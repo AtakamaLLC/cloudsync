@@ -2,7 +2,6 @@ import pytest
 import os
 
 from pycloud import EventManager
-from . import util
 
 class MockProvider:
     def __init__(self):
