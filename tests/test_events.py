@@ -29,7 +29,7 @@ def test_event_basic(util, manager):
         return os.path.exists(local_path)
 
     # loop the sync until the file is found
-    manager.sync(timeout=1, until=done)
+    manager.run(timeout=1, until=done)
 
     local_path = manager.local_path("/fandango")
 
