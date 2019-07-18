@@ -1,28 +1,34 @@
 import pytest
 from unittest.mock import patch
 
-from pycloud import Event, CloudFileNotFoundError
+from pycloud import Event, CloudFileNotFoundError, CloudTemporaryError
+
 
 @pytest.fixture
 def gdrive():
     return 'a'
 
+
 @pytest.fixture
 def dropbox():
     return 'b'
+
 
 @pytest.fixture(params=['gdrive', 'dropbox'])
 def provider(request, gdrive, dropbox):
     return {'gdrive': gdrive, 'b': dropbox}[request.param]
 
+
 @pytest.fixture
 def env():
     return None
+
 
 def test_connect(provider):
     assert provider.connected
 
 # todo: should work with file-likes rather than path  question: magically?
+
 
 def test_upload(env, provider):
     temp = env.temp_file(fill_bytes=32)
@@ -55,11 +61,12 @@ def test_walk(env, provider):
         if e is None:
             break
         assert provider.walked
-        assert e.path = "/dest"
+        assert e.path == "/dest"
         assert e.cloud_id == info.cloud_id
         assert e.mtime
         assert e.exists
-        assert e.source = Event.REMOTE
+        assert e.source == Event.REMOTE
+
 
 def test_event_basic(env, provider):
     for e in provider.events(timeout=1):
@@ -72,38 +79,44 @@ def test_event_basic(env, provider):
     temp = env.temp_file(fill_bytes=32)
     info1 = provider.upload(temp, "/dest")
 
+    received_event = None
     for e in provider.events(timeout=1):
         if e is None:
             break
+        received_event = e
 
-        assert e.path = "/dest"
-        assert e.cloud_id
-        assert e.mtime
-        assert e.exists
-        assert e.source = Event.REMOTE
-
-    provider.delete(cloud_id=e.cloud_id)
-
+    assert received_event is not None
+    assert received_event.path == "/dest"
+    assert received_event.cloud_id
+    assert received_event.mtime
+    assert received_event.exists
+    assert received_event.source == Event.REMOTE
+    provider.delete(cloud_id=received_event.cloud_id)
     with pytest.raises(CloudFileNotFoundError):
-        provider.delete(cloud_id=e.cloud_id)
-   
+        provider.delete(cloud_id=received_event.cloud_id)
+
+    received_event = None
     for e in provider.events(timeout=1):
         if e is None:
             break
+        received_event = e
 
-        assert e.path = "/dest"
-        assert e.cloud_id
-        assert e.mtime
-        assert not e.exists
-        assert e.source = Event.REMOTE
+    assert received_event is not None
+    assert received_event.path == "/dest"
+    assert received_event.cloud_id
+    assert received_event.mtime
+    assert not received_event.exists
+    assert received_event.source == Event.REMOTE
+
 
 def test_api_failure(provider):
     # assert that the cloud 
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
 
-    with patch.object(provider, "api", side_effect=lambda *a, **k: raise CloudTemporaryError("fake disconned")):
+    def side_effect(*a, **k):
+        raise CloudTemporaryError("fake disconned")
+
+    with patch.object(provider, "api", side_effect=side_effect):
         with pytest.raises(CloudTemporaryError):
             provider.exists("/notexists")
-
-
