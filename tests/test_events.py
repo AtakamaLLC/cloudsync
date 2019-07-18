@@ -6,6 +6,9 @@ from pycloud import EventManager
 
 
 class MockProvider:
+    def __init__(self):
+        self._fs = {}
+
     def upload(self, local_file, remote_file) -> list:
         pass
 
