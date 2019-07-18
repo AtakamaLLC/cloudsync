@@ -1,2 +1,2 @@
 class Event:
-    pass
+    REMOTE = "remote"

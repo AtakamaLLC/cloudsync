@@ -1,17 +1,38 @@
 import pytest
+import os
 
 from pycloud import EventManager
+# from .util import util
 
 from . import util
 
 class MockProvider:
-    pass
+    def upload(self, local_file, remote_file) -> list:
+        pass
+
+    def download(self, local_file, remote_file) -> list:
+        pass
+
+    def exists(self, remote_file) -> bool:
+        pass
+
+    def local_hash(self, local_file):
+        pass
+
+    def hash(self, remote_file):
+        pass
+
+    def events(self):
+        pass
+
 
 @pytest.fixture
-def manager()
-    return EventManager(MockProvider)
+def manager(provider):
+    return EventManager(provider)
+
 
 def test_event_basic(util, manager):
+    provider = MockProvider
     temp = util.temp_file(fill_bytes=32)
     cloud_id1, hash1 = provider.upload(temp, "/dest")
 
