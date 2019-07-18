@@ -4,3 +4,7 @@ class CloudFileNotFoundError(Exception):
 
 class CloudTemporaryError(Exception):
     pass
+
+
+class CloudFileExistsError(Exception):
+    pass

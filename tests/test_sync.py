@@ -4,10 +4,12 @@ from pycloud import SyncManager, SyncState, EventManager
 
 from .test_events import MockProvider
 
+
 @pytest.fixture
 def sync():
     state = SyncState()
     return SyncManager(state, EventManager(state, MockProvider()))
+
 
 def test_sync_basic(sync):
     full_path = sync.remote_to_local("/stuff")

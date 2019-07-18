@@ -14,7 +14,8 @@ import pycloud
 
 prov = pycloud.Provider('GDrive', token="237846234236784283")
 
-uuid, hash = prov.upload(file, "/dest")
+info = prov.upload(file, "/dest")
+print ("id of /dest is %s, hash of /dest is %s" % (info.id, info.hash))
 
 Command-line example:
 
