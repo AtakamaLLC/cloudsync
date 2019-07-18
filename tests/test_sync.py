@@ -1,15 +1,11 @@
 import pytest
 
 from pycloud import SyncManager
-
+from . import util
+ 
 @pytest.fixture
 def sync():
-    # m
-    return None
-
-@pytest.fixture
-def util():
-    return None
+    return SyncManager(EventManager(MockProvider))
 
 def test_sync_basic(util, sync):
     full_path = sync.local_path("/local")
