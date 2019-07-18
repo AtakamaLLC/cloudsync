@@ -2,23 +2,14 @@ import pytest
 
 from pycloud import EventManager
 
-@pytest.fixture
-def mock_gdrive():
-    # return a manager linked to mock-provider gdrive
-    return 'a'
+from .util import util
+
+class MockProvider:
+    pass
 
 @pytest.fixture
-def mock_dropbox():
-    # return a manager linked to mock-provider gdrive
-    return 'b'
-
-@pytest.fixture(params=['gdrive', 'dropbox'])
-def manager(request, gdrive, dropbox):
-    return {'gdrive': mock_gdrive, 'b': mock_dropbox}[request.param]
-
-@pytest.fixture
-def util():
-    return None
+def manager()
+    return EventManager(MockProvider)
 
 def test_event_basic(util, manager):
     temp = util.temp_file(fill_bytes=32)
