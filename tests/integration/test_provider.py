@@ -27,7 +27,7 @@ def env():
 def test_connect(provider):
     assert provider.connected
 
-# todo: should work with file-likes rather than path  question: magically?
+# todo: should work with file-likes rather than path. Should it do it magically?
 
 
 def test_upload(env, provider):
@@ -37,10 +37,10 @@ def test_upload(env, provider):
 
     info1 = provider.upload(temp, "/dest")
 
-    info2 = provider.upload(temp, "/dest", cloud_id=cloud_id1)
+    info2 = provider.upload(temp, "/dest", cloud_id=info1.cloud_id)
 
     assert info1.cloud_id == info2.cloud_id
-
+    assert info1.hash == hash0
     assert info1.hash == info2.hash
 
     assert provider.exists("/dest")
@@ -78,6 +78,7 @@ def test_event_basic(env, provider):
 
     temp = env.temp_file(fill_bytes=32)
     info1 = provider.upload(temp, "/dest")
+    assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
     for e in provider.events(timeout=1):
