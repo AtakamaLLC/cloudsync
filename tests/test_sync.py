@@ -1,8 +1,7 @@
 import pytest
 
 from pycloud import SyncManager
-from . import util
- 
+
 @pytest.fixture
 def sync():
     return SyncManager(EventManager(MockProvider))

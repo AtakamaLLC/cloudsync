@@ -1,16 +1,18 @@
 import pytest
 import os
 from hashlib import md5
+from collections import namedtuple
 
 from pycloud import EventManager, CloudFileNotFoundError
 
 class MockProvider:
+    UploadReturnType = namedtuple('UploadReturnType', 'id hash')
     class File:
         def __init__(self, name, contents=b""):
             # self.display_name = name  # TODO: used for case insensitive file systems
             self.name = name
             self.contents = contents
-            self.id = id(self)
+            self.id = str(id(self))
 
         def hash(self):
             return md5(self.contents).hexdigest()
@@ -19,7 +21,7 @@ class MockProvider:
         self._case_insensitive = case_insensitive  # TODO: implement support for this
         self._fs = {}
 
-    def upload(self, local_file, remote_file) -> tuple:
+    def upload(self, local_file, remote_file) -> 'MockProvider.UploadReturnType':
         with open(local_file, "rb") as x:
             contents = x.read()
         file = self._fs.get(remote_file, None)
@@ -27,7 +29,7 @@ class MockProvider:
             file = MockProvider.File(remote_file)
             self._fs[remote_file] = file
         file.contents = contents
-        return file.id, file.hash()
+        return MockProvider.UploadReturnType(id=file.id, hash=file.hash())
 
     def download(self, remote_file, local_file):
         contents = self._fs.get(remote_file, None)
