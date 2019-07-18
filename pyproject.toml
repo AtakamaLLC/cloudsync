@@ -1,0 +1,18 @@
+[build-system]
+requires = ["flit"]
+build-backend = "flit.buildapi"
+
+[tool.flit.metadata]
+module = "pycloud"
+author = "Atakama, LLC"
+author-email = "dev-support@atakama.com"
+home-page = "https://github.com/atakamallc/pycloud"
+description-file="README.md"
+classifiers=["Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+[tool.flit.scripts]
+pycloud = "pycloud:main"
+
