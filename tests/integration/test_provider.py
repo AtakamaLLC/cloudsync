@@ -29,28 +29,26 @@ def test_upload(env, provider):
 
     hash0 = provider.local_hash(temp)
 
-    cloud_id1, hash1 = provider.upload(temp, "/dest")
+    info1 = provider.upload(temp, "/dest")
 
-    cloud_id2, hash2 = provider.upload(temp, "/dest", cloud_id=cloud_id1)
+    info2 = provider.upload(temp, "/dest", cloud_id=cloud_id1)
 
-    assert cloud_id1 == cloud_id2
+    assert info1.cloud_id == info2.cloud_id
 
-    assert hash0 == hash1
-
-    assert hash1 == hash2
+    assert info1.hash == info2.hash
 
     assert provider.exists("/dest")
 
-    cloud_id3, hash3 = provider.download("/dest", temp)
+    info3 = provider.download("/dest", temp)
 
-    assert cloud_id1 == cloud_id3
+    assert info1.cloud_id == info3.cloud_id
 
-    assert hash1 == hash3
+    assert info1.hash == info3.hash
 
 
 def test_walk(env, provider):
     temp = env.temp_file(fill_bytes=32)
-    cloud_id1, hash1 = provider.upload(temp, "/dest")
+    info = provider.upload(temp, "/dest")
     assert not provider.walked
 
     for e in provider.events(timeout=1):
@@ -58,7 +56,7 @@ def test_walk(env, provider):
             break
         assert provider.walked
         assert e.path = "/dest"
-        assert e.cloud_id
+        assert e.cloud_id == info.cloud_id
         assert e.mtime
         assert e.exists
         assert e.source = Event.REMOTE
@@ -72,7 +70,7 @@ def test_event_basic(env, provider):
     assert provider.walked
 
     temp = env.temp_file(fill_bytes=32)
-    cloud_id1, hash1 = provider.upload(temp, "/dest")
+    info1 = provider.upload(temp, "/dest")
 
     for e in provider.events(timeout=1):
         if e is None:
