@@ -1,0 +1,2 @@
+class CloudFileNotFoundError(Exception):
+    pass

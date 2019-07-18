@@ -29,6 +29,7 @@ __version__ = "0.1.1"
 from .provider import *
 from .event import *
 from .sync import *
+from .exceptions import *
 
 from .command import main
 
