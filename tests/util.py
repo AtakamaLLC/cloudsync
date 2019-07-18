@@ -8,7 +8,8 @@ log = logging.getLogger(__name__)
 
 log.setLevel(logging.INFO)
 
-class Util():
+
+class Util:
     def __init__(self):
         self.base = tempfile.mkdtemp(suffix=".pycloud")
         log.debug("temp files will be in: %s", self.base)

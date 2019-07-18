@@ -1,2 +1,5 @@
 class EventManager:
-    pass
+    def __init__(self, provider):
+        self.provider = provider
+
+

@@ -2,7 +2,6 @@ import pytest
 import os
 
 from pycloud import EventManager
-
 from . import util
 
 class MockProvider:
@@ -29,8 +28,8 @@ class MockProvider:
 
 
 @pytest.fixture
-def manager(provider):
-    return EventManager(provider)
+def manager():
+    return EventManager(MockProvider())  # TODO extend this to take any provider
 
 
 def test_event_basic(util, manager):
