@@ -31,11 +31,10 @@ class MockProvider:
 def manager():
     return EventManager(MockProvider())  # TODO extend this to take any provider
 
-
 def test_event_basic(util, manager):
-    provider = MockProvider
+    provider = manager.provider
     temp = util.temp_file(fill_bytes=32)
-    cloud_id1, hash1 = provider.upload(temp, "/dest")
+    info = provider.upload(temp, "/dest")
 
     # this is normally a blocking function that runs forever
     def done():

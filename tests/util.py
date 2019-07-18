@@ -49,7 +49,7 @@ def util(request):
     # user can override at the module level or class level
     # if tehy want to look at the temp files made 
 
-    cleanup = getattr(request.cls, "util_cleanup", True)
+    cleanup = getattr(getattr(request,"cls",None), "util_cleanup", True)
     if cleanup:
         cleanup = getattr(request.module, "util_cleanup", True)
 
@@ -60,15 +60,8 @@ def util(request):
     if cleanup:
         u.do_cleanup()
 
-
-def test_util():
+def test_util(util):
     log.setLevel(logging.DEBUG)
-
-    u = Util()
-
-    f = u.temp_file(fill_bytes=32)
-
+    f = util.temp_file(fill_bytes=32)
     assert len(open(f, "rb").read()) == 32
-
-    u.do_cleanup()
 
