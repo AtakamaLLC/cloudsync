@@ -25,6 +25,8 @@ def test_sync_state():
     state = SyncState()
     state.update(LOCAL, FILE, path="foo", oid="foo", hash=b"foo")
 
+    assert state.lookup_path(LOCAL, path="foo")
+
 def test_sync_basic(sync):
     local_path1 = sync.translate(LOCAL, "/remote/stuff")
 
