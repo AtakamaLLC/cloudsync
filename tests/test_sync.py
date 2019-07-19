@@ -1,3 +1,5 @@
+import logging
+
 from io import BytesIO
 
 import pytest
@@ -6,6 +8,7 @@ from pycloud import SyncManager, SyncState, EventManager, CloudFileNotFoundError
 
 from .test_events import MockProvider
 
+log = logging.getLogger(__name__)
 
 @pytest.fixture(name="sync")
 def fixture_sync():
@@ -65,7 +68,7 @@ def test_sync_basic(sync):
 
     assert sync.syncs.entry_count() == 1
 
-    rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello"))
+    rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
 
     # inserts info about some cloud path
     sync.syncs.update(REMOTE, FILE, oid=rinfo.oid,
@@ -87,7 +90,7 @@ def test_sync_basic(sync):
     sync.run(timeout=1, until=done)
 
     info = sync.providers[LOCAL].info_path("/local/stuff2")
-    assert info.hash == sync.providers[LOCAL].hash_data(b"hello2")
+    assert info.hash == sync.providers[LOCAL].hash_data(BytesIO(b"hello2"))
     assert info.oid
-    assert sync.syncs.lookup_oid(LOCAL, info.oid)
-
+    log.debug("all syncs %s", sync.syncs.get_all())
+    raise

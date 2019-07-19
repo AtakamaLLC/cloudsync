@@ -16,7 +16,11 @@ log = logging.getLogger(__name__)
 # state of a single object
 
 
-class SideState:                            # pylint: disable=too-few-public-methods
+class Reprable:
+    def __repr__(self):
+        return self.__class__.__name__ + str(self.__dict__)
+
+class SideState(Reprable):                            # pylint: disable=too-few-public-methods
     def __init__(self):
         self.exists: bool = True            # exists at provider
         self.hash: Optional[bytes] = None           # hash at provider
@@ -43,7 +47,7 @@ DIRECTORY = "dir"
 # single entry in the syncs state collection
 
 
-class SyncEntry:
+class SyncEntry(Reprable):
     def __init__(self, otype):
         self.__states = (SideState(), SideState())
         self.sync_exists = None
@@ -79,7 +83,6 @@ class SyncEntry:
         if self[0].sync_path and self[1].sync_path:
             return self[0].path != self[0].sync_path and self[1].path != self[1].sync_path
         return False
-
 
 class SyncState:
     def __init__(self):
@@ -178,6 +181,8 @@ class SyncManager(Runnable):
     def __init__(self, syncs, providers, translate):
         self.syncs = syncs
         self.providers = providers
+        self.providers[LOCAL]._sname = "local"
+        self.providers[REMOTE]._sname = "remote"
         self.translate = translate
         self.tempdir = tempfile.mkdtemp(suffix=".pycloud")
 
@@ -230,7 +235,7 @@ class SyncManager(Runnable):
                 try:
                     self.providers[changed].download(sync[changed].oid, open(sync.temp_file, "wb"))
                 except CloudFileNotFoundError:
-                    log.debug("download %s failed fnf, switch to not exists", self.providers[changed])
+                    log.debug("download %s failed fnf, switch to not exists", self.providers[changed]._sname)
                     sync.exists = False
                     return
 
@@ -239,11 +244,12 @@ class SyncManager(Runnable):
                         self.providers[synced].upload(sync[synced].oid, open(sync.temp_file, "rb"))
                         return
                     except CloudFileNotFoundError:
-                        log.debug("upload %s failed fnf, try by path", self.providers[synced])
+                        log.debug("upload %s failed fnf, try by path", self.providers[synced]._sname)
 
                 try:
-                    self.providers[synced].create(sync[synced].path, open(sync.temp_file, "rb"))
-                    log.debug("upload %s %s by path", self.providers[synced], self.translate(synced, sync[changed].path))
+                    translated_path = self.translate(synced, sync[changed].path)
+                    self.providers[synced].create(translated_path, open(sync.temp_file, "rb"))
+                    log.debug("upload %s %s by path", self.providers[synced]._sname, translated_path)
                     self.syncs.synced(sync)
                     return
                 except CloudFileNotFoundError:
