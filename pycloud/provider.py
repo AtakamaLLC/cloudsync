@@ -41,7 +41,7 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    def mkdir(self, path):
+    def mkdir(self, path) -> str:
         ...
 
     @abstractmethod
