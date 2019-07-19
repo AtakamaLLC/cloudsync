@@ -36,6 +36,19 @@ def test_sync_state_rename():
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
 
+def test_sync_state_rename():
+    state = SyncState()
+    state.update(LOCAL, FILE, path="foo2", oid="123")
+    assert state.lookup_path(LOCAL, path="foo2")
+    assert not state.lookup_path(LOCAL, path="foo")
+
+def test_sync_state_multi():
+    state = SyncState()
+    state.update(LOCAL, FILE, path="foo2", oid="123")
+    assert state.lookup_path(LOCAL, path="foo2")
+    assert not state.lookup_path(LOCAL, path="foo")
+
+
 def test_sync_basic(sync):
     local_path1 = sync.translate(LOCAL, "/remote/stuff")
 
