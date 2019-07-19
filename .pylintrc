@@ -59,6 +59,7 @@ confidence=
 disable=multiple-imports,
         missing-docstring,
         broad-except,
+        no-else-return,
         trailing-newlines,
         unidiomatic-typecheck,
         bad-continuation,
