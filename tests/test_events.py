@@ -1,12 +1,13 @@
 import pytest
 import os
 import copy
+import time
 from hashlib import md5
 from collections import namedtuple, deque
 
 from pycloud import EventManager, CloudFileNotFoundError, CloudFileExistsError
 
-MockProviderUploadReturnType = namedtuple('MockProviderUploadReturnType', 'remote_id hash')
+MockProviderInfo = namedtuple('MockProviderInfo', 'oid hash')
 
 
 class MockProvider:
@@ -14,13 +15,14 @@ class MockProvider:
     class FSObject:
         FILE = 'file'
         DIR = 'dir'
-        def __init__(self, name, type, contents=None):
-            # self.display_name = name  # TODO: used for case insensitive file systems
+
+        def __init__(self, path, type, contents=None):
+            # self.display_path = path  # TODO: used for case insensitive file systems
             if contents is None and type == MockProvider.FSObject.FILE:
                 contents = b""
-            self.name = name
+            self.path = path
             self.contents = contents
-            self.remote_id = str(id(self))
+            self.oid = str(id(self))
             self.exists = True
             self.type = type
 
@@ -37,120 +39,156 @@ class MockProvider:
             self.old_object = old_object
             self.new_object = new_object
             self.action = action
+            self.timestamp = time.time()
 
         def serialize(self):
             ret_val = None
             if self.action == self.ACTION_CREATE:
                 ret_val = {"action": self.action,
-                          "id": self.new_object.remote_id,
-                          "path": self.new_object.name
+                           "id": self.new_object.oid,
+                           "path": self.new_object.path
                           }
             elif self.action == self.ACTION_RENAME:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.remote_id,
-                           "path": self.new_object.name
+                           "id": self.new_object.oid,
+                           "path": self.new_object.path
                           }
             elif self.action == self.ACTION_MODIFY:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.remote_id,
+                           "id": self.new_object.oid,
                           }
             elif self.action == self.ACTION_DELETE:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.remote_id,
+                           "id": self.new_object.oid,
                           }
 
-
             return ret_val
-
 
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True):
         self._case_sensitive = case_sensitive  # TODO: implement support for this
         self._allow_renames_over_existing = allow_renames_over_existing
-        self._fs = {}
+        self._fs_by_path = {}
+        self._fs_by_oid = {}
         self._events = []
         self._event_cursor = 0
 
-    @staticmethod
-    def _slurp(path):
-        with open(path, "rb") as x:
-            return x.read()
-
-    @staticmethod
-    def _burp(path, contents):
-        with open(path, "wb") as x:
-            x.write(contents)
+    # @staticmethod
+    # def _slurp(path):
+    #     with open(path, "rb") as x:
+    #         return x.read()
+    #
+    # @staticmethod
+    # def _burp(path, contents):
+    #     with open(path, "wb") as x:
+    #         x.write(contents)
 
     def _register_event(self, action, old_object, new_object):
+        pass
 
+    def _get_by_path(self, path):
+        # TODO: normalize the path, support case insensitive lookups, etc
+        return self._fs_by_path.get(path, None)
 
-    def upload(self, local_file, remote_file) -> 'MockProviderUploadReturnType':
-        # TODO: check to make sure the folder exists before creating a file in it
-        contents = self._slurp(local_file)
-        file = self._fs.get(remote_file, None)
+    def _store_object(self, fo: "MockProvider.FSObject"):
+        # TODO: support case insensitive storage
+        self._fs_by_path[fo.path] = fo
+        self._fs_by_oid[fo.oid] = fo
+
+    def _delete_object(self, fo: "MockProvider.FSObject"):
+        # so far, it looks like I don't need this, but here it is for your edification
+        # instead, file objects get the exists flag set to false, and never truly disappear
+        del self._fs_by_path[fo.path]
+        del self._fs_by_oid[fo.oid]
+
+    def upload(self, oid, file_like):
+        contents = file_like.read()
+        file = self._fs_by_oid.get(oid, None)
         if file is None:
-            file = MockProvider.FSObject(remote_file, MockProvider.FSObject.FILE)
-            self._fs[remote_file] = file
+            raise CloudFileNotFoundError(oid)
         file.contents = contents
-        return MockProviderUploadReturnType(remote_id=file.remote_id, hash=file.hash())
+        return MockProviderInfo(oid=file.oid, hash=file.hash())
 
-    def download(self, remote_file, local_file):
-        file = self._fs.get(remote_file, None)
+    def create(self, path, file_like) -> 'MockProviderInfo':
+        # TODO: check to make sure the folder exists before creating a file in it
+        contents = file_like.read()
+        file = self._fs_by_path.get(path, None)
         if file is None:
-            raise CloudFileNotFoundError(remote_file)
-        self._burp(local_file, file.contents)
-        with open(local_file, "wb") as x:
-            x.write(file.contents)
+            file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
+            self._store_object(file)
+        file.contents = contents
+        return MockProviderInfo(oid=file.oid, hash=file.hash())
 
-    def rename(self, remote_file_from, remote_file_to):
-        #TODO: folders are implied by the name of the file...
+    def download(self, oid, file_like):
+        file = self._fs_by_oid.get(oid, None)
+        if file is None:
+            raise CloudFileNotFoundError(oid)
+        file_like.write(file.contents)
+
+    def rename(self, oid, path):
+        #TODO: folders are implied by the path of the file...
         # actually check to make sure the folder exists and raise a FileNotFound if not
-        file_old = self._fs.get(remote_file_from, None)
-        file_new = self._fs.get(remote_file_to, None)
+        file_old = self._fs_by_oid.get(oid, None)
+        file_new = self._fs_by_path.get(path, None)
         if not (file_old and file_old.exists):
-            raise CloudFileNotFoundError(remote_file_from)
-        if file_new and file_new.exists and not self._allow_renames_over_existing:
-            raise CloudFileExistsError(remote_file_to)
-        file_old.name = remote_file_to
-        self._fs[remote_file_to] = file_old
+            raise CloudFileNotFoundError(oid)
+        if file_new and file_new.exists:
+            if self._allow_renames_over_existing:
+                self.delete(file_new.oid)
+            else:
+                raise CloudFileExistsError(path)
+        old_path = file_old.path
+        file_old.path = path
+        self.delete(file_old.oid)
+        self._fs_by_path[path] = file_old
 
-    def mkdir(self, remote_dir):
+    def mkdir(self, path):
         #TODO: ensure parent folder exists
-        file = self._fs.get(remote_dir, None)
+        file = self._fs_by_path.get(path, None)
         if file and file.exists:
-            raise CloudFileExistsError(remote_dir)
-        self._fs[remote_dir] = MockProvider.FSObject(remote_dir, MockProvider.FSObject.DIR)
+            raise CloudFileExistsError(path)
+        new_fs_object = MockProvider.FSObject(path, MockProvider.FSObject.DIR)
+        self._store_object(new_fs_object)
 
-    def delete(self, remote_file):
-        file = self._fs.get(remote_file, None)
+    def delete(self, oid):
+        file = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
-            raise CloudFileNotFoundError(remote_file)
+            raise CloudFileNotFoundError(oid)
         file.exists = False
 
-    def exists(self, remote_file) -> bool:
-        file = self._fs.get(remote_file, None)
+    def exists_oid(self, oid):
+        file = self._fs_by_oid.get(oid, None)
         return file and file.exists
 
-    def local_hash(self, local_file):
-        contents = self._slurp(local_file)
+    def exists_path(self, path) -> bool:
+        file = self._fs_by_path.get(path, None)
+        return file and file.exists
+
+    @staticmethod
+    def hash_data(file_like):
+        contents = file_like.read()
         return md5(contents).hexdigest()
 
-    def remote_hash(self, remote_file):
-        file: MockProvider.FSObject = self._fs.get(remote_file, None)
+    def remote_hash(self, oid):
+        file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
-            raise CloudFileNotFoundError(remote_file)
+            raise CloudFileNotFoundError(oid)
         return file.hash()
-
-    def remote_id(self, remote_file):
-        file: MockProvider.FSObject = self._fs.get(remote_file, None)
-        if not (file and file.exists):
-            raise CloudFileNotFoundError(remote_file)
-        return file.remote_id
 
     def events(self):
         pass
 
-    def remote_id_to_path(self, remote_id):
-        pass
+    def info_path(self, path):
+        file: MockProvider.FSObject = self._fs_by_path.get(path, None)
+        if not (file and file.exists):
+            raise CloudFileNotFoundError(path)
+        return MockProviderInfo(oid=file.oid, hash=file.hash())
+
+    def info_oid(self, oid):
+        file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
+        if not (file and file.exists):
+            raise CloudFileNotFoundError(oid)
+        return MockProviderInfo(oid=file.oid, hash=file.hash())
+
 
 @pytest.fixture
 def manager():
