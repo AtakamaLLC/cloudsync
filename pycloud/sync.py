@@ -1,7 +1,13 @@
+import os
 import time
 import logging
+import tempfile
 
 from typing import Optional
+
+__all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
+
+from pycloud.exceptions import CloudFileNotFoundError 
 
 from .runnable import Runnable
 
@@ -18,7 +24,8 @@ class SideState:                            # pylint: disable=too-few-public-met
         self.oid: Optional[str] = None           # oid at provider
         # time of last change (we maintain this)
         self.changed: Optional[float] = None
-
+        self.sync_hash: Optional[bytes] = None           # hash at last sync
+        self.sync_path: Optional[str] = None           # path at last sync
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -40,8 +47,6 @@ class SyncEntry:
     def __init__(self, otype):
         self.__states = (SideState(), SideState())
         self.sync_exists = None
-        self.sync_hash = []
-        self.sync_path = []
         self.otype = otype
 
     def __getitem__(self, i):
@@ -49,29 +54,30 @@ class SyncEntry:
 
     def update(self, providers):
         for i in (LOCAL, REMOTE):
-            if self[i].change:
+            if self[i].changed:
                 # get latest info from provider
-                self[i].hash = None
-                self[i].path = self[i].path
                 if self.otype == FILE:
-                    self[i].hash = providers[i].hash(self[i].oid)
+                    self[i].hash = providers[i].hash_oid(self[i].oid)
                     self[i].exists = self[i].hash
                 else:
                     self[i].exists = providers[i].exists(self[i].oid)
             else:
                 # trust local sync state
                 self[i].exists = self.sync_exists
-                self[i].hash = self.sync_hash[i]
-                self[i].path = self.sync_path[i]
+                if self[i].sync_hash:
+                    self[i].hash = self[i].sync_hash
+                    self[i].path = self[i].sync_path
+                else:
+                    self[i].hash = None
 
     def hash_conflict(self):
-        if self.sync_hash:
-            return self[0].hash != self.sync_hash[0] and self[1].hash != self.sync_hash[1]
+        if self[0].sync_hash and self[1].sync_hash:
+            return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash
         return False
 
     def path_conflict(self):
-        if self.sync_path:
-            return self[0].path != self.sync_path[0] and self[1].path != self.sync_path[1]
+        if self[0].sync_path and self[1].sync_path:
+            return self[0].path != self[0].sync_path and self[1].path != self[1].sync_path
         return False
 
 
@@ -152,19 +158,28 @@ class SyncState:
         self._changeset.add(ent)
 
     def changes(self):
-        return self._changeset
+        return list(self._changeset)
 
-    def synced(self, entries):
-        for ent in entries:
-            if not ent.changed:
-                self._changeset.remove(ent)
+    def get_all(self):
+        ents = set()
+        for ent in self._oids[LOCAL].values():
+            ents.add(ent)
+        for ent in self._oids[REMOTE].values():
+            ents.add(ent)
+        return ents
 
+    def synced(self, ent):
+        self._changeset.remove(ent)
+
+    def entry_count(self):
+        return len(self.get_all())
 
 class SyncManager(Runnable):
     def __init__(self, syncs, providers, translate):
         self.syncs = syncs
         self.providers = providers
         self.translate = translate
+        self.tempdir = tempfile.mkdtemp(suffix=".pycloud")
 
         assert len(self.providers) == 2
 
@@ -182,18 +197,64 @@ class SyncManager(Runnable):
             self.handle_path_conflict(sync)
 
         for i in (LOCAL, REMOTE):
-            if sync.states[i].change:
+            if sync[i].changed:
                 self.embrace_change(sync, i, other(i))
 
+    def temp_file(self):
+        # prefer big random name over NamedTemp which can infinite loop in odd situations!
+        return os.path.join(self.tempdir, os.urandom(32).hex())
+
     def embrace_change(self, sync, changed, synced):
-        # see if there are other entries for the same path, but other ids
-        ents = self.syncs.get_path(changed, sync[changed].path)
+        log.debug("HERE!!!!!!!!!!!!!!")
 
-        if len(ents) == 1:
-            assert ents[0] == sync
-            self.providers[synced].delete(sync[other].oid)
+        if not sync[changed].exists:
+            # see if there are other entries for the same path, but other ids
+            ents = self.syncs.get_path(changed, sync[changed].path)
 
-        self.syncs.remove(sync)
+            if len(ents) == 1:
+                assert ents[0] == sync
+                self.providers[synced].delete(sync[other].oid)
+
+            self.syncs.remove(sync)
+            return
+        
+        if sync[changed].path != sync[changed].sync_path:
+            if not sync[changed].sync_path:
+                assert not sync[changed].sync_hash
+                # looks like a new file
+                
+                sync.temp_file = self.temp_file()
+
+                assert sync[changed].oid
+
+                try:
+                    self.providers[changed].download(sync[changed].oid, open(sync.temp_file, "wb"))
+                except CloudFileNotFoundError:
+                    log.debug("download %s failed fnf, switch to not exists", self.providers[changed])
+                    sync.exists = False
+                    return
+
+                if sync[synced].oid:
+                    try:
+                        self.providers[synced].upload(sync[synced].oid, open(sync.temp_file, "rb"))
+                        return
+                    except CloudFileNotFoundError:
+                        log.debug("upload %s failed fnf, try by path", self.providers[synced])
+
+                try:
+                    self.providers[synced].create(sync[synced].path, open(sync.temp_file, "rb"))
+                    log.debug("upload %s %s by path", self.providers[synced], self.translate(synced, sync[changed].path))
+                    self.syncs.synced(sync)
+                    return
+                except CloudFileNotFoundError:
+                    log.debug("upload %s failed fnf, mkdir needed")
+                    raise NotImplementedError("TODO mkdir, and make syncs etc")
+
+        if sync[changed].hash != sync[changed].sync_hash:
+            raise "HASH"
+           
+        raise "NOTHING"
+
 
     def handle_hash_conflict(self, sync):
         raise NotImplementedError()

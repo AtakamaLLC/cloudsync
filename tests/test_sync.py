@@ -2,13 +2,13 @@ from io import BytesIO
 
 import pytest
 
-from pycloud import SyncManager, SyncState, EventManager, LOCAL, REMOTE, FILE, DIRECTORY
+from pycloud import SyncManager, SyncState, EventManager, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
 
 from .test_events import MockProvider
 
 
-@pytest.fixture
-def sync():
+@pytest.fixture(name="sync")
+def fixture_sync():
     state = SyncState()
 
     def translate(to, path):
@@ -17,6 +17,8 @@ def sync():
 
         if to == REMOTE:
             return "/remote/" + path.replace("/local/", "")
+
+        raise ValueError()
 
     # two providers and a translation function that converts paths in one to paths in the other
     return SyncManager(state, (MockProvider(), MockProvider()), translate)
@@ -38,13 +40,6 @@ def test_sync_state_rename():
     assert not state.lookup_path(LOCAL, path="foo")
 
 
-def test_sync_state_rename():
-    state = SyncState()
-    state.update(LOCAL, FILE, path="foo2", oid="123")
-    assert state.lookup_path(LOCAL, path="foo2")
-    assert not state.lookup_path(LOCAL, path="foo")
-
-
 def test_sync_state_multi():
     state = SyncState()
     state.update(LOCAL, FILE, path="foo2", oid="123")
@@ -58,7 +53,7 @@ def test_sync_basic(sync):
     assert local_path1 == "/local/stuff"
     remote_path1 = "/remote/stuff"
     local_path2 = "/local/stuff2"
-    remote_pat21 = "/remote/stuff2"
+    remote_path2 = "/remote/stuff2"
 
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
@@ -73,16 +68,18 @@ def test_sync_basic(sync):
     rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello"))
 
     # inserts info about some cloud path
-    sync.syncs.update(REMOTE, oid=rinfo.oid,
+    sync.syncs.update(REMOTE, FILE, oid=rinfo.oid,
                       path=remote_path2, hash=rinfo.hash)
 
     def done():
-        info = list(range(4))
-
-        info[0] = sync.providers[LOCAL].info_path("/local/stuff")
-        info[1] = sync.providers[LOCAL].info_path("/local/sutff2")
-        info[2] = sync.providers[LOCAL].info_path("/remote/stuff")
-        info[3] = sync.providers[LOCAL].info_path("/remote/sutff2")
+        info = [None] * 4
+        try:
+            info[0] = sync.providers[LOCAL].info_path("/local/stuff")
+            info[1] = sync.providers[LOCAL].info_path("/local/sutff2")
+            info[2] = sync.providers[LOCAL].info_path("/remote/stuff")
+            info[3] = sync.providers[LOCAL].info_path("/remote/sutff2")
+        except CloudFileNotFoundError:
+            pass
 
         return all(info)
 
@@ -90,6 +87,7 @@ def test_sync_basic(sync):
     sync.run(timeout=1, until=done)
 
     info = sync.providers[LOCAL].info_path("/local/stuff2")
-    assert info.hash == provider.hash_data(b"hello2")
+    assert info.hash == sync.providers[LOCAL].hash_data(b"hello2")
     assert info.oid
-    assert info.oid == sync.syncs.get(LOCAL, oid=info.oid).s
+    assert sync.syncs.lookup_oid(LOCAL, info.oid)
+

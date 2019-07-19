@@ -193,6 +193,10 @@ class MockProvider:
             raise CloudFileNotFoundError(oid)
         return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
+    def hash_oid(self, oid):
+        file = self._fs_by_oid.get(oid, None)
+        return file and file.exists and file.hash()
+
     def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
         if sep is None:
             if anysep:

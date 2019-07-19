@@ -10,9 +10,8 @@ def time_helper(secs, sleep=None):
     forever = not secs
     end = forever or time.monotonic() + secs
     while forever or end >= time.monotonic():
-        log.debug("END %s", end, time.monotonic())
         yield True
-        if sleep:
+        if sleep is not None:
             time.sleep(sleep)
 
 
