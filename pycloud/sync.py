@@ -36,6 +36,12 @@ class State(NamedTuple):
     id: str
 
 
+LOCAL = 0
+REMOTE = 1
+
+def other(index):
+    return 1-index
+
 class Sync:
     FILE = "file"
     DIRECTORY = "dir"
@@ -47,7 +53,7 @@ class Sync:
         self.sync_path = None
 
     def update(self, providers):
-        for i in (0,1):
+        for i in (LOCAL,REMOTE):
             if self.states[i].change:
                 # get latest info from provider
                 self.states[i].hash = None
@@ -72,9 +78,10 @@ class Sync:
             return self.states[0].path != sync.sync_path[0] and self.states[1].path != sync.sync_path[1]
 
 class SyncManager(Runnable):
-    def __init__(self, syncs, providers):
+    def __init__(self, syncs, providers, translate):
         self.syncs = syncs
         self.providers = providers
+        self.translate = translate
 
         assert len(self.providers) == 2
 
@@ -91,16 +98,19 @@ class SyncManager(Runnable):
         if sync.path_conflict():
             self.handle_path_conflict(sync, info)
 
-        for i in (0,1):
+        for i in (LOCAL, REMOTE):
             if sync.states[i].change:
-                # one side is deleted
-                # see if there are other entries for the same path, but other ids
-                dups = self.state.get(i, path=sync.states[i].path, all=True)
+                self.embrace_change(sync, i, other(i))
 
-                if len(dups) == 1:
-                    self.providers[1-i].remove(sync.states[1-i].id)
-                self.states.remove(sync)
-                return                 
+    def embrace_change(self, sync, changed, other):
+        # see if there are other entries for the same path, but other ids
+        ents = self.state.get(changed, path=sync.states[changed].path)
+
+        if len(ents) == 1:
+            assert ent[0] == sync
+            self.providers[other].remove(sync.states[other].id)
+
+        self.states.remove(sync)
 
 class SyncState:
     pass
