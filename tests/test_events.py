@@ -1,7 +1,8 @@
 import pytest
 import os
+import copy
 from hashlib import md5
-from collections import namedtuple
+from collections import namedtuple, deque
 
 from pycloud import EventManager, CloudFileNotFoundError, CloudFileExistsError
 
@@ -26,10 +27,48 @@ class MockProvider:
         def hash(self):
             return md5(self.contents).hexdigest()
 
+    class Event:
+        ACTION_CREATE = "create"
+        ACTION_RENAME = "rename"
+        ACTION_MODIFY = "modify"
+        ACTION_DELETE = "delete"
+
+        def __init__(self, old_object: "MockProvider.FSObject", new_object: "MockProvider.FSObject", action):
+            self.old_object = old_object
+            self.new_object = new_object
+            self.action = action
+
+        def serialize(self):
+            ret_val = None
+            if self.action == self.ACTION_CREATE:
+                ret_val = {"action": self.action,
+                          "id": self.new_object.remote_id,
+                          "path": self.new_object.name
+                          }
+            elif self.action == self.ACTION_RENAME:
+                ret_val = {"action": self.action,
+                           "id": self.new_object.remote_id,
+                           "path": self.new_object.name
+                          }
+            elif self.action == self.ACTION_MODIFY:
+                ret_val = {"action": self.action,
+                           "id": self.new_object.remote_id,
+                          }
+            elif self.action == self.ACTION_DELETE:
+                ret_val = {"action": self.action,
+                           "id": self.new_object.remote_id,
+                          }
+
+
+            return ret_val
+
+
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True):
         self._case_sensitive = case_sensitive  # TODO: implement support for this
         self._allow_renames_over_existing = allow_renames_over_existing
         self._fs = {}
+        self._events = []
+        self._event_cursor = 0
 
     @staticmethod
     def _slurp(path):
@@ -40,6 +79,9 @@ class MockProvider:
     def _burp(path, contents):
         with open(path, "wb") as x:
             x.write(contents)
+
+    def _register_event(self, action, old_object, new_object):
+
 
     def upload(self, local_file, remote_file) -> 'MockProviderUploadReturnType':
         # TODO: check to make sure the folder exists before creating a file in it
