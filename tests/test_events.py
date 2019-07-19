@@ -23,7 +23,7 @@ class MockProvider:
                 contents = b""
             self.path = path
             self.contents = contents
-            self.oid = bytes(str(id(self)))
+            self.oid = str(id(self))
             self.exists = True
             self.type = object_type
 
@@ -72,7 +72,7 @@ class MockProvider:
         self._case_sensitive = case_sensitive  # TODO: implement support for this
         self._allow_renames_over_existing = allow_renames_over_existing
         self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
-        self._fs_by_oid: Dict[bytes, "MockProvider.FSObject"] = {}
+        self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
         self._events = []
         self._event_cursor = 0
 
