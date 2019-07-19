@@ -1,32 +1,6 @@
-import time
-
-from abc import ABC, abstractmethod
 from typing import NamedTuple, Any
 
-def time_helper(secs, sleep=None):
-    end = time.monotonic() + secs
-    while end >= time.monotonic():
-        yield True
-        if sleep:
-            time.sleep(sleep)
-
-class Runnable(ABC):
-    def run(self,*, timeout=None, until=None):
-        while time_helper(timeout, sleep=0.1):
-            if until is not None and until():
-                break
-
-            try:
-                self.do()
-            except Exception:
-                log.exception("unhandled exception in %s", self.__class__)
-
-    @abstractmethod
-    def do():
-        ...
-
-    def stop():
-        self.stopped = True
+from .runnable import Runnable
 
 class State(NamedTuple):
     exists: bool
