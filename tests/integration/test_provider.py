@@ -1,27 +1,32 @@
+import os
+from io import BytesIO
+
 import pytest
 from unittest.mock import patch
 
 from pycloud import Event, CloudFileNotFoundError, CloudTemporaryError
 
+from ..fixtures import MockProvider
 
 @pytest.fixture
 def gdrive():
-    return 'a'
+    return None
 
 
 @pytest.fixture
 def dropbox():
-    return 'b'
-
-
-@pytest.fixture(params=['gdrive', 'dropbox'])
-def provider(request, gdrive, dropbox):
-    return {'gdrive': gdrive, 'b': dropbox}[request.param]
-
+    return None
 
 @pytest.fixture
-def env():
-    return None
+def mock():
+    return MockProvider()
+
+
+@pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
+def provider(request, gdrive, dropbox, mock):
+    if request.param in ('gdrive', 'dropbox'):
+        pytest.skip("unsupported configuration")
+    return {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
 
 
 def test_connect(provider):
@@ -30,30 +35,32 @@ def test_connect(provider):
 # todo: should work with file-likes rather than path. Should it do it magically?
 
 
-def test_upload(env, provider):
-    temp = env.temp_file(fill_bytes=32)
+def test_upload(util, provider):
+    dat = os.urandom(32)
+    def data():
+        return BytesIO(dat)
 
-    hash0 = provider.local_hash(temp)
+    hash0 = provider.hash_data(data())
 
-    info1 = provider.upload(temp, "/dest")
+    info1 = provider.create("/dest", data())
 
-    info2 = provider.upload(temp, "/dest", cloud_id=info1.cloud_id)
+    info2 = provider.upload(info1.oid, data())
 
-    assert info1.cloud_id == info2.cloud_id
+    assert info1.oid == info2.oid
     assert info1.hash == hash0
     assert info1.hash == info2.hash
 
-    assert provider.exists("/dest")
+    assert provider.exists_path("/dest")
 
-    info3 = provider.download("/dest", temp)
+    dest = BytesIO()
+    provider.download(info2.oid, dest)
 
-    assert info1.cloud_id == info3.cloud_id
+    dest.seek(0)
+    assert info1.hash == provider.hash_data(dest)
 
-    assert info1.hash == info3.hash
 
-
-def test_walk(env, provider):
-    temp = env.temp_file(fill_bytes=32)
+def test_walk(util, provider):
+    temp = util.temp_file(fill_bytes=32)
     info = provider.upload(temp, "/dest")
     assert not provider.walked
 
@@ -68,7 +75,7 @@ def test_walk(env, provider):
         assert e.source == Event.REMOTE
 
 
-def test_event_basic(env, provider):
+def test_event_basic(util, provider):
     for e in provider.events(timeout=1):
         if e is None:
             break
@@ -76,7 +83,7 @@ def test_event_basic(env, provider):
 
     assert provider.walked
 
-    temp = env.temp_file(fill_bytes=32)
+    temp = util.temp_file(fill_bytes=32)
     info1 = provider.upload(temp, "/dest")
     assert info1 is not None  # TODO: check info1 for more things
 

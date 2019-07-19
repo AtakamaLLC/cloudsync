@@ -8,6 +8,7 @@ from pycloud import CloudFileNotFoundError, CloudFileExistsError
 MockProviderInfo = namedtuple('MockProviderInfo', 'oid hash path')
 
 class MockProvider:
+    connected = True
     # TODO: normalize names to get rid of trailing slashes, etc.
     class FSObject:         # pylint: disable=too-few-public-methods
         FILE = 'file'
@@ -224,4 +225,17 @@ class MockProvider:
         if relative:
             return to_dir + relative
         raise ValueError("replace_path used without subpath")
+
+def test_mock_basic():
+    """
+    basic spot-check, more tests are in test_providers with mock as one of the providers
+    """
+    from io import BytesIO
+    m = MockProvider()
+    info = m.create("/hi.txt", BytesIO(b'hello'))
+    assert info.hash
+    assert info.oid
+    b = BytesIO()
+    m.download(info.oid, b)
+    assert b.getvalue() == b'hello'
 
