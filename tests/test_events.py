@@ -100,7 +100,7 @@ class MockProvider:
         pass
 
     def remote_id_to_path(self, remote_id):
-
+        pass
 
 @pytest.fixture
 def manager():
