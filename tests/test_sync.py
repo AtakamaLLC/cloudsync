@@ -2,7 +2,7 @@ from io import BytesIO
 
 import pytest
 
-from pycloud import SyncManager, SyncState, EventManager, LOCAL, REMOTE
+from pycloud import SyncManager, SyncState, EventManager, LOCAL, REMOTE, FILE, DIRECTORY
 
 from .test_events import MockProvider
 
@@ -21,6 +21,9 @@ def sync():
     # two providers and a translation function that converts paths in one to paths in the other
     return SyncManager(state, (MockProvider(), MockProvider()), translate)
 
+def test_sync_state():
+    state = SyncState()
+    state.update(LOCAL, FILE, path="foo", oid="foo", hash=b"foo")
 
 def test_sync_basic(sync):
     local_path1 = sync.translate(LOCAL, "/remote/stuff")
