@@ -14,7 +14,11 @@ def time_helper(secs, sleep=None):
         if sleep:
             time.sleep(sleep)
 
+
 class Runnable(ABC):
+    def __init__(self):
+        self.stopped = False  # TODO implement stopping
+
     def run(self, *, timeout=None, until=None, sleep=0.1):
         for _ in time_helper(timeout, sleep=sleep):
             if until is not None and until():
@@ -26,7 +30,7 @@ class Runnable(ABC):
                 log.exception("unhandled exception in %s", self.__class__)
 
     @abstractmethod
-    def do():
+    def do(self):
         ...
 
     def stop(self):

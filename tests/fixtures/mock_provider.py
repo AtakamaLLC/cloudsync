@@ -7,9 +7,11 @@ from pycloud import CloudFileNotFoundError, CloudFileExistsError
 
 MockProviderInfo = namedtuple('MockProviderInfo', 'oid hash path')
 
+
 class MockProvider:
     connected = True
     # TODO: normalize names to get rid of trailing slashes, etc.
+
     class FSObject:         # pylint: disable=too-few-public-methods
         FILE = 'file'
         DIR = 'dir'
@@ -27,7 +29,7 @@ class MockProvider:
         def hash(self):
             return md5(self.contents).hexdigest()
 
-    class Event: # pylint: disable=too-few-public-methods
+    class Event:  # pylint: disable=too-few-public-methods
         ACTION_CREATE = "create"
         ACTION_RENAME = "rename"
         ACTION_MODIFY = "modify"
@@ -225,6 +227,7 @@ class MockProvider:
         if relative:
             return to_dir + relative
         raise ValueError("replace_path used without subpath")
+
 
 def test_mock_basic():
     """
