@@ -175,10 +175,10 @@ class SyncManager(Runnable):
         sync.update(self.providers)
 
         if sync.hash_conflict():
-            self.handle_hash_conflict(sync, sync)
+            self.handle_hash_conflict(sync)
 
         if sync.path_conflict():
-            self.handle_path_conflict(sync, sync)
+            self.handle_path_conflict(sync)
 
         for i in (LOCAL, REMOTE):
             if sync.states[i].change:
