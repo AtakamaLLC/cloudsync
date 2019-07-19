@@ -93,4 +93,3 @@ def test_sync_basic(sync):
     assert info.hash == sync.providers[LOCAL].hash_data(BytesIO(b"hello2"))
     assert info.oid
     log.debug("all syncs %s", sync.syncs.get_all())
-    raise
