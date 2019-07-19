@@ -59,10 +59,10 @@ class Sync:
                 self.states[i].hash = None
                 self.states[i].path = self.states[i].path
                 if self.file_type == Sync.FILE:
-                    self.states[i].hash = providers[i].hash(self.states[i].id)
+                    self.states[i].hash = providers[i].hash(self.states[i].oid)
                     self.states[i].exists = self.states[i].hash
                 else:
-                    self.states[i].exists = providers[i].exists(self.states[i].id)
+                    self.states[i].exists = providers[i].exists(self.states[i].oid)
             else:
                 # trust local sync state
                 self.states[i].exists = self.sync_exists
@@ -104,11 +104,11 @@ class SyncManager(Runnable):
 
     def embrace_change(self, sync, changed, other):
         # see if there are other entries for the same path, but other ids
-        ents = self.state.get(changed, path=sync.states[changed].path)
+        ents = self.syncs.get_path(changed, sync.states[changed].path)
 
         if len(ents) == 1:
             assert ent[0] == sync
-            self.providers[other].remove(sync.states[other].id)
+            self.providers[other].delete(sync.states[other].oid)
 
         self.states.remove(sync)
 
