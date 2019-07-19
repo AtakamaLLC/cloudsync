@@ -68,10 +68,13 @@ class SyncState:
         self._changeset = set()
 
     def _change_path(self, side, ent, path):
+        assert type(ent) is SyncEntry
+
+        assert ent[side].oid
+
         if ent[side].path:
-            if ent[side].path not in self._paths[side]:
-                self._paths[side] = {}
-            self._paths[side][ent[side].path].pop(ent[side].oid,None)
+            if ent[side].path in self._paths[side]:
+                self._paths[side][ent[side].path].pop(ent[side].oid,None)
             if not self._paths[side][ent[side].path]:
                 del self._paths[side][ent[side].path]
         if path not in self._paths[side]:
@@ -80,16 +83,24 @@ class SyncState:
         ent[side].path = path
 
     def _change_oid(self, side, ent, oid):
+        assert type(ent) is SyncEntry
+
         if ent[side].oid:
             self._oids[side].pop(ent[side].oid,None)
-        self._oids[side][ent[side].oid] = ent
+        self._oids[side][oid] = ent
         ent[side].oid = oid
  
     def lookup_oid(self, side, oid):
-        return self._oids[side][oid]
+        try:
+            return self._oids[side][oid]
+        except KeyError:
+            return []
 
     def lookup_path(self, side, path):
-        return self._paths[side][path]
+        try:
+            return self._paths[side][path].values()
+        except KeyError:
+            return []
 
     def rename_dir(side, from_dir, to_dir, is_subpath, replace_path):
         """
@@ -109,7 +120,11 @@ class SyncState:
     def update(self, side, otype, path=None, oid=None, hash=None, exists=True):
         try:
             if oid is not None:
-                 ents = self.lookup_oid(side, oid)
+                 ent = self.lookup_oid(side, oid)
+                 if ent:
+                     ents = [ent]
+                 else:
+                     ents = []
             else:
                  ents = self.lookup_path(side, path)
         except KeyError:
@@ -119,11 +134,11 @@ class SyncState:
             ents = [SyncEntry(otype)]
 
         for ent in ents:
-            if path is not None:
-                self._change_path(side, ent, path)
-
             if oid is not None:
                 self._change_oid(side, ent, oid)
+
+            if path is not None:
+                self._change_path(side, ent, path)
 
             if hash is not None:
                 ent[side].hash = hash
