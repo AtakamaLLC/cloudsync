@@ -7,6 +7,7 @@ from pycloud import SyncManager, SyncState, EventManager, LOCAL, REMOTE, FILE, D
 from .test_events import MockProvider
 
 
+
 @pytest.fixture
 def sync():
     state = SyncState()
