@@ -195,7 +195,7 @@ class SyncManager(Runnable):
         self.syncs.remove(sync)
 
     def handle_hash_conflict(self, sync):
-        pass
+        raise NotImplementedError()
     
     def handle_path_conflict(self, sync):
-        pass
+        raise NotImplementedError()
