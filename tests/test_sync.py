@@ -30,7 +30,7 @@ def test_sync_basic(sync):
     local_path2 = "/local/stuff2"
     remote_pat21 = "/remote/stuff2"
 
-    info = sync.providers[LOCAL].upload(local_path1, BytesIO(b"hello"))
+    info = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
     sync.state.update(LOCAL, path=local_path1, oid=info.oid, hash=linfo.hash)
@@ -42,7 +42,7 @@ def test_sync_basic(sync):
 
     assert sync.state.entry_count() == 1
 
-    rinfo = sync.providers[REMOTE].upload(remote_path2, BytesIO(b"hello"))
+    rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello"))
 
     # inserts info about some cloud path
     sync.state.update(REMOTE, oid=rinfo.oid, path=remote_path2, hash=rinfo.hash)
@@ -50,10 +50,10 @@ def test_sync_basic(sync):
     def done():
         info = list(range(4))
 
-        info[0] = sync.providers[LOCAL].info(path="/local/stuff")
-        info[1] = sync.providers[LOCAL].info(path="/local/sutff2")
-        info[2] = sync.providers[LOCAL].info(path="/remote/stuff")
-        info[3] = sync.providers[LOCAL].info(path="/remote/sutff2")
+        info[0] = sync.providers[LOCAL].info_path("/local/stuff")
+        info[1] = sync.providers[LOCAL].info_path("/local/sutff2")
+        info[2] = sync.providers[LOCAL].info_path("/remote/stuff")
+        info[3] = sync.providers[LOCAL].info_path("/remote/sutff2")
 
         return all(info)
          
@@ -61,7 +61,7 @@ def test_sync_basic(sync):
     # loop the sync until the file is found
     sync.run(timeout=1, until=done)
 
-    info = sync.providers[LOCAL].get_info("/local/stuff2")
-
-    assert info.hash == provider.local_hash(temp)
-    assert info.cloud_id
+    info = sync.providers[LOCAL].info_path("/local/stuff2")
+    assert info.hash == provider.hash_data(b"hello2")
+    assert info.oid
+    assert info.oid == sync.syncs.get(LOCAL, oid=info.oid).s

@@ -1,32 +1,6 @@
-import time
-
-from abc import ABC, abstractmethod
 from typing import NamedTuple, Any
 
-def time_helper(secs, sleep=None):
-    end = time.monotonic() + secs
-    while end >= time.monotonic():
-        yield True
-        if sleep:
-            time.sleep(sleep)
-
-class Runnable(ABC):
-    def run(self,*, timeout=None, until=None):
-        while time_helper(timeout, sleep=0.1):
-            if until is not None and until():
-                break
-
-            try:
-                self.do()
-            except Exception:
-                log.exception("unhandled exception in %s", self.__class__)
-
-    @abstractmethod
-    def do():
-        ...
-
-    def stop():
-        self.stopped = True
+from .runnable import Runnable
 
 class State(NamedTuple):
     exists: bool
@@ -59,10 +33,10 @@ class Sync:
                 self.states[i].hash = None
                 self.states[i].path = self.states[i].path
                 if self.file_type == Sync.FILE:
-                    self.states[i].hash = providers[i].hash(self.states[i].id)
+                    self.states[i].hash = providers[i].hash(self.states[i].oid)
                     self.states[i].exists = self.states[i].hash
                 else:
-                    self.states[i].exists = providers[i].exists(self.states[i].id)
+                    self.states[i].exists = providers[i].exists(self.states[i].oid)
             else:
                 # trust local sync state
                 self.states[i].exists = self.sync_exists
@@ -104,11 +78,11 @@ class SyncManager(Runnable):
 
     def embrace_change(self, sync, changed, other):
         # see if there are other entries for the same path, but other ids
-        ents = self.state.get(changed, path=sync.states[changed].path)
+        ents = self.syncs.get_path(changed, sync.states[changed].path)
 
         if len(ents) == 1:
             assert ent[0] == sync
-            self.providers[other].remove(sync.states[other].id)
+            self.providers[other].delete(sync.states[other].oid)
 
         self.states.remove(sync)
 
