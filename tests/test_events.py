@@ -9,9 +9,14 @@ MockProviderUploadReturnType = namedtuple('MockProviderUploadReturnType', 'remot
 
 
 class MockProvider:
-    class File:
-        def __init__(self, name, type, contents=b""):
+    # TODO: normalize names to get rid of trailing slashes, etc.
+    class FSObject:
+        FILE = 'file'
+        DIR = 'dir'
+        def __init__(self, name, type, contents=None):
             # self.display_name = name  # TODO: used for case insensitive file systems
+            if contents is None and type == MockProvider.FSObject.FILE:
+                contents = b""
             self.name = name
             self.contents = contents
             self.remote_id = str(id(self))
@@ -41,7 +46,7 @@ class MockProvider:
         contents = self._slurp(local_file)
         file = self._fs.get(remote_file, None)
         if file is None:
-            file = MockProvider.File(remote_file, 'file')
+            file = MockProvider.FSObject(remote_file, MockProvider.FSObject.FILE)
             self._fs[remote_file] = file
         file.contents = contents
         return MockProviderUploadReturnType(remote_id=file.remote_id, hash=file.hash())
@@ -66,9 +71,12 @@ class MockProvider:
         file_old.name = remote_file_to
         self._fs[remote_file_to] = file_old
 
-
     def mkdir(self, remote_dir):
-        pass
+        #TODO: ensure parent folder exists
+        file = self._fs.get(remote_dir, None)
+        if file and file.exists:
+            raise CloudFileExistsError(remote_dir)
+        self._fs[remote_dir] = MockProvider.FSObject(remote_dir, MockProvider.FSObject.DIR)
 
     def delete(self, remote_file):
         file = self._fs.get(remote_file, None)
@@ -85,13 +93,13 @@ class MockProvider:
         return md5(contents).hexdigest()
 
     def remote_hash(self, remote_file):
-        file: MockProvider.File = self._fs.get(remote_file, None)
+        file: MockProvider.FSObject = self._fs.get(remote_file, None)
         if not (file and file.exists):
             raise CloudFileNotFoundError(remote_file)
         return file.hash()
 
     def remote_id(self, remote_file):
-        file: MockProvider.File = self._fs.get(remote_file, None)
+        file: MockProvider.FSObject = self._fs.get(remote_file, None)
         if not (file and file.exists):
             raise CloudFileNotFoundError(remote_file)
         return file.remote_id
