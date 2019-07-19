@@ -9,7 +9,6 @@ class Event(EventBase):
     REMOTE = "remote"
     LOCAL = "local"
 
-
 class EventManager(Runnable):
     def do(self):  # One iteration of the loop
         # get events

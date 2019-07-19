@@ -209,6 +209,45 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
+    def hash_oid(self, oid):
+        file = self._fs_by_oid.get(oid, None)
+        return file and file.exists and file.hash()
+
+    def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
+        if sep is None:
+            if anysep:
+                sep = "/"
+                folder = folder.replace("\\", "/")
+                target = target.replace("\\", "/")
+            else:
+                sep = self._sep
+        # Will return True for is-same-path in addition to target
+        folder_full = str(folder)
+        folder_full = folder_full.rstrip(sep)
+        target_full = str(target)
+        target_full = target_full.rstrip(sep)
+        # .lower() instead of normcase because normcase will also mess with separators
+        if not self._case_sensitive:
+            folder_full = folder_full.lower()
+            target_full = target_full.lower()
+
+        # target is same as folder, or target is a subpath (ensuring separator is there for base)
+        if folder_full == target_full:
+            return False if strict else sep
+        elif len(target_full) > len(folder_full) and \
+                target_full[len(folder_full)] == sep:
+            if target_full.startswith(folder_full):
+                return target_full.replace(folder_full, "", 1)
+            else:
+                return False
+        return False
+
+    def replace_path(self, path, from_dir, to_dir):
+        relative = self.is_sub_path(path, from_dir)
+        if relative:
+            return to_dir + relative
+        raise ValueError("replace_path used without subpath")
+
 
 def test_mock_basic():
     """
@@ -222,4 +261,3 @@ def test_mock_basic():
     b = BytesIO()
     m.download(info.oid, b)
     assert b.getvalue() == b'hello'
-

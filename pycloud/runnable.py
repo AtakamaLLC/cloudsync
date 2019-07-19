@@ -5,13 +5,13 @@ from abc import ABC, abstractmethod
 import logging
 log = logging.getLogger(__name__)
 
+
 def time_helper(secs, sleep=None):
     forever = not secs
     end = forever or time.monotonic() + secs
     while forever or end >= time.monotonic():
-        log.debug("END %s", end, time.monotonic())
         yield True
-        if sleep:
+        if sleep is not None:
             time.sleep(sleep)
 
 
@@ -57,4 +57,3 @@ def test_runnable():
     foo.run(until=lambda: done == 1)
 
     assert done == 1
-
