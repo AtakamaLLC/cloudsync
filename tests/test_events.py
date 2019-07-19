@@ -152,7 +152,6 @@ class MockProvider:
     def remote_id_to_path(self, remote_id):
         pass
 
-
 @pytest.fixture
 def manager():
     return EventManager(MockProvider())  # TODO extend this to take any provider
