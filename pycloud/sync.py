@@ -1,6 +1,9 @@
 import time
 from .runnable import Runnable
 
+import logging 
+log = logging.getLogger(__name__)
+
 # state of a single object
 class SideState:
     def __init__(self):
@@ -60,20 +63,26 @@ class SyncEntry:
 
 class SyncState:
     def __init__(self):
-        self._oids = {}
-        self._paths = {}
+        self._oids = ({},{})
+        self._paths = ({},{})
         self._changeset = set()
 
-    def _change_path(side, ent, path):
-        self._paths[side][ent.path].pop(ent.oid)
-        self._paths[side][path][ent.oid] = ent
-        if not self._paths[side][ent.path]:
-            del self._paths[side][ent.path]
+    def _change_path(self, side, ent, path):
+        if ent[side].path:
+            if ent[side].path not in self._paths[side]:
+                self._paths[side] = {}
+            self._paths[side][ent[side].path].pop(ent[side].oid,None)
+            if not self._paths[side][ent[side].path]:
+                del self._paths[side][ent[side].path]
+        if path not in self._paths[side]:
+            self._paths[side][path] = {}
+        self._paths[side][path][ent[side].oid] = ent
         ent[side].path = path
 
-    def _change_oid(side, ent, oid):
-        self._oids[side].pop(ent.oid)
-        self._oids[side][ent.oid] = ent
+    def _change_oid(self, side, ent, oid):
+        if ent[side].oid:
+            self._oids[side].pop(ent[side].oid,None)
+        self._oids[side][ent[side].oid] = ent
         ent[side].oid = oid
  
     def lookup_oid(self, side, oid):
@@ -111,16 +120,10 @@ class SyncState:
 
         for ent in ents:
             if path is not None:
-                if ent[side].path:
-                    self._change_path(side, ent, path)
-                else:
-                    ent[side].path = path
+                self._change_path(side, ent, path)
 
             if oid is not None:
-                if ent[side].oid:
-                    self._change_oid(side, ent, oid)
-                else:
-                    ent[side].oid = oid
+                self._change_oid(side, ent, oid)
 
             if hash is not None:
                 ent[side].hash = hash
