@@ -7,20 +7,20 @@ from pycloud import SyncManager, SyncState, EventManager, LOCAL, REMOTE, FILE, D
 from .test_events import MockProvider
 
 
-
 @pytest.fixture
 def sync():
     state = SyncState()
 
     def translate(to, path):
         if to == LOCAL:
-            return "/local/" + path.replace("/remote/","")
+            return "/local/" + path.replace("/remote/", "")
 
         if to == REMOTE:
-            return "/remote/" + path.replace("/local/","")
+            return "/remote/" + path.replace("/local/", "")
 
     # two providers and a translation function that converts paths in one to paths in the other
     return SyncManager(state, (MockProvider(), MockProvider()), translate)
+
 
 def test_sync_state_basic():
     state = SyncState()
@@ -29,6 +29,7 @@ def test_sync_state_basic():
     assert state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, oid="123")
 
+
 def test_sync_state_rename():
     state = SyncState()
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
@@ -36,11 +37,13 @@ def test_sync_state_rename():
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
 
+
 def test_sync_state_rename():
     state = SyncState()
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
+
 
 def test_sync_state_multi():
     state = SyncState()
@@ -57,22 +60,21 @@ def test_sync_basic(sync):
     local_path2 = "/local/stuff2"
     remote_pat21 = "/remote/stuff2"
 
-    info = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.state.update(LOCAL, path=local_path1, oid=info.oid, hash=linfo.hash)
+    sync.syncs.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
 
-    # updates info about some local path, without duping
-    sync.state.update(LOCAL, path=local_path1, exists=True)
+    sync.syncs.update(LOCAL, FILE, oid=linfo.oid, exists=True)
 
-    sync.state.update(LOCAL, oid=info.oid, exists=True)
-
-    assert sync.state.entry_count() == 1
+    assert sync.syncs.entry_count() == 1
 
     rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello"))
 
     # inserts info about some cloud path
-    sync.state.update(REMOTE, oid=rinfo.oid, path=remote_path2, hash=rinfo.hash)
+    sync.syncs.update(REMOTE, oid=rinfo.oid,
+                      path=remote_path2, hash=rinfo.hash)
 
     def done():
         info = list(range(4))
@@ -83,7 +85,6 @@ def test_sync_basic(sync):
         info[3] = sync.providers[LOCAL].info_path("/remote/sutff2")
 
         return all(info)
-         
 
     # loop the sync until the file is found
     sync.run(timeout=1, until=done)

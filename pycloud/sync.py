@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 
 # state of a single object
 
+
 class SideState:                            # pylint: disable=too-few-public-methods
     def __init__(self):
         self.exists: bool = True            # exists at provider
@@ -196,6 +197,6 @@ class SyncManager(Runnable):
 
     def handle_hash_conflict(self, sync):
         raise NotImplementedError()
-    
+
     def handle_path_conflict(self, sync):
         raise NotImplementedError()

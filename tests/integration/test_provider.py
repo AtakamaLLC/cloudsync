@@ -8,6 +8,7 @@ from pycloud import Event, CloudFileNotFoundError, CloudTemporaryError
 
 from ..fixtures import MockProvider
 
+
 @pytest.fixture
 def gdrive():
     return None
@@ -16,6 +17,7 @@ def gdrive():
 @pytest.fixture
 def dropbox():
     return None
+
 
 @pytest.fixture
 def mock():
@@ -37,6 +39,7 @@ def test_connect(provider):
 
 def test_upload(util, provider):
     dat = os.urandom(32)
+
     def data():
         return BytesIO(dat)
 
@@ -118,7 +121,7 @@ def test_event_basic(util, provider):
 
 
 def test_api_failure(provider):
-    # assert that the cloud 
+    # assert that the cloud
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
 

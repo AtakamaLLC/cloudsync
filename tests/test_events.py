@@ -5,9 +5,12 @@ from pycloud import EventManager
 
 from .fixtures import MockProvider
 
+
 @pytest.fixture(name="manager")
 def fixture_manager():
-    return EventManager(MockProvider())  # TODO extend this to take any provider
+    # TODO extend this to take any provider
+    return EventManager(MockProvider())
+
 
 def test_event_basic(util, manager):
     provider = manager.provider

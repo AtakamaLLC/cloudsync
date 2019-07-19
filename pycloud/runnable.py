@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import logging
 log = logging.getLogger(__name__)
 
+
 def time_helper(secs, sleep=None):
     forever = not secs
     end = forever or time.monotonic() + secs
@@ -13,6 +14,7 @@ def time_helper(secs, sleep=None):
         yield True
         if sleep:
             time.sleep(sleep)
+
 
 class Runnable(ABC):
     def run(self, *, timeout=None, until=None, sleep=0.1):
@@ -53,4 +55,3 @@ def test_runnable():
     foo.run(until=lambda: done == 1)
 
     assert done == 1
-

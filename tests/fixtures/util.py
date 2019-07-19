@@ -20,23 +20,23 @@ class Util:
 
     def temp_file(self, *, fill_bytes=None):
         # pretty names for temps
-        caller = self.get_context(1) 
+        caller = self.get_context(1)
         fn = os.path.basename(caller.filename)
         if not fn:
             fn = "unk"
         else:
             fn = os.path.splitext(fn)[0]
-        
+
         func = caller.function
 
         name = fn + '-' + func + "." + os.urandom(16).hex()
-        
+
         fp = os.path.join(self.base, name)
 
         if fill_bytes is not None:
             with open(fp, "wb") as f:
                 f.write(os.urandom(fill_bytes))
-        
+
         log.debug("temp file %s", fp)
 
         return fp
@@ -44,12 +44,13 @@ class Util:
     def do_cleanup(self):
         shutil.rmtree(self.base)
 
+
 @pytest.fixture(scope="module")
 def util(request):
     # user can override at the module level or class level
-    # if tehy want to look at the temp files made 
+    # if tehy want to look at the temp files made
 
-    cleanup = getattr(getattr(request,"cls",None), "util_cleanup", True)
+    cleanup = getattr(getattr(request, "cls", None), "util_cleanup", True)
     if cleanup:
         cleanup = getattr(request.module, "util_cleanup", True)
 
@@ -60,8 +61,8 @@ def util(request):
     if cleanup:
         u.do_cleanup()
 
+
 def test_util(util):
     log.setLevel(logging.DEBUG)
     f = util.temp_file(fill_bytes=32)
     assert len(open(f, "rb").read()) == 32
-
