@@ -3,11 +3,12 @@ import os
 import copy
 import time
 from hashlib import md5
-from collections import namedtuple, deque
+from collections import namedtuple
+from typing import Dict
 
 from pycloud import EventManager, CloudFileNotFoundError, CloudFileExistsError
 
-MockProviderInfo = namedtuple('MockProviderInfo', 'oid hash')
+MockProviderInfo = namedtuple('MockProviderInfo', 'oid hash path')
 
 
 class MockProvider:
@@ -16,15 +17,15 @@ class MockProvider:
         FILE = 'file'
         DIR = 'dir'
 
-        def __init__(self, path, type, contents=None):
+        def __init__(self, path, object_type, contents=None):
             # self.display_path = path  # TODO: used for case insensitive file systems
             if contents is None and type == MockProvider.FSObject.FILE:
                 contents = b""
             self.path = path
             self.contents = contents
-            self.oid = str(id(self))
+            self.oid = bytes(str(id(self)))
             self.exists = True
-            self.type = type
+            self.type = object_type
 
         def hash(self):
             return md5(self.contents).hexdigest()
@@ -47,28 +48,31 @@ class MockProvider:
                 ret_val = {"action": self.action,
                            "id": self.new_object.oid,
                            "path": self.new_object.path
-                          }
+                           }
             elif self.action == self.ACTION_RENAME:
                 ret_val = {"action": self.action,
                            "id": self.new_object.oid,
+                           "old_path": self.old_object.path,
                            "path": self.new_object.path
-                          }
+                           }
             elif self.action == self.ACTION_MODIFY:
                 ret_val = {"action": self.action,
                            "id": self.new_object.oid,
-                          }
+                           "hash": self.new_object.hash()
+                           }
             elif self.action == self.ACTION_DELETE:
                 ret_val = {"action": self.action,
                            "id": self.new_object.oid,
-                          }
+                           }
 
             return ret_val
 
-    def __init__(self, case_sensitive=True, allow_renames_over_existing=True):
+    def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
+        self._sep = sep  # path delimiter
         self._case_sensitive = case_sensitive  # TODO: implement support for this
         self._allow_renames_over_existing = allow_renames_over_existing
-        self._fs_by_path = {}
-        self._fs_by_oid = {}
+        self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
+        self._fs_by_oid: Dict[bytes, "MockProvider.FSObject"] = {}
         self._events = []
         self._event_cursor = 0
 
@@ -97,8 +101,13 @@ class MockProvider:
     def _delete_object(self, fo: "MockProvider.FSObject"):
         # so far, it looks like I don't need this, but here it is for your edification
         # instead, file objects get the exists flag set to false, and never truly disappear
+        # TODO: do I need to check if the path and ID exist before del to avoid a key error,
+        #  or perhaps just catch and swallow that exception? Whatever... this isn't used... yet
         del self._fs_by_path[fo.path]
         del self._fs_by_oid[fo.oid]
+
+    def events(self):
+        pass
 
     def upload(self, oid, file_like):
         contents = file_like.read()
@@ -106,17 +115,17 @@ class MockProvider:
         if file is None:
             raise CloudFileNotFoundError(oid)
         file.contents = contents
-        return MockProviderInfo(oid=file.oid, hash=file.hash())
+        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def create(self, path, file_like) -> 'MockProviderInfo':
         # TODO: check to make sure the folder exists before creating a file in it
         contents = file_like.read()
-        file = self._fs_by_path.get(path, None)
+        file = self._get_by_path(path)
         if file is None:
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
         file.contents = contents
-        return MockProviderInfo(oid=file.oid, hash=file.hash())
+        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
         file = self._fs_by_oid.get(oid, None)
@@ -125,10 +134,10 @@ class MockProvider:
         file_like.write(file.contents)
 
     def rename(self, oid, path):
-        #TODO: folders are implied by the path of the file...
-        # actually check to make sure the folder exists and raise a FileNotFound if not
+        # TODO: folders are implied by the path of the file...
+        #  actually check to make sure the folder exists and raise a FileNotFound if not
         file_old = self._fs_by_oid.get(oid, None)
-        file_new = self._fs_by_path.get(path, None)
+        file_new = self._get_by_path(path)
         if not (file_old and file_old.exists):
             raise CloudFileNotFoundError(oid)
         if file_new and file_new.exists:
@@ -136,14 +145,13 @@ class MockProvider:
                 self.delete(file_new.oid)
             else:
                 raise CloudFileExistsError(path)
-        old_path = file_old.path
         file_old.path = path
         self.delete(file_old.oid)
-        self._fs_by_path[path] = file_old
+        self._store_object(file_old)
 
     def mkdir(self, path):
-        #TODO: ensure parent folder exists
-        file = self._fs_by_path.get(path, None)
+        # TODO: ensure parent folder exists
+        file = self._get_by_path(path)
         if file and file.exists:
             raise CloudFileExistsError(path)
         new_fs_object = MockProvider.FSObject(path, MockProvider.FSObject.DIR)
@@ -160,7 +168,7 @@ class MockProvider:
         return file and file.exists
 
     def exists_path(self, path) -> bool:
-        file = self._fs_by_path.get(path, None)
+        file = self._get_by_path(path)
         return file and file.exists
 
     @staticmethod
@@ -174,25 +182,57 @@ class MockProvider:
             raise CloudFileNotFoundError(oid)
         return file.hash()
 
-    def events(self):
-        pass
-
     def info_path(self, path):
-        file: MockProvider.FSObject = self._fs_by_path.get(path, None)
+        file: MockProvider.FSObject = self._get_by_path(path)
         if not (file and file.exists):
             raise CloudFileNotFoundError(path)
-        return MockProviderInfo(oid=file.oid, hash=file.hash())
+        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid):
         file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             raise CloudFileNotFoundError(oid)
-        return MockProviderInfo(oid=file.oid, hash=file.hash())
+        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+
+    def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
+        if sep is None:
+            if anysep:
+                sep = "/"
+                folder = folder.replace("\\", "/")
+                target = target.replace("\\", "/")
+            else:
+                sep = self._sep
+        # Will return True for is-same-path in addition to target
+        folder_full = str(folder)
+        folder_full = folder_full.rstrip(sep)
+        target_full = str(target)
+        target_full = target_full.rstrip(sep)
+        # .lower() instead of normcase because normcase will also mess with separators
+        if not self._case_sensitive:
+            folder_full = folder_full.lower()
+            target_full = target_full.lower()
+
+        # target is same as folder, or target is a subpath (ensuring separator is there for base)
+        if folder_full == target_full:
+            return False if strict else sep
+        elif len(target_full) > len(folder_full) and \
+                target_full[len(folder_full)] == sep:
+            if target_full.startswith(folder_full):
+                return target_full.replace(folder_full, "", 1)
+            else:
+                return False
+        return False
+
+    def replace_path(self, path, from_dir, to_dir):
+        relative = self.is_sub_path(path, from_dir)
+        if relative:
+            return to_dir + relative
 
 
 @pytest.fixture
 def manager():
     return EventManager(MockProvider())  # TODO extend this to take any provider
+
 
 def test_event_basic(util, manager):
     provider = manager.provider
