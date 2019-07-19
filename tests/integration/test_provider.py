@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from pycloud import Event, CloudFileNotFoundError, CloudTemporaryError
 
-from ..fixtures import MockProvider
+from tests.fixtures.mock_provider import Provider, MockProvider
+
 
 @pytest.fixture
 def gdrive():
@@ -37,6 +38,7 @@ def test_connect(provider):
 
 def test_upload(util, provider):
     dat = os.urandom(32)
+
     def data():
         return BytesIO(dat)
 
@@ -59,12 +61,14 @@ def test_upload(util, provider):
     assert info1.hash == provider.hash_data(dest)
 
 
-def test_walk(util, provider):
-    temp = util.temp_file(fill_bytes=32)
-    info = provider.upload(temp, "/dest")
+def test_walk(util, provider: Provider):
+    temp = BytesIO(os.urandom(32))
+    info = provider.create("/dest", temp)
     assert not provider.walked
 
+    got_event = False
     for e in provider.events(timeout=1):
+        got_event = True
         if e is None:
             break
         assert provider.walked
@@ -74,8 +78,10 @@ def test_walk(util, provider):
         assert e.exists
         assert e.source == Event.REMOTE
 
+    assert got_event
 
-def test_event_basic(util, provider):
+
+def test_event_basic(util, provider: Provider):
     for e in provider.events(timeout=1):
         if e is None:
             break
@@ -83,8 +89,8 @@ def test_event_basic(util, provider):
 
     assert provider.walked
 
-    temp = util.temp_file(fill_bytes=32)
-    info1 = provider.upload(temp, "/dest")
+    temp = BytesIO(os.urandom(32))
+    info1 = provider.create("/dest", temp)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
@@ -125,6 +131,6 @@ def test_api_failure(provider):
     def side_effect(*a, **k):
         raise CloudTemporaryError("fake disconned")
 
-    with patch.object(provider, "api", side_effect=side_effect):
+    with patch.object(provider, "_api", side_effect=side_effect):
         with pytest.raises(CloudTemporaryError):
-            provider.exists("/notexists")
+            provider.exists_path("/notexists")
