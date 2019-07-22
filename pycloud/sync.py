@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import tempfile
+import shutil
 
 from typing import Optional
 
@@ -194,6 +195,9 @@ class SyncManager(Runnable):
         for sync in self.syncs.changes():
             self.sync(sync)
 
+    def done(self):
+        shutil.rmtree(self.tempdir)
+
     def sync(self, sync):
         sync.update(self.providers)
 
@@ -207,21 +211,30 @@ class SyncManager(Runnable):
             if sync[i].changed:
                 self.embrace_change(sync, i, other_side(i))
 
-    def temp_file(self):
+    def temp_file(self, ohash):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
-        return os.path.join(self.tempdir, os.urandom(32).hex())
+        return os.path.join(self.tempdir, ohash)
 
     def finished(self, side, sync):
         sync[side].changed = None
         self.syncs.synced(sync)
+        if sync.temp_file:
+            try:
+                os.unlink(sync.temp_file)
+            except:
+                pass
 
     def download_changed(self, changed, sync):
-        sync.temp_file = sync.temp_file or self.temp_file()
+        sync.temp_file = sync.temp_file or self.temp_file(sync[changed].hash)
 
         assert sync[changed].oid
 
+        if os.path.exists(sync.temp_file):
+            return True
+
         try:
-            self.providers[changed].download(sync[changed].oid, open(sync.temp_file, "wb"))
+            self.providers[changed].download(sync[changed].oid, open(sync.temp_file + ".tmp", "wb"))
+            os.rename(sync.temp_file + ".tmp", sync.temp_file)
             return True
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists", self.providers[changed]._sname)
@@ -286,7 +299,7 @@ class SyncManager(Runnable):
             if not sync[changed].sync_path:
                 assert not sync[changed].sync_hash
                 # looks like a new file
-               
+              
                 if not self.download_changed(changed, sync):
                     return
 
@@ -296,7 +309,6 @@ class SyncManager(Runnable):
 
                 self.create_synced(changed, sync)
                 return
-
             else:
                 assert sync[synced].oid
                 translated_path = self.translate(synced, sync[changed].path)
