@@ -20,11 +20,23 @@ def test_event_basic(util, manager):
     state  = manager.state
     info = provider.create("/dest", BytesIO(b'hello'))
 
+    assert not state.lookup_path(LOCAL, "/dest")
+
+    oid = None
+
     # this is normally a blocking function that runs forever
     def done():
-        return state.lookup_path(LOCAL, "/dest")
+        nonlocal oid
+        states = state.get_all()
+        if states:
+            oid = list(states)[0][LOCAL].oid
+            return state.lookup_oid(LOCAL, oid)
 
     # loop the sync until the file is found
     manager.run(timeout=1, until=done)
 
-    assert done()
+    assert oid
+
+    info = provider.info_oid(oid)
+
+    assert info.path == "/dest"

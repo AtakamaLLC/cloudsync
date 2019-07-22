@@ -163,6 +163,8 @@ class SyncState:
             
         ent[side].changed = time.time()
 
+        log.debug("changed %s", ent)
+
         self._changeset.add(ent)
 
     def changes(self):
