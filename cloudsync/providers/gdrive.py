@@ -32,7 +32,7 @@ class GDriveProvider(Provider):
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
 
-    def get_quota(self, api_key=None, refresh_token=None):
+    def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
         res = self._api('about', 'get', fields='storageQuota,user')
 
@@ -52,19 +52,14 @@ class GDriveProvider(Provider):
             'login': user['emailAddress'],
             'uid': user['permissionId']
         }
-        if api_key:
-            res['api_key'] = api_key
-        if refresh_token:
-            res['refresh_token'] = refresh_token
+
         return res
 
-    def connect(self, creds):
+    def connect(self, creds={}):
         log.debug('Connecting to googledrive')
         if not self.client:
-            if not creds.get('api_key'):
-                api_key = self.api_key
-            if not creds.get('refresh_token'):
-                refresh_token = self.refresh_token
+            api_key = creds.get('api_key', self.api_key)
+            refresh_token = creds.get('refresh_token', self.refresh_token)
             kwargs = {}
             try:
                 with self.mutex:
@@ -89,13 +84,11 @@ class GDriveProvider(Provider):
                 self.api_key = api_key
 
                 try:
-                    self.get_quota(api_key=self.api_key,
-                                   refresh_token=self.refresh_token)
+                    self.get_quota()
                 except SSLError:  # pragma: no cover
                     # Seeing some intermittent SSL failures that resolve on retry
                     log.warning('Retrying intermittent SSLError')
-                    self.get_quota(api_key=self.api_key,
-                                   refresh_token=self.refresh_token)
+                    self.get_quota()
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
