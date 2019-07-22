@@ -213,3 +213,24 @@ def test_sync_rm(sync):
 
     with pytest.raises(CloudFileNotFoundError):
         sync.providers[REMOTE].info_path(remote_path1)
+
+
+def test_sync_mkdir(sync):
+    local_path1 = "/local/stuff"
+    remote_path1 = "/remote/stuff"
+
+    oid = sync.providers[LOCAL].mkdir(local_path1)
+
+    # inserts info about some local path
+    sync.syncs.update(LOCAL, DIRECTORY, path=local_path1,
+                      oid=oid)
+
+    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+
+    sync.providers[LOCAL].rmdir(oid)
+    sync.syncs.update(LOCAL, FILE, oid, exists=False)
+
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
+
+    with pytest.raises(CloudFileNotFoundError):
+        sync.providers[REMOTE].info_path(remote_path1)

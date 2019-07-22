@@ -66,7 +66,7 @@ class SyncEntry(Reprable):
                     self[i].hash = providers[i].hash_oid(self[i].oid)
                     self[i].exists = bool(self[i].hash)
                 else:
-                    self[i].exists = providers[i].exists(self[i].oid)
+                    self[i].exists = providers[i].exists_oid(self[i].oid)
             else:
                 # trust local sync state
                 self[i].exists = self.sync_exists
@@ -248,6 +248,19 @@ class SyncManager(Runnable):
             sync[changed].exists = False
             return False
 
+    def mkdir_synced(self, changed, sync):
+        synced = other_side(changed)
+        try:
+            translated_path = self.translate(synced, sync[changed].path)
+            oid = self.providers[synced].mkdir(translated_path)
+            log.debug("mkdir %s as path %s", self.providers[synced]._sname, sync[synced].sync_path)
+            sync[synced].oid = oid
+            sync[synced].sync_path = translated_path
+            sync[changed].sync_path = sync[changed].path
+            self.finished(changed, sync)
+        except CloudFileNotFoundError:
+            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff", self.providers[synced]._sname)
+            raise NotImplementedError("TODO mkdir, and make syncs etc")
 
     def upload_synced(self, changed, sync):
         synced = other_side(changed)
@@ -278,7 +291,7 @@ class SyncManager(Runnable):
             if info.path:
                 sync[synced].sync_path = info.path
             else:
-                sync[synced].sync_path = sync[synced].path
+                sync[synced].sync_path = translated_path
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
@@ -306,7 +319,11 @@ class SyncManager(Runnable):
             if not sync[changed].sync_path:
                 assert not sync[changed].sync_hash
                 # looks like a new file
-              
+             
+                if sync.otype == DIRECTORY:
+                    self.mkdir_synced(changed, sync)
+                    return
+                
                 if not self.download_changed(changed, sync):
                     return
 
