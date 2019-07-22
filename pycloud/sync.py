@@ -332,7 +332,7 @@ class SyncManager(Runnable):
             self.upload_synced(changed, sync)
             return 
 
-        log.debug("delete %s", sync)
+        log.info("nothing changed %s, but changed is true", sync)
 
 
     def handle_hash_conflict(self, sync):
