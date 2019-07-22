@@ -20,6 +20,9 @@ class Provider(ABC):
     def _api(self, *args, **kwargs):
         ...
 
+    def connect(self, creds):
+        pass
+
     @abstractmethod
     def events(self, timeout):
         ...
