@@ -1,11 +1,13 @@
 from collections import namedtuple
 
-EventBase = namedtuple('EventBase', 'type path oid hash exists')
+# def update(self, side, otype, oid, path=None, hash=None, exists=True):
+EventBase = namedtuple('EventBase', 'side otype oid path hash exists')
 
 
 class Event(EventBase):
     REMOTE = "remote"
     LOCAL = "local"
+
 
 
 

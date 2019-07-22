@@ -1,6 +1,6 @@
 import time
 from hashlib import md5
-from typing import Dict
+from typing import Dict, List
 from pycloud.provider import Provider, ProviderInfo
 
 from pycloud import CloudFileNotFoundError, CloudFileExistsError
@@ -27,7 +27,7 @@ class MockProvider(Provider):
         def hash(self) -> str:
             return md5(self.contents).hexdigest()
 
-    class Event:  # pylint: disable=too-few-public-methods
+    class MockEvent:  # pylint: disable=too-few-public-methods
         ACTION_CREATE = "create"
         ACTION_RENAME = "rename"
         ACTION_MODIFY = "modify"
@@ -68,9 +68,10 @@ class MockProvider(Provider):
         super().__init__()
         self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
         self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
-
+        self._events: List["MockProvider.MockEvent"] = []
 
     def _register_event(self, action, old_object, new_object):
+        event = MockProvider.MockEvent()
         pass
 
     def _get_by_path(self, path):
@@ -150,7 +151,7 @@ class MockProvider(Provider):
                 raise CloudFileExistsError(path)
         file_old.path = path
         self.delete(file_old.oid)
-        self._store_object(file_old)
+        self._store_object(file_new)
 
     def mkdir(self, path) -> str:
         # TODO: ensure parent folder exists
