@@ -1,12 +1,9 @@
 import time
 from hashlib import md5
-from collections import namedtuple
 from typing import Dict
-from pycloud.provider import Provider
+from pycloud.provider import Provider, ProviderInfo
 
 from pycloud import CloudFileNotFoundError, CloudFileExistsError
-
-MockProviderInfo = namedtuple('MockProviderInfo', 'oid hash path')
 
 
 class MockProvider(Provider):
@@ -27,7 +24,7 @@ class MockProvider(Provider):
             self.exists = True
             self.type = object_type
 
-        def hash(self):
+        def hash(self) -> str:
             return md5(self.contents).hexdigest()
 
     class Event:  # pylint: disable=too-few-public-methods
@@ -67,16 +64,11 @@ class MockProvider(Provider):
 
             return ret_val
 
+    def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
+        super().__init__()
+        self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
+        self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
 
-    # @staticmethod
-    # def _slurp(path):
-    #     with open(path, "rb") as x:
-    #         return x.read()
-    #
-    # @staticmethod
-    # def _burp(path, contents):
-    #     with open(path, "wb") as x:
-    #         x.write(contents)
 
     def _register_event(self, action, old_object, new_object):
         pass
@@ -120,9 +112,9 @@ class MockProvider(Provider):
         if file is None:
             raise CloudFileNotFoundError(oid)
         file.contents = contents
-        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
-    def create(self, path, file_like) -> 'MockProviderInfo':
+    def create(self, path, file_like) -> 'ProviderInfo':
         # TODO: check to make sure the folder exists before creating a file in it
         self._api()
         contents = file_like.read()
@@ -131,7 +123,7 @@ class MockProvider(Provider):
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
         file.contents = contents
-        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
         self._api()
@@ -204,53 +196,28 @@ class MockProvider(Provider):
         file: MockProvider.FSObject = self._get_by_path(path)
         if not (file and file.exists):
             raise CloudFileNotFoundError(path)
-        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid):
         self._api()
         file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             raise CloudFileNotFoundError(oid)
-        return MockProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def hash_oid(self, oid):
         file = self._fs_by_oid.get(oid, None)
         return file and file.exists and file.hash()
 
-    def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
-        if sep is None:
-            if anysep:
-                sep = "/"
-                folder = folder.replace("\\", "/")
-                target = target.replace("\\", "/")
-            else:
-                sep = self._sep
-        # Will return True for is-same-path in addition to target
-        folder_full = str(folder)
-        folder_full = folder_full.rstrip(sep)
-        target_full = str(target)
-        target_full = target_full.rstrip(sep)
-        # .lower() instead of normcase because normcase will also mess with separators
-        if not self._case_sensitive:
-            folder_full = folder_full.lower()
-            target_full = target_full.lower()
-
-        # target is same as folder, or target is a subpath (ensuring separator is there for base)
-        if folder_full == target_full:
-            return False if strict else sep
-        elif len(target_full) > len(folder_full) and \
-                target_full[len(folder_full)] == sep:
-            if target_full.startswith(folder_full):
-                return target_full.replace(folder_full, "", 1)
-            else:
-                return False
-        return False
-
-    def replace_path(self, path, from_dir, to_dir):
-        relative = self.is_sub_path(path, from_dir)
-        if relative:
-            return to_dir + relative
-        raise ValueError("replace_path used without subpath")
+    # @staticmethod
+    # def _slurp(path):
+    #     with open(path, "rb") as x:
+    #         return x.read()
+    #
+    # @staticmethod
+    # def _burp(path, contents):
+    #     with open(path, "wb") as x:
+    #         x.write(contents)
 
 
 def test_mock_basic():
