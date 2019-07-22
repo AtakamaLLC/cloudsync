@@ -8,4 +8,4 @@ class EventManager(Runnable):
 
     def do(self):
         for event in self.provider.events():
-            self.state.update(self.side, event.otype, oid, path=event.path, hash=event.hash, exists=event.exists)
+            self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash, exists=event.exists)
