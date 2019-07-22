@@ -260,7 +260,7 @@ class SyncManager(Runnable):
             translated_path = self.translate(synced, sync[changed].path)
             oid = self.providers[synced].mkdir(translated_path)
             log.debug("mkdir %s as path %s",
-                      self.providers[synced].debug_name, sync[synced].sync_path)
+                      self.providers[synced].debug_name, translated_path)
             sync[synced].oid = oid
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
