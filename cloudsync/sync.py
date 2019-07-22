@@ -158,7 +158,9 @@ class SyncState:
         if hash is not None:
             ent[side].hash = hash
 
-        ent[side].exists = exists
+        if exists is not None:
+            ent[side].exists = exists
+            
         ent[side].changed = time.time()
 
         self._changeset.add(ent)

@@ -18,5 +18,3 @@ class Event(EventBase):
     TYPE_DIRECTORY = "directory"
 
 
-
-
