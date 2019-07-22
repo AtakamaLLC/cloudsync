@@ -1,7 +1,8 @@
 import os
+from io import BytesIO
 import pytest
 
-from cloudsync import EventManager
+from cloudsync import EventManager, SyncState, LOCAL
 
 from .fixtures import MockProvider
 
@@ -9,31 +10,33 @@ from .fixtures import MockProvider
 @pytest.fixture(name="manager")
 def fixture_manager():
     # TODO extend this to take any provider
-    return EventManager(MockProvider())
+    state = SyncState()
+    provider = MockProvider()
 
+    yield EventManager(MockProvider(), state, LOCAL)
 
 def test_event_basic(util, manager):
     provider = manager.provider
-    temp = util.temp_file(fill_bytes=32)
-    info = provider.upload(temp, "/dest")
+    state  = manager.state
+    info = provider.create("/dest", BytesIO(b'hello'))
+
+    assert not state.lookup_path(LOCAL, "/dest")
+
+    oid = None
 
     # this is normally a blocking function that runs forever
     def done():
-        return os.path.exists(local_path)
+        nonlocal oid
+        states = state.get_all()
+        if states:
+            oid = list(states)[0][LOCAL].oid
+            return state.lookup_oid(LOCAL, oid)
 
     # loop the sync until the file is found
     manager.run(timeout=1, until=done)
 
-    local_path = manager.local_path("/fandango")
+    assert oid
 
-    util.fill_bytes(local_path, count=32)
+    info = provider.info_oid(oid)
 
-    manager.local_event(path=local_path, exists=True)
-
-    # loop the sync until the file is found
-    manager.sync(timeout=1, until=done)
-
-    info = provider.info("/fandango")
-
-    assert info.hash == provider.local_hash(temp)
-    assert info.cloud_id
+    assert info.path == "/dest"
