@@ -1,5 +1,6 @@
 import time
 import copy
+import logging
 from hashlib import md5
 from typing import Dict, List
 
@@ -7,6 +8,7 @@ from cloudsync.event import Event
 from cloudsync.provider import Provider, ProviderInfo
 from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
+log = logging.getLogger(__name__)
 
 # TODO: ensure parent folder exists prior to create
 # TODO: rename children when renaming non-empty folder
@@ -157,6 +159,7 @@ class MockProvider(Provider):
             self._store_object(file)
         file.contents = contents
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
+        log.debug("created %s %s", file.oid, file.type)
         return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
@@ -167,6 +170,7 @@ class MockProvider(Provider):
         file_like.write(file.contents)
 
     def rename(self, oid, path):
+        log.debug("renaming %s", oid)
         self._api()
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
@@ -174,9 +178,11 @@ class MockProvider(Provider):
         #  store a parent id in the FSObject, then folder renames can walk through _fs, looking for parent id
         #  matches and rename all those
         object_to_rename = self._fs_by_oid.get(oid, None)
-        if object_to_rename.type == Event.TYPE_FILE:
+        if object_to_rename.type == MockProvider.FSObject.FILE:
+            log.debug("renaming file %s", oid)
             possible_conflict = self._get_by_path(path)
             if object_to_rename.path == path:
+                log.debug("noop rename file %s", oid)
                 return
             if not (object_to_rename and object_to_rename.exists):
                 raise CloudFileNotFoundError(oid)
@@ -185,11 +191,14 @@ class MockProvider(Provider):
                 if self.allow_renames_over_existing:
                     self.delete(possible_conflict.oid)
                 else:
+                    log.debug("rename not present %s", oid)
                     raise CloudFileExistsError(path)
             self._delete_object(object_to_rename)
             object_to_rename.path = path
             self._store_object(object_to_rename)
+            log.debug("rename worked %s", object_to_rename)
         else:  # object to rename is a directory
+            log.debug("not a file %s", oid)
             pass
 
         self._register_event(MockProvider.MockEvent.ACTION_RENAME, object_to_rename)
@@ -216,12 +225,12 @@ class MockProvider(Provider):
     def exists_oid(self, oid):
         self._api()
         file = self._fs_by_oid.get(oid, None)
-        return file and file.exists
+        return file is not None and file.exists
 
     def exists_path(self, path) -> bool:
         self._api()
         file = self._get_by_path(path)
-        return file and file.exists
+        return file is not None and file.exists
 
     @staticmethod
     def hash_data(file_like):
