@@ -6,6 +6,7 @@ from re import split
 
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
 
+
 class Provider(ABC):
     sep: str = '/'                      # path delimiter
     case_sensitive = ...                # TODO: implement support for this
@@ -14,7 +15,7 @@ class Provider(ABC):
 
     # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
     def __init__(self):
-       self.walked = False
+        self.walked = False
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -132,4 +133,3 @@ class Provider(ABC):
         parts = split(r'[%s]+' % self.sep, norm_path)
         retval = self.sep + self.sep.join(parts[0:-1])
         return retval
-
