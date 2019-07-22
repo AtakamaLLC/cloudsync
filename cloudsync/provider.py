@@ -121,10 +121,3 @@ class Provider(ABC):
 
     def paths_match(self, patha, pathb):
         pass
-
-    def dirname(self, path: str):
-        norm_path = self.normalize_path(path)
-        parts = split(r'[%s]+' % self.sep, norm_path)
-        retval = self.sep + self.sep.join(parts[0:-1])
-        return retval
-

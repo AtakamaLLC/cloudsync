@@ -1,13 +1,10 @@
 import os
-from io import BytesIO
-
 import pytest
+from io import BytesIO
 from unittest.mock import patch
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
-
 from tests.fixtures.mock_provider import Provider, MockProvider
-
 
 
 @pytest.fixture
@@ -34,8 +31,6 @@ def provider(request, gdrive, dropbox, mock):
 
 def test_connect(provider):
     assert provider.connected
-
-# todo: should work with file-likes rather than path. Should it do it magically?
 
 
 def test_create_upload_download(util, provider):
