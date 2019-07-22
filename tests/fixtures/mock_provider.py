@@ -8,6 +8,9 @@ from cloudsync.provider import Provider, ProviderInfo
 from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 
+# TODO: ensure parent folder exists prior to create
+# TODO: rename children when renaming non-empty folder
+
 class MockProvider(Provider):
     connected = True
     # TODO: normalize names to get rid of trailing slashes, etc.
@@ -28,6 +31,8 @@ class MockProvider(Provider):
             self.update()
 
         def hash(self) -> str:
+            if self.type == self.DIR:
+                return None
             return md5(self.contents).hexdigest()
 
         def update(self):
@@ -57,6 +62,9 @@ class MockProvider(Provider):
         super().__init__()
         # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
         #  These will be accessed in a thread by the event manager
+        self.case_sensitive = case_sensitive
+        self.allow_renames_over_existing = allow_renames_over_existing
+        self.sep = sep
         self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
         self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
         self._events: List["MockProvider.MockEvent"] = []
@@ -91,7 +99,7 @@ class MockProvider(Provider):
         del self._fs_by_path[fo.path]
         del self._fs_by_oid[fo.oid]
 
-    def translate_event(self, pe: "MockProvider.MockEvent") -> Event:
+    def _translate_event(self, pe: "MockProvider.MockEvent") -> Event:
         event = pe.serialize()
         provider_type = event.get("object type", None)
         standard_type = self._type_map.get(provider_type, None)
@@ -115,7 +123,7 @@ class MockProvider(Provider):
             if self._cursor < self._latest_event:
                 self._cursor += 1
                 pe = self._events[self._cursor]
-                yield self.translate_event(pe)
+                yield self._translate_event(pe)
                 found = True
             else:
                 done = found or time.monotonic() >= end_time
@@ -165,21 +173,26 @@ class MockProvider(Provider):
         # TODO: folder renames must rename all children as well
         #  store a parent id in the FSObject, then folder renames can walk through _fs, looking for parent id
         #  matches and rename all those
-        file_old = self._fs_by_oid.get(oid, None)
-        file_new = self._get_by_path(path)
-        if file_old.path == path:
-            return
-        if not (file_old and file_old.exists):
-            raise CloudFileNotFoundError(oid)
-        if file_new and file_new.exists:
-            if self._allow_renames_over_existing:
-                self.delete(file_new.oid)
-            else:
-                raise CloudFileExistsError(path)
-        self._delete_object(file_old)
-        file_old.path = path
-        self._store_object(file_old)
-        self._register_event(MockProvider.MockEvent.ACTION_RENAME, file_old)  # file_old has been updated by this point
+        object_to_rename = self._fs_by_oid.get(oid, None)
+        if object_to_rename.type == Event.TYPE_FILE:
+            possible_conflict = self._get_by_path(path)
+            if object_to_rename.path == path:
+                return
+            if not (object_to_rename and object_to_rename.exists):
+                raise CloudFileNotFoundError(oid)
+
+            if possible_conflict and possible_conflict.exists:
+                if self.allow_renames_over_existing:
+                    self.delete(possible_conflict.oid)
+                else:
+                    raise CloudFileExistsError(path)
+            self._delete_object(object_to_rename)
+            object_to_rename.path = path
+            self._store_object(object_to_rename)
+        else:  # object to rename is a directory
+            pass
+
+        self._register_event(MockProvider.MockEvent.ACTION_RENAME, object_to_rename)
 
     def mkdir(self, path) -> str:
         # TODO: ensure parent folder exists

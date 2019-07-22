@@ -38,7 +38,7 @@ def test_connect(provider):
 # todo: should work with file-likes rather than path. Should it do it magically?
 
 
-def test_upload(util, provider):
+def test_create_upload_download(util, provider):
     dat = os.urandom(32)
 
     def data():
@@ -63,7 +63,7 @@ def test_upload(util, provider):
     assert info1.hash == provider.hash_data(dest)
 
 
-def test_rename(util, provider):
+def test_rename(util, provider: Provider):
     dat = os.urandom(32)
 
     def data():
@@ -77,6 +77,10 @@ def test_rename(util, provider):
 
     assert provider.exists_path("/dest2")
     assert not provider.exists_path("/dest")
+
+
+def test_mkdir(util, provider: Provider):
+    assert False
 
 
 def test_walk(util, provider: Provider):
