@@ -6,9 +6,9 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def time_helper(secs, sleep=None):
-    forever = not secs
-    end = forever or time.monotonic() + secs
+def time_helper(timeout, sleep=None):
+    forever = not timeout
+    end = forever or time.monotonic() + timeout
     while forever or end >= time.monotonic():
         yield True
         if sleep is not None:
