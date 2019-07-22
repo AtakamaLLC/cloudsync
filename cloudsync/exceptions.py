@@ -8,3 +8,11 @@ class CloudTemporaryError(Exception):
 
 class CloudFileExistsError(Exception):
     pass
+
+class CloudTokenError(Exception):
+    pass
+
+
+class CloudDisconnectedError(Exception):
+    pass
+
