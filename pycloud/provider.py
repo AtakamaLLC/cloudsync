@@ -1,7 +1,6 @@
-
 from abc import ABC, abstractmethod
-from typing import Dict
 from collections import namedtuple
+from pycloud.event import Event
 
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
 
@@ -74,6 +73,10 @@ class Provider(ABC):
 
     @abstractmethod
     def info_oid(self, oid) -> ProviderInfo:
+        ...
+
+    @abstractmethod
+    def translate_event(self, provider_event) -> Event:
         ...
 
     def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):

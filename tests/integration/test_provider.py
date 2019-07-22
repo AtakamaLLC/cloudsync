@@ -85,17 +85,17 @@ def test_walk(util, provider: Provider):
     assert not provider.walked
 
     got_event = False
-    for e in provider.events(timeout=1):
+    for e in provider.walk():
         got_event = True
         if e is None:
             break
-        assert provider.walked
         assert e.path == "/dest"
-        assert e.cloud_id == info.cloud_id
+        assert e.oid == info.oid
         assert e.mtime
         assert e.exists
         assert e.source == Event.REMOTE
 
+    assert provider.walked
     assert got_event
 
 
@@ -119,13 +119,13 @@ def test_event_basic(util, provider: Provider):
 
     assert received_event is not None
     assert received_event.path == "/dest"
-    assert received_event.cloud_id
+    assert received_event.oid
     assert received_event.mtime
     assert received_event.exists
     assert received_event.source == Event.REMOTE
-    provider.delete(cloud_id=received_event.cloud_id)
+    provider.delete(oid=received_event.oid)
     with pytest.raises(CloudFileNotFoundError):
-        provider.delete(cloud_id=received_event.cloud_id)
+        provider.delete(oid=received_event.oid)
 
     received_event = None
     for e in provider.events(timeout=1):
@@ -135,7 +135,7 @@ def test_event_basic(util, provider: Provider):
 
     assert received_event is not None
     assert received_event.path == "/dest"
-    assert received_event.cloud_id
+    assert received_event.oid
     assert received_event.mtime
     assert not received_event.exists
     assert received_event.source == Event.REMOTE

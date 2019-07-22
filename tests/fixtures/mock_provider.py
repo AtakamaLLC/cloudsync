@@ -1,8 +1,9 @@
 import time
+import copy
 from hashlib import md5
 from typing import Dict, List
+from pycloud.event import Event
 from pycloud.provider import Provider, ProviderInfo
-
 from pycloud import CloudFileNotFoundError, CloudFileExistsError
 
 
@@ -11,8 +12,8 @@ class MockProvider(Provider):
     # TODO: normalize names to get rid of trailing slashes, etc.
 
     class FSObject:         # pylint: disable=too-few-public-methods
-        FILE = 'file'
-        DIR = 'dir'
+        FILE = 'mock file'
+        DIR = 'mock dir'
 
         def __init__(self, path, object_type, contents=None):
             # self.display_path = path  # TODO: used for case insensitive file systems
@@ -23,56 +24,78 @@ class MockProvider(Provider):
             self.oid = str(id(self))
             self.exists = True
             self.type = object_type
+            self.update()
 
         def hash(self) -> str:
             return md5(self.contents).hexdigest()
 
-    class MockEvent:  # pylint: disable=too-few-public-methods
-        ACTION_CREATE = "create"
-        ACTION_RENAME = "rename"
-        ACTION_MODIFY = "modify"
-        ACTION_DELETE = "delete"
+        def update(self):
+            self.mtime = time.time()
 
-        def __init__(self, old_object: "MockProvider.FSObject", new_object: "MockProvider.FSObject", action):
-            self.old_object = old_object
-            self.new_object = new_object
+    class MockEvent:  # pylint: disable=too-few-public-methods
+        ACTION_CREATE = "provider create"
+        ACTION_RENAME = "provider rename"
+        ACTION_UPDATE = "provider modify"
+        ACTION_DELETE = "provider delete"
+
+        def __init__(self, action, target_object: "MockProvider.FSObject"):
+            self.target_object = copy.copy(target_object)
             self.action = action
             self.timestamp = time.time()
 
         def serialize(self):
             ret_val = None
+            target = self.target_object
             if self.action == self.ACTION_CREATE:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.oid,
-                           "path": self.new_object.path
+                           "id": target.oid,
+                           "mtime": target.mtime,
+                           "path": target.path
                            }
             elif self.action == self.ACTION_RENAME:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.oid,
-                           "old_path": self.old_object.path,
-                           "path": self.new_object.path
+                           "id": target.oid,
+                           "mtime": target.mtime,
+                           "path": target.path
                            }
-            elif self.action == self.ACTION_MODIFY:
+            elif self.action == self.ACTION_UPDATE:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.oid,
-                           "hash": self.new_object.hash()
+                           "id": target.oid,
+                           "mtime": target.mtime,
+                           "hash": target.hash()
                            }
             elif self.action == self.ACTION_DELETE:
                 ret_val = {"action": self.action,
-                           "id": self.new_object.oid,
+                           "mtime": target.mtime,
+                           "id": target.oid,
                            }
 
             return ret_val
 
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
         super().__init__()
+        # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
+        #  These will be accessed in a thread by the event manager
         self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
         self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
         self._events: List["MockProvider.MockEvent"] = []
+        self._latest_event = -1
+        self._cursor = -1
+        self._action_map = {
+            MockProvider.MockEvent.ACTION_CREATE: Event.ACTION_CREATE,
+            MockProvider.MockEvent.ACTION_RENAME: Event.ACTION_RENAME,
+            MockProvider.MockEvent.ACTION_UPDATE: Event.ACTION_UPDATE,
+            MockProvider.MockEvent.ACTION_DELETE: Event.ACTION_DELETE,
+        }
+        self._type_map = {
+            MockProvider.FSObject.FILE
+        }
 
-    def _register_event(self, action, old_object, new_object):
-        event = MockProvider.MockEvent()
-        pass
+    def _register_event(self, action, target_object):
+        event = MockProvider.MockEvent(action, target_object)
+        self._events.append(event)
+        target_object.update()
+        self._latest_event = len(self._events) - 1
 
     def _get_by_path(self, path):
         # TODO: normalize the path, support case insensitive lookups, etc
@@ -92,18 +115,33 @@ class MockProvider(Provider):
         del self._fs_by_path[fo.path]
         del self._fs_by_oid[fo.oid]
 
+    def translate_event(self, pe: "MockProvider.MockEvent") -> Event:
+        event_type = self._action_map.get(pe.action, None)
+        fs_obj = pe.target_object
+        assert event_type
+        return Event(event_type, fs_obj.type, )
+
     def _api(self, *args, **kwargs):
         pass
 
     def events(self, timeout=1):
-        # TODO: implement events
+        # TODO implement timeout
         self._api()
-        self.walk()
-        return []
+        while self._cursor < self._latest_event:
+            self._cursor += 1
+            provider_event = self._events[self._cursor]
+            target = provider_event.target_object
+            yield Event(Event.REMOTE, target.type, target.oid, target.path, target.hash(), target.exists)
+        else:
+            # This clause runs whenever the while condition becomes false, so at least once
+            # after the loop ends, or in place of the loop if it never loops
+            time.sleep(timeout)
 
     def walk(self):
         self._api()
         # TODO: implement walk
+        for obj in self._fs_by_oid.values():
+            yield Event(Event.REMOTE, obj.type, obj.oid, obj.path, obj.hash(), obj.exists)
         self.walked = True
 
     def upload(self, oid, file_like):
@@ -124,6 +162,7 @@ class MockProvider(Provider):
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
         file.contents = contents
+        self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
         return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
@@ -142,6 +181,8 @@ class MockProvider(Provider):
         #  matches and rename all those
         file_old = self._fs_by_oid.get(oid, None)
         file_new = self._get_by_path(path)
+        if file_old.path == path:
+            return
         if not (file_old and file_old.exists):
             raise CloudFileNotFoundError(oid)
         if file_new and file_new.exists:
@@ -152,6 +193,7 @@ class MockProvider(Provider):
         self._delete_object(file_old)
         file_old.path = path
         self._store_object(file_old)
+        self._register_event(MockProvider.MockEvent.ACTION_RENAME, file_old)  # file_old has been updated by this point
 
     def mkdir(self, path) -> str:
         # TODO: ensure parent folder exists
@@ -161,6 +203,7 @@ class MockProvider(Provider):
             raise CloudFileExistsError(path)
         new_fs_object = MockProvider.FSObject(path, MockProvider.FSObject.DIR)
         self._store_object(new_fs_object)
+        self._register_event(MockProvider.MockEvent.ACTION_CREATE, new_fs_object)
         return new_fs_object.oid
 
     def delete(self, oid):
@@ -169,6 +212,7 @@ class MockProvider(Provider):
         if not (file and file.exists):
             raise CloudFileNotFoundError(oid)
         file.exists = False
+        self._register_event(MockProvider.MockEvent.ACTION_DELETE, file)
 
     def exists_oid(self, oid):
         self._api()
