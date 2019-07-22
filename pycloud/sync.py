@@ -62,7 +62,7 @@ class SyncEntry(Reprable):
                 # get latest info from provider
                 if self.otype == FILE:
                     self[i].hash = providers[i].hash_oid(self[i].oid)
-                    self[i].exists = self[i].hash
+                    self[i].exists = bool(self[i].hash)
                 else:
                     self[i].exists = providers[i].exists(self[i].oid)
             else:
@@ -73,7 +73,7 @@ class SyncEntry(Reprable):
                     self[i].path = self[i].sync_path
                 else:
                     self[i].hash = None
-            log.debug("updated state %s %s", self[LOCAL], self[REMOTE], stack_info=10)
+            log.debug("updated state %s %s", self[LOCAL], self[REMOTE])
 
     def hash_conflict(self):
         if self[0].sync_hash and self[1].sync_hash:
@@ -215,6 +215,8 @@ class SyncManager(Runnable):
         self.syncs.synced(sync)
 
     def embrace_change(self, sync, changed, synced):
+        log.debug("changed %s", sync)
+
         if not sync[changed].exists:
             # see if there are other entries for the same path, but other ids
             ents = self.syncs.get_path(changed, sync[changed].path)
@@ -253,6 +255,10 @@ class SyncManager(Runnable):
                             sync[synced].sync_path = info.path
                         else:
                             sync[synced].sync_path = sync[synced].path
+                        log.debug("upload to %s as path %s", self.providers[synced]._sname, sync[synced].sync_path)
+                        sync[synced].oid = info.oid
+                        sync[changed].sync_hash = sync[changed].hash
+                        sync[changed].sync_path = sync[changed].path
                         self.finished(changed, sync)
                         return
                     except CloudFileNotFoundError:
@@ -262,16 +268,29 @@ class SyncManager(Runnable):
                     translated_path = self.translate(synced, sync[changed].path)
                     info = self.providers[synced].create(translated_path, open(sync.temp_file, "rb"))
                     log.debug("create on %s as path %s", self.providers[synced]._sname, translated_path)
+                    sync[synced].oid = info.oid
                     sync[synced].sync_hash = info.hash
                     if info.path:
                         sync[synced].sync_path = info.path
                     else:
                         sync[synced].sync_path = sync[synced].path
+                    sync[changed].sync_hash = sync[changed].hash
+                    sync[changed].sync_path = sync[changed].path
                     self.finished(changed, sync)
                     return
                 except CloudFileNotFoundError:
                     log.debug("create on %s failed fnf, mkdir needed", self.providers[synced]._sname)
                     raise NotImplementedError("TODO mkdir, and make syncs etc")
+            else:
+                assert sync[synced].oid
+                translated_path = self.translate(synced, sync[changed].path)
+                log.debug("rename %s %s", sync[synced].sync_path, translated_path)
+                self.providers[synced].rename(sync[synced].oid, translated_path)
+                sync[synced].path = translated_path
+                sync[synced].sync_path = translated_path
+                sync[changed].sync_path = sync[changed].path
+                self.finished(changed, sync)
+                return
 
         if sync[changed].hash != sync[changed].sync_hash:
             raise "HASH"
