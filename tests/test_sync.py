@@ -10,6 +10,14 @@ from pycloud.runnable import time_helper
 
 from .test_events import MockProvider
 
+from typing import NamedTuple
+
+class WaitFor(NamedTuple):
+    side:int = None
+    path:str = None
+    hash:bytes = None
+    oid:str = None
+
 log = logging.getLogger(__name__)
 
 @pytest.fixture(name="sync")
@@ -32,15 +40,23 @@ def fixture_sync():
         last_error = None
 
         def found():
-             for side, path in files:
+            for info in files:
+                if type(info) is tuple:
+                    info = WaitFor(side=info[0], path=info[1])
+
                 try:
-                    sync.providers[side].info_path(path)
+                    other_info = sync.providers[info.side].info_path(info.path)
                 except CloudFileNotFoundError as e:
                     log.debug("waiting %s", e)
                     last_error = e
                     continue
+
+                log.debug("waiting %s", info)
+    
+                if info.hash and info.hash != other_info.hash:
+                    continue
                 return True
-      
+
         sync.run(timeout=timeout, until=found)
 
         if not found():
@@ -145,3 +161,25 @@ def test_sync_rename(sync):
 
     with pytest.raises(CloudFileNotFoundError):
         sync.providers[REMOTE].info_path("/remote/stuff")
+
+def test_sync_hash(sync):
+    local_path1 = "/local/stuff"
+    remote_path1 = "/remote/stuff"
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    # inserts info about some local path
+    sync.syncs.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+
+    linfo = sync.providers[LOCAL].upload(linfo.oid, BytesIO(b"hello2"))
+
+    sync.syncs.update(LOCAL, FILE, linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, hash=linfo.hash), timeout=1)
+
+    info = sync.providers[REMOTE].info_path(remote_path1)
+
+    assert info.hash == sync.providers[REMOTE].hash_data(BytesIO(b"hello2"))
