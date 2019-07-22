@@ -219,11 +219,13 @@ class SyncManager(Runnable):
     def finished(self, side, sync):
         sync[side].changed = None
         self.syncs.synced(sync)
+
         if sync.temp_file:
             try:
                 os.unlink(sync.temp_file)
             except:
                 pass
+            sync.temp_file = None
 
     def download_changed(self, changed, sync):
         sync.temp_file = sync.temp_file or self.temp_file(sync[changed].hash)
@@ -285,15 +287,15 @@ class SyncManager(Runnable):
 
         if not sync[changed].exists:
             # see if there are other entries for the same path, but other ids
-            ents = self.syncs.get_path(changed, sync[changed].path)
+            ents = list(self.syncs.lookup_path(changed, sync[changed].path))
 
             if len(ents) == 1:
                 assert ents[0] == sync
-                self.providers[synced].delete(sync[other].oid)
+                self.providers[synced].delete(sync[synced].oid)
 
-            sync[synced].sync_exists = False
+            sync[synced].exists = False
 
-            self.finished(sync)
+            self.finished(changed, sync)
             return
         
         if sync[changed].path != sync[changed].sync_path:
@@ -330,7 +332,7 @@ class SyncManager(Runnable):
             self.upload_synced(changed, sync)
             return 
 
-        raise "NOTHING"
+        log.debug("delete %s", sync)
 
 
     def handle_hash_conflict(self, sync):
