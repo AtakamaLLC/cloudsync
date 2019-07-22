@@ -62,12 +62,6 @@ class MockProvider(Provider):
         self._events: List["MockProvider.MockEvent"] = []
         self._latest_event = -1
         self._cursor = -1
-        self._action_map = {
-            MockProvider.MockEvent.ACTION_CREATE: Event.ACTION_CREATE,
-            MockProvider.MockEvent.ACTION_RENAME: Event.ACTION_RENAME,
-            MockProvider.MockEvent.ACTION_UPDATE: Event.ACTION_UPDATE,
-            MockProvider.MockEvent.ACTION_DELETE: Event.ACTION_DELETE,
-        }
         self._type_map = {
             MockProvider.FSObject.FILE: Event.TYPE_FILE,
             MockProvider.FSObject.DIR: Event.TYPE_DIRECTORY,
@@ -99,9 +93,6 @@ class MockProvider(Provider):
 
     def translate_event(self, pe: "MockProvider.MockEvent") -> Event:
         event = pe.serialize()
-        provider_action = event.get("action", None)
-        standard_action = self._action_map.get(provider_action, None)
-        assert standard_action
         provider_type = event.get("object type", None)
         standard_type = self._type_map.get(provider_type, None)
         assert standard_type
@@ -117,14 +108,19 @@ class MockProvider(Provider):
     def events(self, timeout=1):
         # TODO implement timeout
         self._api()
-        while self._cursor < self._latest_event:
-            self._cursor += 1
-            pe = self._events[self._cursor]
-            yield self.translate_event(pe)
-        else:
-            # This clause runs whenever the while condition becomes false, so at least once
-            # after the loop ends, or in place of the loop if it never loops
-            time.sleep(timeout)
+        done = False
+        end_time = time.monotonic() + timeout
+        found = False
+        while not done:
+            if self._cursor < self._latest_event:
+                self._cursor += 1
+                pe = self._events[self._cursor]
+                yield self.translate_event(pe)
+                found = True
+            else:
+                done = found or time.monotonic() >= end_time
+                if not done:
+                    time.sleep(.1)
 
     def walk(self):
         self._api()

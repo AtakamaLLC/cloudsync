@@ -79,10 +79,6 @@ class Provider(ABC):
     def info_oid(self, oid) -> ProviderInfo:
         ...
 
-    @abstractmethod
-    def translate_event(self, provider_event) -> Event:
-        ...
-
     def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
         if sep is None:
             if anysep:
