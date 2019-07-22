@@ -144,6 +144,9 @@ class MockProvider(Provider):
         self._api()
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
+        # TODO: folder renames must rename all children as well
+        #  store a parent id in the FSObject, then folder renames can walk through _fs, looking for parent id
+        #  matches and rename all those
         file_old = self._fs_by_oid.get(oid, None)
         file_new = self._get_by_path(path)
         if not (file_old and file_old.exists):
@@ -157,7 +160,7 @@ class MockProvider(Provider):
         self.delete(file_old.oid)
         self._store_object(file_old)
 
-    def mkdir(self, path):
+    def mkdir(self, path) -> str:
         # TODO: ensure parent folder exists
         self._api()
         file = self._get_by_path(path)
@@ -165,6 +168,7 @@ class MockProvider(Provider):
             raise CloudFileExistsError(path)
         new_fs_object = MockProvider.FSObject(path, MockProvider.FSObject.DIR)
         self._store_object(new_fs_object)
+        return new_fs_object.oid
 
     def delete(self, oid):
         self._api()
