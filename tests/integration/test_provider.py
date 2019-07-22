@@ -63,6 +63,22 @@ def test_upload(util, provider):
     assert info1.hash == provider.hash_data(dest)
 
 
+def test_rename(util, provider):
+    dat = os.urandom(32)
+
+    def data():
+        return BytesIO(dat)
+
+    hash0 = provider.hash_data(data())
+
+    info1 = provider.create("/dest", data())
+
+    provider.rename(info1.oid, "/dest2")
+
+    assert provider.exists_path("/dest2")
+    assert not provider.exists_path("/dest")
+
+
 def test_walk(util, provider: Provider):
     temp = BytesIO(os.urandom(32))
     info = provider.create("/dest", temp)

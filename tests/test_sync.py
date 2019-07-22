@@ -44,7 +44,10 @@ def fixture_sync():
         sync.run(timeout=timeout, until=found)
 
         if not found():
-            raise last_error
+            if last_error:
+                raise last_error
+            else:
+                raise TimeoutError("timed out while waiting")
 
     sync.run_until_found = run_until_found
 
