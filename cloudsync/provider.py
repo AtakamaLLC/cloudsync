@@ -7,12 +7,14 @@ from re import split
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
 
 class Provider(ABC):
+    sep: str = '/'                      # path delimiter
+    case_sensitive = ...                # TODO: implement support for this
+    allow_renames_over_existing = ...   # TODO: move this to the fixture, this is only needed for testing
+    require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
+
+    # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
     def __init__(self):
-        self.sep: str = ... # path delimiter
-        self.case_sensitive = ...  # TODO: implement support for this
-        self.allow_renames_over_existing = ... # TODO: move this to the fixture, this is only needed for testing
-        self.require_parent_folder = ... # TODO: move this to the fixture, this is only needed for testing
-        self.walked = False
+       self.walked = False
 
     @abstractmethod
     def _api(self, *args, **kwargs):
