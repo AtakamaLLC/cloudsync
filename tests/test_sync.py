@@ -214,7 +214,7 @@ def test_sync_rm(sync):
     with pytest.raises(CloudFileNotFoundError):
         sync.providers[REMOTE].info_path(remote_path1)
 
-
+@pytest.mark.skip(reason="no way of currently testing this")
 def test_sync_mkdir(sync):
     local_path1 = "/local/stuff"
     remote_path1 = "/remote/stuff"

@@ -79,6 +79,7 @@ def test_rename(util, provider: Provider):
     assert not provider.exists_path("/dest")
 
 
+@pytest.mark.skip(reason="not ready yet")
 def test_mkdir(util, provider: Provider):
     assert False
 
