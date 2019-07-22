@@ -93,7 +93,7 @@ def test_walk(util, provider: Provider):
         assert e.oid == info.oid
         assert e.mtime
         assert e.exists
-        assert e.source == Event.REMOTE
+        assert e.source == Event.SOURCE_SOURCE_REMOTE
 
     assert provider.walked
     assert got_event
@@ -122,7 +122,7 @@ def test_event_basic(util, provider: Provider):
     assert received_event.oid
     assert received_event.mtime
     assert received_event.exists
-    assert received_event.source == Event.REMOTE
+    assert received_event.source == Event.SOURCE_REMOTE
     provider.delete(oid=received_event.oid)
     with pytest.raises(CloudFileNotFoundError):
         provider.delete(oid=received_event.oid)
@@ -138,7 +138,7 @@ def test_event_basic(util, provider: Provider):
     assert received_event.oid
     assert received_event.mtime
     assert not received_event.exists
-    assert received_event.source == Event.REMOTE
+    assert received_event.source == Event.SOURCE_REMOTE
 
 
 def test_api_failure(provider):
