@@ -8,7 +8,7 @@ from typing import Optional
 
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
-from cloudsync.exceptions import CloudFileNotFoundError 
+from cloudsync.exceptions import CloudFileNotFoundError
 
 from .runnable import Runnable
 
@@ -17,9 +17,10 @@ log = logging.getLogger(__name__)
 # state of a single object
 
 
-class Reprable:
+class Reprable:                                      # pylint: disable=too-few-public-methods
     def __repr__(self):
         return self.__class__.__name__ + str(self.__dict__)
+
 
 class SideState(Reprable):                            # pylint: disable=too-few-public-methods
     def __init__(self):
@@ -31,6 +32,7 @@ class SideState(Reprable):                            # pylint: disable=too-few-
         self.changed: Optional[float] = None
         self.sync_hash: Optional[bytes] = None           # hash at last sync
         self.sync_path: Optional[str] = None           # path at last sync
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -86,6 +88,7 @@ class SyncEntry(Reprable):
         if self[0].sync_path and self[1].sync_path:
             return self[0].path != self[0].sync_path and self[1].path != self[1].sync_path
         return False
+
 
 class SyncState:
     def __init__(self):
@@ -143,7 +146,7 @@ class SyncState:
         for path in remove:
             self._paths[side].pop(path)
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True):
+    def update(self, side, otype, oid, path=None, hash=None, exists=True):   # pylint: disable=redefined-builtin
         ent = self.lookup_oid(side, oid)
 
         if not ent:
@@ -160,7 +163,7 @@ class SyncState:
 
         if exists is not None:
             ent[side].exists = exists
-            
+
         ent[side].changed = time.time()
 
         log.debug("changed %s", ent)
@@ -184,12 +187,13 @@ class SyncState:
     def entry_count(self):
         return len(self.get_all())
 
+
 class SyncManager(Runnable):
     def __init__(self, syncs, providers, translate):
         self.syncs = syncs
         self.providers = providers
-        self.providers[LOCAL]._sname = "local"
-        self.providers[REMOTE]._sname = "remote"
+        self.providers[LOCAL].debug_name = "local"
+        self.providers[REMOTE].debug_name = "remote"
         self.translate = translate
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
 
@@ -240,11 +244,13 @@ class SyncManager(Runnable):
             return True
 
         try:
-            self.providers[changed].download(sync[changed].oid, open(sync.temp_file + ".tmp", "wb"))
+            self.providers[changed].download(
+                sync[changed].oid, open(sync.temp_file + ".tmp", "wb"))
             os.rename(sync.temp_file + ".tmp", sync.temp_file)
             return True
         except CloudFileNotFoundError:
-            log.debug("download from %s failed fnf, switch to not exists", self.providers[changed]._sname)
+            log.debug("download from %s failed fnf, switch to not exists",
+                      self.providers[changed].debug_name)
             sync[changed].exists = False
             return False
 
@@ -253,20 +259,24 @@ class SyncManager(Runnable):
         try:
             translated_path = self.translate(synced, sync[changed].path)
             oid = self.providers[synced].mkdir(translated_path)
-            log.debug("mkdir %s as path %s", self.providers[synced]._sname, sync[synced].sync_path)
+            log.debug("mkdir %s as path %s",
+                      self.providers[synced].debug_name, sync[synced].sync_path)
             sync[synced].oid = oid
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
         except CloudFileNotFoundError:
-            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff", self.providers[synced]._sname)
+            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
+                      self.providers[synced].debug_name)
             raise NotImplementedError("TODO mkdir, and make syncs etc")
 
     def upload_synced(self, changed, sync):
         synced = other_side(changed)
         try:
-            info = self.providers[synced].upload(sync[synced].oid, open(sync.temp_file, "rb"))
-            log.debug("upload to %s as path %s", self.providers[synced]._sname, sync[synced].sync_path)
+            info = self.providers[synced].upload(
+                sync[synced].oid, open(sync.temp_file, "rb"))
+            log.debug("upload to %s as path %s",
+                      self.providers[synced].debug_name, sync[synced].sync_path)
             sync[synced].sync_hash = info.hash
             if info.path:
                 sync[synced].sync_path = info.path
@@ -277,15 +287,18 @@ class SyncManager(Runnable):
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
         except CloudFileNotFoundError:
-            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff", self.providers[synced]._sname)
+            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
+                      self.providers[synced].debug_name)
             raise NotImplementedError("TODO mkdir, and make syncs etc")
 
     def create_synced(self, changed, sync):
-         synced = other_side(changed)
-         try:
+        synced = other_side(changed)
+        try:
             translated_path = self.translate(synced, sync[changed].path)
-            info = self.providers[synced].create(translated_path, open(sync.temp_file, "rb"))
-            log.debug("create on %s as path %s", self.providers[synced]._sname, translated_path)
+            info = self.providers[synced].create(
+                translated_path, open(sync.temp_file, "rb"))
+            log.debug("create on %s as path %s",
+                      self.providers[synced].debug_name, translated_path)
             sync[synced].oid = info.oid
             sync[synced].sync_hash = info.hash
             if info.path:
@@ -295,8 +308,9 @@ class SyncManager(Runnable):
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
-         except CloudFileNotFoundError:
-            log.debug("create on %s failed fnf, mkdir needed", self.providers[synced]._sname)
+        except CloudFileNotFoundError:
+            log.debug("create on %s failed fnf, mkdir needed",
+                      self.providers[synced].debug_name)
             raise NotImplementedError("TODO mkdir, and make syncs etc")
 
     def embrace_change(self, sync, changed, synced):
@@ -314,30 +328,28 @@ class SyncManager(Runnable):
 
             self.finished(changed, sync)
             return
-        
+
         if sync[changed].path != sync[changed].sync_path:
             if not sync[changed].sync_path:
                 assert not sync[changed].sync_hash
                 # looks like a new file
-             
+
                 if sync.otype == DIRECTORY:
                     self.mkdir_synced(changed, sync)
-                    return
-                
-                if not self.download_changed(changed, sync):
-                    return
-
-                if sync[synced].oid:
-                    upload_synced(changed, sync)
-                    return
-
-                self.create_synced(changed, sync)
+                elif not self.download_changed(changed, sync):
+                    pass
+                elif sync[synced].oid:
+                    self.upload_synced(changed, sync)
+                else:
+                    self.create_synced(changed, sync)
                 return
             else:
                 assert sync[synced].oid
                 translated_path = self.translate(synced, sync[changed].path)
-                log.debug("rename %s %s", sync[synced].sync_path, translated_path)
-                self.providers[synced].rename(sync[synced].oid, translated_path)
+                log.debug("rename %s %s",
+                          sync[synced].sync_path, translated_path)
+                self.providers[synced].rename(
+                    sync[synced].oid, translated_path)
                 sync[synced].path = translated_path
                 sync[synced].sync_path = translated_path
                 sync[changed].sync_path = sync[changed].path
@@ -351,10 +363,9 @@ class SyncManager(Runnable):
 
             self.download_changed(changed, sync)
             self.upload_synced(changed, sync)
-            return 
+            return
 
         log.info("nothing changed %s, but changed is true", sync)
-
 
     def handle_hash_conflict(self, sync):
         raise NotImplementedError()

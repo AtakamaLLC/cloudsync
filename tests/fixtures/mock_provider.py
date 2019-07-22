@@ -4,7 +4,7 @@ from hashlib import md5
 from typing import Dict, List
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider, ProviderInfo, ProviderEvent
+from cloudsync.provider import Provider, ProviderInfo
 from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 
@@ -33,7 +33,7 @@ class MockProvider(Provider):
         def update(self):
             self.mtime = time.time()
 
-    class MockEvent(ProviderEvent):  # pylint: disable=too-few-public-methods
+    class MockEvent():  # pylint: disable=too-few-public-methods
         ACTION_CREATE = "provider create"
         ACTION_RENAME = "provider rename"
         ACTION_UPDATE = "provider modify"

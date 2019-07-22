@@ -1,2 +1,2 @@
 def main():
-    raise
+    raise NotImplementedError()

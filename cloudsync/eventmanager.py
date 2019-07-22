@@ -1,6 +1,7 @@
+import logging
+
 from .runnable import Runnable
 
-import logging
 log = logging.getLogger(__name__)
 
 class EventManager(Runnable):

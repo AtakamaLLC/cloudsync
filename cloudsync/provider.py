@@ -1,13 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from cloudsync.event import Event
 
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
-
-
-class ProviderEvent(ABC):
-    pass
-
 
 class Provider(ABC):
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
