@@ -3,6 +3,7 @@ import copy
 import logging
 from hashlib import md5
 from typing import Dict, List
+from re import split
 
 from cloudsync.event import Event
 from cloudsync.provider import Provider, ProviderInfo
@@ -157,11 +158,12 @@ class MockProvider(Provider):
         file = self._get_by_path(path)
         if file is None:
             parent_path = self.dirname(path)
-            parent_obj = self._get_by_path(parent_path)
-            if parent_obj is None or parent_obj.type != MockProvider.FSObject.DIR:
-                # perhaps this should separate "FileNotFound" and "non-folder parent exists
-                # and raise different exceptions
-                raise CloudFileNotFoundError(parent_path)
+            if parent_path != self.sep:
+                parent_obj = self._get_by_path(parent_path)
+                if parent_obj is None or parent_obj.type != MockProvider.FSObject.DIR:
+                    # perhaps this should separate "FileNotFound" and "non-folder parent exists
+                    # and raise different exceptions
+                    raise CloudFileNotFoundError(parent_path)
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
         if file.type != MockProvider.FSObject.FILE:
@@ -195,7 +197,8 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         parent_path = self.dirname(new_path)
         parent_obj = self._get_by_path(parent_path)
-        if parent_obj is None or not parent_obj.exists or parent_obj.type != MockProvider.FSObject.DIR:
+        if parent_path != self.sep and \
+                (parent_obj is None or not parent_obj.exists or parent_obj.type != MockProvider.FSObject.DIR):
             raise CloudFileNotFoundError(parent_path)
         if possible_conflict and possible_conflict.exists:
             if possible_conflict.type != object_to_rename.type:
@@ -301,7 +304,9 @@ class MockProvider(Provider):
     def dirname(self, path: str):
         norm_path = self.normalize_path(path)
         parts = split(r'[%s]+' % self.sep, norm_path)
-        retval = self.sep + self.sep.join(parts[0:-1])
+        retval = self.sep.join(parts[0:-1])
+        if retval == "":
+            retval = self.sep
         return retval
 
 
