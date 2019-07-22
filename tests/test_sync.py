@@ -1,5 +1,6 @@
-import time
 import logging
+import os
+
 
 from io import BytesIO
 
@@ -104,13 +105,16 @@ def test_sync_state_multi():
 
 
 def test_sync_basic(sync):
-    local_path1 = sync.translate(LOCAL, "/remote/stuff")
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_path1 = os.path.join(remote_parent, "stuff1")
+    local_path1 = sync.translate(LOCAL, remote_path1)
+    assert local_path1 == "/local/stuff1"
+    local_path2 = os.path.join(local_parent, "stuff2")  # "/local/stuff2"
+    remote_path2 = os.path.join(remote_parent, "stuff2")  # "/remote/stuff2"
 
-    assert local_path1 == "/local/stuff"
-    remote_path1 = "/remote/stuff"
-    local_path2 = "/local/stuff2"
-    remote_path2 = "/remote/stuff2"
-
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
@@ -130,9 +134,9 @@ def test_sync_basic(sync):
     def done():
         info = [None] * 4
         try:
-            info[0] = sync.providers[LOCAL].info_path("/local/stuff")
+            info[0] = sync.providers[LOCAL].info_path("/local/stuff1")
             info[1] = sync.providers[LOCAL].info_path("/local/stuff2")
-            info[2] = sync.providers[REMOTE].info_path("/remote/stuff")
+            info[2] = sync.providers[REMOTE].info_path("/remote/stuff2")
             info[3] = sync.providers[REMOTE].info_path("/remote/stuff2")
         except CloudFileNotFoundError as e:
             log.debug("waiting for %s", e)
@@ -150,12 +154,17 @@ def test_sync_basic(sync):
     assert info.oid
     log.debug("all syncs %s", sync.syncs.get_all())
 
-def test_sync_rename(sync):
-    local_path1 = "/local/stuff"
-    local_path2 = "/local/stuff2"
-    remote_path1 = "/remote/stuff"
-    remote_path2 = "/remote/stuff2"
 
+def test_sync_rename(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = os.path.join(local_parent, "stuff1")  # "/local/stuff1"
+    local_path2 = os.path.join(local_parent, "stuff2")  # "/local/stuff2"
+    remote_path1 = os.path.join(remote_parent, "stuff1")  # "/remote/stuff1"
+    remote_path2 = os.path.join(remote_parent, "stuff2")  # "/remote/stuff2"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
@@ -173,9 +182,13 @@ def test_sync_rename(sync):
         sync.providers[REMOTE].info_path("/remote/stuff")
 
 def test_sync_hash(sync):
-    local_path1 = "/local/stuff"
-    remote_path1 = "/remote/stuff"
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = "/local/stuff1"
+    remote_path1 = "/remote/stuff1"
 
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
@@ -195,9 +208,13 @@ def test_sync_hash(sync):
     assert info.hash == sync.providers[REMOTE].hash_data(BytesIO(b"hello2"))
 
 def test_sync_rm(sync):
-    local_path1 = "/local/stuff"
-    remote_path1 = "/remote/stuff"
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = os.path.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_path1 = os.path.join(remote_parent, "stuff1")  # "/remote/stuff1"
 
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
