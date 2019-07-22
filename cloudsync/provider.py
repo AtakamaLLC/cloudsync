@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from pycloud.event import Event
+from cloudsync.event import Event
 
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
 
