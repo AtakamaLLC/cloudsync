@@ -149,9 +149,9 @@ class MockProvider(Provider):
                 self.delete(file_new.oid)
             else:
                 raise CloudFileExistsError(path)
+        self._delete_object(file_old)
         file_old.path = path
-        self.delete(file_old.oid)
-        self._store_object(file_new)
+        self._store_object(file_old)
 
     def mkdir(self, path) -> str:
         # TODO: ensure parent folder exists
