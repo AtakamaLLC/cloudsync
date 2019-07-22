@@ -1,13 +1,16 @@
 
 from abc import ABC, abstractmethod
+from typing import Dict
+from collections import namedtuple
+
+ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
+
 
 class Provider(ABC):
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
         self._sep = sep  # path delimiter
         self._case_sensitive = case_sensitive  # TODO: implement support for this
         self._allow_renames_over_existing = allow_renames_over_existing
-        self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
-        self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
         self._events = []
         self._event_cursor = 0
         self.walked = False
@@ -29,7 +32,7 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    def create(self, path, file_like) -> 'MockProviderInfo':
+    def create(self, path, file_like) -> 'ProviderInfo':
         ...
 
     @abstractmethod
@@ -66,11 +69,11 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    def info_path(self, path):
+    def info_path(self, path) -> ProviderInfo:
         ...
 
     @abstractmethod
-    def info_oid(self, oid):
+    def info_oid(self, oid) -> ProviderInfo:
         ...
 
     def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
