@@ -197,12 +197,8 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         parent_path = self.dirname(new_path)
         parent_obj = self._get_by_path(parent_path)
-<<<<<<< HEAD
-        if parent_obj is None or not parent_obj.exists or parent_obj.type != MockProvider.FSObject.DIR:
-=======
         if parent_path != self.sep and \
                 (parent_obj is None or not parent_obj.exists or parent_obj.type != MockProvider.FSObject.DIR):
->>>>>>> 41e9d86751f96ce9a51cc2effa53ba4148dfbba0
             raise CloudFileNotFoundError(parent_path)
         if possible_conflict and possible_conflict.exists:
             if possible_conflict.type != object_to_rename.type:
