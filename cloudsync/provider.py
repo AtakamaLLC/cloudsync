@@ -5,6 +5,10 @@ from cloudsync.event import Event
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
 
 
+class ProviderEvent(ABC):
+    pass
+
+
 class Provider(ABC):
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
         self._sep = sep  # path delimiter
@@ -73,10 +77,6 @@ class Provider(ABC):
 
     @abstractmethod
     def info_oid(self, oid) -> ProviderInfo:
-        ...
-
-    @abstractmethod
-    def translate_event(self, provider_event) -> Event:
         ...
 
     def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):

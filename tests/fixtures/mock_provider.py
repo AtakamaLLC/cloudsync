@@ -4,7 +4,7 @@ from hashlib import md5
 from typing import Dict, List
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider, ProviderInfo
+from cloudsync.provider import Provider, ProviderInfo, ProviderEvent
 from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 
@@ -33,44 +33,24 @@ class MockProvider(Provider):
         def update(self):
             self.mtime = time.time()
 
-    class MockEvent:  # pylint: disable=too-few-public-methods
+    class MockEvent(ProviderEvent):  # pylint: disable=too-few-public-methods
         ACTION_CREATE = "provider create"
         ACTION_RENAME = "provider rename"
         ACTION_UPDATE = "provider modify"
         ACTION_DELETE = "provider delete"
 
         def __init__(self, action, target_object: "MockProvider.FSObject"):
-            self.target_object = copy.copy(target_object)
-            self.action = action
-            self.timestamp = time.time()
+            self._target_object = copy.copy(target_object)
+            self._action = action
+            self._timestamp = time.time()
 
         def serialize(self):
-            ret_val = None
-            target = self.target_object
-            if self.action == self.ACTION_CREATE:
-                ret_val = {"action": self.action,
-                           "id": target.oid,
-                           "mtime": target.mtime,
-                           "path": target.path
-                           }
-            elif self.action == self.ACTION_RENAME:
-                ret_val = {"action": self.action,
-                           "id": target.oid,
-                           "mtime": target.mtime,
-                           "path": target.path
-                           }
-            elif self.action == self.ACTION_UPDATE:
-                ret_val = {"action": self.action,
-                           "id": target.oid,
-                           "mtime": target.mtime,
-                           "hash": target.hash()
-                           }
-            elif self.action == self.ACTION_DELETE:
-                ret_val = {"action": self.action,
-                           "mtime": target.mtime,
-                           "id": target.oid,
-                           }
-
+            ret_val = {"action": self._action,
+                       "id": self._target_object.oid,
+                       "object type": self._target_object.type,
+                       "mtime": self._target_object.mtime,
+                       "trashed": not self._target_object.exists,
+                       }
             return ret_val
 
     def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
@@ -82,14 +62,9 @@ class MockProvider(Provider):
         self._events: List["MockProvider.MockEvent"] = []
         self._latest_event = -1
         self._cursor = -1
-        self._action_map = {
-            MockProvider.MockEvent.ACTION_CREATE: Event.ACTION_CREATE,
-            MockProvider.MockEvent.ACTION_RENAME: Event.ACTION_RENAME,
-            MockProvider.MockEvent.ACTION_UPDATE: Event.ACTION_UPDATE,
-            MockProvider.MockEvent.ACTION_DELETE: Event.ACTION_DELETE,
-        }
         self._type_map = {
-            MockProvider.FSObject.FILE
+            MockProvider.FSObject.FILE: Event.TYPE_FILE,
+            MockProvider.FSObject.DIR: Event.TYPE_DIRECTORY,
         }
 
     def _register_event(self, action, target_object):
@@ -117,10 +92,15 @@ class MockProvider(Provider):
         del self._fs_by_oid[fo.oid]
 
     def translate_event(self, pe: "MockProvider.MockEvent") -> Event:
-        event_type = self._action_map.get(pe.action, None)
-        fs_obj = pe.target_object
-        assert event_type
-        return Event(event_type, fs_obj.type, )
+        event = pe.serialize()
+        provider_type = event.get("object type", None)
+        standard_type = self._type_map.get(provider_type, None)
+        assert standard_type
+        oid = event.get("id", None)
+        mtime = event.get("mtime", None)
+        trashed = event.get("trashed", None)
+        retval = Event(standard_type, oid, None, None, not trashed, mtime)
+        return retval
 
     def _api(self, *args, **kwargs):
         pass
@@ -128,21 +108,26 @@ class MockProvider(Provider):
     def events(self, timeout=1):
         # TODO implement timeout
         self._api()
-        while self._cursor < self._latest_event:
-            self._cursor += 1
-            provider_event = self._events[self._cursor]
-            target = provider_event.target_object
-            yield Event(Event.REMOTE, target.type, target.oid, target.path, target.hash(), target.exists)
-        else:
-            # This clause runs whenever the while condition becomes false, so at least once
-            # after the loop ends, or in place of the loop if it never loops
-            time.sleep(timeout)
+        done = False
+        end_time = time.monotonic() + timeout
+        found = False
+        while not done:
+            if self._cursor < self._latest_event:
+                self._cursor += 1
+                pe = self._events[self._cursor]
+                yield self.translate_event(pe)
+                found = True
+            else:
+                done = found or time.monotonic() >= end_time
+                if not done:
+                    time.sleep(.1)
 
     def walk(self):
         self._api()
         # TODO: implement walk
+        now = time.time()
         for obj in self._fs_by_oid.values():
-            yield Event(Event.REMOTE, obj.type, obj.oid, obj.path, obj.hash(), obj.exists)
+            yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, now)
         self.walked = True
 
     def upload(self, oid, file_like):
