@@ -2,9 +2,10 @@ import time
 import copy
 from hashlib import md5
 from typing import Dict, List
-from pycloud.event import Event
-from pycloud.provider import Provider, ProviderInfo
-from pycloud import CloudFileNotFoundError, CloudFileExistsError
+
+from cloudsync.event import Event
+from cloudsync.provider import Provider, ProviderInfo
+from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 
 class MockProvider(Provider):

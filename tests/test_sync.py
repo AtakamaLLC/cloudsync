@@ -5,10 +5,19 @@ from io import BytesIO
 
 import pytest
 
-from pycloud import SyncManager, SyncState, EventManager, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
-from pycloud.runnable import time_helper
+from cloudsync import SyncManager, SyncState, EventManager, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync.runnable import time_helper
 
 from .test_events import MockProvider
+
+from typing import NamedTuple
+
+class WaitFor(NamedTuple):
+    side:int = None
+    path:str = None
+    hash:bytes = None
+    oid:str = None
+    exists:bool = True
 
 log = logging.getLogger(__name__)
 
@@ -32,15 +41,30 @@ def fixture_sync():
         last_error = None
 
         def found():
-             for side, path in files:
+            for info in files:
+                if type(info) is tuple:
+                    info = WaitFor(side=info[0], path=info[1])
+
                 try:
-                    sync.providers[side].info_path(path)
+                    other_info = sync.providers[info.side].info_path(info.path)
                 except CloudFileNotFoundError as e:
+                    if info.exists == False:
+                        return True
+
                     log.debug("waiting %s", e)
                     last_error = e
                     continue
+
+                if info.exists == False:
+                    continue
+
+                log.debug("waiting %s", info)
+    
+                if info.hash and info.hash != other_info.hash:
+                    continue
+
                 return True
-      
+
         sync.run(timeout=timeout, until=found)
 
         if not found():
@@ -51,7 +75,9 @@ def fixture_sync():
 
     sync.run_until_found = run_until_found
 
-    return sync
+    yield sync
+
+    sync.done()
 
 
 def test_sync_state_basic():
@@ -145,3 +171,45 @@ def test_sync_rename(sync):
 
     with pytest.raises(CloudFileNotFoundError):
         sync.providers[REMOTE].info_path("/remote/stuff")
+
+def test_sync_hash(sync):
+    local_path1 = "/local/stuff"
+    remote_path1 = "/remote/stuff"
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    # inserts info about some local path
+    sync.syncs.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+
+    linfo = sync.providers[LOCAL].upload(linfo.oid, BytesIO(b"hello2"))
+
+    sync.syncs.update(LOCAL, FILE, linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, hash=linfo.hash), timeout=1)
+
+    info = sync.providers[REMOTE].info_path(remote_path1)
+
+    assert info.hash == sync.providers[REMOTE].hash_data(BytesIO(b"hello2"))
+
+def test_sync_rm(sync):
+    local_path1 = "/local/stuff"
+    remote_path1 = "/remote/stuff"
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    # inserts info about some local path
+    sync.syncs.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+
+    sync.providers[LOCAL].delete(linfo.oid)
+    sync.syncs.update(LOCAL, FILE, linfo.oid, exists=False)
+
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
+
+    with pytest.raises(CloudFileNotFoundError):
+        sync.providers[REMOTE].info_path(remote_path1)
