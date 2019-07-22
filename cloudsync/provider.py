@@ -1,21 +1,20 @@
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from cloudsync.event import Event
+from re import split
 
 ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
 
 
-class ProviderEvent(ABC):
+class ProviderEvent(ABC):  # pylint: disable=too-few-public-methods
     pass
 
 
 class Provider(ABC):
-    def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
-        self._sep = sep  # path delimiter
-        self._case_sensitive = case_sensitive  # TODO: implement support for this
-        self._allow_renames_over_existing = allow_renames_over_existing
-        self._events = []
-        self._event_cursor = 0
+    def __init__(self):
+        self.sep: str = ... # path delimiter
+        self.case_sensitive = ...  # TODO: implement support for this
+        self.allow_renames_over_existing = ... # TODO: move this to the fixture, this is only needed for testing
+        self.require_parent_folder = ... # TODO: move this to the fixture, this is only needed for testing
         self.walked = False
 
     @abstractmethod
@@ -79,6 +78,15 @@ class Provider(ABC):
     def info_oid(self, oid) -> ProviderInfo:
         ...
 
+    def normalize_path(self, path: str):
+        norm_path = path.rstrip(self.sep)
+        if self.sep in ["\\", "/"]:
+            parts = split(r'[\\/]+', norm_path)
+        else:
+            parts = split(r'[%s]+' % self.sep, norm_path)
+        norm_path = self.sep.join(parts)
+        return norm_path
+
     def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
         if sep is None:
             if anysep:
@@ -86,14 +94,14 @@ class Provider(ABC):
                 folder = folder.replace("\\", "/")
                 target = target.replace("\\", "/")
             else:
-                sep = self._sep
+                sep = self.sep
         # Will return True for is-same-path in addition to target
         folder_full = str(folder)
         folder_full = folder_full.rstrip(sep)
         target_full = str(target)
         target_full = target_full.rstrip(sep)
         # .lower() instead of normcase because normcase will also mess with separators
-        if not self._case_sensitive:
+        if not self.case_sensitive:
             folder_full = folder_full.lower()
             target_full = target_full.lower()
 
@@ -113,4 +121,13 @@ class Provider(ABC):
         if relative:
             return to_dir + relative
         raise ValueError("replace_path used without subpath")
+
+    def paths_match(self, patha, pathb):
+        pass
+
+    def dirname(self, path: str):
+        norm_path = self.normalize_path(path)
+        parts = split(r'[%s]+' % self.sep, norm_path)
+        retval = self.sep + self.sep.join(parts[0:-1])
+        return retval
 
