@@ -196,6 +196,7 @@ class SyncManager(Runnable):
             self.sync(sync)
 
     def done(self):
+        log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
     def sync(self, sync):

@@ -67,7 +67,9 @@ def fixture_sync():
 
     sync.run_until_found = run_until_found
 
-    return sync
+    yield sync
+
+    sync.done()
 
 
 def test_sync_state_basic():
