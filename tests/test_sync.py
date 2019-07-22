@@ -5,8 +5,8 @@ from io import BytesIO
 
 import pytest
 
-from pycloud import SyncManager, SyncState, EventManager, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
-from pycloud.runnable import time_helper
+from cloudsync import SyncManager, SyncState, EventManager, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync.runnable import time_helper
 
 from .test_events import MockProvider
 

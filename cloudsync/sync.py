@@ -8,7 +8,7 @@ from typing import Optional
 
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
-from pycloud.exceptions import CloudFileNotFoundError 
+from cloudsync.exceptions import CloudFileNotFoundError 
 
 from .runnable import Runnable
 
@@ -187,7 +187,7 @@ class SyncManager(Runnable):
         self.providers[LOCAL]._sname = "local"
         self.providers[REMOTE]._sname = "remote"
         self.translate = translate
-        self.tempdir = tempfile.mkdtemp(suffix=".pycloud")
+        self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
 
         assert len(self.providers) == 2
 

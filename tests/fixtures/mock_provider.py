@@ -1,9 +1,9 @@
 import time
 from hashlib import md5
 from typing import Dict, List
-from pycloud.provider import Provider, ProviderInfo
+from cloudsync.provider import Provider, ProviderInfo
 
-from pycloud import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 
 class MockProvider(Provider):

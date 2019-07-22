@@ -4,7 +4,7 @@ from io import BytesIO
 import pytest
 from unittest.mock import patch
 
-from pycloud import Event, CloudFileNotFoundError, CloudTemporaryError
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
 
 from tests.fixtures.mock_provider import Provider, MockProvider
 

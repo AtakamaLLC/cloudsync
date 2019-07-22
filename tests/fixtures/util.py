@@ -11,7 +11,7 @@ log.setLevel(logging.INFO)
 
 class Util:
     def __init__(self):
-        self.base = tempfile.mkdtemp(suffix=".pycloud")
+        self.base = tempfile.mkdtemp(suffix=".cloudsync")
         log.debug("temp files will be in: %s", self.base)
 
     def get_context(self, level):

@@ -1,25 +1,25 @@
 """
 
-pycloud enables simple cloud file-level sync with a variety of cloud providers
+cloudsync enables simple cloud file-level sync with a variety of cloud providers
 
 External modules:
 
-pycloud.Event
-pycloud.Provider
-pycloud.Sync
+cloudsync.Event
+cloudsync.Provider
+cloudsync.Sync
 
 Example:
 
-import pycloud
+import cloudsync
 
-prov = pycloud.Provider('GDrive', token="237846234236784283")
+prov = cloudsync.Provider('GDrive', token="237846234236784283")
 
 info = prov.upload(file, "/dest")
 print ("id of /dest is %s, hash of /dest is %s" % (info.id, info.hash))
 
 Command-line example:
 
-pycloud -p gdrive --token "236723782347823642786" -f ~/gdrive-folder --daemon
+cloudsync -p gdrive --token "236723782347823642786" -f ~/gdrive-folder --daemon
 
 """
 

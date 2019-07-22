@@ -1,7 +1,7 @@
 import os
 import pytest
 
-from pycloud import EventManager
+from cloudsync import EventManager
 
 from .fixtures import MockProvider
 
