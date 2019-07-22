@@ -108,7 +108,7 @@ class MockProvider(Provider):
         oid = event.get("id", None)
         mtime = event.get("mtime", None)
         trashed = event.get("trashed", None)
-        retval = Event(Event.SOURCE_REMOTE, standard_type, oid, None, None, not trashed, mtime)
+        retval = Event(standard_type, oid, None, None, not trashed, mtime)
         return retval
 
     def _api(self, *args, **kwargs):
@@ -129,8 +129,9 @@ class MockProvider(Provider):
     def walk(self):
         self._api()
         # TODO: implement walk
+        now = time.time()
         for obj in self._fs_by_oid.values():
-            yield Event(Event.SOURCE_REMOTE, obj.type, obj.oid, obj.path, obj.hash(), obj.exists)
+            yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, now)
         self.walked = True
 
     def upload(self, oid, file_like):

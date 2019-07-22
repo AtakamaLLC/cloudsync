@@ -89,56 +89,82 @@ def test_walk(util, provider: Provider):
         got_event = True
         if e is None:
             break
-        assert e.path == "/dest"
         assert e.oid == info.oid
+        path = e.path
+        if path is None:
+            path = provider.info_oid(e.oid).path
+        assert path == "/dest"
         assert e.mtime
         assert e.exists
-        assert e.source == Event.SOURCE_SOURCE_REMOTE
 
     assert provider.walked
     assert got_event
 
 
-def test_event_basic(util, provider: Provider):
-    for e in provider.events(timeout=1):
-        if e is None:
-            break
-        assert False, "no events here!"
+def check_event_path(event: Event, provider: Provider, target_path):
+    # confirms that the path in the event matches the target_path
+    # if the provider doesn't provide the path in the event, look it up by the oid in the event
+    # if we can't get the path, that's OK if the file doesn't exist
+    event_path = event.path
+    if event_path is None:
+        try:
+            event_path = provider.info_oid(event.oid).path
+            assert event_path == target_path
+        except CloudFileNotFoundError:
+            if event.exists:
+                raise
 
-    assert provider.walked
+
+def test_event_basic(util, provider: Provider):
+    for e in provider.events(timeout=0):
+        assert False, "Should not have gotten events, instead got %s" % e
 
     temp = BytesIO(os.urandom(32))
     info1 = provider.create("/dest", temp)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
-    for e in provider.events(timeout=1):
+    event_count = 0
+    for e in provider.events(timeout=0):
         if e is None:
             break
         received_event = e
+        event_count += 1
 
+    assert event_count == 1
     assert received_event is not None
-    assert received_event.path == "/dest"
     assert received_event.oid
+    path = received_event.path
+    if path is None:
+        path = provider.info_oid(received_event.oid).path
+    assert path == "/dest"
     assert received_event.mtime
     assert received_event.exists
-    assert received_event.source == Event.SOURCE_REMOTE
     provider.delete(oid=received_event.oid)
     with pytest.raises(CloudFileNotFoundError):
         provider.delete(oid=received_event.oid)
 
     received_event = None
-    for e in provider.events(timeout=1):
+    event_count = 0
+    for e in provider.events(timeout=0):
         if e is None:
             break
         received_event = e
+        event_count += 1
 
+    assert event_count == 1
     assert received_event is not None
-    assert received_event.path == "/dest"
     assert received_event.oid
+    path = received_event.path
+    if path is None:
+        try:
+            path = provider.info_oid(received_event.oid).path
+            assert path == "/dest"
+        except CloudFileNotFoundError:
+            if received_event.exists:
+                raise
     assert received_event.mtime
     assert not received_event.exists
-    assert received_event.source == Event.SOURCE_REMOTE
 
 
 def test_api_failure(provider):
@@ -147,7 +173,7 @@ def test_api_failure(provider):
     # b) does not trap CloudTemporaryError's
 
     def side_effect(*a, **k):
-        raise CloudTemporaryError("fake disconned")
+        raise CloudTemporaryError("fake disconnect")
 
     with patch.object(provider, "_api", side_effect=side_effect):
         with pytest.raises(CloudTemporaryError):
