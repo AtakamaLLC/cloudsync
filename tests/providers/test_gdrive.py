@@ -12,7 +12,7 @@ def fixture_gdrive_creds():
     token_set = os.environ.get("GDRIVE_TOKEN")
     cli_sec = os.environ.get("GDRIVE_CLI_SECRET")
     if not token_set or not cli_sec:
-        pytest.skip('requires gdrive token and client secret')
+        return None
 
     tokens = token_set.split(",")
 
@@ -25,6 +25,8 @@ def fixture_gdrive_creds():
     return creds
 
 def test_connect(gdrive_creds):
+    if not gdrive_creds:
+        pytest.skip('requires gdrive token and client secret')
     gd = GDriveProvider()
     gd.connect(gdrive_creds)
     assert gd.client

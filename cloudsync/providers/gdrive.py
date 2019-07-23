@@ -13,8 +13,10 @@ from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=im
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
-from cloudsync import Provider, ProviderInfo
+from cloudsync import Provider, ProviderInfo, DIRECTORY, FILE, Event
+
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError
+from cloudsync.runnable import time_helper
 
 log = logging.getLogger(__name__)
 
@@ -37,17 +39,17 @@ class GDriveProvider(Provider):
     _token_uri = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
 
-    def __init__(self):
-        super().__init__()
-        self.root_fileid = None
-        self.flow = None
+    def __init__(self, sync_root):
+        super().__init__(sync_root)
+        self.__root_id = None
+        self.__sync_root_id = None
+        self.__cursor = None
         self.client = None
         self.api_key = None
         self.refresh_token = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/":"root"}
-        self.__root_id = None
 
     @property
     def connected(self):
@@ -113,6 +115,10 @@ class GDriveProvider(Provider):
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
+
+        if not self.sync_root_id:
+            raise CloudFileNotFoundError("cant create sync root")
+
         return self.client
 
     def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ
@@ -151,11 +157,89 @@ class GDriveProvider(Provider):
             self._ids['/'] = self.__root_id
         return self.__root_id
 
+    @property
+    def sync_root_id(self):
+        if not self.__sync_root_id:
+            if not self.info_path(self.sync_root):
+                self.mkdir(self.sync_root)
+            if not self.info_path(self.sync_root):
+                raise CloudFileNotFoundError("Cannot create sync root")
+            info = self.info_path(self.sync_root)
+            self.__sync_root_id = info.oid
+
+        return self.__sync_root_id
+
     def disconnect(self):
         self.client = None
 
+    @property
+    def cursor(self):
+        if not self.__cursor:
+            res = self._api('changes', 'getStartPageToken')
+            self.__cursor = res.get('startPageToken')
+        return self.__cursor
+
+    def is_suboid(self, top, oid):
+        if top == oid:
+            return True
+        pid = self.get_parent_id(oid)
+        return self.is_suboid(top, pid)
+
     def events(self, timeout):
-        ...
+        got_something = False
+        for _ in time_helper(timeout, sleep=2):
+            page_token = self.cursor
+            while page_token is not None:
+#                log.debug("looking for events, timeout: %s", timeout)
+                response = self._api('changes', 'list', pageToken=page_token, spaces='drive', includeRemoved=True, 
+                        includeItemsFromAllDrives=True, supportsAllDrives=True)
+                for change in response.get('changes'):
+                    log.debug("got event %s", change)
+
+                    # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z', 
+                    # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file', 
+                    # 'id': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'name': 'dest', 'mimeType': 'application/octet-stream'}}
+
+                    # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z', 
+                    # 'removed': True, 'fileId': '1lhRe0nDplA6I5JS18642rg0KIbYN66lR'}
+
+                    ts = arrow.get(change.get('time')).float_timestamp
+                    oid = change.get('fileId')
+                    exists = not change.get('removed') 
+ 
+                    fil = change.get('file')
+                    if fil:
+                        if fil.get('mimeType') == self._folder_mime_type:
+                            otype = DIRECTORY
+                        else:
+                            otype = FILE
+                    else:
+                        otype = None
+
+                    ohash = None
+                    path = self._path_oid(oid)
+
+                    if path:
+                        if not self.is_subpath(self.sync_root, path):
+                            log.debug("skipped event %s as %s", self.sync_root, path)
+                            continue
+                    else:
+                        if not self.is_suboid(self.sync_root_id, oid):
+                            log.debug("skipped event %s", change)
+                            continue
+
+                    event = Event(otype, oid, path, ohash, exists, ts)
+
+                    log.debug("converted event %s as %s", change, event)
+
+                    yield event
+
+                    got_something = True
+                page_token = response.get('nextPageToken')
+                if 'newStartPageToken' in response:
+                    self.__cursor = response.get('newStartPageToken')
+            if got_something:
+                break
 
     def walk(self, since=None):
         ...
@@ -234,12 +318,14 @@ class GDriveProvider(Provider):
                 media_body=ul,
                 fields=fields)
 
-        log.debug("response from upload %s", res)
+        log.debug("response from create %s : %s", path, res)
 
         if not res:
             raise CloudTemporaryError("unknown response from drive on upload")
 
         self._ids[path] = res['id']
+
+        log.debug("path cache %s", self._ids)
 
         return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=path)
 
@@ -263,12 +349,6 @@ class GDriveProvider(Provider):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected during download")
 
-    def get_parent_id(self, path):
-        parent, _ = self.split(path)
-        if not self.exists_path(parent):
-            raise CloudFileNotFoundError("parent %s must exist" % parent)
-        return self._ids[parent]
-
     def rename(self, oid, path):
         pid = self.get_parent_id(path)
 
@@ -276,7 +356,7 @@ class GDriveProvider(Provider):
         if pid == 'root':
             add_pids = [self.root_id]
 
-        info = self.info_oid(oid)
+        info = self._info_oid(oid)
         remove_pids = info.pids
 
         _, name = self.split(path)
@@ -300,7 +380,7 @@ class GDriveProvider(Provider):
                     fields='files(id, md5Checksum, parents, name, trashed)',
                     pageToken=None)
         except CloudFileNotFoundError:
-            if self.info_oid(oid):
+            if self._info_oid(oid):
                 return []
             log.debug("OID GONE %s", oid)
             raise
@@ -343,7 +423,7 @@ class GDriveProvider(Provider):
         self._api('files', 'delete', fileId=oid)
 
     def exists_oid(self, oid):
-        return self.info_oid(oid)
+        return self._info_oid(oid)
 
     def info_path(self, path) -> ProviderInfo:
         parent_id = self.get_parent_id(path)
@@ -378,6 +458,20 @@ class GDriveProvider(Provider):
             return True
         return self.info_path(path) is not None
 
+    def get_parent_id(self, path):
+        if not path:
+            return None
+
+        parent, _ = self.split(path)
+
+        if parent == path:
+            return self._ids.get(parent)
+
+        if not self.exists_path(parent):
+            raise CloudFileNotFoundError("parent %s must exist" % parent)
+
+        return self._ids[parent]
+
     @staticmethod
     def hash_data(file_like):
         md5 = hashlib.md5()
@@ -386,7 +480,30 @@ class GDriveProvider(Provider):
         retval = md5.hexdigest()
         return retval
 
+    def _path_oid(self, oid) -> str:
+        "convert oid to path"
+        for p, pid in self._ids.items():
+            if pid == oid:
+                return p
+
+        # todo, better cache, keep up to date, etc.
+
+        info = self._info_oid(oid)
+        if info.pids and info.name:
+            ppath = self._path_oid(info.pids[0])
+            if ppath:
+                path = ppath + "/" + info.name
+                self._ids[path] = oid
+                return path
+        return None
+
     def info_oid(self, oid) -> ProviderInfo:
+        info = self._info_oid(oid)
+        # expensive
+        path = self._path_oid(oid)
+        ProviderInfo(info.oid, info.fhash, path)
+
+    def _info_oid(self, oid) -> GDriveInfo:
         try:
             res = self._api('files', 'get',
                     fileId=oid,
@@ -394,8 +511,11 @@ class GDriveProvider(Provider):
                     )
         except CloudFileNotFoundError:
             return None
-        pids = res['parents']
-        fhash = res['md5Checksum']
-        name = res['name']
+
+        log.debug("info oid %s", res)
+
+        pids = res.get('parents')
+        fhash = res.get('md5Checksum')
+        name = res.get('name')
 
         return GDriveInfo(oid, fhash, None, pids=pids, name=name)

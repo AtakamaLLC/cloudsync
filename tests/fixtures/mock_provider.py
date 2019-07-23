@@ -61,8 +61,8 @@ class MockProvider(Provider):
                        }
             return ret_val
 
-    def __init__(self, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
-        super().__init__()
+    def __init__(self, sync_root, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
+        super().__init__(sync_root)
         # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
         #  These will be accessed in a thread by the event manager
         self.case_sensitive = case_sensitive
@@ -155,7 +155,7 @@ class MockProvider(Provider):
         ret = []
         for obj in self._fs_by_oid.values():
             if obj.exists:
-                if self.is_sub_path(path, obj.path, strict=True):
+                if self.is_subpath(path, obj.path, strict=True):
                     ret.append(ProviderInfo(oid=obj.oid, hash=obj.hash(), path=obj.path))
         log.debug("listdir %s", ret)
         return ret
@@ -225,7 +225,7 @@ class MockProvider(Provider):
             #  store a parent id in the FSObject, then folder renames can walk through _fs, looking for parent id
             #  matches and rename all those
             for obj in self._fs_by_oid.values():
-                if self.is_sub_path(object_to_rename.path, obj.path):
+                if self.is_subpath(object_to_rename.path, obj.path):
                     new_obj_path = self.replace_path(obj.path, object_to_rename.path, new_path)
                     self._rename_single_object(obj, new_obj_path)
             assert NotImplementedError()
