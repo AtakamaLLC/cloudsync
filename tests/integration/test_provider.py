@@ -59,6 +59,7 @@ def test_create_upload_download(util, provider):
 
 
 def test_rename(util, provider: Provider):
+    # TODO: test that renaming the parent folder renames the children
     dat = os.urandom(32)
 
     def data():
@@ -178,3 +179,84 @@ def test_api_failure(provider):
     with patch.object(provider, "_api", side_effect=side_effect):
         with pytest.raises(CloudTemporaryError):
             provider.exists_path("/notexists")
+
+
+def test_file_not_found(provider):
+    # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
+    # when appropriate, and don't when inappropriate
+    dat = os.urandom(32)
+
+    def data():
+        return BytesIO(dat)
+
+    test_path1 = "/dest1"  # Created, then deleted
+    info1 = provider.create(test_path1, data())
+    test_oid1 = info1.oid
+    provider.delete(test_oid1)
+
+    test_path2 = "/dest2"  # Never created
+    test_oid2 = "never created"
+    # TODO: consider mocking info_path to always return None, and then call all the provider methods
+    #  to see if they are handling the None, and not raising exceptions other than FNF
+
+    # Tests:
+    #   exists_path
+    #       returns false, does not raise
+    assert provider.exists_path(test_path1) is False
+    assert provider.exists_path(test_path2) is False
+
+    #   exists_oid
+    #       returns false, does not raise
+    assert provider.exists_oid(test_oid1) is False
+    assert provider.exists_oid(test_oid2) is False
+
+    #   info_path
+    #       deleted file returns None
+    #       never existed file returns None
+    #           handling the None correctly
+    assert provider.info_path(test_path)
+
+
+    #   info_id
+    #       deleted file returns None
+    #       never existed file returns None
+    #       maybe consider mocking this to always return None, and then call all the other methods to see if they are
+    #           handling the None correctly
+    #   upload
+    #       to a made up oid
+    #   create
+    #       to a non-existent folder, conditionally
+    #   download
+    #       on a deleted oid raises FNF
+    #       on a made up oid raises FNF
+    #   rename
+    #       from a deleted oid raises FNF
+    #       from a made up oid raises FNF
+    #       to a non-existent folder raises [something], conditionally
+    #       check the rename source to see if there are others
+    #   mkdir
+    #       to a non-existent folder raises [something], conditionally
+    #   delete
+    #       on a deleted oid does not raise
+    #       on a made up oid does not raise
+    #   hash_oid
+    #       get rid of hash oid entirely from the provider class
+    #   listdir
+    #       raises FNF
+    #   check for other places in the code where FNF is raised and test those
+    #
+    #
+    pass
+
+
+def test_file_exists(provider):
+    # Test that operations on existent file system objects raise CloudExistsError
+    # when appropriate, and don't when inappropriate
+    # api functions to check for FileExists:
+    #   mkdir should not raise FEx
+    #   upload, should not raise FEx
+    #   create, should raise FEx
+    #   rename, should raise FEx when the target of the rename already exists
+    pass
+
+

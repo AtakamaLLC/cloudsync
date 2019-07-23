@@ -133,10 +133,9 @@ class MockProvider(Provider):
 
     def walk(self):
         self._api()
-        # TODO: implement walk
         now = time.time()
         for obj in self._fs_by_oid.values():
-            yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, now)
+            yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
         self.walked = True
 
     def upload(self, oid, file_like):
