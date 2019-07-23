@@ -113,7 +113,8 @@ def test_mkdir(util, provider: Provider):
     assert False
 
 
-def test_walk(util, provider: Provider):
+def test_walk(util, mock: Provider):
+    provider = mock
     temp = BytesIO(os.urandom(32))
     info = provider.create("/dest", temp)
     assert not provider.walked
@@ -149,7 +150,8 @@ def check_event_path(event: Event, provider: Provider, target_path):
                 raise
 
 
-def test_event_basic(util, provider: Provider):
+def test_event_basic(util, mock: Provider):
+    provider = mock
     for e in provider.events(timeout=0):
         assert False, "Should not have gotten events, instead got %s" % e
 

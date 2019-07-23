@@ -351,7 +351,7 @@ class GDriveProvider(Provider):
                     spaces='drive',
                     fields='files(id, md5Checksum, parents)',
                     pageToken=None)
-        except CloudfileNotFoundError:
+        except CloudFileNotFoundError:
             return None
 
         if not res['files']:
