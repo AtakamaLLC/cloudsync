@@ -38,6 +38,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _token_uri = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
+    _io_mime_type = 'application/octet-stream'
 
     def __init__(self, sync_root):
         super().__init__(sync_root)
@@ -187,86 +188,59 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return False
         return self.is_suboid(top, pid)
 
-    def events(self, timeout):      # pylint: disable=too-many-locals
-        got_something = False
-        for _ in time_helper(timeout, sleep=3):
-            page_token = self.cursor
-            while page_token is not None:
+    def events(self):      # pylint: disable=too-many-locals
+        page_token = self.cursor
+        while page_token is not None:
 #                log.debug("looking for events, timeout: %s", timeout)
-                response = self._api('changes', 'list', pageToken=page_token, spaces='drive', includeRemoved=True, 
-                        includeItemsFromAllDrives=True, supportsAllDrives=True)
-                for change in response.get('changes'):
-                    log.debug("got event %s", change)
+            response = self._api('changes', 'list', pageToken=page_token, spaces='drive', includeRemoved=True, 
+                    includeItemsFromAllDrives=True, supportsAllDrives=True)
+            for change in response.get('changes'):
+                log.debug("got event %s", change)
 
-                    # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z', 
-                    # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file', 
-                    # 'id': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'name': 'dest', 'mimeType': 'application/octet-stream'}}
+                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z', 
+                # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file', 
+                # 'id': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'name': 'dest', 'mimeType': 'application/octet-stream'}}
 
-                    # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z', 
-                    # 'removed': True, 'fileId': '1lhRe0nDplA6I5JS18642rg0KIbYN66lR'}
+                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z', 
+                # 'removed': True, 'fileId': '1lhRe0nDplA6I5JS18642rg0KIbYN66lR'}
 
-                    ts = arrow.get(change.get('time')).float_timestamp
-                    oid = change.get('fileId')
-                    exists = not change.get('removed') 
- 
-                    fil = change.get('file')
-                    if fil:
-                        if fil.get('mimeType') == self._folder_mime_type:
-                            otype = DIRECTORY
-                        else:
-                            otype = FILE
+                ts = arrow.get(change.get('time')).float_timestamp
+                oid = change.get('fileId')
+                exists = not change.get('removed') 
+
+                fil = change.get('file')
+                if fil:
+                    if fil.get('mimeType') == self._folder_mime_type:
+                        otype = DIRECTORY
                     else:
-                        otype = None
+                        otype = FILE
+                else:
+                    otype = None
 
-                    ohash = None
-                    path = self._path_oid(oid)
+                ohash = None
+                path = self._path_oid(oid)
 
-                    if path:
-                        if not self.is_subpath(self.sync_root, path):
-                            log.debug("skipped event %s as %s", self.sync_root, path)
-                            continue
-                    else:
-                        if not self.is_suboid(self.sync_root_id, oid):
-                            log.debug("skipped event %s", change)
-                            continue
+                if path:
+                    if not self.is_subpath(self.sync_root, path):
+                        log.debug("skipped event %s as %s", self.sync_root, path)
+                        continue
+                else:
+                    if not self.is_suboid(self.sync_root_id, oid):
+                        log.debug("skipped event %s", change)
+                        continue
 
-                    event = Event(otype, oid, path, ohash, exists, ts)
+                event = Event(otype, oid, path, ohash, exists, ts)
 
-                    log.debug("converted event %s as %s", change, event)
+                log.debug("converted event %s as %s", change, event)
 
-                    yield event
+                yield event
 
-                    got_something = True
-                page_token = response.get('nextPageToken')
-                if 'newStartPageToken' in response:
-                    self.__cursor = response.get('newStartPageToken')
-            if got_something:
-                break
+            page_token = response.get('nextPageToken')
+            if 'newStartPageToken' in response:
+                self.__cursor = response.get('newStartPageToken')
 
     def walk(self, since=None):
         ...
-
-    def upload(self, oid, file_like, metadata=None):
-        if not metadata:
-            metadata = {} 
-        gdrive_info = self.__prep_upload(None, metadata)
-
-        ul = MediaIoBaseUpload(file_like, mimetype=gdrive_info.get('mimeType'), chunksize=4 * 1024 * 1024)
-
-        fields = 'id, md5Checksum'
-
-        res = self._api('files', 'update',
-                body=gdrive_info,
-                fileId=oid,
-                media_body=ul,
-                fields=fields)
-
-        log.debug("response from upload %s", res)
-
-        if not res:
-            raise CloudTemporaryError("unknown response from drive on upload")
-
-        return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=None)
 
     def __prep_upload(self, path, metadata):
         # modification time
@@ -277,7 +251,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 }
 
         # mime type, if provided
-        mime_type = metadata.get("mimeType", "application/octet-stream")
+        mime_type = metadata.get("mimeType", None)
         if mime_type:
             gdrive_info['mimeType'] = mime_type
 
@@ -302,12 +276,35 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return gdrive_info
 
+
+    def upload(self, oid, file_like, metadata=None):
+        if not metadata:
+            metadata = {} 
+        gdrive_info = self.__prep_upload(None, metadata)
+
+        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024)
+
+        fields = 'id, md5Checksum'
+
+        res = self._api('files', 'update',
+                body=gdrive_info,
+                fileId=oid,
+                media_body=ul,
+                fields=fields)
+
+        log.debug("response from upload %s", res)
+
+        if not res:
+            raise CloudTemporaryError("unknown response from drive on upload")
+
+        return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=None)
+
     def create(self, path, file_like, metadata=None) -> 'ProviderInfo':
         if not metadata:
             metadata = {} 
         gdrive_info = self.__prep_upload(path, metadata)
 
-        ul = MediaIoBaseUpload(file_like, mimetype=gdrive_info.get('mimeType'), chunksize=4 * 1024 * 1024)
+        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024)
 
         fields = 'id, md5Checksum'
 

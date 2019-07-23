@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
 from tests.fixtures.mock_provider import Provider, MockProvider
-
+from cloudsync.runnable import time_helper
 from cloudsync.providers import GDriveProvider
 
 log = logging.getLogger(__name__)
@@ -16,7 +16,8 @@ def gdrive(gdrive_creds):
         test_root = "/" + os.urandom(16).hex()
         prov = GDriveProvider(test_root)
         prov.connect(gdrive_creds)
-        prov.event_timeout = 30
+        prov.event_timeout = 60
+        prov.event_sleep = 2
         return prov
     else:
         return None
@@ -28,6 +29,7 @@ def dropbox():
 def mock():
     ret = MockProvider("/")
     ret.event_timeout = 0
+    ret.event_sleep = 0
     return ret
 
 
@@ -55,6 +57,21 @@ def provider(request, gdrive_creds, mock):
 
     # add a provider-specific temp name generator
     prov.temp_name = temp_name
+
+    def events_poll(timeout=prov.event_timeout):
+        if timeout == 0:
+            yield from prov.events()
+            return
+
+        for _ in time_helper(timeout, sleep=prov.event_sleep, multiply=2):
+            got = False
+            for e in prov.events():
+                yield e
+                got = True
+            if got:
+                break
+
+    prov.events_poll = events_poll
 
     yield prov
 
@@ -165,7 +182,7 @@ def test_event_basic(util, provider: Provider):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events(timeout=min(provider.event_timeout,1)):
+    for e in provider.events_poll(timeout=min(provider.event_timeout,1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
@@ -173,10 +190,12 @@ def test_event_basic(util, provider: Provider):
 
     received_event = None
     event_count = 0
-    for e in provider.events(timeout=provider.event_timeout):
+    for e in provider.events_poll():
         log.debug("event %s", e)
         received_event = e
-        event_count += 1
+        # you might get events for the root folder here or other setup stuff
+        if not e.path or e.path == dest:
+            event_count += 1
 
     assert event_count == 1
     assert received_event is not None
@@ -193,7 +212,7 @@ def test_event_basic(util, provider: Provider):
 
     received_event = None
     event_count = 0
-    for e in provider.events(timeout=provider.event_timeout):
+    for e in provider.events_poll():
         log.debug("event %s", e)
         received_event = e
         event_count += 1
