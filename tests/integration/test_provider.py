@@ -28,7 +28,28 @@ def mock():
 def provider(request, gdrive, dropbox, mock):
     if request.param in ('dropbox'):
         pytest.skip("unsupported configuration")
-    return {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
+    prov = {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
+
+    prov.test_files = []
+
+    prov.test_root = "/" + os.urandom(16).hex()
+
+    prov.mkdir(prov.test_root)
+
+    def temp_name(name="tmp", folder=None):
+        fname = prov.join((prov.test_root, folder, os.urandom(16).hex() + "." +name))
+        prov.test_files.append(fname)
+        return fname
+
+    # add a provider-specific temp name generator
+    prov.temp_name = temp_name
+
+    yield prov
+
+    for name in prov.test_files:
+        info = provider.info_path(name)
+        if info and info.oid:
+            provider.delete(name)
 
 
 def test_connect(provider):
@@ -42,7 +63,9 @@ def test_create_upload_download(util, provider):
 
     hash0 = provider.hash_data(data())
 
-    info1 = provider.create("/dest", data())
+    dest = provider.temp_name("dest")
+
+    info1 = provider.create(dest, data())
 
     info2 = provider.upload(info1.oid, data())
 
@@ -50,7 +73,7 @@ def test_create_upload_download(util, provider):
     assert info1.hash == hash0
     assert info1.hash == info2.hash
 
-    assert provider.exists_path("/dest")
+    assert provider.exists_path(dest)
 
     dest = BytesIO()
     provider.download(info2.oid, dest)
@@ -67,12 +90,16 @@ def test_rename(util, provider: Provider):
 
     hash0 = provider.hash_data(data())
 
-    info1 = provider.create("/dest", data())
+    dest = provider.temp_name("dest")
 
-    provider.rename(info1.oid, "/dest2")
+    info1 = provider.create(dest, data())
 
-    assert provider.exists_path("/dest2")
-    assert not provider.exists_path("/dest")
+    dest2 = provider.temp_name("dest2")
+
+    provider.rename(info1.oid, dest2)
+
+    assert provider.exists_path(dest2)
+    assert not provider.exists_path(dest2)
 
 
 @pytest.mark.skip(reason="not ready yet")

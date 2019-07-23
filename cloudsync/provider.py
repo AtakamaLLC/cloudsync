@@ -80,16 +80,20 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    def remote_hash(self, oid):
-        ...
-
-    @abstractmethod
     def info_path(self, path) -> ProviderInfo:
         ...
 
     @abstractmethod
     def info_oid(self, oid) -> ProviderInfo:
         ...
+
+    def join(self, paths):
+        res = ""
+        for path in paths:
+            if path is None:
+                continue
+            res = res + self.sep + path.strip(self.sep)
+        return res or self.sep
 
     def normalize_path(self, path: str):
         norm_path = path.rstrip(self.sep)

@@ -266,13 +266,6 @@ class MockProvider(Provider):
         contents = file_like.read()
         return md5(contents).hexdigest()
 
-    def remote_hash(self, oid):
-        self._api()
-        file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
-        if not (file and file.exists):
-            raise CloudFileNotFoundError(oid)
-        return file.hash()
-
     def info_path(self, path):
         self._api()
         file: MockProvider.FSObject = self._get_by_path(path)

@@ -19,6 +19,12 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 
 log = logging.getLogger(__name__)
 
+class GDriveInfo(ProviderInfo):
+    def __new__(cls, *a, pids=[], name=None):
+        self = super().__new__(cls, *a)
+        self.pids = pids
+        return self
+
 class GDriveProvider(Provider):
     case_sensitive = False
     allow_renames_over_existing = False
@@ -38,6 +44,7 @@ class GDriveProvider(Provider):
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/":"root"}
+        self.__root_id = None
 
     @property
     def connected(self):
@@ -125,10 +132,21 @@ class GDriveProvider(Provider):
                 if (str(e.resp.status) == '403' and str(e.resp.reason) == 'Forbidden') or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
                 
-                raise CloudTemporaryError("unknown error")
+                raise CloudTemporaryError("unknown error %s", e)
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
+
+    @property
+    def root_id(self):
+        if not self.__root_id:
+            res = self._api('files', 'get',
+                    fileId='root',
+                    fields='id',
+                    )
+            self.__root_id = res['id']
+            self._ids['/'] = self.__root_id
+        return self.__root_id
 
     def disconnect(self):
         self.client = None
@@ -242,7 +260,25 @@ class GDriveProvider(Provider):
                 raise CloudDisconnectedError("disconnected during download")
 
     def rename(self, oid, path):
-        ...
+        parent, name = os.path.split(path)
+        
+        if not self.exists_path(parent):
+            raise CloudFileNotFoundError("parent must exist")
+
+        pid = self._ids[parent]
+
+        add_pids = [pid]
+        if pid == 'root':
+            add_pids = [self.root_id]
+
+        info = self.info_oid(oid)
+        remove_pids = info.pids
+
+        body = {'name': name}
+
+        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
+
+        log.debug("renamed %s", body)
 
     def mkdir(self, path) -> str:
         ...
@@ -253,18 +289,14 @@ class GDriveProvider(Provider):
     def exists_oid(self, oid):
         ...
 
-    def exists_path(self, path) -> bool:
+    def info_path(self, path) -> ProviderInfo:
         parent, name = os.path.split(path)
         if parent == "":
             parent = "/"
 
-        if parent not in self._ids:
-            if not exists_path(self, parent):
-                return False
+        if not self.exists_path(parent):
+            return None
        
-        if path in self._ids:
-            return True
-
         parent_id = self._ids[parent]
 
         query = f"'{parent_id}' in parents and name='{name}'"
@@ -272,18 +304,24 @@ class GDriveProvider(Provider):
         res = self._api('files', 'list',
                 q=query,
                 spaces='drive',
-                fields='files(id)',
+                fields='files(id, md5Checksum, parents)',
                 pageToken=None)
 
         if not res['files']:
-            return False
+            return None
 
         oid = res['files'][0]['id']
+        pids = res['files'][0]['parents']
+        fhash = res['files'][0]['md5Checksum']
 
         self._ids[path] = oid
 
-        return oid
+        return GDriveInfo(oid, fhash, path, pids=pids) 
 
+    def exists_path(self, path) -> bool:
+        if path in self._ids:
+            return True
+        return self.info_path(path) is not None
 
     @staticmethod
     def hash_data(file_like):
@@ -293,11 +331,14 @@ class GDriveProvider(Provider):
         retval = md5.hexdigest()
         return retval
 
-    def remote_hash(self, oid):
-        ...
-
-    def info_path(self, path) -> ProviderInfo:
-        ...
-
     def info_oid(self, oid) -> ProviderInfo:
-        ...
+        res = self._api('files', 'get',
+                fileId=oid,
+                fields='name, md5Checksum, parents',
+                )
+       
+        pids = res['parents']
+        fhash = res['md5Checksum']
+        name = res['name']
+
+        return GDriveInfo(oid, fhash, None, pids=pids, name=name)
