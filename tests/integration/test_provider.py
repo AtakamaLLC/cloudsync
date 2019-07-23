@@ -210,6 +210,8 @@ def test_api_failure(provider):
     # b) does not trap CloudTemporaryError's
 
     def side_effect(*a, **k):
+        if a or k:
+            pass
         raise CloudTemporaryError("fake disconnect")
 
     with patch.object(provider, "_api", side_effect=side_effect):
@@ -217,82 +219,126 @@ def test_api_failure(provider):
             provider.exists_path("/notexists")
 
 
-def test_file_not_found(provider):
+def test_file_not_found(mock: MockProvider):
+    provider = mock
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
+    provider.temp_name = lambda x: "/" + x  # TODO: fix this when we replace the mock fixture with the provider fixture
     dat = os.urandom(32)
 
     def data():
         return BytesIO(dat)
 
-    test_path1 = "/dest1"  # Created, then deleted
-    info1 = provider.create(test_path1, data())
-    test_oid1 = info1.oid
-    provider.delete(test_oid1)
+    test_path_deleted = provider.temp_name("dest1")  # Created, then deleted
+    info1 = provider.create(test_path_deleted, data())
+    test_oid_deleted = info1.oid
+    provider.delete(test_oid_deleted)
 
-    test_path2 = "/dest2"  # Never created
-    test_oid2 = "never created"
+    test_path_made_up = provider.temp_name("dest2")  # Never created
+    test_oid_made_up = "never created"
     # TODO: consider mocking info_path to always return None, and then call all the provider methods
     #  to see if they are handling the None, and not raising exceptions other than FNF
 
     # Tests:
     #   exists_path
     #       returns false, does not raise
-    assert provider.exists_path(test_path1) is False
-    assert provider.exists_path(test_path2) is False
+    assert provider.exists_path(test_path_deleted) is False
+    assert provider.exists_path(test_path_made_up) is False
 
     #   exists_oid
     #       returns false, does not raise
-    assert provider.exists_oid(test_oid1) is False
-    assert provider.exists_oid(test_oid2) is False
+    assert provider.exists_oid(test_oid_deleted) is False
+    assert provider.exists_oid(test_oid_made_up) is False
 
     #   info_path
     #       deleted file returns None
     #       never existed file returns None
-    #           handling the None correctly
-    assert provider.info_path(test_path)
+    assert provider.info_path(test_path_deleted) is None
+    assert provider.info_path(test_path_made_up) is None
 
-
-    #   info_id
+    #   info_oid
     #       deleted file returns None
     #       never existed file returns None
-    #       maybe consider mocking this to always return None, and then call all the other methods to see if they are
-    #           handling the None correctly
+    assert provider.info_oid(test_oid_deleted) is None
+    assert provider.info_oid(test_oid_made_up) is None
+
+    #   hash_oid
+    #       deleted file returns None
+    #       never existed file returns None
+    assert provider.hash_oid(test_oid_deleted) is None
+    assert provider.hash_oid(test_oid_made_up) is None
+
     #   upload
-    #       to a made up oid
+    #       to a deleted file raises FNF
+    #       to a made up oid raises FNF
+    # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
+    with pytest.raises(CloudFileNotFoundError):
+        provider.upload(test_oid_deleted, data())
+    with pytest.raises(CloudFileNotFoundError):
+        provider.upload(test_oid_made_up, data())
+
     #   create
-    #       to a non-existent folder, conditionally
+    #       to a non-existent folder, conditionally raises FNF
+    if not provider.auto_vivify_parent_folders:
+        with pytest.raises(CloudFileNotFoundError):
+            provider.create("/nonexistentfolder/junk", data())
+
     #   download
     #       on a deleted oid raises FNF
     #       on a made up oid raises FNF
+    with pytest.raises(CloudFileNotFoundError):
+        provider.download(test_oid_deleted, data())
+    with pytest.raises(CloudFileNotFoundError):
+        provider.download(test_oid_made_up, data())
+
     #   rename
     #       from a deleted oid raises FNF
     #       from a made up oid raises FNF
     #       to a non-existent folder raises [something], conditionally
     #       check the rename source to see if there are others
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_oid_deleted, test_path_deleted)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_oid_made_up, test_path_made_up)
+
     #   mkdir
     #       to a non-existent folder raises [something], conditionally
+    if not provider.auto_vivify_parent_folders:
+        with pytest.raises(CloudFileNotFoundError):
+            provider.mkdir("/nonexistentfolder/junk")
+
     #   delete
     #       on a deleted oid does not raise
     #       on a made up oid does not raise
-    #   hash_oid
-    #       get rid of hash oid entirely from the provider class
+    provider.delete(test_oid_deleted)
+    provider.delete(test_oid_made_up)
+
     #   listdir
     #       raises FNF
+    with pytest.raises(CloudFileNotFoundError):
+        provider.listdir(test_path_deleted)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.listdir(test_path_made_up)
+
     #   check for other places in the code where FNF is raised and test those
     #
     #
-    pass
 
 
 def test_file_exists(provider):
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
     # api functions to check for FileExists:
-    #   mkdir should not raise FEx
-    #   upload, should not raise FEx
-    #   create, should raise FEx
-    #   rename, should raise FEx when the target of the rename already exists
+    #   mkdir, where target OID is a file, raises FEx
+    #   upload,
+    #       where target OID is a folder, raises FEx
+    #   create,
+    #       where target path exists, raises FEx
+    #       creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
+    #   rename,
+    #       should raise FEx when the target of the rename already exists, conditionally
+    #       raises FEx (always) if the target of the rename exists and is not the same type as the source obj
+
     pass
 
 
