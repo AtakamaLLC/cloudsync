@@ -340,14 +340,8 @@ class GDriveProvider(Provider):
         return self.info_oid(oid)
 
     def info_path(self, path) -> ProviderInfo:
-        parent, name = self.split(path)
-        if parent == "":
-            parent = "/"
-
-        if not self.exists_path(parent):
-            return None
-       
-        parent_id = self._ids[parent]
+        parent_id = self.get_parent_id(path)
+        _, name = self.split(path)
 
         query = f"'{parent_id}' in parents and name='{name}'"
 
