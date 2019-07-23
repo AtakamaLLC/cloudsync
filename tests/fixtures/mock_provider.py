@@ -61,7 +61,7 @@ class MockProvider(Provider):
                        }
             return ret_val
 
-    def __init__(self, sync_root, case_sensitive=True, allow_renames_over_existing=True, sep="/"):
+    def __init__(self, sync_root="/", case_sensitive=True, allow_renames_over_existing=True, sep="/"):
         super().__init__(sync_root)
         # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
         #  These will be accessed in a thread by the event manager

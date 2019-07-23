@@ -11,9 +11,9 @@ from .fixtures import MockProvider
 def fixture_manager():
     # TODO extend this to take any provider
     state = SyncState()
-    provider = MockProvider()
+    provider = MockProvider("/")
 
-    yield EventManager(MockProvider(), state, LOCAL)
+    yield EventManager(provider, state, LOCAL)
 
 def test_event_basic(util, manager):
     provider = manager.provider
