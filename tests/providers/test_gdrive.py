@@ -4,7 +4,7 @@ import random
 import pytest
 
 
-
+from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
 
 @pytest.fixture(name="gdrive_creds")
@@ -27,7 +27,14 @@ def fixture_gdrive_creds():
 def test_connect(gdrive_creds):
     if not gdrive_creds:
         pytest.skip('requires gdrive token and client secret')
-    gd = GDriveProvider()
+    sync_root = "/" + os.urandom(16).hex()
+    gd = GDriveProvider(sync_root)
     gd.connect(gdrive_creds)
     assert gd.client
     quota = gd.get_quota()
+    try:
+        info = gd.info_path(sync_root)
+        if info and info.oid:
+            gd.delete(info.oid)
+    except CloudFileNotFoundError:
+        pass
