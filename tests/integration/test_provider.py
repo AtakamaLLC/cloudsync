@@ -1,4 +1,5 @@
 import os
+import logging
 import pytest
 from io import BytesIO
 from unittest.mock import patch
@@ -8,36 +9,47 @@ from tests.fixtures.mock_provider import Provider, MockProvider
 
 from cloudsync.providers import GDriveProvider
 
-@pytest.fixture
-def gdrive(gdrive_creds):
-    prov = GDriveProvider()
-    prov.connect(gdrive_creds)
-    return prov
+log = logging.getLogger(__name__)
 
-@pytest.fixture
+def gdrive(gdrive_creds):
+    if gdrive_creds:
+        test_root = "/" + os.urandom(16).hex()
+        prov = GDriveProvider(test_root)
+        prov.connect(gdrive_creds)
+        prov.event_timeout = 30
+        return prov
+    else:
+        return None
+
 def dropbox():
     return None
 
-
 @pytest.fixture
 def mock():
-    return MockProvider()
+    ret = MockProvider("/")
+    ret.event_timeout = 0
+    return ret
 
 
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
-def provider(request, gdrive, dropbox, mock):
+def provider(request, gdrive_creds, mock):
     if request.param in ('dropbox'):
         pytest.skip("unsupported configuration")
-    prov = {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
+
+    if request.param == 'gdrive':
+        prov = gdrive(gdrive_creds)
+    elif request.param == 'dropbox':
+        prov = dropbox()
+    elif request.param == 'mock':
+        prov = mock
+
+    if not prov:
+        pytest.skip("unsupported provider")
 
     prov.test_files = []
 
-    prov.test_root = "/" + os.urandom(16).hex()
-
-    prov.mkdir(prov.test_root)
-
     def temp_name(name="tmp", folder=None):
-        fname = prov.join((prov.test_root, folder, os.urandom(16).hex() + "." +name))
+        fname = prov.join((prov.sync_root, folder, os.urandom(16).hex() + "." +name))
         prov.test_files.append(fname)
         return fname
 
@@ -46,17 +58,15 @@ def provider(request, gdrive, dropbox, mock):
 
     yield prov
 
-    for name in prov.test_files:
-        info = prov.info_path(name)
-        if info and info.oid:
+    # remove everything in the sync_root
+    info = prov.info_path(prov.sync_root)
+    if info:
+        for info in prov.listdir(info.oid):
             prov.delete(info.oid)
 
-    info = prov.info_path(prov.test_root)
-    for info in prov.listdir(info.oid):
+    info = prov.info_path(prov.sync_root)
+    if info:
         prov.delete(info.oid)
-
-    info = prov.info_path(prov.test_root)
-    prov.delete(info.oid)
 
 def test_connect(provider):
     assert provider.connected
@@ -151,20 +161,21 @@ def check_event_path(event: Event, provider: Provider, target_path):
                 raise
 
 
-def test_event_basic(util, mock: Provider):
-    provider = mock
-    for e in provider.events(timeout=0):
-        assert False, "Should not have gotten events, instead got %s" % e
-
+def test_event_basic(util, provider: Provider):
     temp = BytesIO(os.urandom(32))
-    info1 = provider.create("/dest", temp)
+    dest = provider.temp_name("dest")
+
+    # just get the cursor going
+    for e in provider.events(timeout=min(provider.event_timeout,1)):
+        log.debug("event %s", e)
+
+    info1 = provider.create(dest, temp)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
     event_count = 0
-    for e in provider.events(timeout=0):
-        if e is None:
-            break
+    for e in provider.events(timeout=provider.event_timeout):
+        log.debug("event %s", e)
         received_event = e
         event_count += 1
 
@@ -174,7 +185,7 @@ def test_event_basic(util, mock: Provider):
     path = received_event.path
     if path is None:
         path = provider.info_oid(received_event.oid).path
-    assert path == "/dest"
+    assert path == dest
     assert received_event.mtime
     assert received_event.exists
     provider.delete(oid=received_event.oid)
@@ -183,9 +194,8 @@ def test_event_basic(util, mock: Provider):
 
     received_event = None
     event_count = 0
-    for e in provider.events(timeout=0):
-        if e is None:
-            break
+    for e in provider.events(timeout=provider.event_timeout):
+        log.debug("event %s", e)
         received_event = e
         event_count += 1
 
@@ -196,7 +206,7 @@ def test_event_basic(util, mock: Provider):
     if path is None:
         try:
             path = provider.info_oid(received_event.oid).path
-            assert path == "/dest"
+            assert path == dest
         except CloudFileNotFoundError:
             if received_event.exists:
                 raise

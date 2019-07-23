@@ -20,7 +20,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     auto_vivify_parent_folders = ...    # TODO: move this to the fixture, this is only needed for testing
 
     # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
-    def __init__(self):
+    def __init__(self, sync_root):
+        self.sync_root = sync_root
         self.walked = False
         self.__connected = False
 
@@ -28,6 +29,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     @abstractmethod
     def connected(self):
         ...
+
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -127,7 +129,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         norm_path = self.sep.join(parts)
         return norm_path
 
-    def is_sub_path(self, folder, target, sep=None, anysep=False, strict=False):
+    def is_subpath(self, folder, target, sep=None, anysep=False, strict=False):
         if sep is None:
             if anysep:
                 sep = "/"
@@ -157,7 +159,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return False
 
     def replace_path(self, path, from_dir, to_dir):
-        relative = self.is_sub_path(path, from_dir)
+        relative = self.is_subpath(path, from_dir)
         if relative:
             return to_dir + relative
         raise ValueError("replace_path used without subpath")
