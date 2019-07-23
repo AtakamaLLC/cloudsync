@@ -188,9 +188,9 @@ def test_event_basic(util, provider: Provider):
     assert path == dest
     assert received_event.mtime
     assert received_event.exists
-    provider.delete(oid=received_event.oid)
-    with pytest.raises(CloudFileNotFoundError):
-        provider.delete(oid=received_event.oid)
+    deleted_oid = received_event.oid
+    provider.delete(oid=deleted_oid)
+    provider.delete(oid=deleted_oid)  # Tests that deleting a non-existing file does not raise a FNFE
 
     received_event = None
     event_count = 0
@@ -202,16 +202,11 @@ def test_event_basic(util, provider: Provider):
     assert event_count == 1
     assert received_event is not None
     assert received_event.oid
-    path = received_event.path
-    if path is None:
-        try:
-            path = provider.info_oid(received_event.oid).path
-            assert path == dest
-        except CloudFileNotFoundError:
-            if received_event.exists:
-                raise
-    assert received_event.mtime
     assert not received_event.exists
+    if received_event.path is not None:
+        assert received_event.path == dest
+    assert received_event.oid == deleted_oid
+    assert received_event.mtime
 
 
 def test_api_failure(provider):
@@ -229,11 +224,10 @@ def test_api_failure(provider):
             provider.exists_path("/notexists")
 
 
-def test_file_not_found(mock: MockProvider):
-    provider = mock
+def test_file_not_found(provider):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
-    provider.temp_name = lambda x: "/" + x  # TODO: fix this when we replace the mock fixture with the provider fixture
+    # provider.temp_name = lambda x: "/" + x  # TODO: fix this when we replace the mock fixture with the provider fixture
     dat = os.urandom(32)
 
     def data():
@@ -275,8 +269,9 @@ def test_file_not_found(mock: MockProvider):
     #   hash_oid
     #       deleted file returns None
     #       never existed file returns None
-    assert provider.hash_oid(test_oid_deleted) is None
-    assert provider.hash_oid(test_oid_made_up) is None
+    if getattr(provider, "hash_oid", False): # TODO implement hash_oid in gdrive, then don't have this be conditional
+        assert provider.hash_oid(test_oid_deleted) is None
+        assert provider.hash_oid(test_oid_made_up) is None
 
     #   upload
     #       to a deleted file raises FNF

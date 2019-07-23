@@ -359,6 +359,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             add_pids = [self.root_id]
 
         info = self._info_oid(oid)
+        if info is None:
+            raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
 
         _, name = self.split(path)
@@ -422,10 +424,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids[path] = fileid
 
     def delete(self, oid):
-        self._api('files', 'delete', fileId=oid)
+        try:
+            self._api('files', 'delete', fileId=oid)
+        except CloudFileNotFoundError:
+            log.debug("deleted non-existing oid %s", oid)
+        for currpath, curroid in list(self._ids.items()):
+            if curroid == oid:
+                del self._ids[currpath]
 
     def exists_oid(self, oid):
-        return self._info_oid(oid)
+        return self._info_oid(oid) is not None
 
     def info_path(self, path) -> ProviderInfo:
         parent_id = self.get_parent_id(path)
@@ -501,9 +509,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def info_oid(self, oid) -> ProviderInfo:
         info = self._info_oid(oid)
+        if info is None:
+            return None
         # expensive
         path = self._path_oid(oid)
-        ProviderInfo(info.oid, info.hash, path)
+        return ProviderInfo(info.oid, info.hash, path)
 
     def _info_oid(self, oid) -> GDriveInfo:
         try:
