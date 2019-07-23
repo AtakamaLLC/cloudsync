@@ -1,11 +1,14 @@
 from abc import ABC, abstractmethod
 
-from collections import namedtuple
+from typing import NamedTuple, Optional
 
 from re import split
 
-ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
-
+# information returned 
+class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
+    oid : str                               # file id       (better name: fid)
+    hash : bytes                            # file hash     (better name: fhash)
+    path : str                              # path
 
 class Provider(ABC):
     sep: str = '/'                      # path delimiter
@@ -16,13 +19,20 @@ class Provider(ABC):
     # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
     def __init__(self):
         self.walked = False
+        self.__connected = False
+
+    @property
+    @abstractmethod
+    def connected(self):
+        ...
 
     @abstractmethod
     def _api(self, *args, **kwargs):
         ...
 
     def connect(self, creds):
-        pass
+        # some providers don't need connections, so just don't implement this
+        self.__connected = True
 
     @abstractmethod
     def events(self, timeout):
@@ -33,11 +43,11 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    def upload(self, oid, file_like):
+    def upload(self, oid, file_like, metadata):
         ...
 
     @abstractmethod
-    def create(self, path, file_like) -> 'ProviderInfo':
+    def create(self, path, file_like, metadata) -> 'ProviderInfo':
         ...
 
     @abstractmethod

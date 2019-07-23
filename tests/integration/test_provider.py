@@ -6,11 +6,13 @@ from unittest.mock import patch
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
 from tests.fixtures.mock_provider import Provider, MockProvider
 
+from cloudsync.providers import GDriveProvider
 
 @pytest.fixture
-def gdrive():
-    return None
-
+def gdrive(gdrive_creds):
+    prov = GDriveProvider()
+    prov.connect(gdrive_creds)
+    return prov
 
 @pytest.fixture
 def dropbox():
@@ -24,14 +26,13 @@ def mock():
 
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
 def provider(request, gdrive, dropbox, mock):
-    if request.param in ('gdrive', 'dropbox'):
+    if request.param in ('dropbox'):
         pytest.skip("unsupported configuration")
     return {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
 
 
 def test_connect(provider):
     assert provider.connected
-
 
 def test_create_upload_download(util, provider):
     dat = os.urandom(32)

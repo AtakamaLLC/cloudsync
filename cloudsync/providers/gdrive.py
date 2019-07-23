@@ -1,5 +1,9 @@
+import os
+import time
+import arrow
 import logging
 import threading
+import hashlib
 
 from ssl import SSLError
 from apiclient.discovery import build   # pylint: disable=import-error
@@ -7,6 +11,8 @@ from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=import-error
+
+from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from cloudsync import Provider, ProviderInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError
@@ -31,6 +37,11 @@ class GDriveProvider(Provider):
         self.refresh_token = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
+        self._ids = {"/":"root"}
+
+    @property
+    def connected(self):
+        return self.client is not None
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
@@ -113,6 +124,8 @@ class GDriveProvider(Provider):
                     ))
                 if (str(e.resp.status) == '403' and str(e.resp.reason) == 'Forbidden') or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
+                
+                raise CloudTemporaryError("unknown error")
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
@@ -126,14 +139,107 @@ class GDriveProvider(Provider):
     def walk(self):
         ...
 
-    def upload(self, oid, file_like):
-        ...
+    def upload(self, oid, file_like, metadata={}):
+        gdrive_info = self.__prep_upload(None, file_like, metadata)
 
-    def create(self, path, file_like) -> 'ProviderInfo':
-        ...
+        ul = MediaIoBaseUpload(file_like, mimetype=gdrive_info.get('mimeType'), chunksize=4 * 1024 * 1024)
+
+        fields = 'id, md5Checksum'
+
+        res = self._api('files', 'update',
+                body=gdrive_info,
+                fileId=oid,
+                media_body=ul,
+                fields=fields)
+
+        log.debug("response from upload %s", res)
+
+        if not res:
+            raise CloudTemporaryError("unknown response from drive on upload")
+
+        return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=None)
+
+    def __prep_upload(self, path, file_like, metadata):
+        # modification time
+        mtime = metadata.get("modifiedTime", time.time())
+        mtime = arrow.get(mtime).isoformat()
+        gdrive_info = {
+                'modifiedTime':  mtime
+                }
+
+        # mime type, if provided
+        mime_type = metadata.get("mimeType", "application/octet-stream")
+        if mime_type:
+            gdrive_info['mimeType'] = mime_type
+
+        # path, if provided
+        if path:
+            parent, name = os.path.split(path)
+            gdrive_info['name'] = name
+
+        # misc properties, if provided
+        app_props = metadata.get("appProperties", None)
+        if app_props:
+            # caller can specify google-specific stuff, if desired
+            gdrive_info['appProperties'] = app_props
+
+        # misc properties, if provided
+        app_props = metadata.get("properties", None)
+        if app_props:
+            # caller can specify google-specific stuff, if desired
+            gdrive_info['properties'] = app_props
+
+        log.debug("info %s", gdrive_info)
+
+        return gdrive_info
+
+    def create(self, path, file_like, metadata={}) -> 'ProviderInfo':
+        gdrive_info = self.__prep_upload(path, file_like, metadata)
+
+        ul = MediaIoBaseUpload(file_like, mimetype=gdrive_info.get('mimeType'), chunksize=4 * 1024 * 1024)
+
+        fields = 'id, md5Checksum'
+
+        parent, name = os.path.split(path)
+        if not self.exists_path(parent):
+            raise CloudFileNotFoundError("parent folder %s doesn't exist", parent)
+        parent_oid = self._ids[parent]
+
+        gdrive_info['parents'] = [parent_oid]
+
+        res = self._api('files', 'create',
+                body=gdrive_info,
+                media_body=ul,
+                fields=fields)
+
+        log.debug("response from upload %s", res)
+
+        if not res:
+            raise CloudTemporaryError("unknown response from drive on upload")
+
+        self._ids[path] = res['id']
+
+        return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=path)
 
     def download(self, oid, file_like):
-        ...
+        req = self.client.files().get_media(fileId=oid)
+        dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
+
+        done = False
+        while not done:
+            try:
+                status, done = dl.next_chunk()
+            except HttpError as e:
+                if str(e.resp.status) == '416':
+                    log.debug("empty file downloaded")
+                    done = True
+                elif str(e.resp.status) == '404':
+                    raise CloudFileNotFoundError("file %s not found", oid) 
+                else:
+                    raise CloudTemporaryError("unknown response from drive")
+            except (TimeoutError, HttpLib2Error) as e:
+                self.disconnect()
+                raise CloudDisconnectedError("disconnected during download")
 
     def rename(self, oid, path):
         ...
@@ -148,11 +254,44 @@ class GDriveProvider(Provider):
         ...
 
     def exists_path(self, path) -> bool:
-        ...
+        parent, name = os.path.split(path)
+        if parent == "":
+            parent = "/"
+
+        if parent not in self._ids:
+            if not exists_path(self, parent):
+                return False
+       
+        if path in self._ids:
+            return True
+
+        parent_id = self._ids[parent]
+
+        query = f"'{parent_id}' in parents and name='{name}'"
+
+        res = self._api('files', 'list',
+                q=query,
+                spaces='drive',
+                fields='files(id)',
+                pageToken=None)
+
+        if not res['files']:
+            return False
+
+        oid = res['files'][0]['id']
+
+        self._ids[path] = oid
+
+        return oid
+
 
     @staticmethod
     def hash_data(file_like):
-        ...
+        md5 = hashlib.md5()
+        for c in iter(lambda: file_like.read(4096), b''):
+            md5.update(c)
+        retval = md5.hexdigest()
+        return retval
 
     def remote_hash(self, oid):
         ...
