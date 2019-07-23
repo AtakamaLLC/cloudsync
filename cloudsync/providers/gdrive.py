@@ -23,6 +23,7 @@ class GDriveInfo(ProviderInfo):
     def __new__(cls, *a, pids=[], name=None):
         self = super().__new__(cls, *a)
         self.pids = pids
+        self.name = name
         return self
 
 class GDriveProvider(Provider):
@@ -33,6 +34,7 @@ class GDriveProvider(Provider):
     _scope = "https://www.googleapis.com/auth/drive"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _token_uri = 'https://accounts.google.com/o/oauth2/token'
+    _folder_mime_type = 'application/vnd.google-apps.folder'
 
     def __init__(self):
         super().__init__()
@@ -192,7 +194,7 @@ class GDriveProvider(Provider):
 
         # path, if provided
         if path:
-            parent, name = os.path.split(path)
+            parent, name = self.split(path)
             gdrive_info['name'] = name
 
         # misc properties, if provided
@@ -218,10 +220,7 @@ class GDriveProvider(Provider):
 
         fields = 'id, md5Checksum'
 
-        parent, name = os.path.split(path)
-        if not self.exists_path(parent):
-            raise CloudFileNotFoundError("parent folder %s doesn't exist", parent)
-        parent_oid = self._ids[parent]
+        parent_oid = self.get_parent_id(path)
 
         gdrive_info['parents'] = [parent_oid]
 
@@ -259,13 +258,14 @@ class GDriveProvider(Provider):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected during download")
 
-    def rename(self, oid, path):
-        parent, name = os.path.split(path)
-        
+    def get_parent_id(self, path):
+        parent, name = self.split(path)
         if not self.exists_path(parent):
-            raise CloudFileNotFoundError("parent must exist")
+            raise CloudFileNotFoundError("parent %s must exist" % parent)
+        return self._ids[parent]
 
-        pid = self._ids[parent]
+    def rename(self, oid, path):
+        pid = self.get_parent_id(path)
 
         add_pids = [pid]
         if pid == 'root':
@@ -274,23 +274,73 @@ class GDriveProvider(Provider):
         info = self.info_oid(oid)
         remove_pids = info.pids
 
+        _, name = self.split(path)
         body = {'name': name}
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
+        for cpath, coid in list(self._ids.items()):
+            if coid == oid:
+                self._ids.pop(cpath)
+                self._ids[path] = oid
+
         log.debug("renamed %s", body)
 
-    def mkdir(self, path) -> str:
-        ...
+    def listdir(self, oid) -> list:
+        query = f"'{oid}' in parents"
+        try:
+            res = self._api('files', 'list',
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, md5Checksum, parents, name, trashed)',
+                    pageToken=None)
+        except CloudFileNotFoundError:
+            if self.info_oid(oid):
+                return []
+            log.debug("OID GONE %s", oid)
+            raise
+
+        if not res:
+            return []
+
+
+        log.debug("got res %s", res)
+
+        ret = []
+        for ent in res['files']:
+            fid = res['id']
+            pids = res['parents']
+            fhash = res['md5Checksum']
+            name = res['name']
+            trashed = res['trashed']
+            if not trashed:
+                ret.append(GDriveInfo(oid, fash, None, pids=pids, name=name))
+
+        log.debug("listdir %s", ret)
+        return ret
+ 
+    def mkdir(self, path, metadata={}) -> str:
+        pid = self.get_parent_id(path)
+        _, name = self.split(path)
+        file_metadata = {
+            'name': name,
+            'parents': [pid],
+            'mimeType': self._folder_mime_type,
+        }
+        file_metadata.update(metadata)
+        res = self._api('files', 'create',
+                body=file_metadata, fields='id')
+        fileid = res.get('id')
+        self._ids[path] = fileid
 
     def delete(self, oid):
-        ...
+        self._api('files', 'delete', fileId=oid)
 
     def exists_oid(self, oid):
-        ...
+        return self.info_oid(oid)
 
     def info_path(self, path) -> ProviderInfo:
-        parent, name = os.path.split(path)
+        parent, name = self.split(path)
         if parent == "":
             parent = "/"
 
@@ -301,18 +351,23 @@ class GDriveProvider(Provider):
 
         query = f"'{parent_id}' in parents and name='{name}'"
 
-        res = self._api('files', 'list',
-                q=query,
-                spaces='drive',
-                fields='files(id, md5Checksum, parents)',
-                pageToken=None)
+        try:
+            res = self._api('files', 'list',
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, md5Checksum, parents)',
+                    pageToken=None)
+        except CloudfileNotFoundError:
+            return None
 
         if not res['files']:
             return None
 
-        oid = res['files'][0]['id']
-        pids = res['files'][0]['parents']
-        fhash = res['files'][0]['md5Checksum']
+        ent = res['files'][0]
+
+        oid = ent['id']
+        pids = ent['parents']
+        fhash = ent.get('md5Checksum')
 
         self._ids[path] = oid
 
@@ -332,11 +387,13 @@ class GDriveProvider(Provider):
         return retval
 
     def info_oid(self, oid) -> ProviderInfo:
-        res = self._api('files', 'get',
-                fileId=oid,
-                fields='name, md5Checksum, parents',
-                )
-       
+        try:
+            res = self._api('files', 'get',
+                    fileId=oid,
+                    fields='name, md5Checksum, parents',
+                    )
+        except CloudFileNotFoundError:
+            return None
         pids = res['parents']
         fhash = res['md5Checksum']
         name = res['name']

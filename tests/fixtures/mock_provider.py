@@ -151,6 +151,15 @@ class MockProvider(Provider):
         self._register_event(MockProvider.MockEvent.ACTION_UPDATE, file)
         return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
+    def listdir(self, path) -> 'List[ProviderInfo]':
+        ret = []
+        for obj in self._fs_by_oid.values():
+            if obj.exists:
+                if self.is_sub_path(path, obj.path, strict=True):
+                    ret.append(ProviderInfo(oid=obj.oid, hash=obj.hash(), path=obj.path))
+        log.debug("listdir %s", ret)
+        return ret
+
     def create(self, path, file_like) -> 'ProviderInfo':
         # TODO: check to make sure the folder exists before creating a file in it
         self._api()
@@ -244,8 +253,10 @@ class MockProvider(Provider):
         return new_fs_object.oid
 
     def delete(self, oid):
+        log.debug("delete %s", oid)
         self._api()
         file = self._fs_by_oid.get(oid, None)
+        log.debug("got %s", file)
         if not (file and file.exists):
             raise CloudFileNotFoundError(oid)
         file.exists = False
@@ -270,7 +281,7 @@ class MockProvider(Provider):
         self._api()
         file: MockProvider.FSObject = self._get_by_path(path)
         if not (file and file.exists):
-            raise CloudFileNotFoundError(path)
+            return None
         return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid):

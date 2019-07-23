@@ -47,10 +47,16 @@ def provider(request, gdrive, dropbox, mock):
     yield prov
 
     for name in prov.test_files:
-        info = provider.info_path(name)
+        info = prov.info_path(name)
         if info and info.oid:
-            provider.delete(name)
+            prov.delete(info.oid)
 
+    info = prov.info_path(prov.test_root)
+    for info in prov.listdir(info.oid):
+        prov.delete(info.oid)
+
+    info = prov.info_path(prov.test_root)
+    prov.delete(info.oid)
 
 def test_connect(provider):
     assert provider.connected
@@ -99,7 +105,7 @@ def test_rename(util, provider: Provider):
     provider.rename(info1.oid, dest2)
 
     assert provider.exists_path(dest2)
-    assert not provider.exists_path(dest2)
+    assert not provider.exists_path(dest)
 
 
 @pytest.mark.skip(reason="not ready yet")

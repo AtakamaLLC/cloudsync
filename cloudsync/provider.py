@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 from typing import NamedTuple, Optional
 
-from re import split
+import re
 
 # information returned 
 class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
@@ -12,6 +12,7 @@ class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
 
 class Provider(ABC):
     sep: str = '/'                      # path delimiter
+    alt_sep: str = '\\'                 # alternate path delimiter
     case_sensitive = ...                # TODO: implement support for this
     allow_renames_over_existing = ...   # TODO: move this to the fixture, this is only needed for testing
     require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
@@ -39,7 +40,7 @@ class Provider(ABC):
         ...
 
     @abstractmethod
-    def walk(self):
+    def walk(self, since=None):
         ...
 
     @abstractmethod
@@ -74,6 +75,10 @@ class Provider(ABC):
     def exists_path(self, path) -> bool:
         ...
 
+    @abstractmethod
+    def listdir(self, oid) -> list:
+        ...
+
     @staticmethod
     @abstractmethod
     def hash_data(file_like):
@@ -95,12 +100,23 @@ class Provider(ABC):
             res = res + self.sep + path.strip(self.sep)
         return res or self.sep
 
+    def split(self, path):
+        # todo cache regex
+        index = path.rfind(self.sep)
+        if index == -1 and self.alt_sep:
+            index = path.rfind(self.alt_sep)
+        if index == -1:
+            return (path, "")
+        if index == 0:
+            return (self.sep, path[index+1:])
+        return (path[:index],path[index+1:])
+
     def normalize_path(self, path: str):
         norm_path = path.rstrip(self.sep)
         if self.sep in ["\\", "/"]:
-            parts = split(r'[\\/]+', norm_path)
+            parts = re.split(r'[\\/]+', norm_path)
         else:
-            parts = split(r'[%s]+' % self.sep, norm_path)
+            parts = re.split(r'[%s]+' % self.sep, norm_path)
         norm_path = self.sep.join(parts)
         return norm_path
 
@@ -144,6 +160,6 @@ class Provider(ABC):
 
     def dirname(self, path: str):
         norm_path = self.normalize_path(path)
-        parts = split(r'[%s]+' % self.sep, norm_path)
+        parts = re.split(r'[%s]+' % self.sep, norm_path)
         retval = self.sep + self.sep.join(parts[0:-1])
         return retval
