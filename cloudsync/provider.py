@@ -1,14 +1,19 @@
 from abc import ABC, abstractmethod
 
-from collections import namedtuple
+from typing import NamedTuple
 
-from re import split
-
-ProviderInfo = namedtuple('ProviderInfo', 'oid hash path')
+import re
 
 
-class Provider(ABC):
+class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
+    oid: str                               # file id       (better name: fid)
+    hash: bytes                            # file hash     (better name: fhash)
+    path: str                              # path
+
+
+class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
+    alt_sep: str = '\\'                 # alternate path delimiter
     case_sensitive = ...                # TODO: implement support for this
     allow_renames_over_existing = ...   # TODO: move this to the fixture, this is only needed for testing
     require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
@@ -16,28 +21,35 @@ class Provider(ABC):
     # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
     def __init__(self):
         self.walked = False
+        self.__connected = False
+
+    @property
+    @abstractmethod
+    def connected(self):
+        ...
 
     @abstractmethod
     def _api(self, *args, **kwargs):
         ...
 
-    def connect(self, creds):
-        pass
+    def connect(self, creds):           # pylint: disable=unused-argument
+        # some providers don't need connections, so just don't implement this
+        self.__connected = True
 
     @abstractmethod
     def events(self, timeout):
         ...
 
     @abstractmethod
-    def walk(self):
+    def walk(self, since=None):
         ...
 
     @abstractmethod
-    def upload(self, oid, file_like):
+    def upload(self, oid, file_like, metadata):
         ...
 
     @abstractmethod
-    def create(self, path, file_like) -> 'ProviderInfo':
+    def create(self, path, file_like, metadata) -> 'ProviderInfo':
         ...
 
     @abstractmethod
@@ -64,13 +76,13 @@ class Provider(ABC):
     def exists_path(self, path) -> bool:
         ...
 
+    @abstractmethod
+    def listdir(self, oid) -> list:
+        ...
+
     @staticmethod
     @abstractmethod
     def hash_data(file_like):
-        ...
-
-    @abstractmethod
-    def remote_hash(self, oid):
         ...
 
     @abstractmethod
@@ -81,12 +93,31 @@ class Provider(ABC):
     def info_oid(self, oid) -> ProviderInfo:
         ...
 
+    def join(self, paths):
+        res = ""
+        for path in paths:
+            if path is None:
+                continue
+            res = res + self.sep + path.strip(self.sep)
+        return res or self.sep
+
+    def split(self, path):
+        # todo cache regex
+        index = path.rfind(self.sep)
+        if index == -1 and self.alt_sep:
+            index = path.rfind(self.alt_sep)
+        if index == -1:
+            return (path, "")
+        if index == 0:
+            return (self.sep, path[index+1:])
+        return (path[:index], path[index+1:])
+
     def normalize_path(self, path: str):
         norm_path = path.rstrip(self.sep)
         if self.sep in ["\\", "/"]:
-            parts = split(r'[\\/]+', norm_path)
+            parts = re.split(r'[\\/]+', norm_path)
         else:
-            parts = split(r'[%s]+' % self.sep, norm_path)
+            parts = re.split(r'[%s]+' % self.sep, norm_path)
         norm_path = self.sep.join(parts)
         return norm_path
 
@@ -130,6 +161,6 @@ class Provider(ABC):
 
     def dirname(self, path: str):
         norm_path = self.normalize_path(path)
-        parts = split(r'[%s]+' % self.sep, norm_path)
+        parts = re.split(r'[%s]+' % self.sep, norm_path)
         retval = self.sep + self.sep.join(parts[0:-1])
         return retval

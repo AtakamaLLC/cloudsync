@@ -49,11 +49,13 @@ def fixture_sync():
                 try:
                     other_info = sync.providers[info.side].info_path(info.path)
                 except CloudFileNotFoundError as e:
+                    other_info = None
+
+                if other_info is None:
                     if info.exists == False:
                         return True
-
-                    log.debug("waiting %s", e)
-                    last_error = e
+                    log.debug("waiting %s", info.path)
+                    last_error = CloudFileNotFoundError(info.path)
                     continue
 
                 if info.exists == False:
@@ -178,8 +180,7 @@ def test_sync_rename(sync):
 
     sync.run_until_found((REMOTE, remote_path2), timeout=1)
 
-    with pytest.raises(CloudFileNotFoundError):
-        sync.providers[REMOTE].info_path("/remote/stuff")
+    assert sync.providers[REMOTE].info_path("/remote/stuff") is None
 
 def test_sync_hash(sync):
     remote_parent = "/remote"
@@ -228,8 +229,7 @@ def test_sync_rm(sync):
 
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
 
-    with pytest.raises(CloudFileNotFoundError):
-        sync.providers[REMOTE].info_path(remote_path1)
+    assert sync.providers[REMOTE].info_path(remote_path1) is None
 
 @pytest.mark.skip(reason="no way of currently testing this")
 def test_sync_mkdir(sync):
