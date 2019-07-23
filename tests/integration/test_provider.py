@@ -6,11 +6,13 @@ from unittest.mock import patch
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
 from tests.fixtures.mock_provider import Provider, MockProvider
 
+from cloudsync.providers import GDriveProvider
 
 @pytest.fixture
-def gdrive():
-    return None
-
+def gdrive(gdrive_creds):
+    prov = GDriveProvider()
+    prov.connect(gdrive_creds)
+    return prov
 
 @pytest.fixture
 def dropbox():
@@ -24,14 +26,40 @@ def mock():
 
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
 def provider(request, gdrive, dropbox, mock):
-    if request.param in ('gdrive', 'dropbox'):
+    if request.param in ('dropbox'):
         pytest.skip("unsupported configuration")
-    return {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
+    prov = {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
 
+    prov.test_files = []
+
+    prov.test_root = "/" + os.urandom(16).hex()
+
+    prov.mkdir(prov.test_root)
+
+    def temp_name(name="tmp", folder=None):
+        fname = prov.join((prov.test_root, folder, os.urandom(16).hex() + "." +name))
+        prov.test_files.append(fname)
+        return fname
+
+    # add a provider-specific temp name generator
+    prov.temp_name = temp_name
+
+    yield prov
+
+    for name in prov.test_files:
+        info = prov.info_path(name)
+        if info and info.oid:
+            prov.delete(info.oid)
+
+    info = prov.info_path(prov.test_root)
+    for info in prov.listdir(info.oid):
+        prov.delete(info.oid)
+
+    info = prov.info_path(prov.test_root)
+    prov.delete(info.oid)
 
 def test_connect(provider):
     assert provider.connected
-
 
 def test_create_upload_download(util, provider):
     dat = os.urandom(32)
@@ -41,7 +69,9 @@ def test_create_upload_download(util, provider):
 
     hash0 = provider.hash_data(data())
 
-    info1 = provider.create("/dest", data())
+    dest = provider.temp_name("dest")
+
+    info1 = provider.create(dest, data())
 
     info2 = provider.upload(info1.oid, data())
 
@@ -49,7 +79,7 @@ def test_create_upload_download(util, provider):
     assert info1.hash == hash0
     assert info1.hash == info2.hash
 
-    assert provider.exists_path("/dest")
+    assert provider.exists_path(dest)
 
     dest = BytesIO()
     provider.download(info2.oid, dest)
@@ -66,12 +96,16 @@ def test_rename(util, provider: Provider):
 
     hash0 = provider.hash_data(data())
 
-    info1 = provider.create("/dest", data())
+    dest = provider.temp_name("dest")
 
-    provider.rename(info1.oid, "/dest2")
+    info1 = provider.create(dest, data())
 
-    assert provider.exists_path("/dest2")
-    assert not provider.exists_path("/dest")
+    dest2 = provider.temp_name("dest2")
+
+    provider.rename(info1.oid, dest2)
+
+    assert provider.exists_path(dest2)
+    assert not provider.exists_path(dest)
 
 
 @pytest.mark.skip(reason="not ready yet")
@@ -79,7 +113,8 @@ def test_mkdir(util, provider: Provider):
     assert False
 
 
-def test_walk(util, provider: Provider):
+def test_walk(util, mock: Provider):
+    provider = mock
     temp = BytesIO(os.urandom(32))
     info = provider.create("/dest", temp)
     assert not provider.walked
@@ -115,7 +150,8 @@ def check_event_path(event: Event, provider: Provider, target_path):
                 raise
 
 
-def test_event_basic(util, provider: Provider):
+def test_event_basic(util, mock: Provider):
+    provider = mock
     for e in provider.events(timeout=0):
         assert False, "Should not have gotten events, instead got %s" % e
 
