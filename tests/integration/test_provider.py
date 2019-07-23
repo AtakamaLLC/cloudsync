@@ -17,7 +17,7 @@ def gdrive(gdrive_creds):
         test_root = "/" + os.urandom(16).hex()
         prov = GDriveProvider(test_root)
         prov.connect(gdrive_creds)
-        prov.event_timeout = 10
+        prov.event_timeout = 30
         return prov
     else:
         return None
@@ -162,6 +162,10 @@ def test_event_basic(util, provider: Provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
+    # just get the cursor going
+    for e in provider.events(timeout=1):
+        log.debug("event %s", e)
+
     info1 = provider.create(dest, temp)
     assert info1 is not None  # TODO: check info1 for more things
 
@@ -187,7 +191,7 @@ def test_event_basic(util, provider: Provider):
 
     received_event = None
     event_count = 0
-    for e in provider.events(timeout=provider.event_timeout*3):
+    for e in provider.events(timeout=provider.event_timeout):
         log.debug("event %s", e)
         received_event = e
         event_count += 1

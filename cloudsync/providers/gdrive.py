@@ -29,7 +29,7 @@ class GDriveInfo(ProviderInfo):
         self.name = name
         return self
 
-class GDriveProvider(Provider):
+class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods
     case_sensitive = False
     allow_renames_over_existing = False
     require_parent_folder = True
@@ -183,11 +183,13 @@ class GDriveProvider(Provider):
         if top == oid:
             return True
         pid = self.get_parent_id(oid)
+        if pid == oid:
+            return False
         return self.is_suboid(top, pid)
 
-    def events(self, timeout):
+    def events(self, timeout):      # pylint: disable=too-many-locals
         got_something = False
-        for _ in time_helper(timeout, sleep=2):
+        for _ in time_helper(timeout, sleep=3):
             page_token = self.cursor
             while page_token is not None:
 #                log.debug("looking for events, timeout: %s", timeout)
@@ -489,7 +491,7 @@ class GDriveProvider(Provider):
         # todo, better cache, keep up to date, etc.
 
         info = self._info_oid(oid)
-        if info.pids and info.name:
+        if info and info.pids and info.name:
             ppath = self._path_oid(info.pids[0])
             if ppath:
                 path = ppath + "/" + info.name
@@ -501,7 +503,7 @@ class GDriveProvider(Provider):
         info = self._info_oid(oid)
         # expensive
         path = self._path_oid(oid)
-        ProviderInfo(info.oid, info.fhash, path)
+        ProviderInfo(info.oid, info.hash, path)
 
     def _info_oid(self, oid) -> GDriveInfo:
         try:
