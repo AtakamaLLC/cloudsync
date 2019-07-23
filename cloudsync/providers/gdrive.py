@@ -16,7 +16,6 @@ from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disa
 from cloudsync import Provider, ProviderInfo, DIRECTORY, FILE, Event
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError
-from cloudsync.runnable import time_helper
 
 log = logging.getLogger(__name__)
 

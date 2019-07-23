@@ -39,7 +39,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         self.__connected = True
 
     @abstractmethod
-    def events(self, timeout):
+    def events(self):
         ...
 
     @abstractmethod
