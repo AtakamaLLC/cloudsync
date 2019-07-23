@@ -1,18 +1,17 @@
-import os
 import time
-import arrow
 import logging
 import threading
 import hashlib
-
 from ssl import SSLError
+
+import arrow
 from apiclient.discovery import build   # pylint: disable=import-error
 from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=import-error
 
-from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
 from cloudsync import Provider, ProviderInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError
@@ -20,6 +19,8 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 log = logging.getLogger(__name__)
 
 class GDriveInfo(ProviderInfo):
+    pids = []
+    name = ""
     def __new__(cls, *a, pids=[], name=None):
         self = super().__new__(cls, *a)
         self.pids = pids
@@ -75,7 +76,7 @@ class GDriveProvider(Provider):
 
         return res
 
-    def connect(self, creds={}):
+    def connect(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
             api_key = creds.get('api_key', self.api_key)
@@ -134,7 +135,7 @@ class GDriveProvider(Provider):
                 if (str(e.resp.status) == '403' and str(e.resp.reason) == 'Forbidden') or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
                 
-                raise CloudTemporaryError("unknown error %s", e)
+                raise CloudTemporaryError("unknown error %s" % e)
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
@@ -156,11 +157,13 @@ class GDriveProvider(Provider):
     def events(self, timeout):
         ...
 
-    def walk(self):
+    def walk(self, since=None):
         ...
 
-    def upload(self, oid, file_like, metadata={}):
-        gdrive_info = self.__prep_upload(None, file_like, metadata)
+    def upload(self, oid, file_like, metadata=None):
+        if not metadata:
+            metadata = {} 
+        gdrive_info = self.__prep_upload(None, metadata)
 
         ul = MediaIoBaseUpload(file_like, mimetype=gdrive_info.get('mimeType'), chunksize=4 * 1024 * 1024)
 
@@ -179,7 +182,7 @@ class GDriveProvider(Provider):
 
         return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=None)
 
-    def __prep_upload(self, path, file_like, metadata):
+    def __prep_upload(self, path, metadata):
         # modification time
         mtime = metadata.get("modifiedTime", time.time())
         mtime = arrow.get(mtime).isoformat()
@@ -194,7 +197,7 @@ class GDriveProvider(Provider):
 
         # path, if provided
         if path:
-            parent, name = self.split(path)
+            _, name = self.split(path)
             gdrive_info['name'] = name
 
         # misc properties, if provided
@@ -213,8 +216,10 @@ class GDriveProvider(Provider):
 
         return gdrive_info
 
-    def create(self, path, file_like, metadata={}) -> 'ProviderInfo':
-        gdrive_info = self.__prep_upload(path, file_like, metadata)
+    def create(self, path, file_like, metadata=None) -> 'ProviderInfo':
+        if not metadata:
+            metadata = {} 
+        gdrive_info = self.__prep_upload(path, metadata)
 
         ul = MediaIoBaseUpload(file_like, mimetype=gdrive_info.get('mimeType'), chunksize=4 * 1024 * 1024)
 
@@ -245,13 +250,13 @@ class GDriveProvider(Provider):
         done = False
         while not done:
             try:
-                status, done = dl.next_chunk()
+                _, done = dl.next_chunk()
             except HttpError as e:
                 if str(e.resp.status) == '416':
                     log.debug("empty file downloaded")
                     done = True
                 elif str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError("file %s not found", oid) 
+                    raise CloudFileNotFoundError("file %s not found" % oid) 
                 else:
                     raise CloudTemporaryError("unknown response from drive")
             except (TimeoutError, HttpLib2Error) as e:
@@ -259,7 +264,7 @@ class GDriveProvider(Provider):
                 raise CloudDisconnectedError("disconnected during download")
 
     def get_parent_id(self, path):
-        parent, name = self.split(path)
+        parent, _ = self.split(path)
         if not self.exists_path(parent):
             raise CloudFileNotFoundError("parent %s must exist" % parent)
         return self._ids[parent]
@@ -308,18 +313,18 @@ class GDriveProvider(Provider):
 
         ret = []
         for ent in res['files']:
-            fid = res['id']
-            pids = res['parents']
-            fhash = res['md5Checksum']
-            name = res['name']
-            trashed = res['trashed']
+            fid = ent['id']
+            pids = ent['parents']
+            fhash = ent['md5Checksum']
+            name = ent['name']
+            trashed = ent.get('trashed', False)
             if not trashed:
-                ret.append(GDriveInfo(oid, fash, None, pids=pids, name=name))
+                ret.append(GDriveInfo(fid, fhash, None, pids=pids, name=name))
 
         log.debug("listdir %s", ret)
         return ret
  
-    def mkdir(self, path, metadata={}) -> str:
+    def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
         pid = self.get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {
@@ -327,7 +332,8 @@ class GDriveProvider(Provider):
             'parents': [pid],
             'mimeType': self._folder_mime_type,
         }
-        file_metadata.update(metadata)
+        if metadata:
+            file_metadata.update(metadata)
         res = self._api('files', 'create',
                 body=file_metadata, fields='id')
         fileid = res.get('id')

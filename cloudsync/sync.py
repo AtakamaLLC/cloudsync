@@ -322,7 +322,10 @@ class SyncManager(Runnable):
 
             if len(ents) == 1:
                 assert ents[0] == sync
-                self.providers[synced].delete(sync[synced].oid)
+                try:
+                    self.providers[synced].delete(sync[synced].oid)
+                except CloudFileNotFoundError:
+                    pass
 
             sync[synced].exists = False
 

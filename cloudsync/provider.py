@@ -1,16 +1,17 @@
 from abc import ABC, abstractmethod
 
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import re
 
-# information returned 
-class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
-    oid : str                               # file id       (better name: fid)
-    hash : bytes                            # file hash     (better name: fhash)
-    path : str                              # path
 
-class Provider(ABC):
+class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
+    oid: str                               # file id       (better name: fid)
+    hash: bytes                            # file hash     (better name: fhash)
+    path: str                              # path
+
+
+class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
     case_sensitive = ...                # TODO: implement support for this
@@ -31,7 +32,7 @@ class Provider(ABC):
     def _api(self, *args, **kwargs):
         ...
 
-    def connect(self, creds):
+    def connect(self, creds):           # pylint: disable=unused-argument
         # some providers don't need connections, so just don't implement this
         self.__connected = True
 
@@ -109,7 +110,7 @@ class Provider(ABC):
             return (path, "")
         if index == 0:
             return (self.sep, path[index+1:])
-        return (path[:index],path[index+1:])
+        return (path[:index], path[index+1:])
 
     def normalize_path(self, path: str):
         norm_path = path.rstrip(self.sep)
