@@ -11,7 +11,6 @@ from cloudsync.providers import GDriveProvider
 
 log = logging.getLogger(__name__)
 
-@pytest.fixture
 def gdrive(gdrive_creds):
     if gdrive_creds:
         test_root = "/" + os.urandom(16).hex()
@@ -22,10 +21,8 @@ def gdrive(gdrive_creds):
     else:
         return None
 
-@pytest.fixture
 def dropbox():
     return None
-
 
 @pytest.fixture
 def mock():
@@ -35,11 +32,16 @@ def mock():
 
 
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
-def provider(request, gdrive, dropbox, mock):
+def provider(request, gdrive_creds, mock):
     if request.param in ('dropbox'):
         pytest.skip("unsupported configuration")
 
-    prov = {'gdrive': gdrive, 'dropbox': dropbox, 'mock': mock}[request.param]
+    if request.param == 'gdrive':
+        prov = gdrive(gdrive_creds)
+    elif request.param == 'dropbox':
+        prov = dropbox()
+    elif request.param == 'mock':
+        prov = mock
 
     if not prov:
         pytest.skip("unsupported provider")
@@ -163,7 +165,7 @@ def test_event_basic(util, provider: Provider):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events(timeout=1):
+    for e in provider.events(timeout=min(provider.event_timeout,1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
