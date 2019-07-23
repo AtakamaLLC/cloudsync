@@ -114,22 +114,14 @@ class MockProvider(Provider):
     def _api(self, *args, **kwargs):
         pass
 
-    def events(self, timeout=1):
-        # TODO implement timeout
+    def events(self):
         self._api()
         done = False
-        end_time = time.monotonic() + timeout
         found = False
-        while not done:
-            if self._cursor < self._latest_event:
-                self._cursor += 1
-                pe = self._events[self._cursor]
-                yield self._translate_event(pe)
-                found = True
-            else:
-                done = found or time.monotonic() >= end_time
-                if not done:
-                    time.sleep(.1)
+        while self._cursor < self._latest_event:
+            self._cursor += 1
+            pe = self._events[self._cursor]
+            yield self._translate_event(pe)
 
     def walk(self):
         self._api()
