@@ -9,6 +9,7 @@ from typing import Optional
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
 from cloudsync.exceptions import CloudFileNotFoundError
+from cloudsync.types import DIRECTORY, FILE
 
 from .runnable import Runnable
 
@@ -43,9 +44,6 @@ REMOTE = 1
 def other_side(index):
     return 1-index
 
-
-FILE = "file"
-DIRECTORY = "dir"
 
 # single entry in the syncs state collection
 

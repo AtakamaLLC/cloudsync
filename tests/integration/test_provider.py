@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 from tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
 
@@ -58,8 +58,8 @@ def provider(request, gdrive_creds, dropbox_creds, mock):
 
     prov.test_files = []
 
-    def temp_name(name="tmp", folder=None):
-        fname = prov.join((prov.sync_root, folder, os.urandom(16).hex() + "." +name))
+    def temp_name(name="tmp", *, folder=None):
+        fname = prov.join((folder or prov.sync_root, os.urandom(16).hex() + "." + name))
         prov.test_files.append(fname)
         return fname
 
@@ -92,6 +92,12 @@ def provider(request, gdrive_creds, dropbox_creds, mock):
     info = prov.info_path(prov.sync_root)
     if info:
         prov.delete(info.oid)
+
+def test_join(mock):
+    assert "/a/b/c" == mock.join(("a", "b", "c"))
+    assert "/a/c" == mock.join(("a", None, "c"))
+    assert "/a/b/c" == mock.join(("/a", "/b", "/c"))
+    assert "/a/c" == mock.join(("a", "/", "c"))
 
 def test_connect(provider):
     assert provider.connected
@@ -139,9 +145,22 @@ def test_rename(util, provider: Provider):
     assert not provider.exists_path(dest)
 
 
-@pytest.mark.skip(reason="not ready yet")
 def test_mkdir(util, provider: Provider):
-    assert False
+    dat = os.urandom(32)
+    def data():
+        return BytesIO(dat)
+    dest = provider.temp_name("dest")
+    provider.mkdir(dest)
+    info = provider.info_path(dest)
+    assert info.otype == cloudsync.DIRECTORY
+    sub_f = provider.temp_name("dest", folder=dest)
+    log.debug("parent = %s, sub = %s", dest, sub_f)
+    with pytest.raises(CloudFileExistsError):
+        info1 = provider.create(dest, data())
+    assert provider.exists_path(dest)
+    log.debug("folder %s exists", dest)
+    info1 = provider.create(sub_f, data())
+
 
 
 def test_walk(util, provider: Provider):

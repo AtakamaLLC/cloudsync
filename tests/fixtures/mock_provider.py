@@ -6,7 +6,8 @@ from typing import Dict, List, Any
 from re import split
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider, ProviderInfo
+from cloudsync.provider import Provider
+from cloudsync.types import OInfo, OType
 from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,13 @@ class MockProvider(Provider):
             self.exists = True
             self.type = object_type
             self.update()
+
+        @property
+        def otype(self):
+            if self.type == self.FILE:
+                return OType.FILE
+            else:
+                return OType.DIRECTORY
 
         def hash(self) -> bytes:
             if self.type == self.DIR:
@@ -74,8 +82,8 @@ class MockProvider(Provider):
         self._latest_event = -1
         self._cursor = -1
         self._type_map = {
-            MockProvider.FSObject.FILE: Event.TYPE_FILE,
-            MockProvider.FSObject.DIR: Event.TYPE_DIRECTORY,
+            MockProvider.FSObject.FILE: OType.FILE,
+            MockProvider.FSObject.DIR: OType.DIRECTORY,
         }
 
     def _register_event(self, action, target_object):
@@ -149,9 +157,9 @@ class MockProvider(Provider):
         contents = file_like.read()
         file.contents = contents
         self._register_event(MockProvider.MockEvent.ACTION_UPDATE, file)
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, path: str) -> 'List[ProviderInfo]':
+    def listdir(self, path: str) -> 'List[OInfo]':
         ret = []
         folder_obj = self._get_by_path(path)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockProvider.FSObject.DIR):
@@ -159,11 +167,11 @@ class MockProvider(Provider):
         for obj in self._fs_by_oid.values():
             if obj.exists:
                 if self.is_subpath(path, obj.path, strict=True):
-                    # If we yield here instead, make sure the list we are iterating over is immutable
-                    ret.append(ProviderInfo(oid=obj.oid, hash=obj.hash(), path=obj.path))
+                    ret.append(OInfo(otype=obj.otype,oid=obj.oid, hash=obj.hash(), path=obj.path))
+        log.debug("listdir %s", ret)
         return ret
 
-    def create(self, path, file_like) -> 'ProviderInfo':
+    def create(self, path, file_like) -> 'OInfo':
         # TODO: check to make sure the folder exists before creating a file in it
         self._api()
         contents = file_like.read()
@@ -177,7 +185,7 @@ class MockProvider(Provider):
         file.contents = contents
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
         self._api()
@@ -266,14 +274,14 @@ class MockProvider(Provider):
         file: MockProvider.FSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid):
         self._api()
         file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             return None
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.type,oid=file.oid, hash=file.hash(), path=file.path)
 
     # @staticmethod
     # def _slurp(path):

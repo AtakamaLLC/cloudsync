@@ -12,21 +12,19 @@ from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=im
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
-from cloudsync import Provider, ProviderInfo, DIRECTORY, FILE, Event
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event
 
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
-
-class GDriveInfo(ProviderInfo):
+class GDriveInfo(OInfo):
     pids = []
     name = ""
-    def __new__(cls, *a, pids=[], name=None, otype=None):
+    def __new__(cls, *a, pids=[], name=None):
         self = super().__new__(cls, *a)
         self.pids = pids
         self.name = name
-        self.otype = otype
         return self
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
@@ -307,12 +305,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not res:
             raise CloudTemporaryError("unknown response from drive on upload")
 
-        return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=None)
+        return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=None)
 
-    def create(self, path, file_like, metadata=None) -> 'ProviderInfo':
+    def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
             metadata = {} 
         gdrive_info = self.__prep_upload(path, metadata)
+
+        if self.exists_path(path):
+            raise CloudFileExistsError()
 
         ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024)
 
@@ -336,7 +337,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         log.debug("path cache %s", self._ids)
 
-        return ProviderInfo(oid=res['id'], hash=res['md5Checksum'], path=path)
+        return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path)
 
     def download(self, oid, file_like):
         req = self.client.files().get_media(fileId=oid)
@@ -388,7 +389,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                     q=query,
                     spaces='drive',
-                    fields='files(id, md5Checksum, parents, name, trashed)',
+                    fields='files(id, md5Checksum, parents, name, mimeType, trashed)',
                     pageToken=None)
         except CloudFileNotFoundError:
             if self._info_oid(oid):
@@ -406,11 +407,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         for ent in res['files']:
             fid = ent['id']
             pids = ent['parents']
-            fhash = ent['md5Checksum']
+            fhash = ent.get('md5Checksum')
             name = ent['name']
             trashed = ent.get('trashed', False)
+            if ent.get('mimeType') == self._folder_mime_type:
+                otype = DIRECTORY
+            else:
+                otype = FILE
             if not trashed:
-                ret.append(GDriveInfo(fid, fhash, None, pids=pids, name=name))
+                ret.append(GDriveInfo(otype, fid, fhash, None, pids=pids, name=name))
 
         log.debug("listdir %s -> %s", oid, ret)
         return ret
@@ -443,7 +448,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def exists_oid(self, oid):
         return self._info_oid(oid) is not None
 
-    def info_path(self, path) -> ProviderInfo:
+    def info_path(self, path) -> OInfo:
         parent_id = self.get_parent_id(path)
         _, name = self.split(path)
 
@@ -453,7 +458,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                     q=query,
                     spaces='drive',
-                    fields='files(id, md5Checksum, parents)',
+                    fields='files(id, md5Checksum, parents, mimeType)',
                     pageToken=None)
         except CloudFileNotFoundError:
             return None
@@ -463,13 +468,19 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         ent = res['files'][0]
 
+        log.debug("res is %s", res)
+
         oid = ent['id']
         pids = ent['parents']
         fhash = ent.get('md5Checksum')
+        if ent.get('mimeType') == self._folder_mime_type:
+            otype = DIRECTORY
+        else:
+            otype = FILE
 
         self._ids[path] = oid
 
-        return GDriveInfo(oid, fhash, path, pids=pids) 
+        return GDriveInfo(otype, oid, fhash, path, pids=pids) 
 
     def exists_path(self, path) -> bool:
         if path in self._ids:
@@ -511,13 +522,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid) -> ProviderInfo:
+    def info_oid(self, oid) -> OInfo:
         info = self._info_oid(oid)
         if info is None:
             return None
         # expensive
         path = self._path_oid(oid)
-        ret = ProviderInfo(info.oid, info.hash, path)
+        ret = OInfo(info.otype, info.oid, info.hash, path)
         log.debug("info oid ret: %s", ret)
         return ret
 
@@ -540,4 +551,4 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         else:
             otype = FILE
 
-        return GDriveInfo(oid, fhash, None, pids=pids, name=name, otype=otype)
+        return GDriveInfo(otype, oid, fhash, None, pids=pids, name=name)
