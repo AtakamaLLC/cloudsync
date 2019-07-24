@@ -28,10 +28,10 @@ def fixture_sync():
 
     def translate(to, path):
         if to == LOCAL:
-            return "/local/" + path.replace("/remote/", "")
+            return "/local" + path.replace("/remote", "")
 
         if to == REMOTE:
-            return "/remote/" + path.replace("/local/", "")
+            return "/remote" + path.replace("/local", "")
 
         raise ValueError()
 
@@ -234,21 +234,26 @@ def test_sync_rm(sync):
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
-@pytest.mark.skip(reason="no way of currently testing this")
 def test_sync_mkdir(sync):
+    local_dir1 = "/local"
     local_path1 = "/local/stuff"
+    remote_dir1 = "/remote"
     remote_path1 = "/remote/stuff"
 
-    oid = sync.providers[LOCAL].mkdir(local_path1)
+    local_dir_oid1 = sync.providers[LOCAL].mkdir(local_dir1)
+    local_path_oid1 = sync.providers[LOCAL].mkdir(local_path1)
 
     # inserts info about some local path
+    sync.syncs.update(LOCAL, DIRECTORY, path=local_dir1,
+                      oid=local_dir_oid1)
     sync.syncs.update(LOCAL, DIRECTORY, path=local_path1,
-                      oid=oid)
+                      oid=local_path_oid1)
 
+    sync.run_until_found((REMOTE, remote_dir1), timeout=1)
     sync.run_until_found((REMOTE, remote_path1), timeout=1)
 
-    sync.providers[LOCAL].rmdir(oid)
-    sync.syncs.update(LOCAL, FILE, oid, exists=False)
+    sync.providers[LOCAL].rmdir(local_path_oid1)
+    sync.syncs.update(LOCAL, FILE, local_path_oid1, exists=False)
 
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
 

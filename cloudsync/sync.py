@@ -252,11 +252,26 @@ class SyncManager(Runnable):
             sync[changed].exists = False
             return False
 
+    def mkdirs(self, prov, path):
+        log.debug("mkdirs %s", path)
+        try:
+            oid = prov.mkdir(path)
+        except CloudFileNotFoundError:
+            ppath, _ = prov.split(path)
+            log.debug("mkdirs parent, %s", ppath)
+            assert ppath != path
+            self.mkdirs(prov, ppath) 
+            try:
+                oid = prov.mkdir(path)
+            except CloudFileNotFoundError:
+                raise CloudFileExistsError("f'ed up mkdir")
+
     def mkdir_synced(self, changed, sync):
         synced = other_side(changed)
         try:
             translated_path = self.translate(synced, sync[changed].path)
-            oid = self.providers[synced].mkdir(translated_path)
+            log.debug("translated %s as path %s", sync[changed].path, translated_path)
+            oid = self.mkdirs(self.providers[synced], translated_path)
             log.debug("mkdir %s as path %s",
                       self.providers[synced].debug_name, translated_path)
             sync[synced].oid = oid
@@ -264,8 +279,8 @@ class SyncManager(Runnable):
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
         except CloudFileNotFoundError:
-            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
-                      self.providers[synced].debug_name)
+            log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
+                      self.providers[synced].debug_name, translated_path)
             raise NotImplementedError("TODO mkdir, and make syncs etc")
 
     def upload_synced(self, changed, sync):
