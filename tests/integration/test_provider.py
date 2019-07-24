@@ -356,8 +356,8 @@ def test_file_exists(provider: Provider):
 
     test_folder = os.urandom(8).hex()
     test_file = provider.temp_name()
-    oid_dir = provider.mkdir(test_folder)
-    info_file = provider.create(test_file, data())
+    # oid_dir = provider.mkdir(test_folder)
+    # info_file = provider.create(test_file, data())
     # Setup the initial state of the provider ==========================================
 
     # Test that operations on existent file system objects raise CloudExistsError
