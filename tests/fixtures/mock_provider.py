@@ -126,10 +126,12 @@ class MockProvider(Provider):
         parent_path = self.dirname(path)
         if parent_path != self.sep:
             parent_obj = self._get_by_path(parent_path)
-            if parent_obj is None or not parent_obj.exists or parent_obj.type != MockProvider.FSObject.DIR:
+            if parent_obj is None or not parent_obj.exists:
                 # perhaps this should separate "FileNotFound" and "non-folder parent exists"
                 # and raise different exceptions
                 raise CloudFileNotFoundError(parent_path)
+            if parent_obj.type != MockProvider.FSObject.DIR:
+                raise CloudFileExistsError(parent_path)
 
     def events(self):
         self._api()
@@ -171,8 +173,9 @@ class MockProvider(Provider):
         log.debug("listdir %s", ret)
         return ret
 
-    def create(self, path, file_like) -> 'OInfo':
+    def create(self, path, file_like, Metadata) -> 'OInfo':
         # TODO: check to make sure the folder exists before creating a file in it
+        # TODO: store the metadata
         self._api()
         contents = file_like.read()
         file = self._get_by_path(path)

@@ -381,44 +381,57 @@ def test_file_not_found(provider):
 
 
 def test_file_exists(provider: Provider):
-    # Setup the initial state of the provider ==========================================
+    # Start setup the initial state of the provider ==========================================
     dat = os.urandom(32)
 
     def data(da=dat):
         return BytesIO(da)
 
-    test_folder = os.urandom(8).hex()
-    test_file = provider.temp_name()
-    # oid_dir = provider.mkdir(test_folder)
-    # info_file = provider.create(test_file, data())
-    # Setup the initial state of the provider ==========================================
+    existing_folder_name = "/" + os.urandom(8).hex()
+    existing_file_name = provider.temp_name()
+    existing_folder_oid = provider.mkdir(existing_folder_name)
+    existing_file_info = provider.create(existing_file_name, data(), None)
+    # End setup the initial state of the provider ==========================================
 
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
-    # api functions to check for FileExists:
-    #   mkdir,
-    #       where target path has a parent folder that already exists as a file, raises FEx
-    #       where target path exists as a file, raises FEx
-    #       where target path exists as a folder, does not raise
-    #       creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
-    #       creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
-    #   upload,
-    #       where target OID is a folder, raises FEx
-    #   create,
-    #       where target path exists, raises FEx
-    #       creating a file, deleting it, then creating a file at the same path, should not raise an FEx
-    #       creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
-    #       where target path has a parent folder that already exists as a file, raises FEx
-    #   rename,
-    #       rename over empty folder succeeds
-    #       rename over non-empty folder raises FEx
-    #       target has a parent folder that already exists as a file, raises FEx
-    #       renaming file over a folder, raises FEx
-    #       renaming a folder over a file, raises FEx
-    #       create a file, delete it, then rename a file to the same path as the deleted, does not raise
-    #       create a folder, delete it, then rename file to the same path as the deleted, does not raise
-    #       create a file, delete it, then rename a folder to the same path as the deleted, does not raise
-    #       create a folder, delete it, then rename folder to the same path as the deleted, does not raise
+    # api methods to check for FileExists: mkdir, upload, create, rename
+    # Possible issues to potentially check each of the vulnerable api methods:
+    #       target path has a component in the parent folder that already exists as a file
+    #       target path exists
+    #       target path exists, but the type of the existing object at that location is different from expected
+    #       target path exists, but the type of the existing object at that location is what was expected
+    #       target path existed, but is currently trashed, different type as source
+    #       target path existed, but is currently trashed, same type as source
+    #
+
+    # The enumerated tests:
+    #   mkdir: where target path has a parent folder that already exists as a file, raises FEx
+    with pytest.raises(CloudFileExistsError):
+        provider.mkdir(existing_file_name + "/junk")
+
+    #   mkdir: where target path exists as a file, raises FEx
+    with pytest.raises(CloudFileExistsError):
+        provider.mkdir(existing_file_name)
+
+    #   mkdir: where target path exists as a folder, does not raise
+    #   mkdir: creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
+    #   mkdir: creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
+    #   upload: where target OID is a folder, raises FEx
+    #   create: where target path exists, raises FEx
+    #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
+    #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
+    #   create: where target path has a parent folder that already exists as a file, raises FEx
+    #   rename: rename folder over empty folder succeeds
+    #   rename: rename folder over non-empty folder raises FEx
+    #   rename: target has a parent folder that already exists as a file, raises FEx
+    #   rename: renaming file over empty folder, raises FEx
+    #   rename: renaming file over non-empty folder, raises FEx
+    #   rename: renaming a folder over a file, raises FEx
+    #   rename: create a file, delete it, then rename a file to the same path as the deleted, does not raise
+    #   rename: create a folder, delete it, then rename file to the same path as the deleted, does not raise
+    #   rename: create a file, delete it, then rename a folder to the same path as the deleted, does not raise
+    #   rename: create a folder, delete it, then rename folder to the same path as the deleted, does not raise
 
 
 
