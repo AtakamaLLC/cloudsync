@@ -29,7 +29,7 @@ class GDriveInfo(ProviderInfo):
         self.otype = otype
         return self
 
-class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods
+class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     allow_renames_over_existing = False
     require_parent_folder = True
@@ -239,11 +239,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if 'newStartPageToken' in response:
                 self.__cursor = response.get('newStartPageToken')
 
-    def walk(self, since=None):
+    def _walk(self, oid):
         for ent in self.listdir(self.sync_root_id):
             event = Event(ent.otype, ent.oid, ent.path, None, True, time.time())
             log.debug("walk %s", event)
             yield event
+            if ent.otype == DIRECTORY:
+                yield from self._walk(ent.oid)
+ 
+    def walk(self, since=None):
+        yield from self._walk(self.sync_root_id)
         self.walked = True
 
     def __prep_upload(self, path, metadata):
