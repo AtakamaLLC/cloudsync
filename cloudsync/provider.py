@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 
-from typing import NamedTuple
+from typing import NamedTuple, Any
 
 import re
 
 
 class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
     oid: str                               # file id       (better name: fid)
-    hash: bytes                            # file hash     (better name: fhash)
+    hash: Any                             # file hash     (better name: fhash)
     path: str                              # path
 
 
@@ -15,8 +15,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
     case_sensitive = ...                # TODO: implement support for this
-    allow_renames_over_existing = ...   # TODO: move this to the fixture, this is only needed for testing
     require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
+    auto_vivify_parent_folders = ...    # TODO: move this to the fixture, this is only needed for testing
 
     # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
     def __init__(self, sync_root):
@@ -81,6 +81,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     @abstractmethod
     def listdir(self, oid) -> list:
         ...
+
+#    @abstractmethod
+#    def hash_oid(self, oid) -> Any:
+#        ...
 
     @abstractmethod
     def info_path(self, path) -> ProviderInfo:

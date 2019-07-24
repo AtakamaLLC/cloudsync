@@ -332,7 +332,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return ProviderInfo(oid=res.id, hash=None, path=path)
 
     def delete(self, oid):
-        self._api('files_delete_v2', oid)
+        try:
+            self._api('files_delete_v2', oid)
+        except CloudFileNotFoundError:
+            return
 
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
