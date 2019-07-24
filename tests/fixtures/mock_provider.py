@@ -6,7 +6,8 @@ from typing import Dict, List
 from re import split
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider, ProviderInfo
+from cloudsync.provider import Provider
+from cloudsync.types import OInfo, OType
 from cloudsync import CloudFileNotFoundError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,13 @@ class MockProvider(Provider):
             self.exists = True
             self.type = object_type
             self.update()
+
+        @property
+        def otype(self):
+            if self.type == self.FILE:
+                return OType.FILE
+            else:
+                return OType.DIRECTORY
 
         def hash(self) -> str:
             if self.type == self.DIR:
@@ -74,8 +82,8 @@ class MockProvider(Provider):
         self._latest_event = -1
         self._cursor = -1
         self._type_map = {
-            MockProvider.FSObject.FILE: Event.TYPE_FILE,
-            MockProvider.FSObject.DIR: Event.TYPE_DIRECTORY,
+            MockProvider.FSObject.FILE: OType.FILE,
+            MockProvider.FSObject.DIR: OType.DIRECTORY,
         }
 
     def _register_event(self, action, target_object):
@@ -141,18 +149,18 @@ class MockProvider(Provider):
             raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
         file.contents = contents
         self._register_event(MockProvider.MockEvent.ACTION_UPDATE, file)
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, path) -> 'List[ProviderInfo]':
+    def listdir(self, path) -> 'List[OInfo]':
         ret = []
         for obj in self._fs_by_oid.values():
             if obj.exists:
                 if self.is_subpath(path, obj.path, strict=True):
-                    ret.append(ProviderInfo(oid=obj.oid, hash=obj.hash(), path=obj.path))
+                    ret.append(OInfo(otype=obj.otype,oid=obj.oid, hash=obj.hash(), path=obj.path))
         log.debug("listdir %s", ret)
         return ret
 
-    def create(self, path, file_like) -> 'ProviderInfo':
+    def create(self, path, file_like) -> 'OInfo':
         # TODO: check to make sure the folder exists before creating a file in it
         self._api()
         contents = file_like.read()
@@ -172,7 +180,7 @@ class MockProvider(Provider):
         file.contents = contents
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
         self._api()
@@ -269,14 +277,14 @@ class MockProvider(Provider):
         file: MockProvider.FSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid):
         self._api()
         file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             raise CloudFileNotFoundError(oid)
-        return ProviderInfo(oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.type,oid=file.oid, hash=file.hash(), path=file.path)
 
     def hash_oid(self, oid):
         file = self._fs_by_oid.get(oid, None)

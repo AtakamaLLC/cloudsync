@@ -9,20 +9,19 @@ import arrow
 
 from dropbox import Dropbox, exceptions, files
 
-from cloudsync import Provider, ProviderInfo, DIRECTORY, FILE, Event
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
 
-class DropboxInfo(ProviderInfo):
+class DropboxInfo(OInfo):
     name = ""
 
-    def __new__(cls, *a, name=None, otype=None):
+    def __new__(cls, *a, name=None):
         self = super().__new__(cls, *a)
         self.name = name
-        self.otype = otype
         return self
 
 
@@ -270,12 +269,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 ohash = res.content_hash
             path = res.path_display
             oid = res.id
-            yield DropboxInfo(oid, ohash, path, otype=otype)
+            yield DropboxInfo(otype, oid, ohash, path)
 
     def create(self, path, file_like, metadata=None):
         return self.upload(path, file_like, metadata)
 
-    def upload(self, oid, file_like, metadata=None) -> 'ProviderInfo':
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         metadata = metadata or {}
 
         file_like.seek(0, io.SEEK_END)
@@ -312,15 +311,16 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                          data, cursor)
                     cursor.offset += len(data)
 
-        log.debug("dropbox res %s", res)
+        if res is None:
+            raise CloudFileExistsError()
 
-        return ProviderInfo(oid=res.id, hash=res.content_hash, path=res.path_display)
+        return OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display)
 
     def download(self, oid, file_like):
         res, content = self._api('files_download', oid)
         for data in content.iter_content(self._upload_block_size):
             file_like.write(data)
-        return ProviderInfo(oid=oid, hash=res.content_hash, path=res.path_display)
+        return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
 
     def rename(self, oid, path):
         self._api('files_move_v2', oid, path)
@@ -329,7 +329,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         res = self._api('files_create_folder_v2', path)
         log.debug("dbx mkdir %s", res)
         res = res.metadata
-        return ProviderInfo(oid=res.id, hash=None, path=path)
+        return OInfo(otype=DIRECTORY, oid=res.id, hash=None, path=path)
 
     def delete(self, oid):
         self._api('files_delete_v2', oid)
@@ -337,7 +337,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
 
-    def info_path(self, path) -> ProviderInfo:
+    def info_path(self, path) -> OInfo:
         try:
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
@@ -351,14 +351,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 otype = FILE
                 fhash = res.content_hash
 
-            return DropboxInfo(oid, fhash, path, otype=otype)
+            return DropboxInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None
 
     def exists_path(self, path) -> bool:
         return self.info_path(path) is not None
 
-    def info_oid(self, oid) -> ProviderInfo:
+    def info_oid(self, oid) -> OInfo:
         res = self._api('files_get_metadata', oid)
         log.debug("res info oid %s", res)
 
@@ -371,4 +371,4 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             otype = FILE
             fhash = res.content_hash
 
-        return DropboxInfo(oid, fhash, path, otype=otype)
+        return DropboxInfo(otype, oid, fhash, path)

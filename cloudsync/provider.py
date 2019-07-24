@@ -1,15 +1,8 @@
 from abc import ABC, abstractmethod
 
-from typing import NamedTuple
-
 import re
 
-
-class ProviderInfo(NamedTuple):             # todo, rename to FileInfo
-    oid: str                               # file id       (better name: fid)
-    hash: bytes                            # file hash     (better name: fhash)
-    path: str                              # path
-
+from cloudsync.types import OInfo
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
@@ -51,7 +44,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def create(self, path, file_like, metadata) -> 'ProviderInfo':
+    def create(self, path, file_like, metadata) -> 'OInfo':
         ...
 
     @abstractmethod
@@ -83,17 +76,17 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def info_path(self, path) -> ProviderInfo:
+    def info_path(self, path) -> OInfo:
         ...
 
     @abstractmethod
-    def info_oid(self, oid) -> ProviderInfo:
+    def info_oid(self, oid) -> OInfo:
         ...
 
     def join(self, paths):
         res = ""
         for path in paths:
-            if path is None:
+            if path is None or path == self.sep:
                 continue
             res = res + self.sep + path.strip(self.sep)
         return res or self.sep

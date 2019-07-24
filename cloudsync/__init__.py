@@ -32,6 +32,7 @@ from .event import *
 from .sync import *
 from .exceptions import *
 from .eventmanager import *
+from .types import *
 
 from .command import main
 
