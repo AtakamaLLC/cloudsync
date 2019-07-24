@@ -140,10 +140,10 @@ def test_mkdir(util, provider: Provider):
     assert False
 
 
-def test_walk(util, mock: Provider):
-    provider = mock
+def test_walk(util, provider: Provider):
     temp = BytesIO(os.urandom(32))
-    info = provider.create("/dest", temp)
+    dest = provider.temp_name("dest")
+    info = provider.create(dest, temp)
     assert not provider.walked
 
     got_event = False
@@ -155,7 +155,7 @@ def test_walk(util, mock: Provider):
         path = e.path
         if path is None:
             path = provider.info_oid(e.oid).path
-        assert path == "/dest"
+        assert path == dest
         assert e.mtime
         assert e.exists
 

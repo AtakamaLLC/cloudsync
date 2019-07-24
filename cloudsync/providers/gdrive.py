@@ -22,13 +22,14 @@ log = logging.getLogger(__name__)
 class GDriveInfo(ProviderInfo):
     pids = []
     name = ""
-    def __new__(cls, *a, pids=[], name=None):
+    def __new__(cls, *a, pids=[], name=None, otype=None):
         self = super().__new__(cls, *a)
         self.pids = pids
         self.name = name
+        self.otype = otype
         return self
 
-class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods
+class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     allow_renames_over_existing = False
     require_parent_folder = True
@@ -238,8 +239,17 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if 'newStartPageToken' in response:
                 self.__cursor = response.get('newStartPageToken')
 
+    def _walk(self, oid):
+        for ent in self.listdir(oid):
+            event = Event(ent.otype, ent.oid, ent.path, None, True, time.time())
+            log.debug("walk %s", event)
+            yield event
+            if ent.otype == DIRECTORY:
+                yield from self._walk(ent.oid)
+ 
     def walk(self, since=None):
-        ...
+        yield from self._walk(self.sync_root_id)
+        self.walked = True
 
     def __prep_upload(self, path, metadata):
         # modification time
@@ -380,14 +390,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         except CloudFileNotFoundError:
             if self._info_oid(oid):
                 return []
-            log.debug("OID GONE %s", oid)
+            log.debug("listdir oid gone %s", oid)
             raise
 
         if not res:
             return []
 
 
-        log.debug("got res %s", res)
+        log.debug("listdir got res %s", res)
 
         ret = []
         for ent in res['files']:
@@ -399,7 +409,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if not trashed:
                 ret.append(GDriveInfo(fid, fhash, None, pids=pids, name=name))
 
-        log.debug("listdir %s", ret)
+        log.debug("listdir %s -> %s", oid, ret)
         return ret
  
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
@@ -499,13 +509,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         info = self._info_oid(oid)
         # expensive
         path = self._path_oid(oid)
-        ProviderInfo(info.oid, info.hash, path)
+        ret = ProviderInfo(info.oid, info.hash, path)
+        log.debug("info oid ret: %s", ret)
+        return ret
 
     def _info_oid(self, oid) -> GDriveInfo:
         try:
             res = self._api('files', 'get',
                     fileId=oid,
-                    fields='name, md5Checksum, parents',
+                    fields='name, md5Checksum, parents, mimeType',
                     )
         except CloudFileNotFoundError:
             return None
@@ -515,5 +527,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         pids = res.get('parents')
         fhash = res.get('md5Checksum')
         name = res.get('name')
+        if res.get('mimeType') == self._folder_mime_type:
+            otype = DIRECTORY
+        else:
+            otype = FILE
 
-        return GDriveInfo(oid, fhash, None, pids=pids, name=name)
+        return GDriveInfo(oid, fhash, None, pids=pids, name=name, otype=otype)
