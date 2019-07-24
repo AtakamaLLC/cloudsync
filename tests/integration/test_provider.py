@@ -57,24 +57,32 @@ class ProviderHelper:
             except CloudTemporaryError:
                 log.info("api retry %s %s %s", func, ar, kw)
 
-class TestGDriveProvider(GDriveProvider, ProviderHelper):
+class GDriveProviderHelper(GDriveProvider, ProviderHelper):
     def __init__(self, *ar, **kw):
         GDriveProvider.__init__(self, *ar, **kw)
 
     def _api(self, *ar, **kw):
         return self.api_retry(GDriveProvider._api, *ar, **kw)
 
-class TestDropboxProvider(DropboxProvider, ProviderHelper):
+class DropboxProviderHelper(DropboxProvider, ProviderHelper):
     def __init__(self, *ar, **kw):
         DropboxProvider.__init__(self, *ar, **kw)
 
     def _api(self, *ar, **kw):
         return self.api_retry(DropboxProvider._api, *ar, **kw)
 
+class MockProviderHelper(MockProvider, ProviderHelper):
+    def __init__(self, *ar, **kw):
+        MockProvider.__init__(self, *ar, **kw)
+
+    def _api(self, *ar, **kw):
+        return self.api_retry(MockProvider._api, *ar, **kw)
+
+
 def gdrive(gdrive_creds):
     if gdrive_creds:
         test_root = "/" + os.urandom(16).hex()
-        prov = TestGDriveProvider(test_root)
+        prov = GDriveProviderHelper(test_root)
         prov.event_timeout = 60
         prov.event_sleep = 2
         prov.connect(gdrive_creds)
@@ -85,7 +93,7 @@ def gdrive(gdrive_creds):
 def dropbox(dropbox_creds):
     if dropbox_creds:
         test_root = "/" + os.urandom(16).hex()
-        prov = TestDropboxProvider(test_root)
+        prov = DropboxProviderHelper(test_root)
         prov.event_timeout = 20
         prov.event_sleep = 2
         prov.connect(dropbox_creds)
@@ -95,7 +103,7 @@ def dropbox(dropbox_creds):
 
 @pytest.fixture
 def mock():
-    ret = MockProvider("/")
+    ret = MockProviderHelper("/")
     ret.event_timeout = 0
     ret.event_sleep = 0
     return ret
