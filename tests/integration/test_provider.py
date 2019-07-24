@@ -14,13 +14,78 @@ from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
+class ProviderHelper:
+    def temp_name(self, name="tmp", *, folder=None):
+        fname = self.join((folder or self.sync_root, os.urandom(16).hex() + "." + name))
+        return fname
+
+    def events_poll(self, timeout=None):
+        if timeout is None:
+            timeout = self.event_timeout
+
+        if timeout == 0:
+            yield from self.events()
+            return
+
+        for _ in time_helper(timeout, sleep=self.event_sleep, multiply=2):
+            got = False
+            for e in self.events():
+                yield e
+                got = True
+            if got:
+                break
+
+    def test_cleanup(self):
+        # remove everything in the sync_root
+        info = self.info_path(self.sync_root)
+        if info:
+            for info in self.listdir(info.oid):
+                self.delete(info.oid)
+
+        info = self.info_path(self.sync_root)
+        if info:
+            self.delete(info.oid)
+
+    def api_retry(self, func, *ar, **kw):
+        # the cloud providers themselves should *not* have their own backoff logic
+        # rather, they should punt rate limit and temp errors to the sync system
+        # since we're not testing the sync system here, we need to make our own
+
+        for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
+            try:
+                return func(self, *ar, **kw)
+            except CloudTemporaryError:
+                log.info("api retry %s %s %s", func, ar, kw)
+
+class GDriveProviderHelper(GDriveProvider, ProviderHelper):
+    def __init__(self, *ar, **kw):
+        GDriveProvider.__init__(self, *ar, **kw)
+
+    def _api(self, *ar, **kw):
+        return self.api_retry(GDriveProvider._api, *ar, **kw)
+
+class DropboxProviderHelper(DropboxProvider, ProviderHelper):
+    def __init__(self, *ar, **kw):
+        DropboxProvider.__init__(self, *ar, **kw)
+
+    def _api(self, *ar, **kw):
+        return self.api_retry(DropboxProvider._api, *ar, **kw)
+
+class MockProviderHelper(MockProvider, ProviderHelper):
+    def __init__(self, *ar, **kw):
+        MockProvider.__init__(self, *ar, **kw)
+
+    def _api(self, *ar, **kw):
+        return self.api_retry(MockProvider._api, *ar, **kw)
+
+
 def gdrive(gdrive_creds):
     if gdrive_creds:
         test_root = "/" + os.urandom(16).hex()
-        prov = GDriveProvider(test_root)
-        prov.connect(gdrive_creds)
+        prov = GDriveProviderHelper(test_root)
         prov.event_timeout = 60
         prov.event_sleep = 2
+        prov.connect(gdrive_creds)
         return prov
     else:
         return None
@@ -28,17 +93,17 @@ def gdrive(gdrive_creds):
 def dropbox(dropbox_creds):
     if dropbox_creds:
         test_root = "/" + os.urandom(16).hex()
-        prov = DropboxProvider(test_root)
-        prov.connect(dropbox_creds)
+        prov = DropboxProviderHelper(test_root)
         prov.event_timeout = 20
         prov.event_sleep = 2
+        prov.connect(dropbox_creds)
         return prov
     else:
         return None
 
 @pytest.fixture
 def mock():
-    ret = MockProvider("/")
+    ret = MockProviderHelper("/")
     ret.event_timeout = 0
     ret.event_sleep = 0
     return ret
@@ -56,42 +121,9 @@ def provider(request, gdrive_creds, dropbox_creds, mock):
     if not prov:
         pytest.skip("unsupported provider")
 
-    prov.test_files = []
-
-    def temp_name(name="tmp", *, folder=None):
-        fname = prov.join((folder or prov.sync_root, os.urandom(16).hex() + "." + name))
-        prov.test_files.append(fname)
-        return fname
-
-    # add a provider-specific temp name generator
-    prov.temp_name = temp_name
-
-    def events_poll(timeout=prov.event_timeout):
-        if timeout == 0:
-            yield from prov.events()
-            return
-
-        for _ in time_helper(timeout, sleep=prov.event_sleep, multiply=2):
-            got = False
-            for e in prov.events():
-                yield e
-                got = True
-            if got:
-                break
-
-    prov.events_poll = events_poll
-
     yield prov
 
-    # remove everything in the sync_root
-    info = prov.info_path(prov.sync_root)
-    if info:
-        for info in prov.listdir(info.oid):
-            prov.delete(info.oid)
-
-    info = prov.info_path(prov.sync_root)
-    if info:
-        prov.delete(info.oid)
+    prov.test_cleanup()
 
 def test_join(mock):
     assert "/a/b/c" == mock.join(("a", "b", "c"))
