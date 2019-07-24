@@ -344,25 +344,50 @@ def test_file_not_found(provider):
     with pytest.raises(CloudFileNotFoundError):
         provider.listdir(test_path_made_up)
 
-    #   check for other places in the code where FNF is raised and test those
-    #
-    #
+    # Google drive raises FNF when it can't find the root... can we test for that here?
 
 
-def test_file_exists(provider):
+def test_file_exists(provider: Provider):
+    # Setup the initial state of the provider ==========================================
+    dat = os.urandom(32)
+
+    def data(da=dat):
+        return BytesIO(da)
+
+    test_folder = os.urandom(8).hex()
+    test_file = provider.temp_name()
+    oid_dir = provider.mkdir(test_folder)
+    info_file = provider.create(test_file, data())
+    # Setup the initial state of the provider ==========================================
+
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
     # api functions to check for FileExists:
-    #   mkdir, where target OID is a file, raises FEx
+    #   mkdir,
+    #       where target path has a parent folder that already exists as a file, raises FEx
+    #       where target path exists as a file, raises FEx
+    #       where target path exists as a folder, does not raise
+    #       creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
+    #       creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
     #   upload,
     #       where target OID is a folder, raises FEx
     #   create,
     #       where target path exists, raises FEx
+    #       creating a file, deleting it, then creating a file at the same path, should not raise an FEx
     #       creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
+    #       where target path has a parent folder that already exists as a file, raises FEx
     #   rename,
-    #       should raise FEx when the target of the rename already exists, conditionally
-    #       raises FEx (always) if the target of the rename exists and is not the same type as the source obj
+    #       rename over empty folder succeeds
+    #       rename over non-empty folder raises FEx
+    #       target has a parent folder that already exists as a file, raises FEx
+    #       renaming file over a folder, raises FEx
+    #       renaming a folder over a file, raises FEx
+    #       create a file, delete it, then rename a file to the same path as the deleted, does not raise
+    #       create a folder, delete it, then rename file to the same path as the deleted, does not raise
+    #       create a file, delete it, then rename a folder to the same path as the deleted, does not raise
+    #       create a folder, delete it, then rename folder to the same path as the deleted, does not raise
 
-    pass
 
+
+# TODO: test that renaming A over B replaces B's OID with A's OID, and B's OID is trashed
 

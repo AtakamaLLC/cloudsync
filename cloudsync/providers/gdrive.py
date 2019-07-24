@@ -30,7 +30,6 @@ class GDriveInfo(ProviderInfo):
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods
     case_sensitive = False
-    allow_renames_over_existing = False
     require_parent_folder = True
 
     _scope = "https://www.googleapis.com/auth/drive"

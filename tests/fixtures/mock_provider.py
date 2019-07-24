@@ -61,12 +61,11 @@ class MockProvider(Provider):
                        }
             return ret_val
 
-    def __init__(self, sync_root="/", case_sensitive=True, allow_renames_over_existing=True, sep="/"):
+    def __init__(self, sync_root="/", case_sensitive=True, sep="/"):
         super().__init__(sync_root)
         # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
         #  These will be accessed in a thread by the event manager
         self.case_sensitive = case_sensitive
-        self.allow_renames_over_existing = allow_renames_over_existing
         self.auto_vivify_parent_folders = False
         self.sep = sep
         self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
@@ -196,18 +195,12 @@ class MockProvider(Provider):
         if not (object_to_rename and object_to_rename.exists):
             raise CloudFileNotFoundError(oid)
         possible_conflict = self._get_by_path(new_path)
-        if not self.allow_renames_over_existing and self.paths_match(object_to_rename.path, new_path):
-            raise CloudFileExistsError(new_path)
         self._verify_parent_folder_exists(new_path)
         if possible_conflict and possible_conflict.exists:
             if possible_conflict.type != object_to_rename.type:
                 log.debug("rename %s:%s conflicts with existing object of another type", oid, object_to_rename.path)
                 raise CloudFileExistsError(new_path)
-            if not self.allow_renames_over_existing:
-                log.debug("rename %s:%s conflicts with existing", oid, object_to_rename.path)
-                raise CloudFileExistsError(new_path)
-            else:
-                self.delete(possible_conflict.oid)
+            self.delete(possible_conflict.oid)
         if object_to_rename.type == MockProvider.FSObject.FILE:
             self._rename_single_object(object_to_rename, new_path)
         else:  # object to rename is a directory

@@ -15,7 +15,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
     case_sensitive = ...                # TODO: implement support for this
-    allow_renames_over_existing = ...   # TODO: move this to the fixture, this is only needed for testing
     require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
     auto_vivify_parent_folders = ...    # TODO: move this to the fixture, this is only needed for testing
 
