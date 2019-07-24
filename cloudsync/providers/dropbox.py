@@ -173,8 +173,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 log.debug("f*ed up api error: %s", e)
                 if "never created" in str(e):
                     raise CloudFileNotFoundError()
-                else:
-                    raise
+                raise
             except requests.exceptions.ConnectionError as e:
                 log.exception('api error handled exception %s:%s',
                               "dropbox", e.__class__.__name__)
