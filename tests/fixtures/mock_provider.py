@@ -254,11 +254,6 @@ class MockProvider(Provider):
         file = self._get_by_path(path)
         return file is not None and file.exists
 
-    @staticmethod
-    def hash_data(file_like) -> Any:
-        contents = file_like.read()
-        return md5(contents).digest()
-
     def hash_oid(self, oid) -> Any:
         file = self._fs_by_oid.get(oid, None)
         if file and file.exists:

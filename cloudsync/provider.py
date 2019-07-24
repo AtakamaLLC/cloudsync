@@ -82,15 +82,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def listdir(self, oid) -> list:
         ...
 
-    @staticmethod
-    @abstractmethod
-    def hash_data(file_like) -> Any:
-        ...
-
-    # TODO: hash_oid
-    # @abstractmethod
-    # def hash_oid(self, oid) -> Any:
-    #     ...
+#    @abstractmethod
+#    def hash_oid(self, oid) -> Any:
+#        ...
 
     @abstractmethod
     def info_path(self, path) -> ProviderInfo:

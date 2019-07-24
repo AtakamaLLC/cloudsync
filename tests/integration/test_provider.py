@@ -4,10 +4,13 @@ import pytest
 from io import BytesIO
 from unittest.mock import patch
 
+import cloudsync
+
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError
 from tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
-from cloudsync.providers import GDriveProvider
+
+from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
@@ -22,8 +25,16 @@ def gdrive(gdrive_creds):
     else:
         return None
 
-def dropbox():
-    return None
+def dropbox(dropbox_creds):
+    if dropbox_creds:
+        test_root = "/" + os.urandom(16).hex()
+        prov = DropboxProvider(test_root)
+        prov.connect(dropbox_creds)
+        prov.event_timeout = 20
+        prov.event_sleep = 2
+        return prov
+    else:
+        return None
 
 @pytest.fixture
 def mock():
@@ -34,14 +45,11 @@ def mock():
 
 
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
-def provider(request, gdrive_creds, mock):
-    if request.param in ('dropbox'):
-        pytest.skip("unsupported configuration")
-
+def provider(request, gdrive_creds, dropbox_creds, mock):
     if request.param == 'gdrive':
         prov = gdrive(gdrive_creds)
     elif request.param == 'dropbox':
-        prov = dropbox()
+        prov = dropbox(dropbox_creds)
     elif request.param == 'mock':
         prov = mock
 
@@ -94,8 +102,6 @@ def test_create_upload_download(util, provider):
     def data():
         return BytesIO(dat)
 
-    hash0 = provider.hash_data(data())
-
     dest = provider.temp_name("dest")
 
     info1 = provider.create(dest, data())
@@ -103,7 +109,6 @@ def test_create_upload_download(util, provider):
     info2 = provider.upload(info1.oid, data())
 
     assert info1.oid == info2.oid
-    assert info1.hash == hash0
     assert info1.hash == info2.hash
 
     assert provider.exists_path(dest)
@@ -112,7 +117,7 @@ def test_create_upload_download(util, provider):
     provider.download(info2.oid, dest)
 
     dest.seek(0)
-    assert info1.hash == provider.hash_data(dest)
+    assert dest.getvalue() == dat
 
 
 def test_rename(util, provider: Provider):
@@ -121,8 +126,6 @@ def test_rename(util, provider: Provider):
 
     def data():
         return BytesIO(dat)
-
-    hash0 = provider.hash_data(data())
 
     dest = provider.temp_name("dest")
 
@@ -152,6 +155,8 @@ def test_walk(util, provider: Provider):
         got_event = True
         if e is None:
             break
+        if e.otype == cloudsync.DIRECTORY:
+            continue
         assert e.oid == info.oid
         path = e.path
         if path is None:
@@ -193,10 +198,10 @@ def test_event_basic(util, provider: Provider):
     event_count = 0
     for e in provider.events_poll():
         log.debug("event %s", e)
-        received_event = e
         # you might get events for the root folder here or other setup stuff
         if not e.path or e.path == dest:
             event_count += 1
+            received_event = e
 
     assert event_count == 1
     assert received_event is not None
@@ -296,8 +301,17 @@ def test_file_not_found(provider):
     #       to a deleted file raises FNF
     #       to a made up oid raises FNF
     # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
-    with pytest.raises(CloudFileNotFoundError):
+    try:
         provider.upload(test_oid_deleted, data())
+        assert provider.exists_path(test_path_deleted) is True
+        re_delete = True
+    except CloudFileNotFoundError:
+        re_delete = False
+        pass
+    
+    if re_delete:
+        provider.delete(test_oid_deleted)
+
     with pytest.raises(CloudFileNotFoundError):
         provider.upload(test_oid_made_up, data())
 
