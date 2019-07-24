@@ -2,6 +2,7 @@ import time
 import logging
 import threading
 from ssl import SSLError
+import json
 
 import arrow
 from apiclient.discovery import build   # pylint: disable=import-error
@@ -133,14 +134,37 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.disconnect()
                 raise CloudTokenError()
             except HttpError as e:
+                from googleapiclient.http import _should_retry_response  # Yuck!
+
+                # gets a default something (actually the message, not the reason) using their secret interface
+                reason = e._get_reason()
+
+                # parses the JSON of the content to get the reason from where it really lives in the content
+                try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
+                    data = json.loads(e.content.decode('utf-8'))
+                    if isinstance(data, dict):
+                        reason = data['error']['errors'][0]['reason']
+                    else:
+                        reason = data[0]['error']['errors']['reason']
+                except (UnicodeDecodeError, ValueError, KeyError):
+                    log.warning('Invalid JSON content from response: %s', e.content)
+
                 if str(e.resp.status) == '404':
                     raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % (
                         resource, method, kwargs
                     ))
-                if (str(e.resp.status) == '403' and str(e.resp.reason) == 'Forbidden') or str(e.resp.status) == '429':
+
+                if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
+                    raise CloudFileExistsError("Parent Not A Folder")
+
+                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
-                
-                raise CloudTemporaryError("unknown error %s" % e)
+
+                should_retry = _should_retry_response(e.resp.status, e.content)
+                if should_retry:
+                    raise CloudTemporaryError("unknown error %s" % e)
+                else:
+                    raise Exception("unknown error %s" % e)
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
@@ -421,6 +445,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return ret
  
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
+        if self.exists_path(path):
+            raise CloudFileExistsError()
         pid = self.get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {
@@ -434,6 +460,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 body=file_metadata, fields='id')
         fileid = res.get('id')
         self._ids[path] = fileid
+        return fileid
 
     def delete(self, oid):
         try:

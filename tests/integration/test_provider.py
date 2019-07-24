@@ -54,8 +54,8 @@ class ProviderHelper:
         for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
             try:
                 return func(self, *ar, **kw)
-            except CloudTemporaryError:
-                log.info("api retry %s %s %s", func, ar, kw)
+            except CloudTemporaryError as e:
+                log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
 
 class GDriveProviderHelper(GDriveProvider, ProviderHelper):
     def __init__(self, *ar, **kw):
