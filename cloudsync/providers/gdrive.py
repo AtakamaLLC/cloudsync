@@ -240,7 +240,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.__cursor = response.get('newStartPageToken')
 
     def _walk(self, oid):
-        for ent in self.listdir(self.sync_root_id):
+        for ent in self.listdir(oid):
             event = Event(ent.otype, ent.oid, ent.path, None, True, time.time())
             log.debug("walk %s", event)
             yield event
