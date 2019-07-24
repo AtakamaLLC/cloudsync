@@ -14,10 +14,48 @@ from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
+class TestProvider:
+    def temp_name(self, name="tmp", *, folder=None):
+        fname = self.join((folder or self.sync_root, os.urandom(16).hex() + "." + name))
+        return fname
+
+    def events_poll(self, timeout=None):
+        if timeout is None:
+            timeout = self.event_timeout
+
+        if timeout == 0:
+            yield from self.events()
+            return
+
+        for _ in time_helper(timeout, sleep=self.event_sleep, multiply=2):
+            got = False
+            for e in self.events():
+                yield e
+                got = True
+            if got:
+                break
+
+    def test_cleanup(self):
+        # remove everything in the sync_root
+        info = self.info_path(self.sync_root)
+        if info:
+            for info in self.listdir(info.oid):
+                self.delete(info.oid)
+
+        info = self.info_path(self.sync_root)
+        if info:
+            self.delete(info.oid)
+
+class TestGDriveProvider(GDriveProvider, TestProvider):
+    pass
+
+class TestDropboxProvider(DropboxProvider, TestProvider):
+    pass
+
 def gdrive(gdrive_creds):
     if gdrive_creds:
         test_root = "/" + os.urandom(16).hex()
-        prov = GDriveProvider(test_root)
+        prov = TestGDriveProvider(test_root)
         prov.connect(gdrive_creds)
         prov.event_timeout = 60
         prov.event_sleep = 2
@@ -28,7 +66,7 @@ def gdrive(gdrive_creds):
 def dropbox(dropbox_creds):
     if dropbox_creds:
         test_root = "/" + os.urandom(16).hex()
-        prov = DropboxProvider(test_root)
+        prov = TestDropboxProvider(test_root)
         prov.connect(dropbox_creds)
         prov.event_timeout = 20
         prov.event_sleep = 2
@@ -56,42 +94,9 @@ def provider(request, gdrive_creds, dropbox_creds, mock):
     if not prov:
         pytest.skip("unsupported provider")
 
-    prov.test_files = []
-
-    def temp_name(name="tmp", *, folder=None):
-        fname = prov.join((folder or prov.sync_root, os.urandom(16).hex() + "." + name))
-        prov.test_files.append(fname)
-        return fname
-
-    # add a provider-specific temp name generator
-    prov.temp_name = temp_name
-
-    def events_poll(timeout=prov.event_timeout):
-        if timeout == 0:
-            yield from prov.events()
-            return
-
-        for _ in time_helper(timeout, sleep=prov.event_sleep, multiply=2):
-            got = False
-            for e in prov.events():
-                yield e
-                got = True
-            if got:
-                break
-
-    prov.events_poll = events_poll
-
     yield prov
 
-    # remove everything in the sync_root
-    info = prov.info_path(prov.sync_root)
-    if info:
-        for info in prov.listdir(info.oid):
-            prov.delete(info.oid)
-
-    info = prov.info_path(prov.sync_root)
-    if info:
-        prov.delete(info.oid)
+    prov.test_cleanup()
 
 def test_join(mock):
     assert "/a/b/c" == mock.join(("a", "b", "c"))
