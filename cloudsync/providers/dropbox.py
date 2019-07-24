@@ -1,11 +1,9 @@
 import io
 import time
 import logging
-import requests
 import threading
-import hashlib
-import datetime
-from ssl import SSLError
+
+import requests
 
 import arrow
 
@@ -13,17 +11,20 @@ from dropbox import Dropbox, exceptions, files
 
 from cloudsync import Provider, ProviderInfo, DIRECTORY, FILE, Event
 
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
+
 class DropboxInfo(ProviderInfo):
     name = ""
+
     def __new__(cls, *a, name=None, otype=None):
         self = super().__new__(cls, *a)
         self.name = name
         self.otype = otype
         return self
+
 
 class _FolderIterator:
     def __init__(self, api, path, *, recursive, cursor=None):
@@ -33,19 +34,21 @@ class _FolderIterator:
 
         if not cursor:
             self.ls_res = self.api('files_list_folder',
-                    path=self.path,
-                    recursive=recursive,
-                    limit=200)
+                                   path=self.path,
+                                   recursive=recursive,
+                                   limit=200)
         else:
             self.ls_res = self.api('files_list_folder_continue',
-                    cursor)
+                                   cursor)
+
     def __iter__(self):
         return self
 
     def __next__(self):
         if self.ls_res:
             if not self.ls_res.entries and self.ls_res.has_more:
-                self.ls_res = self.api('files_list_folder_continue', self.ls_res.cursor)
+                self.ls_res = self.api(
+                    'files_list_folder_continue', self.ls_res.cursor)
 
             if self.ls_res.entries:
                 ret = self.ls_res.entries.pop()
@@ -56,6 +59,7 @@ class _FolderIterator:
     @property
     def cursor(self):
         return self.ls_res and self.ls_res.cursor
+
 
 class DropboxProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
@@ -114,7 +118,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.disconnect()
                 raise CloudDisconnectedError()
 
-    def _api(self, method, *args, **kwargs):          # pylint: disable=arguments-differ
+    def _api(self, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
@@ -126,38 +130,49 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error: files.LookupError = e.error.get_path()
                         if inside_error.is_not_found():
-                            log.debug('file not found %s(%s %s) : %s', method, args, kwargs, e)
-                            raise CloudFileNotFoundError('File not found when executing %s(%s)' % (method, kwargs))
+                            log.debug('file not found %s(%s %s) : %s',
+                                      method, args, kwargs, e)
+                            raise CloudFileNotFoundError(
+                                'File not found when executing %s(%s)' % (method, kwargs))
 
                 if isinstance(e.error, files.DeleteError):
                     if e.error.is_path_lookup():
                         inside_error: files.LookupError = e.error.get_path_lookup()
                         if inside_error.is_not_found():
-                            log.debug('file not found %s(%s %s) : %s', method, args, kwargs, e)
-                            raise CloudFileNotFoundError('File not found when executing %s(%s)' % (method, kwargs))
+                            log.debug('file not found %s(%s %s) : %s',
+                                      method, args, kwargs, e)
+                            raise CloudFileNotFoundError(
+                                'File not found when executing %s(%s)' % (method, kwargs))
 
                 if isinstance(e.error, files.RelocationError):
                     if e.error.is_from_lookup():
                         inside_error: files.LookupError = e.error.get_from_lookup()
                         if inside_error.is_not_found():
-                            log.debug('file not found %s(%s %s) : %s', method, args, kwargs, e)
-                            raise CloudFileNotFoundError('File not found when executing %s(%s)' % (method, kwargs))
+                            log.debug('file not found %s(%s %s) : %s',
+                                      method, args, kwargs, e)
+                            raise CloudFileNotFoundError(
+                                'File not found when executing %s(%s)' % (method, kwargs))
                     if e.error.is_to():
                         inside_error: files.WriteError = e.error.get_to()
                         if inside_error.is_conflict():
-                            raise CloudFileExistsError('File already exists when executing %s(%s)' % (method, kwargs))
+                            raise CloudFileExistsError(
+                                'File already exists when executing %s(%s)' % (method, kwargs))
                         log.debug("here")
 
                 if isinstance(e.error, files.CreateFolderError):
-                     if e.error.is_path() and isinstance(e.error.get_path(), files.WriteError):
-                         inside_error: files.WriteError = e.error.get_path()
-                         if inside_error.is_conflict():
-                              raise CloudFileExistsError('File already exists when executing %s(%s)' % (method, kwargs))
+                    if e.error.is_path() and isinstance(e.error.get_path(), files.WriteError):
+                        inside_error: files.WriteError = e.error.get_path()
+                        if inside_error.is_conflict():
+                            raise CloudFileExistsError(
+                                'File already exists when executing %s(%s)' % (method, kwargs))
+            except (exceptions.InternalServerError, exceptions.RateLimitError):
+                raise CloudTemporaryError()
             except requests.exceptions.ConnectionError as e:
-                log.exception('api error handled exception %s:%s', self.NAME, e.__class__.__name__)
+                log.exception('api error handled exception %s:%s',
+                              "dropbox", e.__class__.__name__)
                 self.disconnect()
                 raise CloudDisconnectedError()
-            
+
     @property
     def root_id(self):
         if not self.__root_id:
@@ -184,22 +199,15 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     @property
     def cursor(self):
         if not self.__cursor:
-            res = self._api('files_list_folder_get_latest_cursor', self.sync_root_id, recursive=True, include_deleted=True, limit=200) 
+            res = self._api('files_list_folder_get_latest_cursor',
+                            self.sync_root_id, recursive=True, include_deleted=True, limit=200)
             self.__cursor = res.cursor
         return self.__cursor
-
-    def is_suboid(self, top, oid):
-        if top == oid:
-            return True
-        pid = self.get_parent_id(oid)
-        if pid == oid:
-            return False
-        return self.is_suboid(top, pid)
 
     def _events(self, cursor):
         for res in _FolderIterator(self._api, self.sync_root_id, recursive=True, cursor=cursor):
             exists = True
-           
+
             log.debug("event %s", res)
 
             if isinstance(res, files.DeletedMetadata):
@@ -208,7 +216,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 # then find out which one was the latest before the deletion time
                 # then get the oid for that
 
-                revs = self._api('files_list_revisions', res.path_lower, limit=10)
+                revs = self._api('files_list_revisions',
+                                 res.path_lower, limit=10)
                 log.debug("revs %s", revs)
                 deleted_time = revs.server_deleted
                 latest_time = None
@@ -218,7 +227,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         oid = ent.id
                         latest_time = ent.server_modified
                 if not oid:
-                    log.error("skipping deletion %s, because we don't know the oid", res)
+                    log.error(
+                        "skipping deletion %s, because we don't know the oid", res)
                     continue
 
                 exists = False
@@ -249,7 +259,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return list(self._listdir(oid, recursive=False))
 
     def _listdir(self, oid, *, recursive):
-        for res in _FolderIterator(self._api, oid, recursive=False):
+        for res in _FolderIterator(self._api, oid, recursive=recursive):
             if isinstance(res, files.DeletedMetadata):
                 continue
             if isinstance(res, files.FolderMetadata):
@@ -261,56 +271,20 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             path = res.path_display
             oid = res.id
             yield DropboxInfo(oid, ohash, path, otype=otype)
- 
-    def __prep_upload(self, path, metadata):
-        # modification time
-        mtime = metadata.get("modifiedTime", time.time())
-        mtime = arrow.get(mtime).isoformat()
-        dropbox_info = {
-                'modifiedTime':  mtime
-                }
-
-        # mime type, if provided
-        mime_type = metadata.get("mimeType", None)
-        if mime_type:
-            dropbox_info['mimeType'] = mime_type
-
-        # path, if provided
-        if path:
-            _, name = self.split(path)
-            dropbox_info['name'] = name
-
-        # misc properties, if provided
-        app_props = metadata.get("appProperties", None)
-        if app_props:
-            # caller can specify google-specific stuff, if desired
-            dropbox_info['appProperties'] = app_props
-
-        # misc properties, if provided
-        app_props = metadata.get("properties", None)
-        if app_props:
-            # caller can specify google-specific stuff, if desired
-            dropbox_info['properties'] = app_props
-
-        log.debug("info %s", dropbox_info)
-
-        return dropbox_info
-
 
     def create(self, path, file_like, metadata=None):
         return self.upload(path, file_like, metadata)
 
     def upload(self, oid, file_like, metadata=None) -> 'ProviderInfo':
-        if not metadata:
-            metadata = {} 
-        dropbox_info = self.__prep_upload(oid, metadata)
+        metadata = metadata or {}
 
         file_like.seek(0, io.SEEK_END)
         size = file_like.tell()
         file_like.seek(0)
 
         if size < self._max_simple_upload_size:
-            res = self._api('files_upload', file_like.read(), oid, mode=files.WriteMode('overwrite'))
+            res = self._api('files_upload', file_like.read(),
+                            oid, mode=files.WriteMode('overwrite'))
         else:
             cursor = None
 
@@ -318,7 +292,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 data = file_like.read(self._upload_block_size)
                 if not data:
                     if cursor:
-                        local_mtime = arrow.get(metadata.get('mtime')).datetime
+                        local_mtime = arrow.get(metadata.get('mtime', time.time())).datetime
                         commit = files.CommitInfo(path=oid,
                                                   mode=files.WriteMode.overwrite,
                                                   autorename=False,
@@ -331,10 +305,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     break
                 if not cursor:
                     self._api('files_upload_session_start', data)
-                    cursor = files.UploadSessionCursor(res.session_id, len(data))
+                    cursor = files.UploadSessionCursor(
+                        res.session_id, len(data))
                 else:
-                    self.connection.safe_execute('files_upload_session_append_v2',
-                            data, cursor)
+                    self._api('files_upload_session_append_v2',
+                         data, cursor)
                     cursor.offset += len(data)
 
         log.debug("dropbox res %s", res)
@@ -351,7 +326,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._api('files_move_v2', oid, path)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
-        res = self._api('files_create_folder_v2', path)
+        metadata = metadata or {}
+        local_mtime = arrow.get(metadata.get('mtime', time.time())).datetime
+        res = self._api('files_create_folder_v2', path, client_modified=local_mtime)
         log.debug("dbx mkdir %s", res)
         res = res.metadata
         return ProviderInfo(oid=res.id, hash=None, path=path)
@@ -359,8 +336,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def delete(self, oid):
         self._api('files_delete_v2', oid)
 
-    def exists_oid(self, oid):
-        return self._info_oid(oid)
+    def exists_oid(self, oid) -> bool:
+        return bool(self.info_oid(oid))
 
     def info_path(self, path) -> ProviderInfo:
         try:
@@ -376,7 +353,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 otype = FILE
                 fhash = res.content_hash
 
-            return DropboxInfo(oid, fhash, path, otype=otype) 
+            return DropboxInfo(oid, fhash, path, otype=otype)
         except CloudFileNotFoundError:
             return None
 
@@ -384,16 +361,16 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return self.info_path(path) is not None
 
     def info_oid(self, oid) -> ProviderInfo:
-        log.debug("res info path %s", path)
         res = self._api('files_get_metadata', oid)
-        log.debug("res info path %s", res)
+        log.debug("res info oid %s", res)
 
         path = res.path_display
-        fhash = res.content_hash
 
-        return DropboxInfo(oid, fhash, path) 
+        if isinstance(res, files.FolderMetadata):
+            otype = DIRECTORY
+            fhash = None
+        else:
+            otype = FILE
+            fhash = res.content_hash
 
-
-        log.debug("info oid ret: %s", ret)
-        raise NotImplementedError()
-        return DropboxInfo(oid, fhash, None, pids=pids, name=name, otype=otype)
+        return DropboxInfo(oid, fhash, path, otype=otype)

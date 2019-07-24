@@ -1,7 +1,6 @@
 import time
 import logging
 import threading
-import hashlib
 from ssl import SSLError
 
 import arrow

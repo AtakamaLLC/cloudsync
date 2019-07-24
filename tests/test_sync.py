@@ -206,7 +206,10 @@ def test_sync_hash(sync):
 
     info = sync.providers[REMOTE].info_path(remote_path1)
 
-    assert info.hash == sync.providers[REMOTE].hash_data(BytesIO(b"hello2"))
+    check = BytesIO()
+    sync.providers[REMOTE].download(info.oid, check)
+
+    assert check.getvalue() == b"hello2"
 
 def test_sync_rm(sync):
     remote_parent = "/remote"
