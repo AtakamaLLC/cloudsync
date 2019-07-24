@@ -14,7 +14,7 @@ from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
-class TestProvider:
+class ProviderHelper:
     def temp_name(self, name="tmp", *, folder=None):
         fname = self.join((folder or self.sync_root, os.urandom(16).hex() + "." + name))
         return fname
@@ -46,19 +46,38 @@ class TestProvider:
         if info:
             self.delete(info.oid)
 
-class TestGDriveProvider(GDriveProvider, TestProvider):
-    pass
+    def api_retry(self, func, *ar, **kw):
+        # the cloud providers themselves should *not* have their own backoff logic
+        # rather, they should punt rate limit and temp errors to the sync system
+        # since we're not testing the sync system here, we need to make our own
 
-class TestDropboxProvider(DropboxProvider, TestProvider):
-    pass
+        for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
+            try:
+                return func(self, *ar, **kw)
+            except CloudTemporaryError:
+                log.info("api retry %s %s %s", func, ar, kw)
+
+class TestGDriveProvider(GDriveProvider, ProviderHelper):
+    def __init__(self, *ar, **kw):
+        GDriveProvider.__init__(self, *ar, **kw)
+
+    def _api(self, *ar, **kw):
+        return self.api_retry(GDriveProvider._api, *ar, **kw)
+
+class TestDropboxProvider(DropboxProvider, ProviderHelper):
+    def __init__(self, *ar, **kw):
+        DropboxProvider.__init__(self, *ar, **kw)
+
+    def _api(self, *ar, **kw):
+        return self.api_retry(DropboxProvider._api, *ar, **kw)
 
 def gdrive(gdrive_creds):
     if gdrive_creds:
         test_root = "/" + os.urandom(16).hex()
         prov = TestGDriveProvider(test_root)
-        prov.connect(gdrive_creds)
         prov.event_timeout = 60
         prov.event_sleep = 2
+        prov.connect(gdrive_creds)
         return prov
     else:
         return None
