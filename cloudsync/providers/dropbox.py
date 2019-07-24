@@ -325,10 +325,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def rename(self, oid, path):
         self._api('files_move_v2', oid, path)
 
-    def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
-        metadata = metadata or {}
-        local_mtime = arrow.get(metadata.get('mtime', time.time())).datetime
-        res = self._api('files_create_folder_v2', path, client_modified=local_mtime)
+    def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
+        res = self._api('files_create_folder_v2', path)
         log.debug("dbx mkdir %s", res)
         res = res.metadata
         return ProviderInfo(oid=res.id, hash=None, path=path)
