@@ -19,6 +19,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 
 log = logging.getLogger(__name__)
 
+
 class GDriveInfo(ProviderInfo):
     pids = []
     name = ""
@@ -50,6 +51,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/":"root"}
+        self._trashed_ids = {}
 
     @property
     def connected(self):
@@ -182,9 +184,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def is_suboid(self, top, oid):
         if top == oid:
             return True
-        pid = self.get_parent_id(oid)
+        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid -- maybe we don't even need is_suboid
         if pid == oid:
             return False
+
         return self.is_suboid(top, pid)
 
     def events(self):      # pylint: disable=too-many-locals
@@ -435,6 +438,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             log.debug("deleted non-existing oid %s", oid)
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
+                self._trashed_ids[currpath] = self._ids[currpath]
                 del self._ids[currpath]
 
     def exists_oid(self, oid):
@@ -498,6 +502,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _path_oid(self, oid) -> str:
         "convert oid to path"
         for p, pid in self._ids.items():
+            if pid == oid:
+                return p
+
+        for p, pid in self._trashed_ids.items():
             if pid == oid:
                 return p
 
