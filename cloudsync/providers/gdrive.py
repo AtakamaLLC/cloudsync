@@ -30,7 +30,7 @@ class GDriveInfo(ProviderInfo):
         return self
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
-    case_sensitive = False
+    case_sensitive = True
     allow_renames_over_existing = False
     require_parent_folder = True
 
@@ -479,14 +479,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError("parent %s must exist" % parent)
 
         return self._ids[parent]
-
-    @staticmethod
-    def hash_data(file_like):
-        md5 = hashlib.md5()
-        for c in iter(lambda: file_like.read(4096), b''):
-            md5.update(c)
-        retval = md5.hexdigest()
-        return retval
 
     def _path_oid(self, oid) -> str:
         "convert oid to path"

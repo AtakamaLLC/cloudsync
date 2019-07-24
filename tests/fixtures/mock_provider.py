@@ -264,11 +264,6 @@ class MockProvider(Provider):
         file = self._get_by_path(path)
         return file is not None and file.exists
 
-    @staticmethod
-    def hash_data(file_like):
-        contents = file_like.read()
-        return md5(contents).hexdigest()
-
     def info_path(self, path):
         self._api()
         file: MockProvider.FSObject = self._get_by_path(path)

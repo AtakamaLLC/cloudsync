@@ -1,7 +1,9 @@
 arrow
 oauth2client<4.0.0
 httplib2
+# gdrive provider
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-
+# dropbox provider
+dropbox
