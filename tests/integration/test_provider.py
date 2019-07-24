@@ -301,8 +301,17 @@ def test_file_not_found(provider):
     #       to a deleted file raises FNF
     #       to a made up oid raises FNF
     # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
-    with pytest.raises(CloudFileNotFoundError):
+    try:
         provider.upload(test_oid_deleted, data())
+        assert provider.exists_path(test_path_deleted) is True
+        re_delete = True
+    except CloudFileNotFoundError:
+        re_delete = False
+        pass
+    
+    if re_delete:
+        provider.delete(test_oid_deleted)
+
     with pytest.raises(CloudFileNotFoundError):
         provider.upload(test_oid_made_up, data())
 
