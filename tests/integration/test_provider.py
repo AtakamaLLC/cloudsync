@@ -86,9 +86,9 @@ def dropbox(dropbox_creds):
     if dropbox_creds:
         test_root = "/" + os.urandom(16).hex()
         prov = TestDropboxProvider(test_root)
-        prov.connect(dropbox_creds)
         prov.event_timeout = 20
         prov.event_sleep = 2
+        prov.connect(dropbox_creds)
         return prov
     else:
         return None
