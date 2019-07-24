@@ -7,13 +7,14 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def time_helper(timeout, sleep=None):
+def time_helper(timeout, sleep=None, multiply=1):
     forever = not timeout
     end = forever or time.monotonic() + timeout
     while forever or end >= time.monotonic():
         yield True
         if sleep is not None:
             time.sleep(sleep)
+            sleep = sleep * multiply
 
 
 class Runnable(ABC):
