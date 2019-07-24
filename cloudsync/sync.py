@@ -234,7 +234,7 @@ class SyncManager(Runnable):
             sync.temp_file = None
 
     def download_changed(self, changed, sync):
-        sync.temp_file = sync.temp_file or self.temp_file(sync[changed].hash)
+        sync.temp_file = sync.temp_file or self.temp_file(str(sync[changed].hash))
 
         assert sync[changed].oid
 

@@ -29,7 +29,6 @@ class GDriveInfo(OInfo):
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = True
-    allow_renames_over_existing = False
     require_parent_folder = True
 
     _scope = "https://www.googleapis.com/auth/drive"
@@ -49,6 +48,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/":"root"}
+        self._trashed_ids = {}
 
     @property
     def connected(self):
@@ -181,9 +181,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def is_suboid(self, top, oid):
         if top == oid:
             return True
-        pid = self.get_parent_id(oid)
+        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid -- maybe we don't even need is_suboid
         if pid == oid:
             return False
+
         return self.is_suboid(top, pid)
 
     def events(self):      # pylint: disable=too-many-locals
@@ -366,6 +367,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             add_pids = [self.root_id]
 
         info = self._info_oid(oid)
+        if info is None:
+            raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
 
         _, name = self.split(path)
@@ -433,10 +436,17 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids[path] = fileid
 
     def delete(self, oid):
-        self._api('files', 'delete', fileId=oid)
+        try:
+            self._api('files', 'delete', fileId=oid)
+        except CloudFileNotFoundError:
+            log.debug("deleted non-existing oid %s", oid)
+        for currpath, curroid in list(self._ids.items()):
+            if curroid == oid:
+                self._trashed_ids[currpath] = self._ids[currpath]
+                del self._ids[currpath]
 
     def exists_oid(self, oid):
-        return self._info_oid(oid)
+        return self._info_oid(oid) is not None
 
     def info_path(self, path) -> OInfo:
         parent_id = self.get_parent_id(path)
@@ -497,6 +507,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if pid == oid:
                 return p
 
+        for p, pid in self._trashed_ids.items():
+            if pid == oid:
+                return p
+
         # todo, better cache, keep up to date, etc.
 
         info = self._info_oid(oid)
@@ -510,6 +524,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def info_oid(self, oid) -> OInfo:
         info = self._info_oid(oid)
+        if info is None:
+            return None
         # expensive
         path = self._path_oid(oid)
         ret = OInfo(info.otype, info.oid, info.hash, path)

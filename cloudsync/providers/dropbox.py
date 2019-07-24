@@ -7,6 +7,7 @@ import requests
 
 import arrow
 
+import dropbox
 from dropbox import Dropbox, exceptions, files
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event
@@ -166,6 +167,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                                 'File already exists when executing %s(%s)' % (method, kwargs))
             except (exceptions.InternalServerError, exceptions.RateLimitError):
                 raise CloudTemporaryError()
+            except dropbox.stone_validators.ValidationError as e:
+                log.debug("f*ed up api error: %s", e)
+                if "never created" in str(e):
+                    raise CloudFileNotFoundError()
+                raise
             except requests.exceptions.ConnectionError as e:
                 log.exception('api error handled exception %s:%s',
                               "dropbox", e.__class__.__name__)
@@ -317,7 +323,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display)
 
     def download(self, oid, file_like):
-        res, content = self._api('files_download', oid)
+        ok = self._api('files_download', oid)
+        if not ok:
+            raise CloudFileNotFoundError()
+        res, content = ok
         for data in content.iter_content(self._upload_block_size):
             file_like.write(data)
         return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
@@ -332,7 +341,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return OInfo(otype=DIRECTORY, oid=res.id, hash=None, path=path)
 
     def delete(self, oid):
-        self._api('files_delete_v2', oid)
+        try:
+            self._api('files_delete_v2', oid)
+        except CloudFileNotFoundError:
+            return
 
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
@@ -359,16 +371,19 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return self.info_path(path) is not None
 
     def info_oid(self, oid) -> OInfo:
-        res = self._api('files_get_metadata', oid)
-        log.debug("res info oid %s", res)
+        try:
+            res = self._api('files_get_metadata', oid)
+            log.debug("res info oid %s", res)
 
-        path = res.path_display
+            path = res.path_display
 
-        if isinstance(res, files.FolderMetadata):
-            otype = DIRECTORY
-            fhash = None
-        else:
-            otype = FILE
-            fhash = res.content_hash
+            if isinstance(res, files.FolderMetadata):
+                otype = DIRECTORY
+                fhash = None
+            else:
+                otype = FILE
+                fhash = res.content_hash
 
-        return DropboxInfo(otype, oid, fhash, path)
+            return DropboxInfo(otype, oid, fhash, path)
+        except CloudFileNotFoundError:
+            return None
