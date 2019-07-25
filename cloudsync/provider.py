@@ -88,6 +88,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def info_oid(self, oid) -> OInfo:
         ...
 
+### CONVENIENCE
+    def download_path(self, path, io):
+        info = self.info_path(path)
+        if not info or not info.oid:
+            raise CloudFileNotFoundError()
+        self.download(info.oid, io) 
+
+### HELPER
     def join(self, paths):
         res = ""
         for path in paths:

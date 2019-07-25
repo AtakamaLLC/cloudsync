@@ -323,6 +323,10 @@ class MockProvider(Provider):
             retval = self.sep
         return retval
 
+    def log_debug_state(self, msg=""):
+        log.debug("%s: mock provider state %s", msg, list(self.walk()))
+
+
 
 def test_mock_basic():
     """
