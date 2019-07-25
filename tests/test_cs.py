@@ -78,23 +78,18 @@ def test_sync_conflict_delete(cs):
     linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
-    cs.run(timeout=0.5)
 
     rinfo = cs.providers[REMOTE].info_path(remote_path1)
 
-    log.error("TABLE1\n%s", cs.state.pretty_print(ignore_dirs=True))
-    
     cs.providers[LOCAL].delete(linfo1.oid)
     cs.emgrs[LOCAL].do()
-
-    log.error("TABLE2\n%s", cs.state.pretty_print(ignore_dirs=True))
 
     linfo2 = cs.providers[LOCAL].create(local_path1, BytesIO(b"goodbye"))
 
     cs.emgrs[LOCAL].do()
 
+    cs.run(until=lambda: len(cs.state) == 3, timeout=2)
     log.error("TABLE3\n%s", cs.state.pretty_print(ignore_dirs=True))
-
     assert(len(cs.state) == 3)
 
 
