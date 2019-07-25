@@ -130,6 +130,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error: files.LookupError = e.error.get_path()
                         if inside_error.is_not_found():
+                            log.debug('Malformed path when executing %s(%s %s) : %s',
+                                      method, args, kwargs, e)
+                            raise CloudFileNotFoundError(
+                                'Malformed path when executing %s(%s)' % (method, kwargs))
+                        if inside_error.is_malformed_path():
                             log.debug('file not found %s(%s %s) : %s',
                                       method, args, kwargs, e)
                             raise CloudFileNotFoundError(
@@ -190,12 +195,16 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     @property
     def sync_root_id(self):
         if not self.__sync_root_id:
+            oid = None
             info = self.info_path(self.sync_root)
-            if not info:
-                info = self.mkdir(self.sync_root)
-            if not info and info.oid:
-                raise CloudFileNotFoundError("Cannot create sync root")
-            self.__sync_root_id = info.oid
+            if info:
+                oid = info.oid
+            if not oid:
+                try:
+                    oid = self.mkdir(self.sync_root)
+                except (CloudFileNotFoundError, CloudFileExistsError):
+                    raise CloudFileNotFoundError("Cannot create sync root")
+            self.__sync_root_id = oid
         return self.__sync_root_id
 
     def disconnect(self):
@@ -278,6 +287,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             yield DropboxInfo(otype, oid, ohash, path)
 
     def create(self, path, file_like, metadata=None):
+        self._verify_parent_folder_exists(path)
         return self.upload(path, file_like, metadata)
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
@@ -335,6 +345,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._api('files_move_v2', oid, path)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
+        self._verify_parent_folder_exists(path)
         if self.exists_path(path):
             info = self.info_path(path)
             if info.otype == FILE:
@@ -394,3 +405,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             return DropboxInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None
+
+    def _verify_parent_folder_exists(self, path):
+        parent_path = self.dirname(path)
+        if parent_path != self.sep:
+            parent_obj = self.info_path(parent_path)
+            if parent_obj is None:
+                # perhaps this should separate "FileNotFound" and "non-folder parent exists"
+                # and raise different exceptions
+                raise CloudFileNotFoundError(parent_path)
+            if parent_obj.otype != DIRECTORY:
+                raise CloudFileExistsError(parent_path)

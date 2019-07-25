@@ -189,7 +189,7 @@ def test_mkdir(util, provider: Provider):
     sub_f = provider.temp_name("dest", folder=dest)
     log.debug("parent = %s, sub = %s", dest, sub_f)
     with pytest.raises(CloudFileExistsError):
-        info1 = provider.create(dest, data())
+        info1 = provider.create(dest, data(), None)
     assert provider.exists_path(dest)
     log.debug("folder %s exists", dest)
     info1 = provider.create(sub_f, data())
@@ -199,7 +199,7 @@ def test_mkdir(util, provider: Provider):
 def test_walk(util, provider: Provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
-    info = provider.create(dest, temp)
+    info = provider.create(dest, temp, None)
     assert not provider.walked
 
     got_event = False
@@ -243,7 +243,7 @@ def test_event_basic(util, provider: Provider):
     for e in provider.events_poll(timeout=min(provider.event_timeout,1)):
         log.debug("event %s", e)
 
-    info1 = provider.create(dest, temp)
+    info1 = provider.create(dest, temp, None)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
@@ -309,10 +309,16 @@ def test_file_not_found(provider: Union[ProviderHelper, Provider]):
     def data():
         return BytesIO(dat)
 
-    test_path_deleted = provider.temp_name("dest1")  # Created, then deleted
-    info1 = provider.create(test_path_deleted, data())
-    test_oid_deleted = info1.oid
-    provider.delete(test_oid_deleted)
+    if getattr(provider, "sync_root_id", False):
+        _ = provider.sync_root_id
+    test_file_deleted_path = provider.temp_name("dest1")  # Created, then deleted
+    test_file_deleted_info = provider.create(test_file_deleted_path, data(), None)
+    test_file_deleted_oid = test_file_deleted_info.oid
+    provider.delete(test_file_deleted_oid)
+
+    test_folder_deleted_path = provider.temp_name("dest1")  # Created, then deleted
+    test_folder_deleted_oid = provider.mkdir(test_folder_deleted_path)
+    provider.delete(test_folder_deleted_oid)
 
     test_path_made_up = provider.temp_name("dest2")  # Never created
     test_oid_made_up = "never created"
@@ -321,63 +327,74 @@ def test_file_not_found(provider: Union[ProviderHelper, Provider]):
 
     # Tests:
     #   exists_path
-    #       returns false, does not raise
-    assert provider.exists_path(test_path_deleted) is False
+    #       deleted file, returns false, does not raise
+    #       deleted folder, returns false, does not raise
+    #       never existed fsobj, returns false, does not raise
+    assert provider.exists_path(test_file_deleted_path) is False
+    assert provider.exists_path(test_folder_deleted_path) is False
     assert provider.exists_path(test_path_made_up) is False
 
     #   exists_oid
-    #       returns false, does not raise
-    assert provider.exists_oid(test_oid_deleted) is False
+    #       deleted file, returns false, does not raise
+    #       deleted folder, returns false, does not raise
+    #       never existed fsobj, returns false, does not raise
+    assert provider.exists_oid(test_file_deleted_oid) is False
+    assert provider.exists_oid(test_folder_deleted_oid) is False
     assert provider.exists_oid(test_oid_made_up) is False
 
     #   info_path
     #       deleted file returns None
-    #       never existed file returns None
-    assert provider.info_path(test_path_deleted) is None
+    #       deleted folder returns None
+    #       never existed fsobj returns None
+    assert provider.info_path(test_file_deleted_path) is None
+    assert provider.info_path(test_folder_deleted_path) is None
     assert provider.info_path(test_path_made_up) is None
 
     #   info_oid
     #       deleted file returns None
-    #       never existed file returns None
-    assert provider.info_oid(test_oid_deleted) is None
+    #       deleted folder returns None
+    #       never existed fsobj returns None
+    assert provider.info_oid(test_file_deleted_oid) is None
+    assert provider.info_oid(test_folder_deleted_oid) is None
     assert provider.info_oid(test_oid_made_up) is None
 
     #   hash_oid
     #       deleted file returns None
     #       never existed file returns None
     if getattr(provider, "hash_oid", False): # TODO implement hash_oid in gdrive, then don't have this be conditional
-        assert provider.hash_oid(test_oid_deleted) is None
+        assert provider.hash_oid(test_file_deleted_oid) is None
         assert provider.hash_oid(test_oid_made_up) is None
 
     #   upload
-    #       to a deleted file raises FNF
+    #       to a deleted file raises FNF, or untrashes the file, either is OK
     #       to a made up oid raises FNF
     # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
     try:
-        provider.upload(test_oid_deleted, data())
-        assert provider.exists_path(test_path_deleted) is True
+        provider.upload(test_file_deleted_oid, data(), None)
+        assert provider.exists_path(test_file_deleted_path) is True
         re_delete = True
     except CloudFileNotFoundError:
         re_delete = False
         pass
-    
     if re_delete:
-        provider.delete(test_oid_deleted)
+        provider.delete(test_file_deleted_oid)
 
     with pytest.raises(CloudFileNotFoundError):
-        provider.upload(test_oid_made_up, data())
+        provider.upload(test_oid_made_up, data(), None)
 
     #   create
-    #       to a non-existent folder, conditionally raises FNF
-    if not provider.auto_vivify_parent_folders:
-        with pytest.raises(CloudFileNotFoundError):
-            provider.create("/nonexistentfolder/junk", data())
+    #       to a non-existent folder, raises FNF
+    #       to a previously deleted folder, raises FNF
+    with pytest.raises(CloudFileNotFoundError):
+        provider.create(test_path_made_up + "/junk", data(), None)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.create(test_folder_deleted_path + "/junk", data(), None)
 
     #   download
     #       on a deleted oid raises FNF
     #       on a made up oid raises FNF
     with pytest.raises(CloudFileNotFoundError):
-        provider.download(test_oid_deleted, data())
+        provider.download(test_file_deleted_oid, data())
     with pytest.raises(CloudFileNotFoundError):
         provider.download(test_oid_made_up, data())
 
@@ -385,36 +402,49 @@ def test_file_not_found(provider: Union[ProviderHelper, Provider]):
     #       from a deleted oid raises FNF
     #       from a made up oid raises FNF
     #       to a non-existent folder raises [something], conditionally
+    #       to a previously deleted folder raises
     #       check the rename source to see if there are others
     with pytest.raises(CloudFileNotFoundError):
-        provider.rename(test_oid_deleted, test_path_deleted)
+        provider.rename(test_file_deleted_oid, test_file_deleted_path)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_folder_deleted_oid, test_folder_deleted_path)
     with pytest.raises(CloudFileNotFoundError):
         provider.rename(test_oid_made_up, test_path_made_up)
 
     #   mkdir
-    #       to a non-existent folder raises [something], conditionally
-    if not provider.auto_vivify_parent_folders:
-        with pytest.raises(CloudFileNotFoundError):
-            provider.mkdir("/nonexistentfolder/junk")
+    #       to a non-existent folder raises FNF
+    #       to a previously deleted folder as parent folder raises FNF
+    #       to a previously deleted file as parent folder raises FNF
+    with pytest.raises(CloudFileNotFoundError):
+        provider.mkdir(test_path_made_up + "/junk")
+    with pytest.raises(CloudFileNotFoundError):
+        provider.mkdir(test_folder_deleted_path + "/junk")
+    with pytest.raises(CloudFileNotFoundError):
+        provider.mkdir(test_file_deleted_path + "/junk")
 
     #   delete
-    #       on a deleted oid does not raise
+    #       on a deleted file oid does not raise
+    #       on a deleted folder oid does not raise
     #       on a made up oid does not raise
-    provider.delete(test_oid_deleted)
+    provider.delete(test_file_deleted_oid)
+    provider.delete(test_folder_deleted_oid)
     provider.delete(test_oid_made_up)
 
     #   listdir
-    #       raises FNF
+    #       on a deleted file raises FNF
+    #       on a deleted folder raises FNF
+    #       on a made up path raises FNF
     with pytest.raises(CloudFileNotFoundError):
-        provider.listdir(test_path_deleted)
+        provider.listdir(test_file_deleted_path)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.listdir(test_folder_deleted_path)
     with pytest.raises(CloudFileNotFoundError):
         provider.listdir(test_path_made_up)
 
-    # Google drive raises FNF when it can't find the root... can we test for that here?
+    # TODO: Google drive raises FNF when it can't find the root... can we test for that here?
 
 
 def test_file_exists(provider: Union[ProviderHelper, Provider]):
-    # Start setup the initial state of the provider ==========================================
     dat = os.urandom(32)
 
     def data(da=dat):
@@ -458,8 +488,6 @@ def test_file_exists(provider: Union[ProviderHelper, Provider]):
         folder_oid = provider.mkdir(folder_name)
         return folder_name, folder_oid
 
-    # End setup the initial state of the provider ==========================================
-
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
     # api methods to check for FileExists:
@@ -476,11 +504,14 @@ def test_file_exists(provider: Union[ProviderHelper, Provider]):
     #       target path existed, but was renamed, same type as source
     #
     #   vulnerable to existing OIDs:
-    #       upload
+    #       upload, delete
     #   Possible issues to potentially check each of the vulnerable api methods:
     #       target OID exists, but the type of the existing object at that location is different from expected
     #       target OID existed, but was trashed, should un-trash the object
+    #       target OID is a non-empty folder, delete should raise FEx
     #
+    res = provider.is_subpath("/a/", "/a/b")
+    assert res
 
     # The enumerated tests:
     #   mkdir: where target path has a parent folder that already exists as a file, raises FEx
@@ -516,7 +547,7 @@ def test_file_exists(provider: Union[ProviderHelper, Provider]):
     #   upload: where target OID is a folder, raises FEx
     _, oid = create_folder()
     with pytest.raises(CloudFileExistsError):
-        provider.upload(oid, data())
+        provider.upload(oid, data(), None)
 
     #   create: where target path exists, raises FEx
     name, _ = create_file()
@@ -550,6 +581,11 @@ def test_file_exists(provider: Union[ProviderHelper, Provider]):
 
     #   rename: rename folder over non-empty folder raises FEx
     # TODO
+    _, oid1 = create_folder()
+    name2, _ = create_folder()
+    create_file(name2 + "/junk")
+    with pytest.raises(CloudFileExistsError):
+        provider.rename(oid1, name2)
 
     #   rename: target has a parent folder that already exists as a file, raises FEx
     # TODO

@@ -313,7 +313,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return gdrive_info
 
-
     def upload(self, oid, file_like, metadata=None):
         if not metadata:
             metadata = {} 
@@ -334,7 +333,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not res:
             raise CloudTemporaryError("unknown response from drive on upload")
 
-        return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=None)
+        md5 = res.get('md5Checksum', None)  # can be none if the user tries to upload to a folder
+        if md5 is None:
+            possible_conflict = self._info_oid(oid)
+            if possible_conflict and possible_conflict.otype == DIRECTORY:
+                raise CloudFileExistsError("Can only upload to a file: %s" % possible_conflict.path)
+        return OInfo(otype=FILE, oid=res['id'], hash=md5, path=None)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
@@ -402,6 +406,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         _, name = self.split(path)
         body = {'name': name}
+
+        if self.exists_path(path):
+            possible_conflict = self.info_path(path)
+            if possible_conflict.otype == DIRECTORY:
+                contents = self.listdir(possible_conflict.oid)
+                if len(contents) > 0:
+                    raise CloudFileExistsError("Cannot rename over empty folder %s" % path)
+            else:
+                if info.otype != possible_conflict.otype:
+                    raise CloudFileExistsError(path)
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
