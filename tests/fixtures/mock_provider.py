@@ -49,7 +49,7 @@ class MockProvider(Provider):
         def update(self):
             self.mtime = time.time()
 
-    class MockEvent():  # pylint: disable=too-few-public-methods
+    class MockEvent:  # pylint: disable=too-few-public-methods
         ACTION_CREATE = "provider create"
         ACTION_RENAME = "provider rename"
         ACTION_UPDATE = "provider modify"
@@ -160,7 +160,7 @@ class MockProvider(Provider):
             yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
         self.walked = True
 
-    def upload(self, oid, file_like, metadata):
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         self._api()
         file = self._fs_by_oid.get(oid, None)
         if file is None or not file.exists:
@@ -184,7 +184,7 @@ class MockProvider(Provider):
         log.debug("listdir %s", ret)
         return ret
 
-    def create(self, path, file_like, Metadata) -> 'OInfo':
+    def create(self, path, file_like, metadata=None) -> 'OInfo':
         # TODO: store the metadata
         self._api()
         contents = file_like.read()

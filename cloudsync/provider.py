@@ -41,11 +41,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def upload(self, oid, file_like, metadata):
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         ...
 
     @abstractmethod
-    def create(self, path, file_like, metadata) -> 'OInfo':
+    def create(self, path, file_like, metadata=None) -> 'OInfo':
         ...
 
     @abstractmethod

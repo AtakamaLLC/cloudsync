@@ -313,7 +313,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return gdrive_info
 
-    def upload(self, oid, file_like, metadata=None):
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         if not metadata:
             metadata = {} 
         gdrive_info = self.__prep_upload(None, metadata)
