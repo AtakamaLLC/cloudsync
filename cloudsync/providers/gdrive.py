@@ -10,6 +10,7 @@ from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=import-error
+from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
@@ -134,8 +135,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.disconnect()
                 raise CloudTokenError()
             except HttpError as e:
-                from googleapiclient.http import _should_retry_response  # Yuck!
-
                 # gets a default something (actually the message, not the reason) using their secret interface
                 reason = e._get_reason()
 
@@ -160,6 +159,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
 
+                # At this point, _should_retry_response() returns true for error codes >=500, 429, and 403 with
+                #  the reason 'userRateLimitExceeded' or 'rateLimitExceeded'. 403 without content, or any other
+                #  response is not retried. We have already taken care of some of those cases above, but we call this below
+                #  to catch the rest, and in case they improve their library with more conditions. If we called
+                #  meth.execute() above with a num_retries argument, all this retrying would happen in the google api
+                #  library, and we wouldn't have to think about retries.
                 should_retry = _should_retry_response(e.resp.status, e.content)
                 if should_retry:
                     raise CloudTemporaryError("unknown error %s" % e)

@@ -447,7 +447,11 @@ def test_file_exists(provider: Provider):
         provider.mkdir(existing_file_name)
 
     #   mkdir: where target path exists as a folder, does not raise
+    provider.mkdir(existing_folder_name)
+
     #   mkdir: creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
+    new_name1 = provider.temp_name()
+
     #   mkdir: creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
     #   upload: where target OID is a folder, raises FEx
     #   create: where target path exists, raises FEx
