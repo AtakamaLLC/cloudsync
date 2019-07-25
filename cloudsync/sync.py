@@ -346,9 +346,9 @@ class SyncManager(Runnable):
             sync[changed].sync_path = sync[changed].path
             self.syncs.update_entry(sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
         except CloudFileNotFoundError:
-            log.debug("create on %s failed fnf, mkdir needed",
-                      self.providers[synced].debug_name)
-            raise NotImplementedError("TODO mkdir, and make syncs etc")
+            parent, _ = self.providers[synced].split(translated_path)
+            self.mkdirs(self.providers[synced], parent)
+            self.create_synced(changed, sync)
 
     def delete_synced(self, changed, sync):
         synced = other_side(changed)
@@ -460,7 +460,7 @@ class SyncManager(Runnable):
         if not info.path:
             assert False, "impossible sync, no path %s" % sync[changed]
 
-        self.syncs.update_entry(sync, changed, path=info.path)
+        self.syncs.update_entry(sync, changed, sync[changed].oid, path=info.path)
 
     def handle_hash_conflict(self, sync):
         # split the sync in two
