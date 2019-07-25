@@ -26,8 +26,8 @@ class CloudSync(Runnable):
 
     def start(self):
         self.sthread.start()
-        self.ethread[0].start()
-        self.ethread[1].start()
+        self.ethreads[0].start()
+        self.ethreads[1].start()
 
     def stop(self):
         self.smgr.stop()

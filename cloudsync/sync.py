@@ -363,19 +363,8 @@ class SyncManager(Runnable):
             return
 
         if sync[changed].path != sync[changed].sync_path or sync[changed].sync_path is None:
-
             if not sync[changed].path:
-                assert sync[changed].oid
-
-                info = self.providers[changed].info_oid(sync[changed].oid)
-                if not info:
-                    sync[changed].exists = False
-                    return
-
-                if not info.path:
-                    assert False, "impossible sync, no path %s" % sync[changed]
-
-                sync[changed].path = info.path
+                self.update_sync_path(sync, changed)
 
             if not sync[changed].sync_path:
                 assert not sync[changed].sync_hash
@@ -415,6 +404,20 @@ class SyncManager(Runnable):
             return
 
         log.info("nothing changed %s, but changed is true", sync)
+
+    def update_sync_path(self, sync, changed):
+        assert sync[changed].oid
+
+        info = self.providers[changed].info_oid(sync[changed].oid)
+        if not info:
+            sync[changed].exists = False
+            return
+
+        if not info.path:
+            assert False, "impossible sync, no path %s" % sync[changed]
+
+        sync[changed].path = info.path
+
 
     def handle_hash_conflict(self, sync):
         raise NotImplementedError()
