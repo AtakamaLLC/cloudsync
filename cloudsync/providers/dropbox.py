@@ -335,10 +335,17 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._api('files_move_v2', oid, path)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
+        if self.exists_path(path):
+            info = self.info_path(path)
+            if info.otype == FILE:
+                raise CloudFileExistsError()
+            else:
+                log.debug("Skipped creating already existing folder: %s", path)
+                return info.oid
         res = self._api('files_create_folder_v2', path)
         log.debug("dbx mkdir %s", res)
         res = res.metadata
-        return OInfo(otype=DIRECTORY, oid=res.id, hash=None, path=path)
+        return res.id
 
     def delete(self, oid):
         try:

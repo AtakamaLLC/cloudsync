@@ -174,7 +174,6 @@ class MockProvider(Provider):
         return ret
 
     def create(self, path, file_like, Metadata) -> 'OInfo':
-        # TODO: check to make sure the folder exists before creating a file in it
         # TODO: store the metadata
         self._api()
         contents = file_like.read()
@@ -183,8 +182,9 @@ class MockProvider(Provider):
             self._verify_parent_folder_exists(path)
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
-        if file.type != MockProvider.FSObject.FILE:
-            raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
+        else:
+            if file.exists:
+                raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         file.contents = contents
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
@@ -237,7 +237,11 @@ class MockProvider(Provider):
         self._verify_parent_folder_exists(path)
         file = self._get_by_path(path)
         if file and file.exists:
-            raise CloudFileExistsError(path)
+            if file.type == MockProvider.FSObject.FILE:
+                raise CloudFileExistsError(path)
+            else:
+                log.debug("Skipped creating already existing folder: %s", path)
+                return file.oid
         new_fs_object = MockProvider.FSObject(path, MockProvider.FSObject.DIR)
         self._store_object(new_fs_object)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, new_fs_object)

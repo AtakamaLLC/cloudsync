@@ -9,6 +9,7 @@ import cloudsync
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 from tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
+from typing import Union
 
 from cloudsync.providers import GDriveProvider, DropboxProvider
 
@@ -299,7 +300,7 @@ def test_api_failure(provider):
             provider.exists_path("/notexists")
 
 
-def test_file_not_found(provider):
+def test_file_not_found(provider: Union[ProviderHelper, Provider]):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
     # provider.temp_name = lambda x: "/" + x  # TODO: fix this when we replace the mock fixture with the provider fixture
@@ -412,62 +413,174 @@ def test_file_not_found(provider):
     # Google drive raises FNF when it can't find the root... can we test for that here?
 
 
-def test_file_exists(provider: Provider):
+def test_file_exists(provider: Union[ProviderHelper, Provider]):
     # Start setup the initial state of the provider ==========================================
     dat = os.urandom(32)
 
     def data(da=dat):
         return BytesIO(da)
 
-    existing_folder_name = "/" + os.urandom(8).hex()
-    existing_file_name = provider.temp_name()
-    existing_folder_oid = provider.mkdir(existing_folder_name)
-    existing_file_info = provider.create(existing_file_name, data(), None)
+    def create_and_delete_file():
+        file_name = provider.temp_name()
+        file_info = provider.create(file_name, data(), None)
+        provider.delete(file_info.oid)
+        return file_name, file_info.oid
+
+    def create_and_delete_folder():
+        folder_name = provider.temp_name()
+        folder_oid = provider.mkdir(folder_name)
+        provider.delete(folder_oid)
+        return folder_name, folder_oid
+
+    def create_and_rename_file():
+        file_name1 = provider.temp_name()
+        file_name2 = provider.temp_name()
+        file_info1 = provider.create(file_name1, data(), None)
+        provider.rename(file_info1.oid, file_name2)
+        return file_name1, file_info1.oid
+
+    def create_and_rename_folder():
+        folder_name1 = provider.temp_name()
+        folder_name2 = provider.temp_name()
+        folder_oid1 = provider.mkdir(folder_name1)
+        provider.rename(folder_oid1, folder_name2)
+        return folder_name1, folder_oid1
+
+    def create_file(file_name=None):
+        if file_name is None:
+            file_name = provider.temp_name()
+        file_info = provider.create(file_name, data(), None)
+        return file_name, file_info.oid
+
+    def create_folder(folder_name=None):
+        if folder_name is None:
+            folder_name = provider.temp_name()
+        folder_oid = provider.mkdir(folder_name)
+        return folder_name, folder_oid
+
     # End setup the initial state of the provider ==========================================
 
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
-    # api methods to check for FileExists: mkdir, upload, create, rename
-    # Possible issues to potentially check each of the vulnerable api methods:
+    # api methods to check for FileExists:
+    #   vulnerable to existing paths:
+    #       mkdir, create, rename
+    #   Possible issues to potentially check each of the vulnerable api methods:
     #       target path has a component in the parent folder that already exists as a file
     #       target path exists
     #       target path exists, but the type of the existing object at that location is different from expected
     #       target path exists, but the type of the existing object at that location is what was expected
-    #       target path existed, but is currently trashed, different type as source
-    #       target path existed, but is currently trashed, same type as source
+    #       target path existed, but was deleted, different type as source
+    #       target path existed, but was deleted, same type as source
+    #       target path existed, but was renamed, different type as source
+    #       target path existed, but was renamed, same type as source
+    #
+    #   vulnerable to existing OIDs:
+    #       upload
+    #   Possible issues to potentially check each of the vulnerable api methods:
+    #       target OID exists, but the type of the existing object at that location is different from expected
+    #       target OID existed, but was trashed, should un-trash the object
     #
 
     # The enumerated tests:
     #   mkdir: where target path has a parent folder that already exists as a file, raises FEx
+    name, _ = create_file()
     with pytest.raises(CloudFileExistsError):
-        provider.mkdir(existing_file_name + "/junk")
+        provider.mkdir(name + "/junk")
 
     #   mkdir: where target path exists as a file, raises FEx
+    name, _ = create_file()
     with pytest.raises(CloudFileExistsError):
-        provider.mkdir(existing_file_name)
+        provider.mkdir(name)
 
     #   mkdir: where target path exists as a folder, does not raise
-    provider.mkdir(existing_folder_name)
+    name, _ = create_folder()
+    provider.mkdir(name)
 
     #   mkdir: creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
-    new_name1 = provider.temp_name()
+    name, _ = create_and_delete_file()
+    provider.mkdir(name)
 
     #   mkdir: creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
+    name, _ = create_and_delete_folder()
+    provider.mkdir(name)
+
+    #   mkdir: target path existed, but was renamed, different type as source
+    name, _ = create_and_rename_file()
+    create_folder(name)
+
+    #   mkdir: target path existed, but was renamed, same type as source
+    name, _ = create_and_rename_folder()
+    create_folder(name)
+
     #   upload: where target OID is a folder, raises FEx
+    _, oid = create_folder()
+    with pytest.raises(CloudFileExistsError):
+        provider.upload(oid, data())
+
     #   create: where target path exists, raises FEx
+    name, _ = create_file()
+    with pytest.raises(CloudFileExistsError):
+        create_file(name)
+
     #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
+    name, _ = create_and_delete_file()
+    create_file(name)
+
     #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
+    name, _ = create_and_delete_folder()
+    create_file(name)
+
     #   create: where target path has a parent folder that already exists as a file, raises FEx
+    name, _ = create_and_delete_file()
+    create_file(name)
+
+    #   create: target path existed, but was renamed, different type as source
+    name, _ = create_and_delete_folder()
+    provider.create(name, data(), None)
+
+    #   create: target path existed, but was renamed, same type as source
+    name, _ = create_and_rename_file()
+    create_file(name)
+
     #   rename: rename folder over empty folder succeeds
+    _, oid1 = create_folder()
+    name2, _ = create_folder()
+    provider.rename(oid1, name2)
+
     #   rename: rename folder over non-empty folder raises FEx
+    # TODO
+
     #   rename: target has a parent folder that already exists as a file, raises FEx
+    # TODO
+
     #   rename: renaming file over empty folder, raises FEx
+    # TODO
+
     #   rename: renaming file over non-empty folder, raises FEx
+    # TODO
+
     #   rename: renaming a folder over a file, raises FEx
+    # TODO
+
     #   rename: create a file, delete it, then rename a file to the same path as the deleted, does not raise
+    # TODO
+
     #   rename: create a folder, delete it, then rename file to the same path as the deleted, does not raise
+    # TODO
+
     #   rename: create a file, delete it, then rename a folder to the same path as the deleted, does not raise
+    # TODO
+
     #   rename: create a folder, delete it, then rename folder to the same path as the deleted, does not raise
+    # TODO
+
+    #   rename: target path existed, but was renamed, different type as source
+    # TODO
+
+    #   rename: target path existed, but was renamed, same type as source
+    # TODO
+
 
 
 

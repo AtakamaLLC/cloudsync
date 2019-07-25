@@ -451,7 +451,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
  
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
         if self.exists_path(path):
-            raise CloudFileExistsError()
+            info = self.info_path(path)
+            if info.otype == FILE:
+                raise CloudFileExistsError()
+            else:
+                log.debug("Skipped creating already existing folder: %s", path)
+                return info.oid
         pid = self.get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {
