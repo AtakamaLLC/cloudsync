@@ -31,8 +31,8 @@ from .provider import *
 from .event import *
 from .sync import *
 from .exceptions import *
-from .eventmanager import *
 from .types import *
+from .cs import *
 
 from .command import main
 
