@@ -8,7 +8,7 @@ from typing import Optional
 
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
-from cloudsync.exceptions import CloudFileNotFoundError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.types import DIRECTORY, FILE
 
 from .runnable import Runnable
@@ -256,6 +256,14 @@ class SyncManager(Runnable):
         log.debug("mkdirs %s", path)
         try:
             oid = prov.mkdir(path)
+        except CloudFileExistsError:
+            # todo: mabye CloudFileExistsError needs to have an oid and/or path in it
+            # at least optionally
+            info = prov.info_path(path)
+            if info:
+                oid = info.oid
+            else:
+                raise
         except CloudFileNotFoundError:
             ppath, _ = prov.split(path)
             log.debug("mkdirs parent, %s", ppath)
@@ -265,6 +273,7 @@ class SyncManager(Runnable):
                 oid = prov.mkdir(path)
             except CloudFileNotFoundError:
                 raise CloudFileExistsError("f'ed up mkdir")
+        return oid
 
     def mkdir_synced(self, changed, sync):
         synced = other_side(changed)
@@ -272,10 +281,12 @@ class SyncManager(Runnable):
             translated_path = self.translate(synced, sync[changed].path)
             log.debug("translated %s as path %s", sync[changed].path, translated_path)
             oid = self.mkdirs(self.providers[synced], translated_path)
-            log.debug("mkdir %s as path %s",
-                      self.providers[synced].debug_name, translated_path)
+            log.debug("mkdir %s as path %s oid %s",
+                      self.providers[synced].debug_name, translated_path, oid)
             sync[synced].oid = oid
             sync[synced].sync_path = translated_path
+            sync[synced].exists = True
+            sync[synced].path = sync[synced].sync_path
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
         except CloudFileNotFoundError:
@@ -291,11 +302,13 @@ class SyncManager(Runnable):
             log.debug("upload to %s as path %s",
                       self.providers[synced].debug_name, sync[synced].sync_path)
             sync[synced].sync_hash = info.hash
+            sync[synced].oid = info.oid
             if info.path:
                 sync[synced].sync_path = info.path
             else:
                 sync[synced].sync_path = sync[synced].path
-            sync[synced].oid = info.oid
+            sync[synced].path = sync[synced].sync_path
+            sync[synced].exists = True
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
@@ -312,12 +325,14 @@ class SyncManager(Runnable):
                 translated_path, open(sync.temp_file, "rb"))
             log.debug("create on %s as path %s",
                       self.providers[synced].debug_name, translated_path)
-            sync[synced].oid = info.oid
             sync[synced].sync_hash = info.hash
+            sync[synced].oid = info.oid
             if info.path:
                 sync[synced].sync_path = info.path
             else:
                 sync[synced].sync_path = translated_path
+            sync[synced].path = sync[synced].sync_path
+            sync[synced].exists = True
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
             self.finished(changed, sync)
@@ -330,9 +345,11 @@ class SyncManager(Runnable):
         log.debug("changed %s", sync)
 
         if not sync[changed].exists:
+            log.debug("sync deleted %s", sync[changed].path)
             # see if there are other entries for the same path, but other ids
             ents = list(self.syncs.lookup_path(changed, sync[changed].path))
 
+            log.debug("ents %s", ents)
             if len(ents) == 1:
                 assert ents[0] == sync
                 try:
@@ -345,7 +362,21 @@ class SyncManager(Runnable):
             self.finished(changed, sync)
             return
 
-        if sync[changed].path != sync[changed].sync_path:
+        if sync[changed].path != sync[changed].sync_path or sync[changed].sync_path is None:
+
+            if not sync[changed].path:
+                assert sync[changed].oid
+
+                info = self.providers[changed].info_oid(sync[changed].oid)
+                if not info:
+                    sync[changed].exists = False
+                    return
+
+                if not info.path:
+                    assert False, "impossible sync, no path %s" % sync[changed]
+
+                sync[changed].path = info.path
+
             if not sync[changed].sync_path:
                 assert not sync[changed].sync_hash
                 # looks like a new file
@@ -374,6 +405,8 @@ class SyncManager(Runnable):
 
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info
+
+            log.debug("needs upload: %s", sync)
 
             assert sync[synced].oid
 

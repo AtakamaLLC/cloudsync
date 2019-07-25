@@ -22,6 +22,51 @@ class WaitFor(NamedTuple):
 
 log = logging.getLogger(__name__)
 
+class RunUntilHelper():
+    def run_until_found(self, *files, timeout=1):
+        last_error = None
+
+        def found():
+            ok = True
+
+            for info in files:
+                if type(info) is tuple:
+                    info = WaitFor(side=info[0], path=info[1])
+
+                try:
+                    other_info = self.providers[info.side].info_path(info.path)
+                except CloudFileNotFoundError as e:
+                    other_info = None
+
+                if other_info is None:
+                    if info.exists == False:
+                        continue
+                    log.debug("waiting %s", info.path)
+                    last_error = CloudFileNotFoundError(info.path)
+                    ok = False
+                    break
+
+                if info.exists == False:
+                    ok = False
+                    break
+
+                log.debug("waiting %s", info)
+
+                if info.hash and info.hash != other_info.hash:
+                    ok = False
+                    break
+
+            return ok
+
+        self.run(timeout=timeout, until=found)
+
+        if not found():
+            if last_error:
+                raise last_error
+            else:
+                raise TimeoutError("timed out while waiting")
+
+
 @pytest.fixture(name="sync")
 def fixture_sync():
     state = SyncState()
@@ -35,48 +80,12 @@ def fixture_sync():
 
         raise ValueError()
 
+   
+    class SyncMgrMixin(SyncManager, RunUntilHelper):
+        pass
+
     # two providers and a translation function that converts paths in one to paths in the other
-    sync =  SyncManager(state, (MockProvider(), MockProvider()), translate)
-
-    def run_until_found(*files, timeout=1):
-        last_error = None
-
-        def found():
-            for info in files:
-                if type(info) is tuple:
-                    info = WaitFor(side=info[0], path=info[1])
-
-                try:
-                    other_info = sync.providers[info.side].info_path(info.path)
-                except CloudFileNotFoundError as e:
-                    other_info = None
-
-                if other_info is None:
-                    if info.exists == False:
-                        return True
-                    log.debug("waiting %s", info.path)
-                    last_error = CloudFileNotFoundError(info.path)
-                    continue
-
-                if info.exists == False:
-                    continue
-
-                log.debug("waiting %s", info)
-    
-                if info.hash and info.hash != other_info.hash:
-                    continue
-
-                return True
-
-        sync.run(timeout=timeout, until=found)
-
-        if not found():
-            if last_error:
-                raise last_error
-            else:
-                raise TimeoutError("timed out while waiting")
-
-    sync.run_until_found = run_until_found
+    sync =  SyncMgrMixin(state, (MockProvider(), MockProvider()), translate)
 
     yield sync
 
@@ -252,10 +261,13 @@ def test_sync_mkdir(sync):
     sync.run_until_found((REMOTE, remote_dir1), timeout=1)
     sync.run_until_found((REMOTE, remote_path1), timeout=1)
 
-    sync.providers[LOCAL].rmdir(local_path_oid1)
+    log.debug("delete")
+    sync.providers[LOCAL].delete(local_path_oid1)
     sync.syncs.update(LOCAL, FILE, local_path_oid1, exists=False)
 
+    log.debug("wait for delete")
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
 
-    with pytest.raises(CloudFileNotFoundError):
-        sync.providers[REMOTE].info_path(remote_path1)
+    assert sync.providers[REMOTE].info_path(remote_path1) is None
+
+
