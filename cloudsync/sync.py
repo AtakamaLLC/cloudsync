@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 class Reprable:                                     # pylint: disable=too-few-public-methods
     def __repr__(self):
-        return self.__class__.__name__ + str(self.__dict__)
+        return self.__class__.__name__ + ":" + str(id(self)) + str(self.__dict__)
 
 
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods
@@ -53,7 +53,6 @@ def other_side(index):
 class SyncEntry(Reprable):
     def __init__(self, otype):
         self.__states = [SideState(0), SideState(1)]
-        self.sync_exists = None
         self.otype = otype
         self.temp_file = None
 
@@ -160,6 +159,9 @@ class SyncState:
 
         ent[side].changed = time.time()
 
+    def __len__(self):
+        return len(self.get_all())
+
     def update(self, side, otype, oid, path=None, hash=None, exists=True):   # pylint: disable=redefined-builtin
         ent = self.lookup_oid(side, oid)
         if not ent:
@@ -179,6 +181,25 @@ class SyncState:
         if ent[1].changed or ent[0].changed:
             return
         self._changeset.remove(ent)
+
+    def pretty_print(self, ignore_dirs=False):
+        from io import StringIO
+        ret = StringIO()
+
+        for ent in self.get_all():
+            if ignore_dirs:
+                if ent.otype == DIRECTORY:
+                    continue
+
+            print("%5s %20s %16s %20s -- %20s %16s %s"  
+                    % (
+                            ent.otype.value,
+                            ent[LOCAL].path, ent[LOCAL].oid, str(ent[LOCAL].sync_path) + ":" + str(ent[LOCAL].exists),
+                            ent[REMOTE].path, ent[REMOTE].oid, str(ent[REMOTE].sync_path) + ":" + str(ent[REMOTE].exists)
+                      )
+                , file=ret)
+
+        return ret.getvalue()
 
     def get_all(self):
         ents = set()
@@ -370,6 +391,9 @@ class SyncManager(Runnable):
         sync[synced].exists = False
 
     def check_disjoint_conflict(self, sync, changed, synced, translated_path):
+        if sync.otype != FILE:
+            return False
+
         ents = list(self.syncs.lookup_path(synced, translated_path))
 
         # filter for exists

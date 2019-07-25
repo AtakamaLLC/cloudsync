@@ -51,7 +51,7 @@ def test_sync_basic(cs):
             (LOCAL, local_path2),
             (REMOTE, remote_path1),
             (REMOTE, remote_path2),
-    )
+    timeout=2)
 
     linfo2 = cs.providers[LOCAL].info_path(local_path2)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -61,4 +61,40 @@ def test_sync_basic(cs):
     assert linfo2.hash == rinfo2.hash
     assert linfo1.hash == rinfo1.hash
 
-    log.debug("state %s", cs.state)
+    assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
+    assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+    log.error("TABLE\n%s", cs.state.pretty_print())
+
+
+def test_sync_conflict_delete(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+    cs.run(timeout=0.5)
+
+    rinfo = cs.providers[REMOTE].info_path(remote_path1)
+
+    log.error("TABLE1\n%s", cs.state.pretty_print(ignore_dirs=True))
+    
+    cs.providers[LOCAL].delete(linfo1.oid)
+    cs.emgrs[LOCAL].do()
+
+    log.error("TABLE2\n%s", cs.state.pretty_print(ignore_dirs=True))
+
+    linfo2 = cs.providers[LOCAL].create(local_path1, BytesIO(b"goodbye"))
+
+    cs.emgrs[LOCAL].do()
+
+    log.error("TABLE3\n%s", cs.state.pretty_print(ignore_dirs=True))
+
+    assert(len(cs.state) == 3)
+
+

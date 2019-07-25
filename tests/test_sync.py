@@ -23,7 +23,7 @@ class WaitFor(NamedTuple):
 log = logging.getLogger(__name__)
 
 class RunUntilHelper():
-    def run_until_found(self, *files, timeout=1):
+    def run_until_found(self, *files, timeout=2):
         log.debug("running until found")
         last_error = None
 
@@ -41,8 +41,9 @@ class RunUntilHelper():
 
                 if other_info is None:
                     if info.exists == False:
+                        log.debug("waiting not exists %s", info.path)
                         continue
-                    log.debug("waiting %s", info.path)
+                    log.debug("waiting exists %s", info.path)
                     last_error = CloudFileNotFoundError(info.path)
                     ok = False
                     break
@@ -51,9 +52,8 @@ class RunUntilHelper():
                     ok = False
                     break
 
-                log.debug("waiting %s", info)
-
                 if info.hash and info.hash != other_info.hash:
+                    log.debug("waiting hash %s", info.path)
                     ok = False
                     break
 
@@ -309,7 +309,6 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
 
-
 def test_sync_conflict_path(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -354,7 +353,7 @@ def test_sync_conflict_path(sync):
     assert len(sync.syncs.get_all()) == 1
    
     # currently defers to the alphabetcially greater name, rather than conflicting
-    sync.run_until_found((LOCAL, "/local/stuff-r"), timeout=1)
+    sync.run_until_found((LOCAL, "/local/stuff-r"), timeout=2)
    
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
