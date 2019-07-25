@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 class RunUntilHelper():
     def run_until_found(self, *files, timeout=1):
+        log.debug("running until found")
         last_error = None
 
         def found():
@@ -270,4 +271,90 @@ def test_sync_mkdir(sync):
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
+def test_sync_conflict_simul(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = os.path.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_path1 = os.path.join(remote_parent, "stuff1")  # "/remote/stuff1"
 
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+    rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"))
+
+    # inserts info about some local path
+    sync.syncs.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+    sync.syncs.update(REMOTE, FILE, path=remote_path1,
+                      oid=rinfo.oid, hash=rinfo.hash)
+
+    sync.run_until_found(
+            (REMOTE, "/remote/stuff1.conflicted"),
+            (LOCAL, "/local/stuff1.conflicted"),
+            (REMOTE, "/remote/stuff1"),
+            (LOCAL, "/local/stuff1")
+            , timeout=1)
+
+    sync.providers[LOCAL].log_debug_state("LOCAL")
+    sync.providers[REMOTE].log_debug_state("REMOTE")
+
+    b1 = BytesIO()
+    b2 = BytesIO()
+    sync.providers[REMOTE].download_path("/remote/stuff1.conflicted", b1)
+    sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+
+    # both files are intact
+    assert b1.getvalue() != b2.getvalue()
+    assert b1.getvalue() in (b"hello", b"goodbye")
+    assert b2.getvalue() in (b"hello", b"goodbye")
+
+
+def test_sync_conflict_path(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = "/local/stuff"
+    remote_path1 = "/remote/stuff"
+    local_path2 = "/local/stuff-l"
+    remote_path2 = "/remote/stuff-r"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    # inserts info about some local path
+    sync.syncs.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+
+    rinfo = sync.providers[REMOTE].info_path(remote_path1)
+
+    assert len(sync.syncs.get_all()) == 1
+
+    ent = sync.syncs.get_all().pop()
+
+    sync.providers[REMOTE].log_debug_state("BEFORE")
+
+    sync.providers[LOCAL].rename(linfo.oid, local_path2)
+    sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
+
+    sync.providers[REMOTE].log_debug_state("AFTER")
+
+    sync.syncs.update(LOCAL, FILE, path=local_path2,
+                      oid=linfo.oid, hash=linfo.hash)
+   
+    assert len(sync.syncs.get_all()) == 1
+    assert ent[REMOTE].oid == rinfo.oid
+
+    sync.syncs.update(REMOTE, FILE, path=remote_path2,
+                      oid=rinfo.oid, hash=rinfo.hash)
+
+    assert len(sync.syncs.get_all()) == 1
+   
+    # currently defers to the alphabetcially greater name, rather than conflicting
+    sync.run_until_found((LOCAL, "/local/stuff-r"), timeout=1)
+   
+    assert not sync.providers[LOCAL].exists_path(local_path1)
+    assert not sync.providers[LOCAL].exists_path(local_path2)
