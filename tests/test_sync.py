@@ -22,53 +22,43 @@ class WaitFor(NamedTuple):
 
 log = logging.getLogger(__name__)
 
-@pytest.fixture(name="sync")
-def fixture_sync():
-    state = SyncState()
-
-    def translate(to, path):
-        if to == LOCAL:
-            return "/local/" + path.replace("/remote/", "")
-
-        if to == REMOTE:
-            return "/remote/" + path.replace("/local/", "")
-
-        raise ValueError()
-
-    # two providers and a translation function that converts paths in one to paths in the other
-    sync =  SyncManager(state, (MockProvider(), MockProvider()), translate)
-
-    def run_until_found(*files, timeout=1):
+class RunUntilHelper():
+    def run_until_found(self, *files, timeout=1):
         last_error = None
 
         def found():
+            ok = True
+
             for info in files:
                 if type(info) is tuple:
                     info = WaitFor(side=info[0], path=info[1])
 
                 try:
-                    other_info = sync.providers[info.side].info_path(info.path)
+                    other_info = self.providers[info.side].info_path(info.path)
                 except CloudFileNotFoundError as e:
                     other_info = None
 
                 if other_info is None:
                     if info.exists == False:
-                        return True
+                        continue
                     log.debug("waiting %s", info.path)
                     last_error = CloudFileNotFoundError(info.path)
-                    continue
+                    ok = False
+                    break
 
                 if info.exists == False:
-                    continue
+                    ok = False
+                    break
 
                 log.debug("waiting %s", info)
-    
+
                 if info.hash and info.hash != other_info.hash:
-                    continue
+                    ok = False
+                    break
 
-                return True
+            return ok
 
-        sync.run(timeout=timeout, until=found)
+        self.run(timeout=timeout, until=found)
 
         if not found():
             if last_error:
@@ -76,7 +66,26 @@ def fixture_sync():
             else:
                 raise TimeoutError("timed out while waiting")
 
-    sync.run_until_found = run_until_found
+
+@pytest.fixture(name="sync")
+def fixture_sync():
+    state = SyncState()
+
+    def translate(to, path):
+        if to == LOCAL:
+            return "/local" + path.replace("/remote", "")
+
+        if to == REMOTE:
+            return "/remote" + path.replace("/local", "")
+
+        raise ValueError()
+
+   
+    class SyncMgrMixin(SyncManager, RunUntilHelper):
+        pass
+
+    # two providers and a translation function that converts paths in one to paths in the other
+    sync =  SyncMgrMixin(state, (MockProvider(), MockProvider()), translate)
 
     yield sync
 
@@ -234,23 +243,31 @@ def test_sync_rm(sync):
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
-@pytest.mark.skip(reason="no way of currently testing this")
 def test_sync_mkdir(sync):
+    local_dir1 = "/local"
     local_path1 = "/local/stuff"
+    remote_dir1 = "/remote"
     remote_path1 = "/remote/stuff"
 
-    oid = sync.providers[LOCAL].mkdir(local_path1)
+    local_dir_oid1 = sync.providers[LOCAL].mkdir(local_dir1)
+    local_path_oid1 = sync.providers[LOCAL].mkdir(local_path1)
 
     # inserts info about some local path
+    sync.syncs.update(LOCAL, DIRECTORY, path=local_dir1,
+                      oid=local_dir_oid1)
     sync.syncs.update(LOCAL, DIRECTORY, path=local_path1,
-                      oid=oid)
+                      oid=local_path_oid1)
 
+    sync.run_until_found((REMOTE, remote_dir1), timeout=1)
     sync.run_until_found((REMOTE, remote_path1), timeout=1)
 
-    sync.providers[LOCAL].rmdir(oid)
-    sync.syncs.update(LOCAL, FILE, oid, exists=False)
+    log.debug("delete")
+    sync.providers[LOCAL].delete(local_path_oid1)
+    sync.syncs.update(LOCAL, FILE, local_path_oid1, exists=False)
 
+    log.debug("wait for delete")
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
 
-    with pytest.raises(CloudFileNotFoundError):
-        sync.providers[REMOTE].info_path(remote_path1)
+    assert sync.providers[REMOTE].info_path(remote_path1) is None
+
+
