@@ -69,7 +69,7 @@ class MockProvider(Provider):
                        }
             return ret_val
 
-    def __init__(self, sync_root="/", case_sensitive=True, sep="/"):
+    def __init__(self, sync_root="/", case_sensitive=True, sep="/", recycle_oid=False):
         super().__init__(sync_root)
         # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
         #  These will be accessed in a thread by the event manager
@@ -84,6 +84,7 @@ class MockProvider(Provider):
             MockProvider.FSObject.FILE: OType.FILE,
             MockProvider.FSObject.DIR: OType.DIRECTORY,
         }
+        self._recycle_oid = recycle_oid
 
     def _register_event(self, action, target_object):
         event = MockProvider.MockEvent(action, target_object)
@@ -195,7 +196,9 @@ class MockProvider(Provider):
         self._api()
         contents = file_like.read()
         file = self._get_by_path(path)
-        if file is None:
+        if file is not None and file.type != MockProvider.FSObject.FILE:
+            raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
+        if file is None or not self._recycle_oid:
             self._verify_parent_folder_exists(path)
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
@@ -203,6 +206,7 @@ class MockProvider(Provider):
             if file.exists:
                 raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         file.contents = contents
+        file.exists = True
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
         return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
@@ -309,7 +313,7 @@ class MockProvider(Provider):
         file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             return None
-        return OInfo(otype=file.type,oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     # @staticmethod
     # def _slurp(path):
