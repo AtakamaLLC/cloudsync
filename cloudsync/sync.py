@@ -482,10 +482,15 @@ class SyncManager(Runnable):
         translated_path = self.translate(synced, sync[changed].path)
         try:
             self._create_synced(changed, sync, translated_path)
+            return FINISHED
         except CloudFileNotFoundError:
             parent, _ = self.providers[synced].split(translated_path)
             self.mkdirs(self.providers[synced], parent)
             self._create_synced(changed, sync, translated_path)
+            return FINISHED
+        except CloudFileExistsError:
+            # there's a folder in the way, let that resolve later
+            return REQUEUE
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -567,7 +572,7 @@ class SyncManager(Runnable):
             elif sync[synced].oid:
                 self.upload_synced(changed, sync)
             else:
-                self.create_synced(changed, sync)
+                return self.create_synced(changed, sync)
         else:
             assert sync[synced].oid
             log.debug("rename %s %s",
