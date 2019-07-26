@@ -7,7 +7,6 @@ import random
 from hashlib import md5
 from base64 import b64encode
 from enum import Enum
-from io import StringIO
 
 from typing import Optional
 
@@ -21,12 +20,16 @@ from .runnable import Runnable
 log = logging.getLogger(__name__)
 
 # useful for converting oids and pointer nubmers into digestible nonces
+
+
 def debug_sig(t, size=3):
     if not t:
         return 0
     return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
 
 # adds a repr to some classes
+
+
 class Reprable:                                     # pylint: disable=too-few-public-methods
     def __repr__(self):
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(self.__dict__)
@@ -151,13 +154,13 @@ class SyncEntry(Reprable):
                 return 0
 
         ret = "%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s" % (
-                  debug_sig(id(self)),
-                  self.otype.value,
-                  secs(self[LOCAL].changed), self[LOCAL].path, debug_sig(self[LOCAL].oid), str(
-                      self[LOCAL].sync_path) + ":" + str(self[LOCAL].exists.value),
-                  secs(self[REMOTE].changed), self[REMOTE].path, debug_sig(self[REMOTE].oid), str(
-                      self[REMOTE].sync_path) + ":" + str(self[REMOTE].exists.value)
-              )
+            debug_sig(id(self)),
+            self.otype.value,
+            secs(self[LOCAL].changed), self[LOCAL].path, debug_sig(self[LOCAL].oid), str(
+                self[LOCAL].sync_path) + ":" + str(self[LOCAL].exists.value),
+            secs(self[REMOTE].changed), self[REMOTE].path, debug_sig(self[REMOTE].oid), str(
+                self[REMOTE].sync_path) + ":" + str(self[REMOTE].exists.value)
+        )
 
         return ret
 
@@ -273,7 +276,7 @@ class SyncState:
                     continue
             if e.discarded:
                 continue
-           
+
             ret += e.pretty() + "\n"
         return ret
 
@@ -406,11 +409,13 @@ class SyncManager(Runnable):
                     # these we can toss, they are other folders
                     # keep the current one, since it exists for sure
                     ent.discard()
-        ents = [ ent for ent in ents if ent.discarded == False ]
-        ents = [ ent for ent in ents if TRASHED not in ( ent[changed].exists, ent[synced].exists)  ]
+        ents = [ent for ent in ents if not ent.discarded]
+        ents = [ent for ent in ents if TRASHED not in (
+            ent[changed].exists, ent[synced].exists)]
 
         if ents:
-            raise NotImplementedError("What to do if we create a folder when there's already a FILE")
+            raise NotImplementedError(
+                "What to do if we create a folder when there's already a FILE")
 
         try:
             translated_path = self.translate(synced, sync[changed].path)
@@ -536,11 +541,13 @@ class SyncManager(Runnable):
         if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
             return False
 
-        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (ent[synced].exists, ent[changed].exists)]
+        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
+            ent[synced].exists, ent[changed].exists)]
 
         assert len(other_untrashed_ents) == 1
 
-        self.handle_split_conflict(other_untrashed_ents[0], synced, sync, changed)
+        self.handle_split_conflict(
+            other_untrashed_ents[0], synced, sync, changed)
 
         return True
 
