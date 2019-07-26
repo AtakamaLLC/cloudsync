@@ -136,7 +136,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError()
             except HttpError as e:
                 # gets a default something (actually the message, not the reason) using their secret interface
-                reason = e._get_reason()
+                reason = e._get_reason() # pylint: disable=protected-access
 
                 # parses the JSON of the content to get the reason from where it really lives in the content
                 try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
@@ -168,8 +168,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 should_retry = _should_retry_response(e.resp.status, e.content)
                 if should_retry:
                     raise CloudTemporaryError("unknown error %s" % e)
-                else:
-                    raise Exception("unknown error %s" % e)
+                raise Exception("unknown error %s" % e)
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
@@ -411,10 +410,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             possible_conflict = self.info_path(path)
             if possible_conflict.otype == DIRECTORY:
                 contents = self.listdir(possible_conflict.oid)
-                if len(contents) > 0:
+                if contents:
                     raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-                else:
-                    self.delete(possible_conflict.oid)
+                self.delete(possible_conflict.oid)
             else:
                 if info.otype != possible_conflict.otype:
                     raise CloudFileExistsError(path)
@@ -469,10 +467,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if self.exists_path(path):
             info = self.info_path(path)
             if info.otype == FILE:
-                raise CloudFileExistsError()
-            else:
-                log.debug("Skipped creating already existing folder: %s", path)
-                return info.oid
+                raise CloudFileExistsError(path)
+            log.debug("Skipped creating already existing folder: %s", path)
+            return info.oid
         pid = self.get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {

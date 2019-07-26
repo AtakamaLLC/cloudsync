@@ -121,7 +121,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if not self.sync_root_id:
             raise CloudFileNotFoundError("cant create sync root")
 
-    def _api(self, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches
+    def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
@@ -352,15 +352,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         possible_conflict = self.info_path(path)
         if possible_conflict.otype == DIRECTORY:
             contents = self.listdir(possible_conflict.oid)
-            if len(contents) > 0:
+            if contents:
                 raise CloudFileExistsError("Cannot rename over empty folder %s" % path)
-            else:
-                self.delete(possible_conflict.oid)
-                self._api('files_move_v2', info.oid, path)
-                return True
-        else:
-            if info.otype != possible_conflict.otype:
-                raise CloudFileExistsError(path)
+            self.delete(possible_conflict.oid)
+            self._api('files_move_v2', info.oid, path)
+            return True
+        else:  # conflict is a file, and we already know that the rename is on a folder
+            raise CloudFileExistsError(path)
 
     def rename(self, oid, path):
         try:
@@ -373,14 +371,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     raise
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
+        # TODO: check if a regular filesystem lets you mkdir over a non-empty folder...
         self._verify_parent_folder_exists(path)
         if self.exists_path(path):
             info = self.info_path(path)
             if info.otype == FILE:
                 raise CloudFileExistsError()
-            else:
-                log.debug("Skipped creating already existing folder: %s", path)
-                return info.oid
+            log.debug("Skipped creating already existing folder: %s", path)
+            return info.oid
         res = self._api('files_create_folder_v2', path)
         log.debug("dbx mkdir %s", res)
         res = res.metadata
