@@ -377,6 +377,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             info = self.info_path(path)
             if info.otype == FILE:
                 raise CloudFileExistsError()
+            else:
+                pass
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
         res = self._api('files_create_folder_v2', path)
@@ -431,14 +433,3 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             return DropboxInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None
-
-    def _verify_parent_folder_exists(self, path):
-        parent_path = self.dirname(path)
-        if parent_path != self.sep:
-            parent_obj = self.info_path(parent_path)
-            if parent_obj is None:
-                # perhaps this should separate "FileNotFound" and "non-folder parent exists"
-                # and raise different exceptions
-                raise CloudFileNotFoundError(parent_path)
-            if parent_obj.otype != DIRECTORY:
-                raise CloudFileExistsError(parent_path)
