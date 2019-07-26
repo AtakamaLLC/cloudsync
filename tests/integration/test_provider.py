@@ -309,8 +309,6 @@ def test_file_not_found(provider: Union[ProviderHelper, Provider]):
     def data():
         return BytesIO(dat)
 
-    if getattr(provider, "sync_root_id", False):
-        _ = provider.sync_root_id
     test_file_deleted_path = provider.temp_name("dest1")  # Created, then deleted
     test_file_deleted_info = provider.create(test_file_deleted_path, data(), None)
     test_file_deleted_oid = test_file_deleted_info.oid
@@ -525,8 +523,9 @@ def test_file_exists(provider: Union[ProviderHelper, Provider]):
         provider.mkdir(name)
 
     #   mkdir: where target path exists as a folder, does not raise
-    name, _ = create_folder()
-    provider.mkdir(name)
+    name, oid1 = create_folder()
+    oid2 = provider.mkdir(name)
+    assert oid1 == oid2
 
     #   mkdir: creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
     name, _ = create_and_delete_file()
@@ -576,16 +575,24 @@ def test_file_exists(provider: Union[ProviderHelper, Provider]):
 
     #   rename: rename folder over empty folder succeeds
     _, oid1 = create_folder()
-    name2, _ = create_folder()
+    name2, oid2 = create_folder()
+    assert oid1 != oid2
+    contents1 = provider.listdir(oid1)
     provider.rename(oid1, name2)
+    assert provider.exists_oid(oid1)
+    assert not provider.exists_oid(oid2)
+    contents2 = provider.listdir(oid1)
+    assert contents1 == contents2  # pytest MAGIC!
 
     #   rename: rename folder over non-empty folder raises FEx
-    # TODO
     _, oid1 = create_folder()
-    name2, _ = create_folder()
+    name2, oid2 = create_folder()
+    assert oid1 != oid2
     create_file(name2 + "/junk")
     with pytest.raises(CloudFileExistsError):
         provider.rename(oid1, name2)
+
+
 
     #   rename: target has a parent folder that already exists as a file, raises FEx
     # TODO

@@ -91,6 +91,11 @@ class MockProvider(Provider):
         target_object.update()
         self._latest_event = len(self._events) - 1
 
+    def _get_by_oid(self, oid):
+        # TODO: normalize the path, support case insensitive lookups, etc
+        self._api()
+        return self._fs_by_oid.get(oid, None)
+
     def _get_by_path(self, path):
         # TODO: normalize the path, support case insensitive lookups, etc
         self._api()
@@ -172,11 +177,12 @@ class MockProvider(Provider):
         self._register_event(MockProvider.MockEvent.ACTION_UPDATE, file)
         return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, path: str) -> 'List[OInfo]':
+    def listdir(self, oid) -> 'List[OInfo]':
         ret = []
-        folder_obj = self._get_by_path(path)
+        folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockProvider.FSObject.DIR):
-            raise CloudFileNotFoundError(path)
+            raise CloudFileNotFoundError(oid)
+        path = folder_obj.path
         for obj in self._fs_by_oid.values():
             if obj.exists:
                 if self.is_subpath(path, obj.path, strict=True):
@@ -223,7 +229,7 @@ class MockProvider(Provider):
                 log.debug("rename %s:%s conflicts with existing object of another type", oid, object_to_rename.path)
                 raise CloudFileExistsError(new_path)
             if possible_conflict.type == MockProvider.FSObject.DIR:
-                contents = self.listdir(possible_conflict.path)
+                contents = self.listdir(possible_conflict.oid)
                 if len(contents) > 0:
                     raise CloudFileExistsError(new_path)
             self.delete(possible_conflict.oid)

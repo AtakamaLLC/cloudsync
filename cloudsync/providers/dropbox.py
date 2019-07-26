@@ -118,6 +118,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.disconnect()
                 raise CloudDisconnectedError()
 
+        if not self.sync_root_id:
+            raise CloudFileNotFoundError("cant create sync root")
+
     def _api(self, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
@@ -288,6 +291,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def create(self, path, file_like, metadata=None):
         self._verify_parent_folder_exists(path)
+        if self.exists_path(path):
+            raise CloudFileExistsError(path)
         return self.upload(path, file_like, metadata)
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
@@ -341,8 +346,31 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             file_like.write(data)
         return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
 
+    def _attempt_rename_folder_over_empty_folder(self, info: OInfo, path):
+        if info.otype != DIRECTORY:
+            return False
+        possible_conflict = self.info_path(path)
+        if possible_conflict.otype == DIRECTORY:
+            contents = self.listdir(possible_conflict.oid)
+            if len(contents) > 0:
+                raise CloudFileExistsError("Cannot rename over empty folder %s" % path)
+            else:
+                self.delete(possible_conflict.oid)
+                self._api('files_move_v2', info.oid, path)
+                return True
+        else:
+            if info.otype != possible_conflict.otype:
+                raise CloudFileExistsError(path)
+
     def rename(self, oid, path):
-        self._api('files_move_v2', oid, path)
+        try:
+            self._api('files_move_v2', oid, path)
+        except CloudFileExistsError:
+            info = self.info_oid(oid)
+            if info.otype == DIRECTORY:
+                success = self._attempt_rename_folder_over_empty_folder(info, path)
+                if not success:
+                    raise
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
         self._verify_parent_folder_exists(path)
