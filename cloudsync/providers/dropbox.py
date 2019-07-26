@@ -132,12 +132,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 if isinstance(e.error, (files.ListFolderError, files.GetMetadataError, files.ListRevisionsError)):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error: files.LookupError = e.error.get_path()
-                        if inside_error.is_not_found():
+                        if inside_error.is_malformed_path():
                             log.debug('Malformed path when executing %s(%s %s) : %s',
                                       method, args, kwargs, e)
                             raise CloudFileNotFoundError(
                                 'Malformed path when executing %s(%s)' % (method, kwargs))
-                        if inside_error.is_malformed_path():
+                        if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
                                       method, args, kwargs, e)
                             raise CloudFileNotFoundError(
