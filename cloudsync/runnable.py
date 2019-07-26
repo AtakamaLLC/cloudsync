@@ -18,7 +18,7 @@ def time_helper(timeout, sleep=None, multiply=1):
 
 
 class Runnable(ABC):
-    def run(self, *, timeout=None, until=None, sleep=0.1):
+    def run(self, *, timeout=None, until=None, sleep=0.01):
         self.stopped = False                                                    # pylint: disable=attribute-defined-outside-init
 
         for _ in time_helper(timeout, sleep=sleep):

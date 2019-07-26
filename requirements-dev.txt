@@ -2,4 +2,5 @@ pytest
 pytest-parallel
 pytest-profiling
 pytest-repeat
+pytest-cov
 pylint

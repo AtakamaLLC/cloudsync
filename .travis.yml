@@ -1,13 +1,26 @@
 language: python
-python:
-- '3.6'
-- '3.7'
+cache: pip
+jobs:
+    include: 
+    - stage: lint
+      script:
+        - pylint cloudsync
+    - stage: test
+      script:
+        - pytest --durations=0 --workers=2 tests/unit
+      python:
+        - '3.6'
+        - '3.7'
+    - stage: integ
+      script:
+        - pytest --durations=0 --workers=2 tests/integration
+      python:
+        - '3.6'
+
 install:
 - pip install -r requirements-dev.txt
 - pip install -r requirements.txt
-script:
-- pylint cloudsync
-- pytest --durations=0 --workers=2 tests
+
 env:
   global:
   - secure: ij/D8TgoajOxXU6zXUDYcGSPGqc/ehF3X54nLsXEAwJuyne76m82KkLYn1yS1WkCYbqI2EKBPezriUc/OC42s3Nl8GQUQs/8vI/W+whiVYgVKzbZILzudmtMQXg9LGVFeIqCfSc3ViSGuk2ogBwOv1Ian8xqy4ntLaBKCXj10ba2/WNq72sbgaLQ/Hbu46IIpLLAwjqE/sPVWwE8GR4s2hccjzl1ljMe9enBccBSjV6U334tu26vkWLM9orKpOkr8p9Q24AIACIBSEZccsNeJqnDE6VQ4LwBqiXvm+BZnYHLXDnszOApBce+Ouvdb9IAwPKZ1SSrVxlJjWyQm3OmBSQTjY7QFyXJ+2CgX51q6BoAGBYCf5H0SLWCcOkJOUk0wFDlWh6EMNVHNO/htlVVkCFwG/FNm1RQ6lPEdbw/SjDxMtr9OvsTHyUioo7oyueccoNA7QUdYW4CHYFI+aTwPQPZvk2TrHZWbFqdKKDgUOAEN4BbN0Q4AB/NAc/DIe7vYMVUMLNihzZQ8Jfw8r/qVJUSJemCvZp5WapK+ydFB2D2dIEh+XPla4h0TJquzak2FnI8aRTCy/2EWZ+RBlTI2do3OX4YHzMIvfD+QejoKPJEvkcOP22r25tW6cO0iUARA6RiFjy3iVS7WoHOUnmnGotdWU46ZOzRzfAk6NAQUPM=

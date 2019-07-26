@@ -5,7 +5,7 @@ import pytest
 
 from cloudsync import CloudSync, SyncState, LOCAL, REMOTE
 
-from .fixtures import MockProvider
+from ..fixtures import MockProvider
 
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -161,3 +161,49 @@ def test_sync_two_conflicts(cs):
 
     assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+    b1 = BytesIO()
+    b2 = BytesIO()
+
+    cs.providers[LOCAL].download_path(local_path1, b1)
+    cs.providers[LOCAL].download_path(local_path1 + ".conflicted", b2)
+
+    assert b1.getvalue() in (b'goodbye', b'world')
+    assert b2.getvalue() in (b'goodbye', b'world')
+    assert b1.getvalue() != b2.getvalue()
+
+def test_sync_folder_conflicts_file(cs):
+    remote_path1 = "/remote/stuff1"
+    remote_path2 = "/remote/stuff1/under"
+    local_path1 = "/local/stuff1"
+
+    setup_remote_local(cs, "stuff1")
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print(ignore_dirs=False))
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    cs.providers[LOCAL].delete(linfo1.oid)
+    cs.providers[REMOTE].delete(rinfo1.oid)
+
+    linfo2 = cs.providers[LOCAL].create(local_path1, BytesIO(b"goodbye"))
+    linfo2 = cs.providers[REMOTE].mkdir(remote_path1)
+    linfo2 = cs.providers[REMOTE].create(remote_path2, BytesIO(b"world"))
+
+    # run event managers only... not sync
+    cs.emgrs[LOCAL].do()
+    cs.emgrs[REMOTE].do()
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
+    assert(len(cs.state) == 5)
+
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+
+    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    assert(len(cs.state) == 4)
+
+    local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
