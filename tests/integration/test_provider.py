@@ -19,7 +19,7 @@ class ProviderHelper:
         fname = self.join((folder or self.sync_root, os.urandom(16).hex() + "." + name))
         return fname
 
-    def events_poll(self, timeout=None):
+    def events_poll(self, timeout=None, until=None):
         if timeout is None:
             timeout = self.event_timeout
 
@@ -32,7 +32,9 @@ class ProviderHelper:
             for e in self.events():
                 yield e
                 got = True
-            if got:
+            if not until and got:
+                break
+            elif until and until():
                 break
 
     def test_cleanup(self):
@@ -284,6 +286,45 @@ def test_event_basic(util, provider: Provider):
     assert received_event.mtime
 
 
+def test_event_del_create(util, provider: Provider):
+    temp = BytesIO(os.urandom(32))
+    temp2 = BytesIO(os.urandom(32))
+    dest = provider.temp_name("dest")
+
+    # just get the cursor going
+    for e in provider.events_poll(timeout=min(provider.event_timeout,2)):
+        log.debug("event %s", e)
+
+    info1 = provider.create(dest, temp)
+    provider.delete(info1.oid)
+    info2 = provider.create(dest, temp2)
+
+    last_event = None
+    saw_delete = False
+    done = False
+    for e in provider.events_poll(provider.event_timeout * 2, until=lambda:done):
+        log.debug("event %s", e)
+        # you might get events for the root folder here or other setup stuff
+        path = e.path
+        if not e.path:
+            info = provider.info_oid(e.oid)
+            if info:
+                path = info.path
+
+        if path == dest or e.exists == False:
+            last_event = e 
+
+            if e.exists == True and saw_delete:
+                log.debug("done, we saw the delete and got a create after")
+                done = True
+
+            if e.exists == False:
+                saw_delete = True
+
+    # the important thing is that we always get a create after the delete event
+    assert last_event
+    assert last_event.exists == True
+    
 def test_api_failure(provider):
     # assert that the cloud
     # a) uses an api function
