@@ -1,4 +1,5 @@
 pytest
 pytest-parallel
 pytest-profiling
+pytest-repeat
 pylint

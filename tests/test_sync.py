@@ -22,8 +22,10 @@ class WaitFor(NamedTuple):
 
 log = logging.getLogger(__name__)
 
+TIMEOUT = 2
+
 class RunUntilHelper():
-    def run_until_found(self, *files, timeout=1):
+    def run_until_found(self, *files, timeout=TIMEOUT):
         log.debug("running until found")
         last_error = None
 
@@ -41,8 +43,9 @@ class RunUntilHelper():
 
                 if other_info is None:
                     if info.exists == False:
+                        log.debug("waiting not exists %s", info.path)
                         continue
-                    log.debug("waiting %s", info.path)
+                    log.debug("waiting exists %s", info.path)
                     last_error = CloudFileNotFoundError(info.path)
                     ok = False
                     break
@@ -51,9 +54,8 @@ class RunUntilHelper():
                     ok = False
                     break
 
-                log.debug("waiting %s", info)
-
                 if info.hash and info.hash != other_info.hash:
+                    log.debug("waiting hash %s", info.path)
                     ok = False
                     break
 
@@ -157,7 +159,7 @@ def test_sync_basic(sync):
         return all(info)
 
     # loop the sync until the file is found
-    sync.run(timeout=1, until=done)
+    sync.run(timeout=TIMEOUT, until=done)
 
     assert done()
 
@@ -183,12 +185,12 @@ def test_sync_rename(sync):
     sync.syncs.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+    sync.run_until_found((REMOTE, remote_path1))
 
     sync.syncs.update(LOCAL, FILE, path=local_path2,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.run_until_found((REMOTE, remote_path2), timeout=1)
+    sync.run_until_found((REMOTE, remote_path2))
 
     assert sync.providers[REMOTE].info_path("/remote/stuff") is None
 
@@ -206,13 +208,13 @@ def test_sync_hash(sync):
     sync.syncs.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+    sync.run_until_found((REMOTE, remote_path1))
 
     linfo = sync.providers[LOCAL].upload(linfo.oid, BytesIO(b"hello2"))
 
     sync.syncs.update(LOCAL, FILE, linfo.oid, hash=linfo.hash)
 
-    sync.run_until_found(WaitFor(REMOTE, remote_path1, hash=linfo.hash), timeout=1)
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, hash=linfo.hash))
 
     info = sync.providers[REMOTE].info_path(remote_path1)
 
@@ -235,12 +237,12 @@ def test_sync_rm(sync):
     sync.syncs.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+    sync.run_until_found((REMOTE, remote_path1))
 
     sync.providers[LOCAL].delete(linfo.oid)
     sync.syncs.update(LOCAL, FILE, linfo.oid, exists=False)
 
-    sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
@@ -259,15 +261,15 @@ def test_sync_mkdir(sync):
     sync.syncs.update(LOCAL, DIRECTORY, path=local_path1,
                       oid=local_path_oid1)
 
-    sync.run_until_found((REMOTE, remote_dir1), timeout=1)
-    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+    sync.run_until_found((REMOTE, remote_dir1))
+    sync.run_until_found((REMOTE, remote_path1))
 
     log.debug("delete")
     sync.providers[LOCAL].delete(local_path_oid1)
     sync.syncs.update(LOCAL, FILE, local_path_oid1, exists=False)
 
     log.debug("wait for delete")
-    sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False), timeout=1)
+    sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
@@ -294,7 +296,7 @@ def test_sync_conflict_simul(sync):
             (LOCAL, "/local/stuff1.conflicted"),
             (REMOTE, "/remote/stuff1"),
             (LOCAL, "/local/stuff1")
-            , timeout=1)
+            )
 
     sync.providers[LOCAL].log_debug_state("LOCAL")
     sync.providers[REMOTE].log_debug_state("REMOTE")
@@ -308,7 +310,6 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() != b2.getvalue()
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
-
 
 def test_sync_conflict_path(sync):
     remote_parent = "/remote"
@@ -327,7 +328,7 @@ def test_sync_conflict_path(sync):
     sync.syncs.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.run_until_found((REMOTE, remote_path1), timeout=1)
+    sync.run_until_found((REMOTE, remote_path1))
 
     rinfo = sync.providers[REMOTE].info_path(remote_path1)
 
@@ -354,7 +355,7 @@ def test_sync_conflict_path(sync):
     assert len(sync.syncs.get_all()) == 1
    
     # currently defers to the alphabetcially greater name, rather than conflicting
-    sync.run_until_found((LOCAL, "/local/stuff-r"), timeout=1)
+    sync.run_until_found((LOCAL, "/local/stuff-r"))
    
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
