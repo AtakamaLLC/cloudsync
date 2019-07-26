@@ -71,6 +71,23 @@ def test_sync_basic(cs):
     assert len(cs.state) == 3
     assert not cs.state.has_changes()
 
+def setup_remote_local(cs, *names):
+    remote_parent = "/remote"
+    local_parent = "/local"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+
+    found = []
+    for name in names:
+        remote_path1 = "/remote/" + name
+        local_path1 = "/local/" + name
+        linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+        found.append( (REMOTE, remote_path1) )
+
+    cs.run_until_found(*found)
+    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+
 def test_sync_create_delete_same_name(cs):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -97,15 +114,50 @@ def test_sync_create_delete_same_name(cs):
     # run local event manager only... not sync
     cs.emgrs[LOCAL].do()
 
-    log.error("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
     assert(len(cs.state) == 3)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
 
-    log.error("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
     assert(len(cs.state) == 2)
 
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+
+def test_sync_two_conflicts(cs):
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    setup_remote_local(cs, "stuff1")
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print(ignore_dirs=False))
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    cs.providers[LOCAL].delete(linfo1.oid)
+    cs.providers[REMOTE].delete(rinfo1.oid)
+
+    linfo2 = cs.providers[LOCAL].create(local_path1, BytesIO(b"goodbye"))
+    linfo2 = cs.providers[REMOTE].create(remote_path1, BytesIO(b"world"))
+
+    # run event managers only... not sync
+    cs.emgrs[LOCAL].do()
+    cs.emgrs[REMOTE].do()
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
+    assert(len(cs.state) == 4)
+
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+
+    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    assert(len(cs.state) == 3)
+
+    assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")

@@ -7,6 +7,7 @@ import random
 from hashlib import md5
 from base64 import b64encode
 from enum import Enum
+from io import StringIO
 
 from typing import Optional
 
@@ -21,10 +22,14 @@ log = logging.getLogger(__name__)
 
 # state of a single object
 
+def debug_sig(t, size=3):
+    if not t:
+        return 0
+    return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
 
 class Reprable:                                     # pylint: disable=too-few-public-methods
     def __repr__(self):
-        return self.__class__.__name__ + ":" + str(id(self)) + str(self.__dict__)
+        return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(self.__dict__)
 
 # safe ternary, don't allow traditional comparisons
 class Exists(Enum):
@@ -36,11 +41,6 @@ class Exists(Enum):
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
-
-def debug_sig(t, size=3):
-    if not t:
-        return 0
-    return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
 
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods
     def __init__(self, side):
@@ -237,17 +237,19 @@ class SyncState:
             return
         self._changeset.remove(ent)
 
-    def pretty_print(self, ignore_dirs=False):
-        from io import StringIO
-        ret = StringIO()
+    def pretty_print(self, ent=None, ignore_dirs=False, into=None):
+        ret = into or StringIO()
 
-        for ent in self.get_all():
+        if ent is None:
+            for e in self.get_all():
+                self.pretty_print(ent=e, ignore_dirs=ignore_dirs, into=ret)
+        else:
             if ignore_dirs:
                 if ent.otype == DIRECTORY:
-                    continue
+                    return
 
             if ent.discarded:
-                continue
+                return
 
             def secs(t):
                 if t:
@@ -486,20 +488,17 @@ class SyncManager(Runnable):
         if not ents:
             return False
 
-        ent = ents[0]
+        log.debug("found matching other ents %s", ents)
 
-        log.debug("found matching other ent %s", ent[synced])
-
-        if ent[synced].exists == TRASHED:
-            # this entity is gone already
+        # ignoring trashed entries with different oids on the same path
+        if all(ent[synced].exists == TRASHED or ent[changed].exists == TRASHED for ent in ents):
             return False
 
-        if ent[changed].exists == TRASHED and ent[changed].changed:
-            # this entity is getting replaced soon, just disard the row from the table
-            ent.discard()
-            return False
+        ents = [ent for ent in ents if ent[synced].exists != TRASHED and ent[changed].exists != TRASHED]
 
-        self.handle_split_conflict(ent, synced, sync, changed)
+        assert len(ents) == 1
+
+        self.handle_split_conflict(ents[0], synced, sync, changed)
 
         return True
 
