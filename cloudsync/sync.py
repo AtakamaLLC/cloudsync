@@ -37,6 +37,11 @@ UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
 
+def debug_sig(t, size=3):
+    if not t:
+        return 0
+    return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
+
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods
     def __init__(self, side):
         self.side = side                            # just for assertions
@@ -56,9 +61,9 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
 # allow traditional sets of ternary
     @exists.setter
     def exists(self, val):
-        if val == False:
+        if val == False:            # pylint: disable=singleton-comparison
             val = TRASHED
-        if val == True:
+        if val == True:             # pylint: disable=singleton-comparison
             val = EXISTS
         if val is None:
             val = UNKNOWN
@@ -205,7 +210,7 @@ class SyncState:
     def update(self, side, otype, oid, path=None, hash=None, exists=True):   # pylint: disable=redefined-builtin
         ent = self.lookup_oid(side, oid)
         if not ent:
-            log.debug("creating new entry because %s not found", oid)
+            log.debug("creating new entry because %s not found", debug_sig(oid))
             ent = SyncEntry(otype)
         self.update_entry(ent, side, oid, path, hash, exists)
         log.debug("event changed %s", ent)
@@ -246,21 +251,17 @@ class SyncState:
 
             def secs(t):
                 if t:
-                    return str(round(t % 300,3)).replace(".", "") 
+                    return str(round(t % 300, 3)).replace(".", "") 
                 else:
                     return 0
 
-            def sig(t):
-                if not t:
-                    return 0
-                return b64encode(md5(str(t).encode()).digest()).decode()[0:3]
-            
+           
             print("%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s"  
                     % (
-                            sig(id(ent)),
+                            debug_sig(id(ent)),
                             ent.otype.value,
-                            secs(ent[LOCAL].changed), ent[LOCAL].path, sig(ent[LOCAL].oid), str(ent[LOCAL].sync_path) + ":" + str(ent[LOCAL].exists.value),
-                            secs(ent[REMOTE].changed), ent[REMOTE].path, sig(ent[REMOTE].oid), str(ent[REMOTE].sync_path) + ":" + str(ent[REMOTE].exists.value)
+                            secs(ent[LOCAL].changed), ent[LOCAL].path, debug_sig(ent[LOCAL].oid), str(ent[LOCAL].sync_path) + ":" + str(ent[LOCAL].exists.value),
+                            secs(ent[REMOTE].changed), ent[REMOTE].path, debug_sig(ent[REMOTE].oid), str(ent[REMOTE].sync_path) + ":" + str(ent[REMOTE].exists.value)
                       )
                 , file=ret)
 
@@ -370,7 +371,7 @@ class SyncManager(Runnable):
             ppath, _ = prov.split(path)
             log.debug("mkdirs parent, %s", ppath)
             assert ppath != path
-            self.mkdirs(prov, ppath) 
+            oid = self.mkdirs(prov, ppath) 
             try:
                 oid = prov.mkdir(path)
             except CloudFileNotFoundError:
@@ -383,8 +384,18 @@ class SyncManager(Runnable):
             translated_path = self.translate(synced, sync[changed].path)
             log.debug("translated %s as path %s", sync[changed].path, translated_path)
             oid = self.mkdirs(self.providers[synced], translated_path)
+
+            # could have made a dir that already existed
+            ents = list(self.syncs.lookup_path(changed, sync[changed].path))
+            ents = [ent for ent in ents if ent != sync]
+
+            for ent in ents:
+                if ent.otype == DIRECTORY:
+                    log.debug("discard duplicate dir entry, caused by a mkdirs")
+                    ent.discard()
+
             log.debug("mkdir %s as path %s oid %s",
-                      self.providers[synced].debug_name, translated_path, oid)
+                      self.providers[synced].debug_name, translated_path, debug_sig(oid))
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
             

@@ -31,5 +31,5 @@ class EventManager(Runnable):
                     log.debug("ignoring delete of something that can't exist")
                     continue
 
-            self.state.update(self.side, event.otype, event.oid, path=path, hash=event.hash, exists=exists)
+            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists)
 

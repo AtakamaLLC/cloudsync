@@ -68,7 +68,7 @@ def test_sync_basic(cs):
     cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
 
-    assert len(cs.state) == 4
+    assert len(cs.state) == 3
     assert not cs.state.has_changes()
 
 def test_sync_create_delete_same_name(cs):
