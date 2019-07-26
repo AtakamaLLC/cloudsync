@@ -179,6 +179,7 @@ class MockProvider(Provider):
         return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     def listdir(self, oid) -> 'List[OInfo]':
+        # TODO: this returns recursive results, and it shouldn't
         ret = []
         folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockProvider.FSObject.DIR):
@@ -194,18 +195,14 @@ class MockProvider(Provider):
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         # TODO: store the metadata
         self._api()
-        contents = file_like.read()
         file = self._get_by_path(path)
-        if file is not None and file.type != MockProvider.FSObject.FILE:
-            raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
+        if file is not None and file.exists:
+            raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
+        self._verify_parent_folder_exists(path)
         if file is None or not self._recycle_oid:
-            self._verify_parent_folder_exists(path)
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
-        else:
-            if file.exists:
-                raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
-        file.contents = contents
+        file.contents = file_like.read()
         file.exists = True
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
