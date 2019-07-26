@@ -16,5 +16,20 @@ class EventManager(Runnable):
     def do(self):
         for event in self.provider.events():
             log.debug("got event %s", event)
-            self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash, exists=event.exists)
+            path = event.path
+            exists = event.exists
+            otype = event.otype
+
+            if not event.path and not self.state.lookup_oid(self.side, event.oid):
+                info = self.provider.info_oid(event.oid)
+                if info.otype != event.otype:
+                    log.warning("provider gave a bad event: %s != %s, using %s", info.path, event.otype, info.otype)
+                if info:
+                    path = info.path
+                    otype = info.otype
+                else:
+                    log.debug("ignoring delete of something that can't exist")
+                    continue
+
+            self.state.update(self.side, event.otype, event.oid, path=path, hash=event.hash, exists=exists)
 

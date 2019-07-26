@@ -283,7 +283,7 @@ class MockProvider(Provider):
         file: MockProvider.FSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             return None
-        return OInfo(otype=file.type,oid=file.oid, hash=file.hash(), path=file.path)
+        return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
     # @staticmethod
     # def _slurp(path):

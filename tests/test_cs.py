@@ -63,10 +63,15 @@ def test_sync_basic(cs):
 
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
-    log.error("TABLE\n%s", cs.state.pretty_print())
 
+    # let cleanups/discards/dedups happen if needed
+    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+    log.info("TABLE\n%s", cs.state.pretty_print())
 
-def test_sync_conflict_delete(cs):
+    assert len(cs.state) == 4
+    assert not cs.state.has_changes()
+
+def test_sync_create_delete_same_name(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_path1 = "/remote/stuff1"
@@ -77,19 +82,30 @@ def test_sync_conflict_delete(cs):
 
     linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+    cs.run(until=lambda:not cs.state.has_changes(), timeout=2)
 
     rinfo = cs.providers[REMOTE].info_path(remote_path1)
 
+    cs.emgrs[LOCAL].do()
+
     cs.providers[LOCAL].delete(linfo1.oid)
+    
     cs.emgrs[LOCAL].do()
 
     linfo2 = cs.providers[LOCAL].create(local_path1, BytesIO(b"goodbye"))
 
+    # run local event manager only... not sync
     cs.emgrs[LOCAL].do()
 
-    cs.run(until=lambda: len(cs.state) == 3, timeout=2)
-    log.error("TABLE3\n%s", cs.state.pretty_print(ignore_dirs=True))
+    log.error("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
     assert(len(cs.state) == 3)
 
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
+    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+
+    log.error("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    assert(len(cs.state) == 2)
+
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")

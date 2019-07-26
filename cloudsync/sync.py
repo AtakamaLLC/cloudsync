@@ -4,6 +4,9 @@ import logging
 import tempfile
 import shutil
 import random
+from hashlib import md5
+from base64 import b64encode
+from enum import Enum
 
 from typing import Optional
 
@@ -23,11 +26,20 @@ class Reprable:                                     # pylint: disable=too-few-pu
     def __repr__(self):
         return self.__class__.__name__ + ":" + str(id(self)) + str(self.__dict__)
 
+# safe ternary, don't allow traditional comparisons
+class Exists(Enum):
+    UNKNOWN = None
+    EXISTS = True
+    TRASHED = False
+    def __bool__(self):
+        raise ValueError("never bool enums")
+UNKNOWN = Exists.UNKNOWN
+EXISTS = Exists.EXISTS
+TRASHED = Exists.TRASHED
 
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods
     def __init__(self, side):
         self.side = side                            # just for assertions
-        self.exists: bool = None                    # exists at provider
         self.hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
         self.changed: Optional[float] = None
@@ -35,6 +47,27 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         self.sync_path: Optional[str] = None        # path at last sync
         self.path: Optional[str] = None             # path at provider
         self.oid: Optional[str] = None              # oid at provider
+        self._exists: Exists = UNKNOWN               # exists at provider
+
+    @property
+    def exists(self):
+        return self._exists
+
+# allow traditional sets of ternary
+    @exists.setter
+    def exists(self, val):
+        if val == False:
+            val = TRASHED
+        if val == True:
+            val = EXISTS
+        if val is None:
+            val = UNKNOWN
+
+        if type(val) != Exists:
+            raise ValueError("use enum for exists")
+
+        self._exists = val
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -55,6 +88,7 @@ class SyncEntry(Reprable):
         self.__states = [SideState(0), SideState(1)]
         self.otype = otype
         self.temp_file = None
+        self.discarded = False
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -64,17 +98,17 @@ class SyncEntry(Reprable):
         assert val.side is None or val.side == i
         self.__states[i] = val
 
-    def update(self, providers):
-        log.debug("before update state %s", self)
+    def get_latest_state(self, providers):
+#        log.debug("before update state %s", self)
         for i in (LOCAL, REMOTE):
             if self[i].changed:
                 # get latest info from provider
                 if self.otype == FILE:
                     self[i].hash = providers[i].hash_oid(self[i].oid)
-                    self[i].exists = bool(self[i].hash)
+                    self[i].exists = EXISTS if self[i].hash else TRASHED
                 else:
                     self[i].exists = providers[i].exists_oid(self[i].oid)
-        log.debug("after update state %s", self)
+#        log.debug("after update state %s", self)
 
     def hash_conflict(self):
         if self[0].hash and self[1].hash:
@@ -86,6 +120,14 @@ class SyncEntry(Reprable):
             return self[0].path != self[0].sync_path and self[1].path != self[1].sync_path
         return False
 
+    def is_path_change(self, changed):
+        return self[changed].path != self[changed].sync_path
+
+    def is_creation(self, changed):
+        return not self[changed].sync_path
+
+    def discard(self):
+        self.discarded = True
 
 class SyncState:
     def __init__(self):
@@ -157,8 +199,6 @@ class SyncState:
         if exists is not None:
             ent[side].exists = exists
 
-        ent[side].changed = time.time()
-
     def __len__(self):
         return len(self.get_all())
 
@@ -168,17 +208,27 @@ class SyncState:
             log.debug("creating new entry because %s not found", oid)
             ent = SyncEntry(otype)
         self.update_entry(ent, side, oid, path, hash, exists)
-        log.debug("changed %s", ent)
+        log.debug("event changed %s", ent)
+
+        ent[side].changed = time.time()
         self._changeset.add(ent)
 
     def change(self):
         # for now just get a random one
         if self._changeset:
-            return random.sample(self._changeset, 1)[0]
+            ret = random.sample(self._changeset, 1)[0]
+            if ret.discarded:
+                self._changeset.remove(ret)
+                return self.change()
+            return ret
         return None
+
+    def has_changes(self):
+        return bool(self._changeset)
 
     def finished(self, ent):
         if ent[1].changed or ent[0].changed:
+            log.info("not marking finished: %s", ent)
             return
         self._changeset.remove(ent)
 
@@ -191,22 +241,42 @@ class SyncState:
                 if ent.otype == DIRECTORY:
                     continue
 
-            print("%5s %20s %16s %20s -- %20s %16s %s"  
+            if ent.discarded:
+                continue
+
+            def secs(t):
+                if t:
+                    return str(round(t % 300,3)).replace(".", "") 
+                else:
+                    return 0
+
+            def sig(t):
+                if not t:
+                    return 0
+                return b64encode(md5(str(t).encode()).digest()).decode()[0:3]
+            
+            print("%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s"  
                     % (
+                            sig(id(ent)),
                             ent.otype.value,
-                            ent[LOCAL].path, ent[LOCAL].oid, str(ent[LOCAL].sync_path) + ":" + str(ent[LOCAL].exists),
-                            ent[REMOTE].path, ent[REMOTE].oid, str(ent[REMOTE].sync_path) + ":" + str(ent[REMOTE].exists)
+                            secs(ent[LOCAL].changed), ent[LOCAL].path, sig(ent[LOCAL].oid), str(ent[LOCAL].sync_path) + ":" + str(ent[LOCAL].exists.value),
+                            secs(ent[REMOTE].changed), ent[REMOTE].path, sig(ent[REMOTE].oid), str(ent[REMOTE].sync_path) + ":" + str(ent[REMOTE].exists.value)
                       )
                 , file=ret)
 
         return ret.getvalue()
 
-    def get_all(self):
+    def get_all(self, discarded=False):
         ents = set()
         for ent in self._oids[LOCAL].values():
+            if ent.discarded and not discarded:
+                continue
             ents.add(ent)
         for ent in self._oids[REMOTE].values():
+            if ent.discarded and not discarded:
+                continue
             ents.add(ent)
+
         return ents
 
     def entry_count(self):
@@ -233,11 +303,7 @@ class SyncManager(Runnable):
         shutil.rmtree(self.tempdir)
 
     def sync(self, sync):
-        log.debug("TOP LEVEL 1 %s", sync)
-
-        sync.update(self.providers)
-
-        log.debug("TOP LEVEL 2 %s", sync)
+        sync.get_latest_state(self.providers)
 
         if sync.hash_conflict():
             self.handle_hash_conflict(sync)
@@ -253,7 +319,6 @@ class SyncManager(Runnable):
                 if response == FINISHED:
                     self.finished(i, sync)
                 break
-        log.debug("TOP LEVEL 3 %s", sync)
 
     def temp_file(self, ohash):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
@@ -286,7 +351,7 @@ class SyncManager(Runnable):
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
                       self.providers[changed].debug_name)
-            sync[changed].exists = False
+            sync[changed].exists = TRASHED
             return False
 
     def mkdirs(self, prov, path):
@@ -322,7 +387,7 @@ class SyncManager(Runnable):
                       self.providers[synced].debug_name, translated_path, oid)
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
-
+            
             self.syncs.update_entry(sync, synced, exists=True, oid=oid, path=translated_path)
         except CloudFileNotFoundError:
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
@@ -371,15 +436,13 @@ class SyncManager(Runnable):
             self.mkdirs(self.providers[synced], parent)
             self.create_synced(changed, sync)
 
-    def delete_synced(self, changed, sync):
-        synced = other_side(changed)
-        log.debug("sync deleted %s", sync[changed].path)
+    def delete_synced(self, sync, changed, synced):
+        log.debug("try sync deleted %s", sync[changed].path)
         # see if there are other entries for the same path, but other ids
         ents = list(self.syncs.lookup_path(changed, sync[changed].path))
+        ents = [ent for ent in ents if ent != sync]
 
-        log.debug("ents %s", ents)
-        if len(ents) == 1:
-            assert ents[0] == sync
+        if not ents:
             if sync[synced].oid:
                 try:
                     self.providers[synced].delete(sync[synced].oid)
@@ -387,32 +450,52 @@ class SyncManager(Runnable):
                     pass
             else:
                 log.debug("was never synced, ignoring deletion")
+        else:
+            for ent in ents:
+                if ent.is_creation(changed):
+                    log.debug("discard delete, pending create %s", sync)
+                    sync.discard()
+                    return
 
-        sync[synced].exists = False
+            log.debug("conflict delete %s <-> %s", ents, sync)
+            sync.discard()
 
-    def check_disjoint_conflict(self, sync, changed, synced, translated_path):
+        sync[synced].exists = TRASHED
+
+    def check_disjoint_create(self, sync, changed, synced, translated_path):
+        # check for creation of a new file with another in the table 
+
         if sync.otype != FILE:
             return False
 
         ents = list(self.syncs.lookup_path(synced, translated_path))
 
         # filter for exists
-        ents = [ent for ent in ents if ent[synced].exists and ent != sync]
+        ents = [ent for ent in ents if ent != sync]
         if not ents:
             return False
 
         ent = ents[0]
 
-        log.debug("found conflict %s", ent)
+        log.debug("found matching other ent %s", ent[synced])
+
+        if ent[synced].exists == TRASHED:
+            # this entity is gone already
+            return False
+
+        if ent[changed].exists == TRASHED and ent[changed].changed:
+            # this entity is getting replaced soon, just disard the row from the table
+            ent.discard()
+            return False
 
         self.handle_split_conflict(ent, synced, sync, changed)
 
         return True
 
-    def handle_creation(self, sync, changed, synced):
+    def handle_path_change_or_creation(self, sync, changed, synced):
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
-            if not sync[changed].exists:
+            if sync[changed].exists == TRASHED:
                 return REQUEUE
 
         translated_path = self.translate(synced, sync[changed].path)
@@ -420,13 +503,13 @@ class SyncManager(Runnable):
         if not sync[changed].path:
             log.debug("can't sync, no path %s", sync)
 
-        if not sync[changed].sync_path:
+        if sync.is_creation(changed):
             # never synced this before, maybe there's another local path with
             # the same name already?
-            if self.check_disjoint_conflict(sync, changed, synced, translated_path):
+            if self.check_disjoint_create(sync, changed, synced, translated_path):
                 return REQUEUE
 
-        if not sync[changed].sync_path:
+        if sync.is_creation(changed):
             assert not sync[changed].sync_hash
             # looks like a new file
 
@@ -452,12 +535,12 @@ class SyncManager(Runnable):
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
 
-        if not sync[changed].exists:
-            self.delete_synced(changed, sync)
+        if sync[changed].exists == TRASHED:
+            self.delete_synced(sync, changed, synced)
             return FINISHED
 
-        if sync[changed].path != sync[changed].sync_path or not sync[changed].sync_path:
-            return self.handle_creation(sync, changed, synced)
+        if sync.is_path_change(changed) or sync.is_creation(changed):
+            return self.handle_path_change_or_creation(sync, changed, synced)
 
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info
@@ -471,20 +554,20 @@ class SyncManager(Runnable):
             return FINISHED
 
         log.info("nothing changed %s, but changed is true", sync)
-        return REQUEUE
+        return FINISHED
 
     def update_sync_path(self, sync, changed):
         assert sync[changed].oid
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
-            sync[changed].exists = False
+            sync[changed].exists = TRASHED
             return
 
         if not info.path:
             assert False, "impossible sync, no path %s" % sync[changed]
 
-        self.syncs.update_entry(sync, changed, sync[changed].oid, path=info.path)
+        self.syncs.update_entry(sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
         # split the sync in two
