@@ -7,7 +7,6 @@ import random
 from hashlib import md5
 from base64 import b64encode
 from enum import Enum
-from io import StringIO
 
 from typing import Optional
 
@@ -20,13 +19,15 @@ from .runnable import Runnable
 
 log = logging.getLogger(__name__)
 
-# state of a single object
+# useful for converting oids and pointer nubmers into digestible nonces
 
 
 def debug_sig(t, size=3):
     if not t:
         return 0
     return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
+
+# adds a repr to some classes
 
 
 class Reprable:                                     # pylint: disable=too-few-public-methods
@@ -50,6 +51,7 @@ EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
 
 
+# state of a single object
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods
     def __init__(self, side):
         self.side = side                            # just for assertions
@@ -95,8 +97,6 @@ def other_side(index):
 
 
 # single entry in the syncs state collection
-
-
 class SyncEntry(Reprable):
     def __init__(self, otype):
         self.__states = [SideState(0), SideState(1)]
@@ -142,6 +142,27 @@ class SyncEntry(Reprable):
 
     def discard(self):
         self.discarded = True
+
+    def pretty(self):
+        if self.discarded:
+            return "DISCARDED"
+
+        def secs(t):
+            if t:
+                return str(round(t % 300, 3)).replace(".", "")
+            else:
+                return 0
+
+        ret = "%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s" % (
+            debug_sig(id(self)),
+            self.otype.value,
+            secs(self[LOCAL].changed), self[LOCAL].path, debug_sig(self[LOCAL].oid), str(
+                self[LOCAL].sync_path) + ":" + str(self[LOCAL].exists.value),
+            secs(self[REMOTE].changed), self[REMOTE].path, debug_sig(self[REMOTE].oid), str(
+                self[REMOTE].sync_path) + ":" + str(self[REMOTE].exists.value)
+        )
+
+        return ret
 
 
 class SyncState:
@@ -247,47 +268,27 @@ class SyncState:
             return
         self._changeset.remove(ent)
 
-    def pretty_print(self, ent=None, ignore_dirs=False):
-
-        ret = StringIO()
-        if ent is None:
-            for e in self.get_all():
-                print(self.pretty_print(ent=e, ignore_dirs=ignore_dirs), file=ret)
-        else:
-            ret = StringIO()
-
+    def pretty_print(self, ignore_dirs=False):
+        ret = ""
+        for e in self.get_all():
             if ignore_dirs:
-                if ent.otype == DIRECTORY:
-                    return ""
+                if e.otype == DIRECTORY:
+                    continue
+            if e.discarded:
+                continue
 
-            if ent.discarded:
-                return ""
-
-            def secs(t):
-                if t:
-                    return str(round(t % 300, 3)).replace(".", "")
-                else:
-                    return 0
-
-            print("%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s"
-                  % (
-                      debug_sig(id(ent)),
-                      ent.otype.value,
-                      secs(ent[LOCAL].changed), ent[LOCAL].path, debug_sig(ent[LOCAL].oid), str(
-                          ent[LOCAL].sync_path) + ":" + str(ent[LOCAL].exists.value),
-                      secs(ent[REMOTE].changed), ent[REMOTE].path, debug_sig(ent[REMOTE].oid), str(
-                          ent[REMOTE].sync_path) + ":" + str(ent[REMOTE].exists.value)
-                  ), file=ret, end="")
-
-        return ret.getvalue()
+            ret += e.pretty() + "\n"
+        return ret
 
     def get_all(self, discarded=False):
         ents = set()
         for ent in self._oids[LOCAL].values():
+            assert ent
             if ent.discarded and not discarded:
                 continue
             ents.add(ent)
         for ent in self._oids[REMOTE].values():
+            assert ent
             if ent.discarded and not discarded:
                 continue
             ents.add(ent)
@@ -375,6 +376,7 @@ class SyncManager(Runnable):
         log.debug("mkdirs %s", path)
         try:
             oid = prov.mkdir(path)
+            # todo update state
         except CloudFileExistsError:
             # todo: mabye CloudFileExistsError needs to have an oid and/or path in it
             # at least optionally
@@ -385,17 +387,36 @@ class SyncManager(Runnable):
                 raise
         except CloudFileNotFoundError:
             ppath, _ = prov.split(path)
+            if ppath == path:
+                raise
             log.debug("mkdirs parent, %s", ppath)
-            assert ppath != path
             oid = self.mkdirs(prov, ppath)
             try:
                 oid = prov.mkdir(path)
+                # todo update state
             except CloudFileNotFoundError:
                 raise CloudFileExistsError("f'ed up mkdir")
         return oid
 
     def mkdir_synced(self, changed, sync):
         synced = other_side(changed)
+        # see if there are other entries for the same path, but other ids
+        ents = list(self.syncs.lookup_path(changed, sync[changed].path))
+        ents = [ent for ent in ents if ent != sync]
+        if ents:
+            for ent in ents:
+                if ent.otype == DIRECTORY:
+                    # these we can toss, they are other folders
+                    # keep the current one, since it exists for sure
+                    ent.discard()
+        ents = [ent for ent in ents if not ent.discarded]
+        ents = [ent for ent in ents if TRASHED not in (
+            ent[changed].exists, ent[synced].exists)]
+
+        if ents:
+            raise NotImplementedError(
+                "What to do if we create a folder when there's already a FILE")
+
         try:
             translated_path = self.translate(synced, sync[changed].path)
             log.debug("translated %s as path %s",
@@ -445,27 +466,36 @@ class SyncManager(Runnable):
                       self.providers[synced].debug_name)
             raise NotImplementedError("TODO mkdir, and make syncs etc")
 
+    def _create_synced(self, changed, sync, translated_path):
+        synced = other_side(changed)
+        log.debug("create on %s as path %s",
+                  self.providers[synced].debug_name, translated_path)
+        info = self.providers[synced].create(
+            translated_path, open(sync.temp_file, "rb"))
+        sync[synced].sync_hash = info.hash
+        if info.path:
+            sync[synced].sync_path = info.path
+        else:
+            sync[synced].sync_path = translated_path
+        sync[changed].sync_hash = sync[changed].hash
+        sync[changed].sync_path = sync[changed].path
+        self.syncs.update_entry(
+            sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
+
     def create_synced(self, changed, sync):
         synced = other_side(changed)
+        translated_path = self.translate(synced, sync[changed].path)
         try:
-            translated_path = self.translate(synced, sync[changed].path)
-            info = self.providers[synced].create(
-                translated_path, open(sync.temp_file, "rb"))
-            log.debug("create on %s as path %s",
-                      self.providers[synced].debug_name, translated_path)
-            sync[synced].sync_hash = info.hash
-            if info.path:
-                sync[synced].sync_path = info.path
-            else:
-                sync[synced].sync_path = translated_path
-            sync[changed].sync_hash = sync[changed].hash
-            sync[changed].sync_path = sync[changed].path
-            self.syncs.update_entry(
-                sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
+            self._create_synced(changed, sync, translated_path)
+            return FINISHED
         except CloudFileNotFoundError:
             parent, _ = self.providers[synced].split(translated_path)
             self.mkdirs(self.providers[synced], parent)
-            self.create_synced(changed, sync)
+            self._create_synced(changed, sync, translated_path)
+            return FINISHED
+        except CloudFileExistsError:
+            # there's a folder in the way, let that resolve later
+            return REQUEUE
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -511,11 +541,13 @@ class SyncManager(Runnable):
         if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
             return False
 
-        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (ent[synced].exists, ent[changed].exists)]
+        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
+            ent[synced].exists, ent[changed].exists)]
 
         assert len(other_untrashed_ents) == 1
 
-        self.handle_split_conflict(other_untrashed_ents[0], synced, sync, changed)
+        self.handle_split_conflict(
+            other_untrashed_ents[0], synced, sync, changed)
 
         return True
 
@@ -547,7 +579,7 @@ class SyncManager(Runnable):
             elif sync[synced].oid:
                 self.upload_synced(changed, sync)
             else:
-                self.create_synced(changed, sync)
+                return self.create_synced(changed, sync)
         else:
             assert sync[synced].oid
             log.debug("rename %s %s",
