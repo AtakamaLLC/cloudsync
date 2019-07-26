@@ -2,15 +2,15 @@ from abc import ABC, abstractmethod
 
 import re
 
-from cloudsync.types import OInfo
-from cloudsync.exceptions import CloudFileNotFoundError
+from cloudsync.types import OInfo, DIRECTORY
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
     case_sensitive = ...                # TODO: implement support for this
     require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
-    auto_vivify_parent_folders = ...    # TODO: move this to the fixture, this is only needed for testing
 
     # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
     def __init__(self, sync_root):
@@ -41,11 +41,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def upload(self, oid, file_like, metadata):
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         ...
 
     @abstractmethod
-    def create(self, path, file_like, metadata) -> 'OInfo':
+    def create(self, path, file_like, metadata=None) -> 'OInfo':
         ...
 
     @abstractmethod
@@ -154,7 +154,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return False
 
     def replace_path(self, path, from_dir, to_dir):
-        relative = self.is_subpath(path, from_dir)
+        relative = self.is_subpath(from_dir, path)
         if relative:
             return to_dir + relative
         raise ValueError("replace_path used without subpath")
@@ -163,7 +163,19 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         pass
 
     def dirname(self, path: str):
-        norm_path = self.normalize_path(path)
+        norm_path = self.normalize_path(path).lstrip(self.sep)
         parts = re.split(r'[%s]+' % self.sep, norm_path)
         retval = self.sep + self.sep.join(parts[0:-1])
         return retval
+
+    def _verify_parent_folder_exists(self, path):
+        parent_path = self.dirname(path)
+        if parent_path != self.sep:
+            parent_obj = self.info_path(parent_path)
+            if parent_obj is None:
+                # perhaps this should separate "FileNotFound" and "non-folder parent exists"
+                # and raise different exceptions
+                raise CloudFileNotFoundError(parent_path)
+            if parent_obj.otype != DIRECTORY:
+                raise CloudFileExistsError(parent_path)
+

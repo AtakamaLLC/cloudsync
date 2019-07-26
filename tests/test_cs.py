@@ -43,8 +43,8 @@ def test_sync_basic(cs):
 
     cs.providers[LOCAL].mkdir(local_parent)
     cs.providers[REMOTE].mkdir(remote_parent)
-    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
-    rinfo2 = cs.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    rinfo2 = cs.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"), None)
 
     cs.run_until_found(
             (LOCAL, local_path1),

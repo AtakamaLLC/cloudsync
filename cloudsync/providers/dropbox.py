@@ -118,7 +118,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.disconnect()
                 raise CloudDisconnectedError()
 
-    def _api(self, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches
+        if not self.sync_root_id:
+            raise CloudFileNotFoundError("cant create sync root")
+
+    def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
@@ -129,6 +132,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 if isinstance(e.error, (files.ListFolderError, files.GetMetadataError, files.ListRevisionsError)):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error: files.LookupError = e.error.get_path()
+                        if inside_error.is_malformed_path():
+                            log.debug('Malformed path when executing %s(%s %s) : %s',
+                                      method, args, kwargs, e)
+                            raise CloudFileNotFoundError(
+                                'Malformed path when executing %s(%s)' % (method, kwargs))
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
                                       method, args, kwargs, e)
@@ -190,12 +198,16 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     @property
     def sync_root_id(self):
         if not self.__sync_root_id:
+            oid = None
             info = self.info_path(self.sync_root)
-            if not info:
-                info = self.mkdir(self.sync_root)
-            if not info and info.oid:
-                raise CloudFileNotFoundError("Cannot create sync root")
-            self.__sync_root_id = info.oid
+            if info:
+                oid = info.oid
+            if not oid:
+                try:
+                    oid = self.mkdir(self.sync_root)
+                except (CloudFileNotFoundError, CloudFileExistsError):
+                    raise CloudFileNotFoundError("Cannot create sync root")
+            self.__sync_root_id = oid
         return self.__sync_root_id
 
     def disconnect(self):
@@ -278,6 +290,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             yield DropboxInfo(otype, oid, ohash, path)
 
     def create(self, path, file_like, metadata=None):
+        self._verify_parent_folder_exists(path)
+        if self.exists_path(path):
+            raise CloudFileExistsError(path)
         return self.upload(path, file_like, metadata)
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
@@ -331,14 +346,43 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             file_like.write(data)
         return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
 
+    def _attempt_rename_folder_over_empty_folder(self, info: OInfo, path):
+        if info.otype != DIRECTORY:
+            return False
+        possible_conflict = self.info_path(path)
+        if possible_conflict.otype == DIRECTORY:
+            contents = self.listdir(possible_conflict.oid)
+            if contents:
+                raise CloudFileExistsError("Cannot rename over empty folder %s" % path)
+            self.delete(possible_conflict.oid)
+            self._api('files_move_v2', info.oid, path)
+            return True
+        else:  # conflict is a file, and we already know that the rename is on a folder
+            raise CloudFileExistsError(path)
+
     def rename(self, oid, path):
-        self._api('files_move_v2', oid, path)
+        try:
+            self._api('files_move_v2', oid, path)
+        except CloudFileExistsError:
+            info = self.info_oid(oid)
+            if info.otype == DIRECTORY:
+                success = self._attempt_rename_folder_over_empty_folder(info, path)
+                if not success:
+                    raise
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
+        # TODO: check if a regular filesystem lets you mkdir over a non-empty folder...
+        self._verify_parent_folder_exists(path)
+        if self.exists_path(path):
+            info = self.info_path(path)
+            if info.otype == FILE:
+                raise CloudFileExistsError()
+            log.debug("Skipped creating already existing folder: %s", path)
+            return info.oid
         res = self._api('files_create_folder_v2', path)
         log.debug("dbx mkdir %s", res)
         res = res.metadata
-        return OInfo(otype=DIRECTORY, oid=res.id, hash=None, path=path)
+        return res.id
 
     def delete(self, oid):
         try:
@@ -387,3 +431,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             return DropboxInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None
+
+    def _verify_parent_folder_exists(self, path):
+        parent_path = self.dirname(path)
+        if parent_path != self.sep:
+            parent_obj = self.info_path(parent_path)
+            if parent_obj is None:
+                # perhaps this should separate "FileNotFound" and "non-folder parent exists"
+                # and raise different exceptions
+                raise CloudFileNotFoundError(parent_path)
+            if parent_obj.otype != DIRECTORY:
+                raise CloudFileExistsError(parent_path)

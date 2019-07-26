@@ -7,8 +7,8 @@ from re import split
 
 from cloudsync.event import Event
 from cloudsync.provider import Provider
-from cloudsync.types import OInfo, OType
-from cloudsync import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.types import OInfo, DIRECTORY, OType
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class MockProvider(Provider):
         def update(self):
             self.mtime = time.time()
 
-    class MockEvent():  # pylint: disable=too-few-public-methods
+    class MockEvent:  # pylint: disable=too-few-public-methods
         ACTION_CREATE = "provider create"
         ACTION_RENAME = "provider rename"
         ACTION_UPDATE = "provider modify"
@@ -74,7 +74,6 @@ class MockProvider(Provider):
         # TODO: implement locks around _fs_by_path, _fs_by_oid and _events...
         #  These will be accessed in a thread by the event manager
         self.case_sensitive = case_sensitive
-        self.auto_vivify_parent_folders = False
         self.sep = sep
         self._fs_by_path: Dict[str, "MockProvider.FSObject"] = {}
         self._fs_by_oid: Dict[str, "MockProvider.FSObject"] = {}
@@ -92,6 +91,11 @@ class MockProvider(Provider):
         self._events.append(event)
         target_object.update()
         self._latest_event = len(self._events) - 1
+
+    def _get_by_oid(self, oid):
+        # TODO: normalize the path, support case insensitive lookups, etc
+        self._api()
+        return self._fs_by_oid.get(oid, None)
 
     def _get_by_path(self, path):
         # TODO: normalize the path, support case insensitive lookups, etc
@@ -123,14 +127,28 @@ class MockProvider(Provider):
     def _api(self, *args, **kwargs):
         pass
 
-    def _verify_parent_folder_exists(self, path):
-        parent_path = self.dirname(path)
-        if parent_path != self.sep:
-            parent_obj = self._get_by_path(parent_path)
-            if parent_obj is None or not parent_obj.exists or parent_obj.type != MockProvider.FSObject.DIR:
-                # perhaps this should separate "FileNotFound" and "non-folder parent exists"
-                # and raise different exceptions
-                raise CloudFileNotFoundError(parent_path)
+    # TODO: delete this code
+    # def _verify_parent_folder_exists(self, path):
+    #     parent_path = self.dirname(path)
+    #     if parent_path != self.sep:
+    #         parent_obj = self.info_path(parent_path)
+    #         if parent_obj is None:
+    #             # perhaps this should separate "FileNotFound" and "non-folder parent exists"
+    #             # and raise different exceptions
+    #             raise CloudFileNotFoundError(parent_path)
+    #         if parent_obj.otype != DIRECTORY:
+    #             raise CloudFileExistsError(parent_path)
+    #
+    # def _verify_parent_folder_exists_old(self, path):
+    #     parent_path = self.dirname(path)
+    #     if parent_path != self.sep:
+    #         parent_obj = self._get_by_path(parent_path)
+    #         if parent_obj is None or not parent_obj.exists:
+    #             # perhaps this should separate "FileNotFound" and "non-folder parent exists"
+    #             # and raise different exceptions
+    #             raise CloudFileNotFoundError(parent_path)
+    #         if parent_obj.type != MockProvider.FSObject.DIR:
+    #             raise CloudFileExistsError(parent_path)
 
     def events(self):
         self._api()
@@ -148,7 +166,7 @@ class MockProvider(Provider):
             yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
         self.walked = True
 
-    def upload(self, oid, file_like):
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         self._api()
         file = self._fs_by_oid.get(oid, None)
         if file is None or not file.exists:
@@ -160,11 +178,13 @@ class MockProvider(Provider):
         self._register_event(MockProvider.MockEvent.ACTION_UPDATE, file)
         return OInfo(otype=file.otype,oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, path: str) -> 'List[OInfo]':
+    def listdir(self, oid) -> 'List[OInfo]':
+        # TODO: this returns recursive results, and it shouldn't
         ret = []
-        folder_obj = self._get_by_path(path)
+        folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockProvider.FSObject.DIR):
-            raise CloudFileNotFoundError(path)
+            raise CloudFileNotFoundError(oid)
+        path = folder_obj.path
         for obj in self._fs_by_oid.values():
             if obj.exists:
                 if self.is_subpath(path, obj.path, strict=True):
@@ -172,18 +192,17 @@ class MockProvider(Provider):
         log.debug("listdir %s", ret)
         return ret
 
-    def create(self, path, file_like) -> 'OInfo':
-        # TODO: check to make sure the folder exists before creating a file in it
+    def create(self, path, file_like, metadata=None) -> 'OInfo':
+        # TODO: store the metadata
         self._api()
-        contents = file_like.read()
         file = self._get_by_path(path)
-        if file is not None and file.type != MockProvider.FSObject.FILE:
-            raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
+        if file is not None and file.exists:
+            raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
+        self._verify_parent_folder_exists(path)
         if file is None or not self._recycle_oid:
-            self._verify_parent_folder_exists(path)
             file = MockProvider.FSObject(path, MockProvider.FSObject.FILE)
             self._store_object(file)
-        file.contents = contents
+        file.contents = file_like.read()
         file.exists = True
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, file)
@@ -210,6 +229,10 @@ class MockProvider(Provider):
             if possible_conflict.type != object_to_rename.type:
                 log.debug("rename %s:%s conflicts with existing object of another type", oid, object_to_rename.path)
                 raise CloudFileExistsError(new_path)
+            if possible_conflict.type == MockProvider.FSObject.DIR:
+                contents = self.listdir(possible_conflict.oid)
+                if len(contents) > 0:
+                    raise CloudFileExistsError(new_path)
             self.delete(possible_conflict.oid)
         if object_to_rename.type == MockProvider.FSObject.FILE:
             self._rename_single_object(object_to_rename, new_path)
@@ -236,7 +259,11 @@ class MockProvider(Provider):
         self._verify_parent_folder_exists(path)
         file = self._get_by_path(path)
         if file and file.exists:
-            raise CloudFileExistsError(path)
+            if file.type == MockProvider.FSObject.FILE:
+                raise CloudFileExistsError(path)
+            else:
+                log.debug("Skipped creating already existing folder: %s", path)
+                return file.oid
         new_fs_object = MockProvider.FSObject(path, MockProvider.FSObject.DIR)
         self._store_object(new_fs_object)
         self._register_event(MockProvider.MockEvent.ACTION_CREATE, new_fs_object)

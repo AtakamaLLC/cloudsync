@@ -2,6 +2,7 @@ import time
 import logging
 import threading
 from ssl import SSLError
+import json
 
 import arrow
 from apiclient.discovery import build   # pylint: disable=import-error
@@ -9,6 +10,7 @@ from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=import-error
+from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
@@ -133,14 +135,40 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.disconnect()
                 raise CloudTokenError()
             except HttpError as e:
+                # gets a default something (actually the message, not the reason) using their secret interface
+                reason = e._get_reason() # pylint: disable=protected-access
+
+                # parses the JSON of the content to get the reason from where it really lives in the content
+                try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
+                    data = json.loads(e.content.decode('utf-8'))
+                    if isinstance(data, dict):
+                        reason = data['error']['errors'][0]['reason']
+                    else:
+                        reason = data[0]['error']['errors']['reason']
+                except (UnicodeDecodeError, ValueError, KeyError):
+                    log.warning('Invalid JSON content from response: %s', e.content)
+
                 if str(e.resp.status) == '404':
                     raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % (
                         resource, method, kwargs
                     ))
-                if (str(e.resp.status) == '403' and str(e.resp.reason) == 'Forbidden') or str(e.resp.status) == '429':
+
+                if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
+                    raise CloudFileExistsError("Parent Not A Folder")
+
+                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
-                
-                raise CloudTemporaryError("unknown error %s" % e)
+
+                # At this point, _should_retry_response() returns true for error codes >=500, 429, and 403 with
+                #  the reason 'userRateLimitExceeded' or 'rateLimitExceeded'. 403 without content, or any other
+                #  response is not retried. We have already taken care of some of those cases above, but we call this below
+                #  to catch the rest, and in case they improve their library with more conditions. If we called
+                #  meth.execute() above with a num_retries argument, all this retrying would happen in the google api
+                #  library, and we wouldn't have to think about retries.
+                should_retry = _should_retry_response(e.resp.status, e.content)
+                if should_retry:
+                    raise CloudTemporaryError("unknown error %s" % e)
+                raise Exception("unknown error %s" % e)
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
@@ -284,8 +312,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return gdrive_info
 
-
-    def upload(self, oid, file_like, metadata=None):
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         if not metadata:
             metadata = {} 
         gdrive_info = self.__prep_upload(None, metadata)
@@ -305,7 +332,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not res:
             raise CloudTemporaryError("unknown response from drive on upload")
 
-        return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=None)
+        md5 = res.get('md5Checksum', None)  # can be none if the user tries to upload to a folder
+        if md5 is None:
+            possible_conflict = self._info_oid(oid)
+            if possible_conflict and possible_conflict.otype == DIRECTORY:
+                raise CloudFileExistsError("Can only upload to a file: %s" % possible_conflict.path)
+        return OInfo(otype=FILE, oid=res['id'], hash=md5, path=None)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
@@ -374,6 +406,17 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         _, name = self.split(path)
         body = {'name': name}
 
+        if self.exists_path(path):
+            possible_conflict = self.info_path(path)
+            if possible_conflict.otype == DIRECTORY:
+                contents = self.listdir(possible_conflict.oid)
+                if contents:
+                    raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
+                self.delete(possible_conflict.oid)
+            else:
+                if info.otype != possible_conflict.otype:
+                    raise CloudFileExistsError(path)
+
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
         for cpath, coid in list(self._ids.items()):
@@ -421,6 +464,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return ret
  
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
+        if self.exists_path(path):
+            info = self.info_path(path)
+            if info.otype == FILE:
+                raise CloudFileExistsError(path)
+            log.debug("Skipped creating already existing folder: %s", path)
+            return info.oid
         pid = self.get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {
@@ -434,6 +483,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 body=file_metadata, fields='id')
         fileid = res.get('id')
         self._ids[path] = fileid
+        return fileid
 
     def delete(self, oid):
         try:

@@ -9,6 +9,7 @@ import cloudsync
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 from tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
+from typing import Union
 
 from cloudsync.providers import GDriveProvider, DropboxProvider
 
@@ -56,8 +57,8 @@ class ProviderHelper:
         for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
             try:
                 return func(self, *ar, **kw)
-            except CloudTemporaryError:
-                log.info("api retry %s %s %s", func, ar, kw)
+            except CloudTemporaryError as e:
+                log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
 
 class GDriveProviderHelper(GDriveProvider, ProviderHelper):
     def __init__(self, *ar, **kw):
@@ -190,17 +191,17 @@ def test_mkdir(util, provider: Provider):
     sub_f = provider.temp_name("dest", folder=dest)
     log.debug("parent = %s, sub = %s", dest, sub_f)
     with pytest.raises(CloudFileExistsError):
-        info1 = provider.create(dest, data())
+        info1 = provider.create(dest, data(), None)
     assert provider.exists_path(dest)
     log.debug("folder %s exists", dest)
-    info1 = provider.create(sub_f, data())
+    info1 = provider.create(sub_f, data(), None)
 
 
 
 def test_walk(util, provider: Provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
-    info = provider.create(dest, temp)
+    info = provider.create(dest, temp, None)
     assert not provider.walked
 
     got_event = False
@@ -244,7 +245,7 @@ def test_event_basic(util, provider: Provider):
     for e in provider.events_poll(timeout=min(provider.event_timeout,1)):
         log.debug("event %s", e)
 
-    info1 = provider.create(dest, temp)
+    info1 = provider.create(dest, temp, None)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
@@ -340,7 +341,7 @@ def test_api_failure(provider):
             provider.exists_path("/notexists")
 
 
-def test_file_not_found(provider):
+def test_file_not_found(provider: Union[ProviderHelper, Provider]):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
     # provider.temp_name = lambda x: "/" + x  # TODO: fix this when we replace the mock fixture with the provider fixture
@@ -349,10 +350,14 @@ def test_file_not_found(provider):
     def data():
         return BytesIO(dat)
 
-    test_path_deleted = provider.temp_name("dest1")  # Created, then deleted
-    info1 = provider.create(test_path_deleted, data())
-    test_oid_deleted = info1.oid
-    provider.delete(test_oid_deleted)
+    test_file_deleted_path = provider.temp_name("dest1")  # Created, then deleted
+    test_file_deleted_info = provider.create(test_file_deleted_path, data(), None)
+    test_file_deleted_oid = test_file_deleted_info.oid
+    provider.delete(test_file_deleted_oid)
+
+    test_folder_deleted_path = provider.temp_name("dest1")  # Created, then deleted
+    test_folder_deleted_oid = provider.mkdir(test_folder_deleted_path)
+    provider.delete(test_folder_deleted_oid)
 
     test_path_made_up = provider.temp_name("dest2")  # Never created
     test_oid_made_up = "never created"
@@ -361,63 +366,74 @@ def test_file_not_found(provider):
 
     # Tests:
     #   exists_path
-    #       returns false, does not raise
-    assert provider.exists_path(test_path_deleted) is False
+    #       deleted file, returns false, does not raise
+    #       deleted folder, returns false, does not raise
+    #       never existed fsobj, returns false, does not raise
+    assert provider.exists_path(test_file_deleted_path) is False
+    assert provider.exists_path(test_folder_deleted_path) is False
     assert provider.exists_path(test_path_made_up) is False
 
     #   exists_oid
-    #       returns false, does not raise
-    assert provider.exists_oid(test_oid_deleted) is False
+    #       deleted file, returns false, does not raise
+    #       deleted folder, returns false, does not raise
+    #       never existed fsobj, returns false, does not raise
+    assert provider.exists_oid(test_file_deleted_oid) is False
+    assert provider.exists_oid(test_folder_deleted_oid) is False
     assert provider.exists_oid(test_oid_made_up) is False
 
     #   info_path
     #       deleted file returns None
-    #       never existed file returns None
-    assert provider.info_path(test_path_deleted) is None
+    #       deleted folder returns None
+    #       never existed fsobj returns None
+    assert provider.info_path(test_file_deleted_path) is None
+    assert provider.info_path(test_folder_deleted_path) is None
     assert provider.info_path(test_path_made_up) is None
 
     #   info_oid
     #       deleted file returns None
-    #       never existed file returns None
-    assert provider.info_oid(test_oid_deleted) is None
+    #       deleted folder returns None
+    #       never existed fsobj returns None
+    assert provider.info_oid(test_file_deleted_oid) is None
+    assert provider.info_oid(test_folder_deleted_oid) is None
     assert provider.info_oid(test_oid_made_up) is None
 
     #   hash_oid
     #       deleted file returns None
     #       never existed file returns None
     if getattr(provider, "hash_oid", False): # TODO implement hash_oid in gdrive, then don't have this be conditional
-        assert provider.hash_oid(test_oid_deleted) is None
+        assert provider.hash_oid(test_file_deleted_oid) is None
         assert provider.hash_oid(test_oid_made_up) is None
 
     #   upload
-    #       to a deleted file raises FNF
+    #       to a deleted file raises FNF, or untrashes the file, either is OK
     #       to a made up oid raises FNF
     # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
     try:
-        provider.upload(test_oid_deleted, data())
-        assert provider.exists_path(test_path_deleted) is True
+        provider.upload(test_file_deleted_oid, data(), None)
+        assert provider.exists_path(test_file_deleted_path) is True
         re_delete = True
     except CloudFileNotFoundError:
         re_delete = False
         pass
-    
     if re_delete:
-        provider.delete(test_oid_deleted)
+        provider.delete(test_file_deleted_oid)
 
     with pytest.raises(CloudFileNotFoundError):
-        provider.upload(test_oid_made_up, data())
+        provider.upload(test_oid_made_up, data(), None)
 
     #   create
-    #       to a non-existent folder, conditionally raises FNF
-    if not provider.auto_vivify_parent_folders:
-        with pytest.raises(CloudFileNotFoundError):
-            provider.create("/nonexistentfolder/junk", data())
+    #       to a non-existent folder, raises FNF
+    #       to a previously deleted folder, raises FNF
+    with pytest.raises(CloudFileNotFoundError):
+        provider.create(test_path_made_up + "/junk", data(), None)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.create(test_folder_deleted_path + "/junk", data(), None)
 
     #   download
     #       on a deleted oid raises FNF
     #       on a made up oid raises FNF
     with pytest.raises(CloudFileNotFoundError):
-        provider.download(test_oid_deleted, data())
+        provider.download(test_file_deleted_oid, data())
     with pytest.raises(CloudFileNotFoundError):
         provider.download(test_oid_made_up, data())
 
@@ -425,73 +441,230 @@ def test_file_not_found(provider):
     #       from a deleted oid raises FNF
     #       from a made up oid raises FNF
     #       to a non-existent folder raises [something], conditionally
+    #       to a previously deleted folder raises
     #       check the rename source to see if there are others
     with pytest.raises(CloudFileNotFoundError):
-        provider.rename(test_oid_deleted, test_path_deleted)
+        provider.rename(test_file_deleted_oid, test_file_deleted_path)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_folder_deleted_oid, test_folder_deleted_path)
     with pytest.raises(CloudFileNotFoundError):
         provider.rename(test_oid_made_up, test_path_made_up)
 
     #   mkdir
-    #       to a non-existent folder raises [something], conditionally
-    if not provider.auto_vivify_parent_folders:
-        with pytest.raises(CloudFileNotFoundError):
-            provider.mkdir("/nonexistentfolder/junk")
+    #       to a non-existent folder raises FNF
+    #       to a previously deleted folder as parent folder raises FNF
+    #       to a previously deleted file as parent folder raises FNF
+    with pytest.raises(CloudFileNotFoundError):
+        provider.mkdir(test_path_made_up + "/junk")
+    with pytest.raises(CloudFileNotFoundError):
+        provider.mkdir(test_folder_deleted_path + "/junk")
+    with pytest.raises(CloudFileNotFoundError):
+        provider.mkdir(test_file_deleted_path + "/junk")
 
     #   delete
-    #       on a deleted oid does not raise
+    #       on a deleted file oid does not raise
+    #       on a deleted folder oid does not raise
     #       on a made up oid does not raise
-    provider.delete(test_oid_deleted)
+    provider.delete(test_file_deleted_oid)
+    provider.delete(test_folder_deleted_oid)
     provider.delete(test_oid_made_up)
 
     #   listdir
-    #       raises FNF
+    #       on a deleted file raises FNF
+    #       on a deleted folder raises FNF
+    #       on a made up path raises FNF
     with pytest.raises(CloudFileNotFoundError):
-        provider.listdir(test_path_deleted)
+        provider.listdir(test_file_deleted_path)
+    with pytest.raises(CloudFileNotFoundError):
+        provider.listdir(test_folder_deleted_path)
     with pytest.raises(CloudFileNotFoundError):
         provider.listdir(test_path_made_up)
 
-    # Google drive raises FNF when it can't find the root... can we test for that here?
+    # TODO: Google drive raises FNF when it can't find the root... can we test for that here?
 
 
-def test_file_exists(provider: Provider):
-    # Setup the initial state of the provider ==========================================
+def test_file_exists(provider: Union[ProviderHelper, Provider]):
     dat = os.urandom(32)
 
     def data(da=dat):
         return BytesIO(da)
 
-    test_folder = os.urandom(8).hex()
-    test_file = provider.temp_name()
-    # oid_dir = provider.mkdir(test_folder)
-    # info_file = provider.create(test_file, data())
-    # Setup the initial state of the provider ==========================================
+    def create_and_delete_file():
+        file_name = provider.temp_name()
+        file_info = provider.create(file_name, data(), None)
+        provider.delete(file_info.oid)
+        return file_name, file_info.oid
+
+    def create_and_delete_folder():
+        folder_name = provider.temp_name()
+        folder_oid = provider.mkdir(folder_name)
+        provider.delete(folder_oid)
+        return folder_name, folder_oid
+
+    def create_and_rename_file():
+        file_name1 = provider.temp_name()
+        file_name2 = provider.temp_name()
+        file_info1 = provider.create(file_name1, data(), None)
+        provider.rename(file_info1.oid, file_name2)
+        return file_name1, file_info1.oid
+
+    def create_and_rename_folder():
+        folder_name1 = provider.temp_name()
+        folder_name2 = provider.temp_name()
+        folder_oid1 = provider.mkdir(folder_name1)
+        provider.rename(folder_oid1, folder_name2)
+        return folder_name1, folder_oid1
+
+    def create_file(file_name=None):
+        if file_name is None:
+            file_name = provider.temp_name()
+        file_info = provider.create(file_name, data(), None)
+        return file_name, file_info.oid
+
+    def create_folder(folder_name=None):
+        if folder_name is None:
+            folder_name = provider.temp_name()
+        folder_oid = provider.mkdir(folder_name)
+        return folder_name, folder_oid
 
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
-    # api functions to check for FileExists:
-    #   mkdir,
-    #       where target path has a parent folder that already exists as a file, raises FEx
-    #       where target path exists as a file, raises FEx
-    #       where target path exists as a folder, does not raise
-    #       creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
-    #       creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
-    #   upload,
-    #       where target OID is a folder, raises FEx
-    #   create,
-    #       where target path exists, raises FEx
-    #       creating a file, deleting it, then creating a file at the same path, should not raise an FEx
-    #       creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
-    #       where target path has a parent folder that already exists as a file, raises FEx
-    #   rename,
-    #       rename over empty folder succeeds
-    #       rename over non-empty folder raises FEx
-    #       target has a parent folder that already exists as a file, raises FEx
-    #       renaming file over a folder, raises FEx
-    #       renaming a folder over a file, raises FEx
-    #       create a file, delete it, then rename a file to the same path as the deleted, does not raise
-    #       create a folder, delete it, then rename file to the same path as the deleted, does not raise
-    #       create a file, delete it, then rename a folder to the same path as the deleted, does not raise
-    #       create a folder, delete it, then rename folder to the same path as the deleted, does not raise
+    # api methods to check for FileExists:
+    #   vulnerable to existing paths:
+    #       mkdir, create, rename
+    #   Possible issues to potentially check each of the vulnerable api methods:
+    #       target path has a component in the parent folder that already exists as a file
+    #       target path exists
+    #       target path exists, but the type of the existing object at that location is different from expected
+    #       target path exists, but the type of the existing object at that location is what was expected
+    #       target path existed, but was deleted, different type as source
+    #       target path existed, but was deleted, same type as source
+    #       target path existed, but was renamed, different type as source
+    #       target path existed, but was renamed, same type as source
+    #
+    #   vulnerable to existing OIDs:
+    #       upload, delete
+    #   Possible issues to potentially check each of the vulnerable api methods:
+    #       target OID exists, but the type of the existing object at that location is different from expected
+    #       target OID existed, but was trashed, should un-trash the object
+    #       target OID is a non-empty folder, delete should raise FEx
+    #
+    res = provider.is_subpath("/a/", "/a/b")
+    assert res
+
+    # The enumerated tests:
+    #   mkdir: where target path has a parent folder that already exists as a file, raises FEx
+    name, _ = create_file()
+    with pytest.raises(CloudFileExistsError):
+        provider.mkdir(name + "/junk")
+
+    #   mkdir: where target path exists as a file, raises FEx
+    name, _ = create_file()
+    with pytest.raises(CloudFileExistsError):
+        provider.mkdir(name)
+
+    #   mkdir: where target path exists as a folder, does not raise
+    name, oid1 = create_folder()
+    oid2 = provider.mkdir(name)
+    assert oid1 == oid2
+
+    #   mkdir: creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
+    name, _ = create_and_delete_file()
+    provider.mkdir(name)
+
+    #   mkdir: creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
+    name, _ = create_and_delete_folder()
+    provider.mkdir(name)
+
+    #   mkdir: target path existed, but was renamed, different type as source
+    name, _ = create_and_rename_file()
+    create_folder(name)
+
+    #   mkdir: target path existed, but was renamed, same type as source
+    name, _ = create_and_rename_folder()
+    create_folder(name)
+
+    #   upload: where target OID is a folder, raises FEx
+    _, oid = create_folder()
+    with pytest.raises(CloudFileExistsError):
+        provider.upload(oid, data(), None)
+
+    #   create: where target path exists, raises FEx
+    name, _ = create_file()
+    with pytest.raises(CloudFileExistsError):
+        create_file(name)
+
+    #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
+    name, _ = create_and_delete_file()
+    create_file(name)
+
+    #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
+    name, _ = create_and_delete_folder()
+    create_file(name)
+
+    #   create: where target path has a parent folder that already exists as a file, raises FEx
+    name, _ = create_and_delete_file()
+    create_file(name)
+
+    #   create: target path existed, but was renamed, different type as source
+    name, _ = create_and_delete_folder()
+    provider.create(name, data(), None)
+
+    #   create: target path existed, but was renamed, same type as source
+    name, _ = create_and_rename_file()
+    create_file(name)
+
+    #   rename: rename folder over empty folder succeeds
+    _, oid1 = create_folder()
+    name2, oid2 = create_folder()
+    assert oid1 != oid2
+    contents1 = provider.listdir(oid1)
+    provider.rename(oid1, name2)
+    assert provider.exists_oid(oid1)
+    assert not provider.exists_oid(oid2)
+    contents2 = provider.listdir(oid1)
+    assert contents1 == contents2  # pytest MAGIC!
+
+    #   rename: rename folder over non-empty folder raises FEx
+    _, oid1 = create_folder()
+    name2, oid2 = create_folder()
+    assert oid1 != oid2
+    create_file(name2 + "/junk")
+    with pytest.raises(CloudFileExistsError):
+        provider.rename(oid1, name2)
+
+
+
+    #   rename: target has a parent folder that already exists as a file, raises FEx
+    # TODO
+
+    #   rename: renaming file over empty folder, raises FEx
+    # TODO
+
+    #   rename: renaming file over non-empty folder, raises FEx
+    # TODO
+
+    #   rename: renaming a folder over a file, raises FEx
+    # TODO
+
+    #   rename: create a file, delete it, then rename a file to the same path as the deleted, does not raise
+    # TODO
+
+    #   rename: create a folder, delete it, then rename file to the same path as the deleted, does not raise
+    # TODO
+
+    #   rename: create a file, delete it, then rename a folder to the same path as the deleted, does not raise
+    # TODO
+
+    #   rename: create a folder, delete it, then rename folder to the same path as the deleted, does not raise
+    # TODO
+
+    #   rename: target path existed, but was renamed, different type as source
+    # TODO
+
+    #   rename: target path existed, but was renamed, same type as source
+    # TODO
+
 
 
 
