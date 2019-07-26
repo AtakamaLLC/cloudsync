@@ -379,6 +379,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 raise CloudFileExistsError()
             else:
                 pass
+
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
         res = self._api('files_create_folder_v2', path)
