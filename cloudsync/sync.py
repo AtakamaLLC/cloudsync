@@ -481,17 +481,16 @@ class SyncManager(Runnable):
                     pass
             else:
                 log.debug("was never synced, ignoring deletion")
+            sync[synced].exists = TRASHED
         else:
+            has_log = False
             for ent in ents:
                 if ent.is_creation(changed):
                     log.debug("discard delete, pending create %s", sync)
-                    sync.discard()
-                    return
-
-            log.debug("conflict delete %s <-> %s", ents, sync)
+                    has_log = True
+            if not has_log:
+                log.warning("conflict delete %s <-> %s", ents, sync)
             sync.discard()
-
-        sync[synced].exists = TRASHED
 
     def check_disjoint_create(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table
@@ -502,21 +501,21 @@ class SyncManager(Runnable):
         ents = list(self.syncs.lookup_path(synced, translated_path))
 
         # filter for exists
-        ents = [ent for ent in ents if ent != sync]
-        if not ents:
+        other_ents = [ent for ent in ents if ent != sync]
+        if not other_ents:
             return False
 
-        log.debug("found matching other ents %s", ents)
+        log.debug("found matching other ents %s", other_ents)
 
         # ignoring trashed entries with different oids on the same path
-        if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in ents):
+        if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
             return False
 
-        ents = [ent for ent in ents if TRASHED not in (ent[synced].exists, ent[changed].exists)]
+        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (ent[synced].exists, ent[changed].exists)]
 
-        assert len(ents) == 1
+        assert len(other_untrashed_ents) == 1
 
-        self.handle_split_conflict(ents[0], synced, sync, changed)
+        self.handle_split_conflict(other_untrashed_ents[0], synced, sync, changed)
 
         return True
 
