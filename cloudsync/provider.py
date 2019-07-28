@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 
 import re
+from typing import List
 
-from cloudsync.types import OInfo, DIRECTORY
+from cloudsync.types import OInfo, DIRECTORY, ListDirOInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 
 
@@ -74,6 +75,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @abstractmethod
     def listdir(self, oid) -> list:
+        ...
+
+    @abstractmethod
+    def listdir_info(self, oid) -> List[ListDirOInfo]:
         ...
 
 #    @abstractmethod

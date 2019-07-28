@@ -3,6 +3,7 @@ import logging
 import threading
 from ssl import SSLError
 import json
+from typing import List
 
 import arrow
 from apiclient.discovery import build   # pylint: disable=import-error
@@ -14,7 +15,7 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, ListDirOInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
@@ -267,7 +268,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.__cursor = response.get('newStartPageToken')
 
     def _walk(self, oid):
-        for ent in self.listdir(oid):
+        for ent in self._listdir(oid):
             event = Event(ent.otype, ent.oid, ent.path, None, True, time.time())
             log.debug("walk %s", event)
             yield event
@@ -384,14 +385,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     log.debug("empty file downloaded")
                     done = True
                 elif str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError("file %s not found" % oid) 
+                    raise CloudFileNotFoundError("file %s not found" % oid)
                 else:
                     raise CloudTemporaryError("unknown response from drive")
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected during download")
 
-    def rename(self, oid, path):
+    def rename(self, oid, path):  # pylint: disable=too-many-locals
         pid = self.get_parent_id(path)
 
         add_pids = [pid]
@@ -402,31 +403,48 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if info is None:
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
+        old_path = info.path
 
         _, name = self.split(path)
         body = {'name': name}
 
         if self.exists_path(path):
             possible_conflict = self.info_path(path)
-            if possible_conflict.otype == DIRECTORY:
-                contents = self.listdir(possible_conflict.oid)
-                if contents:
-                    raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-                self.delete(possible_conflict.oid)
-            else:
-                if info.otype != possible_conflict.otype:
-                    raise CloudFileExistsError(path)
+            if FILE in (info.otype, possible_conflict.otype):
+                raise CloudFileExistsError(path)
+            # the source and target must both be folders
+            contents = self._listdir(possible_conflict.oid)
+            if contents:
+                raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
+            self.delete(possible_conflict.oid)
+
+        if not old_path:
+            for cpath, coid in list(self._ids.items()):
+                if coid == oid:
+                    old_path = cpath
+
+        if not old_path:
+            old_path = self._path_oid(oid)
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
         for cpath, coid in list(self._ids.items()):
-            if coid == oid:
+            if self.is_subpath(old_path, cpath):
+                new_cpath = self.replace_path(cpath, old_path, path)
                 self._ids.pop(cpath)
-                self._ids[path] = oid
+                self._ids[new_cpath] = oid
 
         log.debug("renamed %s", body)
 
-    def listdir(self, oid) -> list:
+    def listdir(self, oid) -> List[str]:
+        ret = [x.name for x in self._listdir(oid)]
+        return ret
+
+    def listdir_info(self, oid) -> List[ListDirOInfo]:
+        ret = [ListDirOInfo(otype=x.otype, oid=x.oid, hash=x.hash, path=x.path, name=x.name) for x in self._listdir(oid)]
+        return ret
+
+    def _listdir(self, oid) -> List[GDriveInfo]:
         query = f"'{oid}' in parents"
         try:
             res = self._api('files', 'list',
@@ -442,7 +460,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         if not res:
             return []
-
 
         log.debug("listdir got res %s", res)
 
@@ -499,12 +516,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return self._info_oid(oid) is not None
 
     def info_path(self, path) -> OInfo:
-        parent_id = self.get_parent_id(path)
-        _, name = self.split(path)
-
-        query = f"'{parent_id}' in parents and name='{name}'"
-
         try:
+            parent_id = self.get_parent_id(path)
+            _, name = self.split(path)
+
+            query = f"'{parent_id}' in parents and name='{name}'"
+
             res = self._api('files', 'list',
                     q=query,
                     spaces='drive',

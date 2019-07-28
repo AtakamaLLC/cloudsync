@@ -2,28 +2,18 @@ import io
 import time
 import logging
 import threading
-
+from typing import List, Optional
 import requests
-
 import arrow
 
 import dropbox
 from dropbox import Dropbox, exceptions, files
 
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, ListDirOInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
-
-
-class DropboxInfo(OInfo):
-    name = ""
-
-    def __new__(cls, *a, name=None):
-        self = super().__new__(cls, *a)
-        self.name = name
-        return self
 
 
 class _FolderIterator:
@@ -52,7 +42,8 @@ class _FolderIterator:
 
             if self.ls_res.entries:
                 ret = self.ls_res.entries.pop()
-                ret.cursor = self.ls_res.cursor
+                if getattr(ret, "cursor", False):
+                    ret.cursor = self.ls_res.cursor
                 return ret
         raise StopIteration()
 
@@ -263,7 +254,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             path = res.path_display
             event = Event(otype, oid, path, ohash, exists, time.time())
             yield event
-            self.__cursor = res.cursor
+            if getattr(res, "cursor", False):
+                self.__cursor = res.cursor
 
     def events(self):      # pylint: disable=too-many-locals
         yield from self._events(self.cursor)
@@ -272,10 +264,16 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         yield from self._events(None)
         self.walked = True
 
-    def listdir(self, oid) -> list:
-        return list(self._listdir(oid, recursive=False))
+    def listdir(self, oid) -> List[str]:
+        ret = [x.name for x in self._listdir(oid, recursive=False)]
+        return ret
 
-    def _listdir(self, oid, *, recursive):
+    def listdir_info(self, oid) -> List[ListDirOInfo]:
+        ret = [ListDirOInfo(otype=x.otype, oid=x.oid, hash=x.hash, path=x.path, name=x.name) for x in self._listdir(oid, recursive=False)]
+        return ret
+
+    def _listdir(self, oid, *, recursive) -> List[ListDirOInfo]:
+        info = self.info_oid(oid)
         for res in _FolderIterator(self._api, oid, recursive=recursive):
             if isinstance(res, files.DeletedMetadata):
                 continue
@@ -287,7 +285,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 ohash = res.content_hash
             path = res.path_display
             oid = res.id
-            yield DropboxInfo(otype, oid, ohash, path)
+            relative = self.is_subpath(info.path, path)
+            if relative:
+                yield ListDirOInfo(otype, oid, ohash, info.path, name=relative)
 
     def create(self, path, file_like, metadata=None):
         self._verify_parent_folder_exists(path)
@@ -351,9 +351,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             return False
         possible_conflict = self.info_path(path)
         if possible_conflict.otype == DIRECTORY:
-            contents = self.listdir(possible_conflict.oid)
+            contents = list(self._listdir(possible_conflict.oid, recursive=False))
             if contents:
-                raise CloudFileExistsError("Cannot rename over empty folder %s" % path)
+                raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
             self.delete(possible_conflict.oid)
             self._api('files_move_v2', info.oid, path)
             return True
@@ -393,7 +393,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
 
-    def info_path(self, path) -> OInfo:
+    def info_path(self, path) -> Optional[OInfo]:
         try:
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
@@ -407,14 +407,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 otype = FILE
                 fhash = res.content_hash
 
-            return DropboxInfo(otype, oid, fhash, path)
+            return OInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None
 
     def exists_path(self, path) -> bool:
         return self.info_path(path) is not None
 
-    def info_oid(self, oid) -> OInfo:
+    def info_oid(self, oid) -> Optional[OInfo]:
         try:
             res = self._api('files_get_metadata', oid)
             log.debug("res info oid %s", res)
@@ -428,6 +428,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 otype = FILE
                 fhash = res.content_hash
 
-            return DropboxInfo(otype, oid, fhash, path)
+            return OInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None

@@ -42,7 +42,7 @@ class RunUntilHelper():
                     other_info = None
 
                 if other_info is None:
-                    if info.exists == False:
+                    if info.exists is False:
                         log.debug("waiting not exists %s", info.path)
                         continue
                     log.debug("waiting exists %s", info.path)
@@ -50,7 +50,7 @@ class RunUntilHelper():
                     ok = False
                     break
 
-                if info.exists == False:
+                if info.exists is False:
                     ok = False
                     break
 
@@ -123,6 +123,7 @@ def test_sync_basic(sync):
     local_parent = "/local"
     remote_path1 = os.path.join(remote_parent, "stuff1")
     local_path1 = sync.translate(LOCAL, remote_path1)
+    local_path1.replace("\\", "/")
     assert local_path1 == "/local/stuff1"
     local_path2 = os.path.join(local_parent, "stuff2")  # "/local/stuff2"
     remote_path2 = os.path.join(remote_parent, "stuff2")  # "/remote/stuff2"
