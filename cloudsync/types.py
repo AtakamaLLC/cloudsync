@@ -1,4 +1,4 @@
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 from enum import Enum
 
 
@@ -11,11 +11,11 @@ DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
 
 
-class OInfo(NamedTuple):             # todo, rename to FileInfo
+class OInfo(NamedTuple):
     otype: OType                           # fsobject type     (DIRECTORY or FILE)
     oid: str                               # fsobject id
     hash: bytes                            # fsobject hash     (better name: ohash)
-    path: str                              # path
+    path: Optional[str]                    # path
 
 
 class ListDirOInfo(OInfo):

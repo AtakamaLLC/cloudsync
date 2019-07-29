@@ -3,7 +3,7 @@ import logging
 import threading
 from ssl import SSLError
 import json
-from typing import Generator
+from typing import Generator, Optional
 
 import arrow
 from apiclient.discovery import build   # pylint: disable=import-error
@@ -56,7 +56,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.refresh_token = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
-        self._ids = {"/":"root"}
+        self._ids = {"/": "root"}
         self._trashed_ids = {}
 
     @property
@@ -176,7 +176,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if should_retry:
                     raise CloudTemporaryError("unknown error %s" % e)
                 raise Exception("unknown error %s" % e)
-            except (TimeoutError, HttpLib2Error) as e:
+            except (TimeoutError, HttpLib2Error):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
 
@@ -216,7 +216,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def is_suboid(self, top, oid):
         if top == oid:
             return True
-        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid -- maybe we don't even need is_suboid
+        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid, maybe we don't even need is_suboid
         if pid == oid:
             return False
 
@@ -225,9 +225,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def events(self):      # pylint: disable=too-many-locals
         page_token = self.cursor
         while page_token is not None:
-#                log.debug("looking for events, timeout: %s", timeout)
-            response = self._api('changes', 'list', pageToken=page_token, spaces='drive', includeRemoved=True, 
-                    includeItemsFromAllDrives=True, supportsAllDrives=True)
+            # log.debug("looking for events, timeout: %s", timeout)
+            response = self._api('changes', 'list', pageToken=page_token, spaces='drive',
+                                 includeRemoved=True, includeItemsFromAllDrives=True, supportsAllDrives=True)
             for change in response.get('changes'):
                 log.debug("got event %s", change)
 
@@ -329,10 +329,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         fields = 'id, md5Checksum'
 
         res = self._api('files', 'update',
-                body=gdrive_info,
-                fileId=oid,
-                media_body=ul,
-                fields=fields)
+                        body=gdrive_info,
+                        fileId=oid,
+                        media_body=ul,
+                        fields=fields)
 
         log.debug("response from upload %s", res)
 
@@ -458,7 +458,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             log.debug("listdir oid gone %s", oid)
             raise
 
-        if not res or (isinstance(res.get("files", False), list) and res['files']):
+        if not res or (isinstance(res.get("files", False), list) and not res['files']):
             if self.exists_oid(oid):
                 return
             raise CloudFileNotFoundError(oid)
@@ -597,7 +597,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         log.debug("info oid ret: %s", ret)
         return ret
 
-    def _info_oid(self, oid) -> GDriveInfo:
+    def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get',
                     fileId=oid,
