@@ -84,6 +84,11 @@ class MockProvider(Provider):
         }
         self._recycle_oid = recycle_oid
 
+        # init root and sicard events related to it
+        self._sync_root = sync_root
+        self.mkdir(self._sync_root)
+        list(self.events())
+
     def _register_event(self, action, target_object):
         event = MockEvent(action, target_object)
         self._events.append(event)
@@ -139,7 +144,8 @@ class MockProvider(Provider):
         self._api()
         now = time.time()
         for obj in self._fs_by_oid.values():
-            yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
+            if self.is_subpath(self._sync_root, obj.path, strict=True):
+                yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
         self.walked = True
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:

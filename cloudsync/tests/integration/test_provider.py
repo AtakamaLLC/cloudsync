@@ -89,14 +89,15 @@ def cloudsync_provider(request, gdrive_creds, dropbox_creds):
         cls.creds = {}
     return cls
 
-@pytest.fixture
-def provider(cloudsync_provider):
-    class ProviderMixin(cloudsync_provider, ProviderHelper):
+def mixin_provider(prov_cls):
+    assert issubclass(prov_cls, Provider)
+
+    class ProviderMixin(prov_cls, ProviderHelper):
         def __init__(self, *ar, **kw):
             ProviderHelper.__init__(self)
-            cloudsync_provider.__init__(self, *ar, **kw)
+            prov_cls.__init__(self, *ar, **kw)
         def _api(self, *ar, **kw):
-            return self.api_retry(cloudsync_provider._api, *ar, **kw)
+            return self.api_retry(prov_cls._api, *ar, **kw)
 
     test_root = "/" + os.urandom(16).hex()
 
@@ -110,6 +111,13 @@ def provider(cloudsync_provider):
 
     prov.test_cleanup()
 
+@pytest.fixture
+def provider(cloudsync_provider):
+    yield from mixin_provider(cloudsync_provider)
+
+@pytest.fixture
+def mock():
+    yield from mixin_provider(MockProvider)
 
 def test_join(mock):
     assert "/a/b/c" == mock.join("a", "b", "c")
