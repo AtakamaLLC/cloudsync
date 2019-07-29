@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Union
 
 from typing import Optional
+from cloudsync.provider import Provider
 
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
@@ -340,7 +341,7 @@ class SyncManager(Runnable):
 
     def temp_file(self, ohash):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
-        return os.path.join(self.tempdir, ohash)
+        return Provider.join(self.tempdir, ohash)  # Not a fan of importing Provider into sync.py for this...
 
     def finished(self, side, sync):
         sync[side].changed = None

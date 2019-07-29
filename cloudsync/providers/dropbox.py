@@ -2,7 +2,7 @@ import io
 import time
 import logging
 import threading
-from typing import List, Optional
+from typing import Generator, Optional
 import requests
 import arrow
 
@@ -42,8 +42,7 @@ class _FolderIterator:
 
             if self.ls_res.entries:
                 ret = self.ls_res.entries.pop()
-                if getattr(ret, "cursor", False):
-                    ret.cursor = self.ls_res.cursor
+                ret.cursor = self.ls_res.cursor
                 return ret
         raise StopIteration()
 
@@ -264,15 +263,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         yield from self._events(None)
         self.walked = True
 
-    def listdir(self, oid) -> List[str]:
-        ret = [x.name for x in self._listdir(oid, recursive=False)]
-        return ret
+    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
+        yield from self._listdir(oid, recursive=False)
 
-    def listdir_info(self, oid) -> List[ListDirOInfo]:
-        ret = [ListDirOInfo(otype=x.otype, oid=x.oid, hash=x.hash, path=x.path, name=x.name) for x in self._listdir(oid, recursive=False)]
-        return ret
-
-    def _listdir(self, oid, *, recursive) -> List[ListDirOInfo]:
+    def _listdir(self, oid, *, recursive) -> Generator[ListDirOInfo, None, None]:
         info = self.info_oid(oid)
         for res in _FolderIterator(self._api, oid, recursive=recursive):
             if isinstance(res, files.DeletedMetadata):
@@ -346,17 +340,19 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             file_like.write(data)
         return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
 
-    def _attempt_rename_folder_over_empty_folder(self, info: OInfo, path):
+    def _attempt_rename_folder_over_empty_folder(self, info: OInfo, path) -> None:
         if info.otype != DIRECTORY:
-            return False
+            raise CloudFileExistsError(path)
         possible_conflict = self.info_path(path)
         if possible_conflict.otype == DIRECTORY:
-            contents = list(self._listdir(possible_conflict.oid, recursive=False))
-            if contents:
+            try:
+                next(self._listdir(possible_conflict.oid, recursive=False))
                 raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
+            except StopIteration:
+                pass # Folder is empty, rename over it no problem
             self.delete(possible_conflict.oid)
             self._api('files_move_v2', info.oid, path)
-            return True
+            return
         else:  # conflict is a file, and we already know that the rename is on a folder
             raise CloudFileExistsError(path)
 
@@ -366,9 +362,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         except CloudFileExistsError:
             info = self.info_oid(oid)
             if info.otype == DIRECTORY:
-                success = self._attempt_rename_folder_over_empty_folder(info, path)
-                if not success:
-                    raise
+                self._attempt_rename_folder_over_empty_folder(info, path)
+            else:
+                raise
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
         # TODO: check if a regular filesystem lets you mkdir over a non-empty folder...

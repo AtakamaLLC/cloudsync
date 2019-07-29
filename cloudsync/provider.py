@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-
 import re
-from typing import List
+from typing import Generator
 
 from cloudsync.types import OInfo, DIRECTORY, ListDirOInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
@@ -74,11 +73,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def listdir(self, oid) -> list:
-        ...
-
-    @abstractmethod
-    def listdir_info(self, oid) -> List[ListDirOInfo]:
+    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
         ...
 
 #    @abstractmethod
@@ -101,13 +96,20 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         self.download(info.oid, io) 
 
 ### HELPER
-    def join(self, paths):
+    @classmethod
+    def join(cls, *paths):
         res = ""
         for path in paths:
-            if path is None or path == self.sep:
+            if path is None or path == cls.sep:
                 continue
-            res = res + self.sep + path.strip(self.sep)
-        return res or self.sep
+            if isinstance(path, str):
+                res = res + cls.sep + path.strip(cls.sep)
+                continue
+            for sub_path in path:
+                if sub_path is None or sub_path == cls.sep:
+                    continue
+                res = res + cls.sep + sub_path.strip(cls.sep)
+        return res or cls.sep
 
     def split(self, path):
         # todo cache regex
@@ -126,7 +128,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             parts = re.split(r'[\\/]+', norm_path)
         else:
             parts = re.split(r'[%s]+' % self.sep, norm_path)
-        norm_path = self.sep.join(parts)
+        norm_path = self.join(*parts)
         return norm_path
 
     def is_subpath(self, folder, target, sep=None, anysep=False, strict=False):
@@ -170,7 +172,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def dirname(self, path: str):
         norm_path = self.normalize_path(path).lstrip(self.sep)
         parts = re.split(r'[%s]+' % self.sep, norm_path)
-        retval = self.sep + self.sep.join(parts[0:-1])
+        retval = self.join(*parts[0:-1])
         return retval
 
     def _verify_parent_folder_exists(self, path):

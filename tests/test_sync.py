@@ -10,6 +10,7 @@ from cloudsync import SyncManager, SyncState, EventManager, CloudFileNotFoundErr
 from cloudsync.runnable import time_helper
 
 from .test_events import MockProvider
+from cloudsync.provider import Provider
 
 from typing import NamedTuple
 
@@ -121,12 +122,12 @@ def test_sync_state_multi():
 def test_sync_basic(sync):
     remote_parent = "/remote"
     local_parent = "/local"
-    remote_path1 = os.path.join(remote_parent, "stuff1")
+    remote_path1 = Provider.join(remote_parent, "stuff1")
     local_path1 = sync.translate(LOCAL, remote_path1)
     local_path1.replace("\\", "/")
     assert local_path1 == "/local/stuff1"
-    local_path2 = os.path.join(local_parent, "stuff2")  # "/local/stuff2"
-    remote_path2 = os.path.join(remote_parent, "stuff2")  # "/remote/stuff2"
+    local_path2 = Provider.join(local_parent, "stuff2")  # "/local/stuff2"
+    remote_path2 = Provider.join(remote_parent, "stuff2")  # "/remote/stuff2"
 
     sync.providers[LOCAL].mkdir(local_parent)
     sync.providers[REMOTE].mkdir(remote_parent)
@@ -173,10 +174,10 @@ def test_sync_basic(sync):
 def test_sync_rename(sync):
     remote_parent = "/remote"
     local_parent = "/local"
-    local_path1 = os.path.join(local_parent, "stuff1")  # "/local/stuff1"
-    local_path2 = os.path.join(local_parent, "stuff2")  # "/local/stuff2"
-    remote_path1 = os.path.join(remote_parent, "stuff1")  # "/remote/stuff1"
-    remote_path2 = os.path.join(remote_parent, "stuff2")  # "/remote/stuff2"
+    local_path1 = Provider.join(local_parent, "stuff1")  # "/local/stuff1"
+    local_path2 = Provider.join(local_parent, "stuff2")  # "/local/stuff2"
+    remote_path1 = Provider.join(remote_parent, "stuff1")  # "/remote/stuff1"
+    remote_path2 = Provider.join(remote_parent, "stuff2")  # "/remote/stuff2"
 
     sync.providers[LOCAL].mkdir(local_parent)
     sync.providers[REMOTE].mkdir(remote_parent)
@@ -227,8 +228,8 @@ def test_sync_hash(sync):
 def test_sync_rm(sync):
     remote_parent = "/remote"
     local_parent = "/local"
-    local_path1 = os.path.join(local_parent, "stuff1")  # "/local/stuff1"
-    remote_path1 = os.path.join(remote_parent, "stuff1")  # "/remote/stuff1"
+    local_path1 = Provider.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_path1 = Provider.join(remote_parent, "stuff1")  # "/remote/stuff1"
 
     sync.providers[LOCAL].mkdir(local_parent)
     sync.providers[REMOTE].mkdir(remote_parent)
@@ -277,8 +278,8 @@ def test_sync_mkdir(sync):
 def test_sync_conflict_simul(sync):
     remote_parent = "/remote"
     local_parent = "/local"
-    local_path1 = os.path.join(local_parent, "stuff1")  # "/local/stuff1"
-    remote_path1 = os.path.join(remote_parent, "stuff1")  # "/remote/stuff1"
+    local_path1 = Provider.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_path1 = Provider.join(remote_parent, "stuff1")  # "/remote/stuff1"
 
     sync.providers[LOCAL].mkdir(local_parent)
     sync.providers[REMOTE].mkdir(remote_parent)

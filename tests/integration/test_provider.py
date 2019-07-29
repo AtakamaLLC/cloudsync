@@ -3,6 +3,7 @@ import logging
 import pytest
 from io import BytesIO
 from unittest.mock import patch
+from typing import Union
 
 import cloudsync
 
@@ -15,16 +16,19 @@ from cloudsync.providers import GDriveProvider, DropboxProvider
 log = logging.getLogger(__name__)
 
 
+ProviderMixin = Union[Provider, "ProviderHelper"]
+
+
 class ProviderHelper:
     def __init__(self):
-        self.event_timeout = ""
-        self.event_sleep = ""
+        self.event_timeout = None
+        self.event_sleep = None
 
-    def temp_name(self: "ProviderMixin", name="tmp", *, folder=None):
-        fname = self.join((folder or self.sync_root, os.urandom(16).hex() + "." + name))
+    def temp_name(self: ProviderMixin, name="tmp", *, folder=None):
+        fname = self.join(folder or self.sync_root, os.urandom(16).hex() + "." + name)
         return fname
 
-    def events_poll(self: "ProviderMixin", timeout=None, until=None):
+    def events_poll(self: ProviderMixin, timeout=None, until=None):
         if timeout is None:
             timeout = self.event_timeout
 
@@ -42,21 +46,23 @@ class ProviderHelper:
             elif until and until():
                 break
 
-    def test_cleanup(self: "ProviderMixin", timeout=None, until=None):
+    def test_cleanup(self: ProviderMixin, timeout=None, until=None):
+        _ = timeout  # TODO: get rid of the arguments, if we're not going to use them
+        _ = until
         # remove everything in the sync_root
         info = self.info_path(self.sync_root)
         if info:
             # TODO: this is broken. Either deletion is recursive, in which case, this is unnecessary,
             #       or it isn't, and this isn't sufficient because it's not recursive
             #       plus, listdir shouldn't be returning oids
-            for info in list(self.listdir_info(info.oid)):
+            for info in self.listdir(info.oid):
                 self.delete(info.oid)
 
         info = self.info_path(self.sync_root)
         if info:
             self.delete(info.oid)
 
-    def api_retry(self: "ProviderMixin", func, *ar, **kw):
+    def api_retry(self: ProviderMixin, func, *ar, **kw):
         # the cloud providers themselves should *not* have their own backoff logic
         # rather, they should punt rate limit and temp errors to the sync system
         # since we're not testing the sync system here, we need to make our own
@@ -64,7 +70,7 @@ class ProviderHelper:
         for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
             try:
                 return func(self, *ar, **kw)
-            except CloudTemporaryError as e:
+            except CloudTemporaryError:
                 log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
 
 
@@ -90,10 +96,6 @@ class MockProviderHelper(MockProvider, ProviderHelper):
 
     def _api(self, *ar, **kw):
         return self.api_retry(MockProvider._api, *ar, **kw)
-
-
-class ProviderMixin(MockProvider, ProviderHelper):  # For typehints only
-    pass
 
 
 def gdrive(gdrive_creds):
@@ -130,6 +132,7 @@ def mock():
 
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
 def provider(request, gdrive_creds, dropbox_creds, mock):
+    prov = None
     if request.param == 'gdrive':
         prov = gdrive(gdrive_creds)
     elif request.param == 'dropbox':
@@ -146,10 +149,10 @@ def provider(request, gdrive_creds, dropbox_creds, mock):
 
 
 def test_join(mock):
-    assert "/a/b/c" == mock.join(("a", "b", "c"))
-    assert "/a/c" == mock.join(("a", None, "c"))
-    assert "/a/b/c" == mock.join(("/a", "/b", "/c"))
-    assert "/a/c" == mock.join(("a", "/", "c"))
+    assert "/a/b/c" == mock.join("a", "b", "c")
+    assert "/a/c" == mock.join("a", None, "c")
+    assert "/a/b/c" == mock.join("/a", "/b", "/c")
+    assert "/a/c" == mock.join("a", "/", "c")
 
 
 def test_connect(provider):
@@ -197,14 +200,14 @@ def test_rename(util, provider: ProviderMixin):
     folder_name1 = provider.temp_name()
     folder_name2 = provider.temp_name()
     file_name = os.urandom(16).hex()
-    file_path1 = folder_name1 + "/" + file_name
-    file_path2 = folder_name2 + "/" + file_name
+    file_path1 = provider.join(folder_name1, file_name)
+    file_path2 = provider.join(folder_name2, file_name)
     sub_folder_name = os.urandom(16).hex()
-    sub_folder_path1 = folder_name1 + "/" + sub_folder_name
-    sub_folder_path2 = folder_name2 + "/" + sub_folder_name
+    sub_folder_path1 = provider.join(folder_name1, sub_folder_name)
+    sub_folder_path2 = provider.join(folder_name2, sub_folder_name)
     sub_file_name = os.urandom(16).hex()
-    sub_file_path1 = sub_folder_path1 + "/" + sub_file_name
-    sub_file_path2 = sub_folder_path2 + "/" + sub_file_name
+    sub_file_path1 = provider.join(sub_folder_path1, sub_file_name)
+    sub_file_path2 = provider.join(sub_folder_path2, sub_file_name)
 
     folder_oid = provider.mkdir(folder_name1)
     sub_folder_oid = provider.mkdir(sub_folder_path1)
@@ -233,6 +236,7 @@ def test_rename(util, provider: ProviderMixin):
 
 def test_mkdir(util, provider: ProviderMixin):
     dat = os.urandom(32)
+
     def data():
         return BytesIO(dat)
     dest = provider.temp_name("dest")
@@ -242,10 +246,10 @@ def test_mkdir(util, provider: ProviderMixin):
     sub_f = provider.temp_name("dest", folder=dest)
     log.debug("parent = %s, sub = %s", dest, sub_f)
     with pytest.raises(CloudFileExistsError):
-        info1 = provider.create(dest, data(), None)
+        provider.create(dest, data(), None)
     assert provider.exists_path(dest)
     log.debug("folder %s exists", dest)
-    info1 = provider.create(sub_f, data(), None)
+    provider.create(sub_f, data(), None)
 
 
 def test_walk(util, provider: ProviderMixin):
@@ -292,7 +296,7 @@ def test_event_basic(util, provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_timeout,1)):
+    for e in provider.events_poll(timeout=min(provider.event_timeout, 1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp, None)
@@ -344,17 +348,17 @@ def test_event_del_create(util, provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_timeout,2)):
+    for e in provider.events_poll(timeout=min(provider.event_timeout, 2)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
     provider.delete(info1.oid)
-    info2 = provider.create(dest, temp2)
+    provider.create(dest, temp2)
 
     last_event = None
     saw_delete = False
     done = False
-    for e in provider.events_poll(provider.event_timeout * 2, until=lambda:done):
+    for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
         log.debug("event %s", e)
         # you might get events for the root folder here or other setup stuff
         path = e.path
@@ -376,7 +380,8 @@ def test_event_del_create(util, provider: ProviderMixin):
     # the important thing is that we always get a create after the delete event
     assert last_event
     assert last_event.exists is True
-    
+
+
 def test_api_failure(provider):
     # assert that the cloud
     # a) uses an api function
@@ -395,7 +400,6 @@ def test_api_failure(provider):
 def test_file_not_found(provider: ProviderMixin):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
-    # provider.temp_name = lambda x: "/" + x  # TODO: fix this when we replace the mock fixture with the provider fixture
     dat = os.urandom(32)
 
     def data():
@@ -451,9 +455,9 @@ def test_file_not_found(provider: ProviderMixin):
     #   hash_oid
     #       deleted file returns None
     #       never existed file returns None
-    if getattr(provider, "hash_oid", False): # TODO implement hash_oid in gdrive, then don't have this be conditional
-        assert provider.hash_oid(test_file_deleted_oid) is None
-        assert provider.hash_oid(test_oid_made_up) is None
+    # if getattr(provider, "hash_oid", False): # TODO implement hash_oid in gdrive, then don't have this be conditional
+    #     assert provider.hash_oid(test_file_deleted_oid) is None
+    #     assert provider.hash_oid(test_oid_made_up) is None
 
     #   upload
     #       to a deleted file raises FNF, or untrashes the file, either is OK
@@ -525,11 +529,11 @@ def test_file_not_found(provider: ProviderMixin):
     #       on a deleted folder raises FNF
     #       on a made up path raises FNF
     with pytest.raises(CloudFileNotFoundError):
-        provider.listdir(test_file_deleted_path)
+        list(provider.listdir(test_file_deleted_oid))
     with pytest.raises(CloudFileNotFoundError):
-        provider.listdir(test_folder_deleted_path)
+        list(provider.listdir(test_folder_deleted_oid))
     with pytest.raises(CloudFileNotFoundError):
-        provider.listdir(test_path_made_up)
+        list(provider.listdir(test_oid_made_up))
 
     # TODO: Google drive raises FNF when it can't find the root... can we test for that here?
 
@@ -541,16 +545,16 @@ def test_file_exists(provider: ProviderMixin):
         return BytesIO(da)
 
     def create_and_delete_file():
-        file_name = provider.temp_name()
-        file_info = provider.create(file_name, data(), None)
+        create_and_delete_file_name = provider.temp_name()
+        file_info = provider.create(create_and_delete_file_name, data(), None)
         provider.delete(file_info.oid)
-        return file_name, file_info.oid
+        return create_and_delete_file_name, file_info.oid
 
     def create_and_delete_folder():
-        folder_name = provider.temp_name()
-        folder_oid = provider.mkdir(folder_name)
-        provider.delete(folder_oid)
-        return folder_name, folder_oid
+        create_and_delete_folder_name = provider.temp_name()
+        create_and_delete_folder_oid = provider.mkdir(create_and_delete_folder_name)
+        provider.delete(create_and_delete_folder_oid)
+        return create_and_delete_folder_name, create_and_delete_folder_oid
 
     def create_and_rename_file():
         file_name1 = provider.temp_name()
@@ -568,17 +572,17 @@ def test_file_exists(provider: ProviderMixin):
         provider.rename(folder_oid1, folder_name2)
         return folder_name1, folder_oid1
 
-    def create_file(file_name=None):
-        if file_name is None:
-            file_name = provider.temp_name()
-        file_info = provider.create(file_name, data(), None)
-        return file_name, file_info.oid
+    def create_file(create_file_name=None):
+        if create_file_name is None:
+            create_file_name = provider.temp_name()
+        file_info = provider.create(create_file_name, data(), None)
+        return create_file_name, file_info.oid
 
-    def create_folder(folder_name=None):
-        if folder_name is None:
-            folder_name = provider.temp_name()
-        folder_oid = provider.mkdir(folder_name)
-        return folder_name, folder_oid
+    def create_folder(create_folder_name=None):
+        if create_folder_name is None:
+            create_folder_name = provider.temp_name()
+        create_folder_oid = provider.mkdir(create_folder_name)
+        return create_folder_name, create_folder_oid
 
     # Test that operations on existent file system objects raise CloudExistsError
     # when appropriate, and don't when inappropriate
@@ -677,11 +681,11 @@ def test_file_exists(provider: ProviderMixin):
     create_file(name1 + "/junk")
     name2, oid2 = create_folder()
     assert oid1 != oid2
-    contents1 = provider.listdir(oid1)
+    contents1 = [x.name for x in provider.listdir(oid1)]
     provider.rename(oid1, name2)
     assert provider.exists_oid(oid1)
     assert not provider.exists_oid(oid2)
-    contents2 = provider.listdir(oid1)
+    contents2 = [x.name for x in provider.listdir(oid1)]
     assert contents1 == contents2  # pytest MAGIC!
 
     #   rename: rename folder over non-empty folder raises FEx
@@ -775,10 +779,7 @@ def test_listdir(provider: ProviderMixin):
     provider.create(outer + "/file1", BytesIO(b"hello"))
     provider.create(outer + "/file2", BytesIO(b"there"))
     provider.create(inner + "/file3", BytesIO(b"world"))
-    contents = provider.listdir(outer_oid)
+    contents = [x.name for x in provider.listdir(outer_oid)]
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
     assert contents.sort() == expected.sort()
-
-
-

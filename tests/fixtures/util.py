@@ -4,6 +4,8 @@ import tempfile
 import shutil
 from inspect import getframeinfo, stack
 import logging
+from cloudsync.provider import Provider
+
 log = logging.getLogger(__name__)
 
 log.setLevel(logging.INFO)
@@ -14,7 +16,8 @@ class Util:
         self.base = tempfile.mkdtemp(suffix=".cloudsync")
         log.debug("temp files will be in: %s", self.base)
 
-    def get_context(self, level):
+    @staticmethod
+    def get_context(level):
         caller = getframeinfo(stack()[level+1][0])
         return caller
 
@@ -31,7 +34,7 @@ class Util:
 
         name = fn + '-' + func + "." + os.urandom(16).hex()
 
-        fp = os.path.join(self.base, name)
+        fp = Provider.join(self.base, name)
 
         if fill_bytes is not None:
             with open(fp, "wb") as f:

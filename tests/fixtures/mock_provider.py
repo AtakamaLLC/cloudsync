@@ -2,7 +2,7 @@ import time
 import copy
 import logging
 from hashlib import md5
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Generator
 from re import split
 
 from cloudsync.event import Event
@@ -154,11 +154,7 @@ class MockProvider(Provider):
         self._register_event(MockEvent.ACTION_UPDATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, oid) -> List[str]:
-        ret = [x.name for x in self.listdir_info(oid)]
-        return ret
-
-    def listdir_info(self, oid) -> List[ListDirOInfo]:
+    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
         folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockFSObject.DIR):
             raise CloudFileNotFoundError(oid)
@@ -209,9 +205,11 @@ class MockProvider(Provider):
                 log.debug("rename %s:%s conflicts with existing object of another type", oid, object_to_rename.path)
                 raise CloudFileExistsError(new_path)
             if possible_conflict.type == MockFSObject.DIR:
-                contents = self.listdir(possible_conflict.oid)
-                if len(contents) > 0:
+                try:
+                    next(self.listdir(possible_conflict.oid))
                     raise CloudFileExistsError(new_path)
+                except StopIteration:
+                    pass # Folder is empty, rename over it no problem
             self.delete(possible_conflict.oid)
         if object_to_rename.type == MockFSObject.FILE:
             self._rename_single_object(object_to_rename, new_path)
@@ -301,14 +299,6 @@ class MockProvider(Provider):
     # def _burp(path, contents):
     #     with open(path, "wb") as x:
     #         x.write(contents)
-
-    def dirname(self, path: str):
-        norm_path = self.normalize_path(path)
-        parts = split(r'[%s]+' % self.sep, norm_path)
-        retval = self.sep.join(parts[0:-1])
-        if retval == "":
-            retval = self.sep
-        return retval
 
     def log_debug_state(self, msg=""):
         log.debug("%s: mock provider state %s", msg, list(self.walk()))
