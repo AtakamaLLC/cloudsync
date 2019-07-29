@@ -5,7 +5,7 @@ import pytest
 
 from cloudsync import CloudSync, SyncState, LOCAL, REMOTE
 
-from .fixtures import MockProvider
+from ..fixtures import MockProvider
 
 from .test_sync import WaitFor, RunUntilHelper
 

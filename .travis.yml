@@ -1,4 +1,5 @@
 language: python
+cache: pip
 
 jobs:
     include: 
@@ -7,13 +8,13 @@ jobs:
         - pylint cloudsync
     - stage: test
       script:
-        - pytest --durations=0 --workers=2 tests --ignore tests/integration --ignore tests/providers
+        - pytest --durations=0 --workers=2 tests/unit
       python:
         - '3.6'
         - '3.7'
     - stage: integ
       script:
-        - pytest --durations=0 --workers=2 tests/integration tests/providers
+        - pytest --durations=0 --workers=2 tests/integration
       python:
         - '3.6'
 
