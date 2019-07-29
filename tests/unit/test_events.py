@@ -4,7 +4,7 @@ import pytest
 
 from cloudsync import EventManager, SyncState, LOCAL
 
-from .fixtures import MockProvider
+from ..fixtures import MockProvider
 
 
 @pytest.fixture(name="manager")
