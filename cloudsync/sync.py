@@ -7,8 +7,10 @@ import random
 from hashlib import md5
 from base64 import b64encode
 from enum import Enum
+from typing import Union
 
 from typing import Optional
+from cloudsync.provider import Provider
 
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
@@ -70,10 +72,10 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
 
 # allow traditional sets of ternary
     @exists.setter
-    def exists(self, val):
-        if val == False:            # pylint: disable=singleton-comparison
+    def exists(self, val: Union[bool, Exists]):
+        if val is False:
             val = TRASHED
-        if val == True:             # pylint: disable=singleton-comparison
+        if val is True:
             val = EXISTS
         if val is None:
             val = UNKNOWN
@@ -339,7 +341,7 @@ class SyncManager(Runnable):
 
     def temp_file(self, ohash):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
-        return os.path.join(self.tempdir, ohash)
+        return Provider.join(self.tempdir, ohash)  # Not a fan of importing Provider into sync.py for this...
 
     def finished(self, side, sync):
         sync[side].changed = None

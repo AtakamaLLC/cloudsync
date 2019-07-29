@@ -3,6 +3,7 @@ import logging
 import threading
 from ssl import SSLError
 import json
+from typing import Generator, Optional
 
 import arrow
 from apiclient.discovery import build   # pylint: disable=import-error
@@ -14,20 +15,26 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, ListDirOInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
-class GDriveInfo(OInfo):
+
+class GDriveInfo(ListDirOInfo):
     pids = []
     name = ""
-    def __new__(cls, *a, pids=[], name=None):
+
+    # def __new__(cls, *a, name=None, **kwargs):
+    def __new__(cls, *a, pids=None, name=None, **kwargs):
         self = super().__new__(cls, *a)
+        if pids is None:
+            pids = []
         self.pids = pids
         self.name = name
         return self
+
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = True
@@ -49,7 +56,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.refresh_token = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
-        self._ids = {"/":"root"}
+        self._ids = {"/": "root"}
         self._trashed_ids = {}
 
     @property
@@ -169,7 +176,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if should_retry:
                     raise CloudTemporaryError("unknown error %s" % e)
                 raise Exception("unknown error %s" % e)
-            except (TimeoutError, HttpLib2Error) as e:
+            except (TimeoutError, HttpLib2Error):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
 
@@ -209,7 +216,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def is_suboid(self, top, oid):
         if top == oid:
             return True
-        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid -- maybe we don't even need is_suboid
+        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid, maybe we don't even need is_suboid
         if pid == oid:
             return False
 
@@ -218,9 +225,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def events(self):      # pylint: disable=too-many-locals
         page_token = self.cursor
         while page_token is not None:
-#                log.debug("looking for events, timeout: %s", timeout)
-            response = self._api('changes', 'list', pageToken=page_token, spaces='drive', includeRemoved=True, 
-                    includeItemsFromAllDrives=True, supportsAllDrives=True)
+            # log.debug("looking for events, timeout: %s", timeout)
+            response = self._api('changes', 'list', pageToken=page_token, spaces='drive',
+                                 includeRemoved=True, includeItemsFromAllDrives=True, supportsAllDrives=True)
             for change in response.get('changes'):
                 log.debug("got event %s", change)
 
@@ -322,10 +329,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         fields = 'id, md5Checksum'
 
         res = self._api('files', 'update',
-                body=gdrive_info,
-                fileId=oid,
-                media_body=ul,
-                fields=fields)
+                        body=gdrive_info,
+                        fileId=oid,
+                        media_body=ul,
+                        fields=fields)
 
         log.debug("response from upload %s", res)
 
@@ -384,14 +391,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     log.debug("empty file downloaded")
                     done = True
                 elif str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError("file %s not found" % oid) 
+                    raise CloudFileNotFoundError("file %s not found" % oid)
                 else:
                     raise CloudTemporaryError("unknown response from drive")
             except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected during download")
 
-    def rename(self, oid, path):
+    def rename(self, oid, path):  # pylint: disable=too-many-locals
         pid = self.get_parent_id(path)
 
         add_pids = [pid]
@@ -402,51 +409,62 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if info is None:
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
+        old_path = info.path
 
         _, name = self.split(path)
         body = {'name': name}
 
         if self.exists_path(path):
             possible_conflict = self.info_path(path)
-            if possible_conflict.otype == DIRECTORY:
-                contents = self.listdir(possible_conflict.oid)
-                if contents:
-                    raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-                self.delete(possible_conflict.oid)
-            else:
-                if info.otype != possible_conflict.otype:
-                    raise CloudFileExistsError(path)
+            if FILE in (info.otype, possible_conflict.otype):
+                raise CloudFileExistsError(path)
+            # because of the preceding if, we know that the source and target must both be folders
+            try:
+                next(self.listdir(possible_conflict.oid))
+                raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
+            except StopIteration:
+                pass # Folder is empty, rename over it no problem
+            self.delete(possible_conflict.oid)
+
+        if not old_path:
+            for cpath, coid in list(self._ids.items()):
+                if coid == oid:
+                    old_path = cpath
+
+        if not old_path:
+            old_path = self._path_oid(oid)
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
         for cpath, coid in list(self._ids.items()):
-            if coid == oid:
+            if self.is_subpath(old_path, cpath):
+                new_cpath = self.replace_path(cpath, old_path, path)
                 self._ids.pop(cpath)
-                self._ids[path] = oid
+                self._ids[new_cpath] = oid
 
         log.debug("renamed %s", body)
 
-    def listdir(self, oid) -> list:
+    def listdir(self, oid) -> Generator[GDriveInfo, None, None]:
         query = f"'{oid}' in parents"
         try:
             res = self._api('files', 'list',
-                    q=query,
-                    spaces='drive',
-                    fields='files(id, md5Checksum, parents, name, mimeType, trashed)',
-                    pageToken=None)
+                            q=query,
+                            spaces='drive',
+                            fields='files(id, md5Checksum, parents, name, mimeType, trashed)',
+                            pageToken=None)
         except CloudFileNotFoundError:
             if self._info_oid(oid):
-                return []
+                return
             log.debug("listdir oid gone %s", oid)
             raise
 
-        if not res:
-            return []
-
+        if not res or (isinstance(res.get("files", False), list) and not res['files']):
+            if self.exists_oid(oid):
+                return
+            raise CloudFileNotFoundError(oid)
 
         log.debug("listdir got res %s", res)
 
-        ret = []
         for ent in res['files']:
             fid = ent['id']
             pids = ent['parents']
@@ -458,11 +476,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             else:
                 otype = FILE
             if not trashed:
-                ret.append(GDriveInfo(otype, fid, fhash, None, pids=pids, name=name))
+                yield GDriveInfo(otype, fid, fhash, None, pids=pids, name=name)
 
-        log.debug("listdir %s -> %s", oid, ret)
-        return ret
- 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
         if self.exists_path(path):
             info = self.info_path(path)
@@ -499,12 +514,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return self._info_oid(oid) is not None
 
     def info_path(self, path) -> OInfo:
-        parent_id = self.get_parent_id(path)
-        _, name = self.split(path)
-
-        query = f"'{parent_id}' in parents and name='{name}'"
-
         try:
+            parent_id = self.get_parent_id(path)
+            _, name = self.split(path)
+
+            query = f"'{parent_id}' in parents and name='{name}'"
+
             res = self._api('files', 'list',
                     q=query,
                     spaces='drive',
@@ -567,7 +582,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if info and info.pids and info.name:
             ppath = self._path_oid(info.pids[0])
             if ppath:
-                path = ppath + "/" + info.name
+                path = self.join(ppath, info.name)
                 self._ids[path] = oid
                 return path
         return None
@@ -582,7 +597,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         log.debug("info oid ret: %s", ret)
         return ret
 
-    def _info_oid(self, oid) -> GDriveInfo:
+    def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get',
                     fileId=oid,
