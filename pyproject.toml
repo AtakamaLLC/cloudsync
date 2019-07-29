@@ -13,6 +13,13 @@ classifiers=["Intended Audience :: Developers",
     "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+requires = ["arrow", "oauth2client", ]
+requires-python = ">=3.6"
+
+[tool.flit.metadata.requires-extra]
+dropbox = [ "dropbox" ]
+gdrive = [ "httplib2", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib", ]
+
 [tool.flit.scripts]
 cloudsync = "cloudsync:main"
-
+cloudsync-tests = "cloudsync:test_main"

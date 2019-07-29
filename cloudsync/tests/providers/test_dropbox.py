@@ -7,7 +7,7 @@ import pytest
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.dropbox import DropboxProvider
 
-@pytest.fixture(name="dropbox_creds")
+@pytest.fixture(name="dropbox_creds", scope="session")
 def fixture_dropbox_creds():
     token_set = os.environ.get("DROPBOX_TOKEN")
     if not token_set:

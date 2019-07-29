@@ -7,7 +7,7 @@ import pytest
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
 
-@pytest.fixture(name="gdrive_creds")
+@pytest.fixture(name="gdrive_creds", scope="session")
 def fixture_gdrive_creds():
     token_set = os.environ.get("GDRIVE_TOKEN")
     cli_sec = os.environ.get("GDRIVE_CLI_SECRET")
