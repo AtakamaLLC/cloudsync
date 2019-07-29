@@ -83,7 +83,7 @@ def cloudsync_provider(request, gdrive_creds, dropbox_creds):
         cls = DropboxProvider
         cls.event_timeout = 20
         cls.event_sleep = 2
-        cls.creds = dropboxe_creds
+        cls.creds = dropbox_creds
     elif request.param == "mock":
         cls = MockProvider
         cls.creds = {}
