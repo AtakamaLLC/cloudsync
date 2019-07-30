@@ -72,23 +72,12 @@ class ProviderHelper:
             except CloudTemporaryError:
                 log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
 
-@pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
-def cloudsync_provider(request, gdrive_creds, dropbox_creds):
-    if request.param == "gdrive":
-        cls = GDriveProvider
-        cls.event_timeout = 60
-        cls.event_sleep = 2
-        cls.creds = gdrive_creds
-    elif request.param == "dropbox":
-        cls = DropboxProvider
-        cls.event_timeout = 20
-        cls.event_sleep = 2
-        cls.creds = dropbox_creds
-    elif request.param == "mock":
-        cls = MockProvider
-        cls.event_timeout = 1
-        cls.event_sleep = 0.001
-        cls.creds = {}
+@pytest.fixture
+def mock_provider(request):
+    cls = MockProvider
+    cls.event_timeout = 1
+    cls.event_sleep = 0.001
+    cls.creds = {}
     return cls
 
 def mixin_provider(prov_cls):
@@ -114,25 +103,45 @@ def mixin_provider(prov_cls):
     prov.test_cleanup()
 
 @pytest.fixture
-def provider(cloudsync_provider):
-    yield from mixin_provider(cloudsync_provider)
+def config_provider(request, mock_provider, provider_name):
+    try:
+        # if there's a plugin, use it
+        return request.getfixturevalue("cloudsync_provider")
+    except:
+        if provider_name == "mock":
+            return mock_provider
+        elif provider_name == "gdrive":
+            from .providers.gdrive import gdrive_provider
+            return gdrive_provider()
+        elif provider_name == "dropbox":
+            from .providers.dropbox import dropbox_provider
+            return dropbox_provider()
+        else:
+            assert False, "Must provide a valid --provider name or use the -p <plugin>"
+
+def pytest_generate_tests(metafunc):
+    if "provider" in metafunc.fixturenames:
+        provs = []
+        for e in metafunc.config.getoption("provider"):
+            provs += e.split(",")
+        if not provs:
+            provs += ["mock"]
+        metafunc.parametrize("provider_name", provs)
 
 @pytest.fixture
-def mock():
-    yield from mixin_provider(MockProvider)
+def provider(config_provider):
+    yield from mixin_provider(config_provider)
 
-def test_join(mock):
-    assert "/a/b/c" == mock.join("a", "b", "c")
-    assert "/a/c" == mock.join("a", None, "c")
-    assert "/a/b/c" == mock.join("/a", "/b", "/c")
-    assert "/a/c" == mock.join("a", "/", "c")
-
+def test_join(mock_provider):
+    assert "/a/b/c" == mock_provider.join("a", "b", "c")
+    assert "/a/c" == mock_provider.join("a", None, "c")
+    assert "/a/b/c" == mock_provider.join("/a", "/b", "/c")
+    assert "/a/c" == mock_provider.join("a", "/", "c")
 
 def test_connect(provider):
     assert provider.connected
 
-
-def test_create_upload_download(util, provider):
+def test_create_upload_download(provider):
     dat = os.urandom(32)
 
     def data():
@@ -156,7 +165,7 @@ def test_create_upload_download(util, provider):
     assert dest.getvalue() == dat
 
 
-def test_rename(util, provider: ProviderMixin):
+def test_rename(provider: ProviderMixin):
     dat = os.urandom(32)
 
     def data():
@@ -207,7 +216,7 @@ def test_rename(util, provider: ProviderMixin):
     assert provider.info_oid(sub_file_info.oid).path == sub_file_path2
 
 
-def test_mkdir(util, provider: ProviderMixin):
+def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)
 
     def data():
@@ -225,7 +234,7 @@ def test_mkdir(util, provider: ProviderMixin):
     provider.create(sub_f, data(), None)
 
 
-def test_walk(util, provider: ProviderMixin):
+def test_walk(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
     info = provider.create(dest, temp, None)
@@ -264,7 +273,7 @@ def check_event_path(event: Event, provider: ProviderMixin, target_path):
                 raise
 
 
-def test_event_basic(util, provider: ProviderMixin):
+def test_event_basic(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
@@ -315,7 +324,7 @@ def test_event_basic(util, provider: ProviderMixin):
     assert received_event.mtime
 
 
-def test_event_del_create(util, provider: ProviderMixin):
+def test_event_del_create(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
