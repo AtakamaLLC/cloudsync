@@ -33,6 +33,115 @@ def fixture_cs():
 
     cs.done()
 
+@pytest.fixture(name="multi_cs")
+def fixture_multi_cs():
+    state1 = SyncState()
+    state2 = SyncState()
+
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    p1 = MockProvider()
+    p2 = MockProvider()
+    p3 = MockProvider()
+
+    def translate1(to, path):
+        if to == LOCAL:
+            return "/local1" + path.replace("/remote", "")
+
+        if to == REMOTE:
+            if "/local1" in path:
+                return "/remote" + path.replace("/local1", "")
+            return None
+
+        raise ValueError()
+
+    def translate2(to, path):
+        if to == LOCAL:
+            return "/local2" + path.replace("/remote", "")
+
+        if to == REMOTE:
+            if "/local2" in path:
+                return "/remote" + path.replace("/local2", "")
+            return None
+
+        raise ValueError()
+
+    cs1 = CloudSyncMixin((p1, p2), translate1, state1)
+    cs2 = CloudSyncMixin((p1, p3), translate2, state2)
+
+    yield cs1, cs2
+
+    cs1.done()
+    cs2.done()
+
+
+def test_sync_multi(multi_cs):
+    cs1, cs2 = multi_cs
+
+    local_parent1 = "/local1"
+    local_parent2 = "/local2"
+    remote_parent1 = "/remote"
+    remote_parent2 = "/remote"
+    remote_path1 = "/remote/stuff1"
+    remote_path2 = "/remote/stuff2"
+    local_path11 = "/local1/stuff1"
+    local_path21 = "/local2/stuff1"
+    local_path12 = "/local1/stuff2"
+    local_path22 = "/local2/stuff2"
+
+    cs1.providers[LOCAL].mkdir(local_parent1)
+    cs1.providers[REMOTE].mkdir(remote_parent1)
+    cs2.providers[LOCAL].mkdir(local_parent2)
+    cs2.providers[REMOTE].mkdir(remote_parent2)
+    linfo1 = cs1.providers[LOCAL].create(local_path11, BytesIO(b"hello1"), None)
+    linfo2 = cs2.providers[LOCAL].create(local_path21, BytesIO(b"hello2"), None)
+    rinfo1 = cs1.providers[REMOTE].create(remote_path2, BytesIO(b"hello3"), None)
+    rinfo2 = cs2.providers[REMOTE].create(remote_path2, BytesIO(b"hello4"), None)
+
+    cs1.run_until_found(
+            (LOCAL, local_path11),
+            (LOCAL, local_path21),
+            (REMOTE, remote_path1),
+            (REMOTE, remote_path2),
+    timeout=2)
+
+    cs1.run(until=lambda:not cs1.state.has_changes(), timeout=1)
+    log.info("TABLE\n%s", cs1.state.pretty_print())
+    
+    assert len(cs1.state) == 5      # two dirs, 3 files, 1 never synced (local2 file)
+
+    try:
+        cs2.run_until_found(
+                (LOCAL, local_path12),
+                (LOCAL, local_path22),
+                (REMOTE, remote_path1),
+                (REMOTE, remote_path2),
+        timeout=2)
+    except TimeoutError:
+        log.info("TABLE\n%s", cs2.state.pretty_print())
+        raise
+
+    linfo12 = cs1.providers[LOCAL].info_path(local_path12)
+    rinfo11 = cs1.providers[REMOTE].info_path(remote_path1)
+    linfo22 = cs2.providers[LOCAL].info_path(local_path22)
+    rinfo21 = cs2.providers[REMOTE].info_path(remote_path1)
+
+    assert linfo12.oid
+    assert linfo22.oid
+    assert rinfo11.oid
+    assert rinfo21.oid
+    assert linfo12.hash == rinfo1.hash
+    assert linfo22.hash == rinfo2.hash
+
+    # let cleanups/discards/dedups happen if needed
+    cs2.run(until=lambda:not cs2.state.has_changes(), timeout=1)
+    log.info("TABLE\n%s", cs2.state.pretty_print())
+
+    assert len(cs2.state) == 6  # two dirs, 4 files, 2 never synced (local1 files)
+
+
 def test_sync_basic(cs):
     local_parent = "/local"
     remote_parent = "/remote"
