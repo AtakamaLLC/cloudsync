@@ -9,6 +9,7 @@ jobs:
     - stage: test
       script:
         - pytest --durations=0 --workers=2 cloudsync/tests/unit
+        - pytest --durations=0 --workers=2 cloudsync/tests/integration -k [mock]
       python:
         - '3.6'
         - '3.7'
