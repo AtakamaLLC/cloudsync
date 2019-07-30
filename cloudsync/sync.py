@@ -302,7 +302,7 @@ class SyncState:
 
 
 class SyncManager(Runnable):
-    def __init__(self, syncs, providers: Tuple[Provider, ...], translate):
+    def __init__(self, syncs, providers: Tuple[Provider, Provider], translate):
         self.syncs = syncs
         self.providers = providers
         self.providers[LOCAL].debug_name = "local"
@@ -562,7 +562,6 @@ class SyncManager(Runnable):
             # ignore these
             return FINISHED
 
- 
         if not sync[changed].path:
             log.debug("can't sync, no path %s", sync)
 
