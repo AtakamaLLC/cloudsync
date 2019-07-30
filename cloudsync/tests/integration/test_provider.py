@@ -86,6 +86,8 @@ def cloudsync_provider(request, gdrive_creds, dropbox_creds):
         cls.creds = dropbox_creds
     elif request.param == "mock":
         cls = MockProvider
+        cls.event_timeout = 1
+        cls.event_sleep = 0.001
         cls.creds = {}
     return cls
 
@@ -267,7 +269,7 @@ def test_event_basic(util, provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_timeout, 1)):
+    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp, None)
@@ -319,7 +321,7 @@ def test_event_del_create(util, provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_timeout, 2)):
+    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
