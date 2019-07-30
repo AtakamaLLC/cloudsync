@@ -2,12 +2,11 @@ import logging
 from collections import namedtuple
 
 from .runnable import Runnable
+from .muxer import Muxer
 
 log = logging.getLogger(__name__)
 
 Event = namedtuple('EventBase', 'otype oid path hash exists mtime')
-
-from .muxer import Muxer
 
 class EventManager(Runnable):
     def __init__(self, provider, state, side):
