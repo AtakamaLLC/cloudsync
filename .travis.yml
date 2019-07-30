@@ -5,16 +5,17 @@ jobs:
     include: 
     - stage: lint
       script:
-        - pylint cloudsync
+        - pylint cloudsync --ignore tests
     - stage: test
       script:
-        - pytest --durations=0 --workers=2 tests/unit
+        - pytest --durations=0 --workers=2 cloudsync/tests/unit
+        - pytest --durations=0 --workers=2 cloudsync/tests/integration -k [mock]
       python:
         - '3.6'
         - '3.7'
     - stage: integ
       script:
-        - pytest --durations=0 --workers=2 tests/integration
+        - pytest --durations=0 --workers=2 cloudsync/tests/integration
       python:
         - '3.6'
 

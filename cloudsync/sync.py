@@ -400,7 +400,7 @@ class SyncManager(Runnable):
                 raise CloudFileExistsError("f'ed up mkdir")
         return oid
 
-    def mkdir_synced(self, changed, sync):
+    def mkdir_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         # see if there are other entries for the same path, but other ids
         ents = list(self.syncs.lookup_path(changed, sync[changed].path))
@@ -420,7 +420,6 @@ class SyncManager(Runnable):
                 "What to do if we create a folder when there's already a FILE")
 
         try:
-            translated_path = self.translate(synced, sync[changed].path)
             log.debug("translated %s as path %s",
                       sync[changed].path, translated_path)
             oid = self.mkdirs(self.providers[synced], translated_path)
@@ -484,9 +483,8 @@ class SyncManager(Runnable):
         self.syncs.update_entry(
             sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
 
-    def create_synced(self, changed, sync):
+    def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
-        translated_path = self.translate(synced, sync[changed].path)
         try:
             self._create_synced(changed, sync, translated_path)
             return FINISHED
@@ -560,7 +558,11 @@ class SyncManager(Runnable):
                 return REQUEUE
 
         translated_path = self.translate(synced, sync[changed].path)
+        if translated_path is None:
+            # ignore these
+            return FINISHED
 
+ 
         if not sync[changed].path:
             log.debug("can't sync, no path %s", sync)
 
@@ -575,13 +577,13 @@ class SyncManager(Runnable):
             # looks like a new file
 
             if sync.otype == DIRECTORY:
-                self.mkdir_synced(changed, sync)
+                self.mkdir_synced(changed, sync, translated_path)
             elif not self.download_changed(changed, sync):
                 pass
             elif sync[synced].oid:
                 self.upload_synced(changed, sync)
             else:
-                return self.create_synced(changed, sync)
+                return self.create_synced(changed, sync, translated_path)
         else:
             assert sync[synced].oid
             log.debug("rename %s %s",
@@ -665,6 +667,8 @@ class SyncManager(Runnable):
         picked = sync[pick]
         other = sync[other_side(pick)]
         other_path = self.translate(other.side, picked.path)
+        if other_path is None:
+            return 
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
         self.providers[other.side].rename(other.oid, other_path)

@@ -2,6 +2,7 @@ import logging
 from collections import namedtuple
 
 from .runnable import Runnable
+from .muxer import Muxer
 
 log = logging.getLogger(__name__)
 
@@ -10,11 +11,12 @@ Event = namedtuple('EventBase', 'otype oid path hash exists mtime')
 class EventManager(Runnable):
     def __init__(self, provider, state, side):
         self.provider = provider
+        self.events = Muxer(provider.events, restart=True)
         self.state = state
         self.side = side
 
     def do(self):
-        for event in self.provider.events():
+        for event in self.events:
             log.debug("got event %s", event)
             path = event.path
             exists = event.exists

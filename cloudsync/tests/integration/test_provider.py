@@ -8,7 +8,7 @@ from typing import Union
 import cloudsync
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
-from tests.fixtures.mock_provider import Provider, MockProvider
+from cloudsync.tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
 
 from cloudsync.providers import GDriveProvider, DropboxProvider
@@ -18,11 +18,10 @@ log = logging.getLogger(__name__)
 
 ProviderMixin = Union[Provider, "ProviderHelper"]
 
-
 class ProviderHelper:
-    def __init__(self):
-        self.event_timeout = None
-        self.event_sleep = None
+    creds = None
+    event_timeout = 20
+    event_sleep = 1
 
     def temp_name(self: ProviderMixin, name="tmp", *, folder=None):
         fname = self.join(folder or self.sync_root, os.urandom(16).hex() + "." + name)
@@ -73,80 +72,54 @@ class ProviderHelper:
             except CloudTemporaryError:
                 log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
 
-
-class GDriveProviderHelper(GDriveProvider, ProviderHelper):
-    def __init__(self, *ar, **kw):
-        GDriveProvider.__init__(self, *ar, **kw)
-
-    def _api(self, *ar, **kw):
-        return self.api_retry(GDriveProvider._api, *ar, **kw)
-
-
-class DropboxProviderHelper(DropboxProvider, ProviderHelper):
-    def __init__(self, *ar, **kw):
-        DropboxProvider.__init__(self, *ar, **kw)
-
-    def _api(self, *ar, **kw):
-        return self.api_retry(DropboxProvider._api, *ar, **kw)
-
-
-class MockProviderHelper(MockProvider, ProviderHelper):
-    def __init__(self, *ar, **kw):
-        MockProvider.__init__(self, *ar, **kw)
-
-    def _api(self, *ar, **kw):
-        return self.api_retry(MockProvider._api, *ar, **kw)
-
-
-def gdrive(gdrive_creds):
-    if gdrive_creds:
-        test_root = "/" + os.urandom(16).hex()
-        prov = GDriveProviderHelper(test_root)
-        prov.event_timeout = 60
-        prov.event_sleep = 2
-        prov.connect(gdrive_creds)
-        return prov
-    else:
-        return None
-
-
-def dropbox(dropbox_creds):
-    if dropbox_creds:
-        test_root = "/" + os.urandom(16).hex()
-        prov = DropboxProviderHelper(test_root)
-        prov.event_timeout = 20
-        prov.event_sleep = 2
-        prov.connect(dropbox_creds)
-        return prov
-    else:
-        return None
-
-
-@pytest.fixture
-def mock():
-    ret = MockProviderHelper("/")
-    ret.event_timeout = 0
-    ret.event_sleep = 0
-    return ret
-
-
 @pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
-def provider(request, gdrive_creds, dropbox_creds, mock):
-    prov = None
-    if request.param == 'gdrive':
-        prov = gdrive(gdrive_creds)
-    elif request.param == 'dropbox':
-        prov = dropbox(dropbox_creds)
-    elif request.param == 'mock':
-        prov = mock
+def cloudsync_provider(request, gdrive_creds, dropbox_creds):
+    if request.param == "gdrive":
+        cls = GDriveProvider
+        cls.event_timeout = 60
+        cls.event_sleep = 2
+        cls.creds = gdrive_creds
+    elif request.param == "dropbox":
+        cls = DropboxProvider
+        cls.event_timeout = 20
+        cls.event_sleep = 2
+        cls.creds = dropbox_creds
+    elif request.param == "mock":
+        cls = MockProvider
+        cls.event_timeout = 1
+        cls.event_sleep = 0.001
+        cls.creds = {}
+    return cls
 
-    if not prov:
-        pytest.skip("unsupported provider")
+def mixin_provider(prov_cls):
+    assert issubclass(prov_cls, Provider)
+
+    class ProviderMixin(prov_cls, ProviderHelper):
+        def __init__(self, *ar, **kw):
+            ProviderHelper.__init__(self)
+            prov_cls.__init__(self, *ar, **kw)
+        def _api(self, *ar, **kw):
+            return self.api_retry(prov_cls._api, *ar, **kw)
+
+    test_root = "/" + os.urandom(16).hex()
+
+    prov = ProviderMixin(test_root)
+
+    assert prov.temp_name
+
+    prov.connect(prov.creds)
 
     yield prov
 
     prov.test_cleanup()
 
+@pytest.fixture
+def provider(cloudsync_provider):
+    yield from mixin_provider(cloudsync_provider)
+
+@pytest.fixture
+def mock():
+    yield from mixin_provider(MockProvider)
 
 def test_join(mock):
     assert "/a/b/c" == mock.join("a", "b", "c")
@@ -296,7 +269,7 @@ def test_event_basic(util, provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_timeout, 1)):
+    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp, None)
@@ -348,7 +321,7 @@ def test_event_del_create(util, provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_timeout, 2)):
+    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
