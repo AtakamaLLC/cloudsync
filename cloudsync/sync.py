@@ -9,7 +9,7 @@ from base64 import b64encode
 from enum import Enum
 from typing import Union
 
-from typing import Optional
+from typing import Optional, Tuple
 from cloudsync.provider import Provider
 
 __all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
@@ -302,7 +302,7 @@ class SyncState:
 
 
 class SyncManager(Runnable):
-    def __init__(self, syncs, providers, translate):
+    def __init__(self, syncs, providers: Tuple[Provider, ...], translate):
         self.syncs = syncs
         self.providers = providers
         self.providers[LOCAL].debug_name = "local"
@@ -350,7 +350,7 @@ class SyncManager(Runnable):
         if sync.temp_file:
             try:
                 os.unlink(sync.temp_file)
-            except:
+            except Exception:  # TODO: what is this actually trying to catch? FNFE? Everything?
                 pass
             sync.temp_file = None
 
