@@ -222,7 +222,7 @@ def config_provider(request, mock_provider, provider_name):
             assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
 def pytest_generate_tests(metafunc):
-    if "provider" in metafunc.fixturenames:
+    if "provider_name" in metafunc.fixturenames:
         provs = []
         for e in metafunc.config.getoption("provider", []):
             provs += e.split(",")

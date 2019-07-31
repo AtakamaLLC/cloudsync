@@ -209,6 +209,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 revs = self._api('files_list_revisions',
                                  res.path_lower, limit=10)
+                if revs is None:
+                    # dropbox will give a 409 conflict if the revision history was deleted
+                    # instead of raising an error, this gets converted to revs==None
+                    log.info("revs is none for %s %s", oid, path)
+                    continue
+
                 log.debug("revs %s", revs)
                 deleted_time = revs.server_deleted
                 latest_time = None
