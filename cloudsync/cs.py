@@ -1,12 +1,20 @@
 import threading
+from typing import Optional, Tuple
 
-from .sync import SyncManager
+from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
 from .event import EventManager
+from .provider import Provider
+
 
 class CloudSync(Runnable):
-    def __init__(self, providers, translate, state):
+    def __init__(self,
+                 providers: Tuple[Provider, Provider],
+                 translate,
+                 storage: Optional[Storage] = None,
+                 label: Optional[str] = None):
 
+        state = SyncState(storage, label)
         smgr = SyncManager(state, providers, translate)
 
         # for tests, make these accessible

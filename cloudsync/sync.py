@@ -4,15 +4,18 @@ import logging
 import tempfile
 import shutil
 import random
+import json
 from hashlib import md5
 from base64 import b64encode
 from enum import Enum
 from typing import Union
+from abc import ABC, abstractmethod
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any, List, Dict
 from cloudsync.provider import Provider
+from cloudsync.types import OType
 
-__all__ = ['SyncManager', 'SyncState', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
+__all__ = ['SyncManager', 'SyncState', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.types import DIRECTORY, FILE
@@ -55,8 +58,8 @@ TRASHED = Exists.TRASHED
 
 # state of a single object
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods
-    def __init__(self, side):
-        self.side = side                            # just for assertions
+    def __init__(self, side: int):
+        self.side: int = side                            # just for assertions
         self.hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
         self.changed: Optional[float] = None
@@ -70,7 +73,7 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
     def exists(self):
         return self._exists
 
-# allow traditional sets of ternary
+    # allow traditional sets of ternary
     @exists.setter
     def exists(self, val: Union[bool, Exists]):
         if val is False:
@@ -98,13 +101,85 @@ def other_side(index):
     return 1-index
 
 
+class Storage(ABC):
+    @abstractmethod
+    def create(self, tag: str, serialization: bytes) -> Any:
+        """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
+        ...
+
+    @abstractmethod
+    def update(self, tag: str, serialization: bytes, eid: Any):
+        """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
+        ...
+
+    @abstractmethod
+    def delete(self, tag: str, eid: Any):
+        """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
+        ...
+
+    @abstractmethod
+    def read_all(self, tag: str) -> Dict[Any, bytes]:
+        """yield all the serialized strings in a generator"""
+        ...
+
+
 # single entry in the syncs state collection
 class SyncEntry(Reprable):
-    def __init__(self, otype):
-        self.__states = [SideState(0), SideState(1)]
-        self.otype = otype
-        self.temp_file = None
-        self.discarded = False
+    def __init__(self, otype: Optional[OType], storage_init: Optional[Tuple[Any, bytes]] = None):
+        super().__init__()
+        self.__states: List[SideState] = [SideState(0), SideState(1)]
+        self.otype: OType = otype
+        self.temp_file: Optional[str] = None
+        self.discarded: bool = False
+        self.storage_id: Any = None
+        if storage_init is not None:
+            self.storage_id = storage_init[0]
+            self.deserialize(storage_init)
+
+    def serialize(self) -> bytes:
+        """converts SyncEntry into a json str"""
+        def side_state_to_dict(side_state: SideState) -> dict:
+            ret = dict()
+            ret['side'] = side_state.side
+            ret['hash'] = side_state.hash.hex() if isinstance(side_state.hash, bytes) else None
+            ret['changed'] = side_state.changed
+            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(side_state.sync_hash, bytes) else None
+            ret['path'] = side_state.path
+            ret['sync_path'] = side_state.sync_path
+            ret['oid'] = side_state.oid
+            ret['exists'] = side_state.exists.value
+            # storage_id does not get serialized, it always comes WITH a serialization when deserializing
+            return ret
+
+        ser = dict()
+        ser['side0'] = side_state_to_dict(self.__states[0])
+        ser['side1'] = side_state_to_dict(self.__states[1])
+        ser['otype'] = self.otype.value
+        ser['temp_file'] = self.temp_file
+        ser['discarded'] = self.discarded
+        return json.dumps(ser).encode('utf-8')
+
+    def deserialize(self, storage_init: Tuple[Any, bytes]):
+        """loads the values in the serialization dict into self"""
+        def dict_to_side_state(side, side_dict: dict) -> SideState:
+            side_state = SideState(side)
+            side_state.side = side_dict['side']
+            side_state.hash = bytes.fromhex(side_dict['hash']) if side_dict['hash'] else None
+            side_state.changed = side_dict['changed']
+            side_state.sync_hash = bytes.fromhex(side_dict['sync_hash']) if side_dict['sync_hash'] else None
+            side_state.sync_path = side_dict['sync_path']
+            side_state.path = side_dict['path']
+            side_state.oid = side_dict['oid']
+            side_state.exists = side_dict['exists']
+            return side_state
+
+        self.storage_id = storage_init[0]
+        ser: dict = json.loads(storage_init[1].decode('utf-8'))
+        self.__states = [dict_to_side_state(0, ser['side0']),
+                         dict_to_side_state(1, ser['side1'])]
+        self.otype = ser['otype']
+        self.temp_file = ser['temp_file']
+        self.discarded = ser['discarded']
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -124,7 +199,7 @@ class SyncEntry(Reprable):
                     self[i].exists = EXISTS if self[i].hash else TRASHED
                 else:
                     self[i].exists = providers[i].exists_oid(self[i].oid)
-#        log.debug("after update state %s", self)
+    #        log.debug("after update state %s", self)
 
     def hash_conflict(self):
         if self[0].hash and self[1].hash:
@@ -166,12 +241,30 @@ class SyncEntry(Reprable):
 
         return ret
 
+    def store(self, tag: str, storage: Storage):
+        if not self.storage_id:
+            self.storage_id = storage.create(tag, self.serialize())
+        else:
+            storage.update(tag, self.serialize(), self.storage_id)
+
 
 class SyncState:
-    def __init__(self):
+    def __init__(self, storage: Optional[Storage] = None, tag: Optional[str] = None):
         self._oids = ({}, {})
         self._paths = ({}, {})
         self._changeset = set()
+        self._storage: Optional[Storage] = storage
+        self._tag = tag
+        if self._storage:
+            storage_dict = self._storage.read_all(tag)
+            for eid, ent_ser in storage_dict.items():
+                ent = SyncEntry(None, (eid, ent_ser))
+                for side in [LOCAL, REMOTE]:
+                    path, oid = ent[side].path, ent[side].oid
+                    if path not in self._paths[side]:
+                        self._paths[side][path] = {}
+                    self._paths[side][path][oid] = ent
+                    self._oids[side][oid] = ent
 
     def _change_path(self, side, ent, path):
         assert type(ent) is SyncEntry
@@ -215,6 +308,9 @@ class SyncState:
         """
         remove = []
 
+        # TODO: refactor this so that a list of affected items is gathered, then the alterations happen to the final
+        #    list, which will avoid having to remove after adding, which feels mildly risky
+        # TODO: is this function called anywhere? ATM, it looks like no... It should be called or removed
         for path, sub in self._paths[side].items():
             if is_subpath(from_dir, sub.path):
                 sub.path = replace_path(sub.path, from_dir, to_dir)
@@ -236,6 +332,12 @@ class SyncState:
 
         if exists is not None:
             ent[side].exists = exists
+
+        if self._storage is not None:
+            if ent.storage_id:
+                self._storage.update(self._tag, ent.serialize(), ent.storage_id)
+            else:
+                self._storage.create(self._tag, ent.serialize())
 
     def __len__(self):
         return len(self.get_all())
