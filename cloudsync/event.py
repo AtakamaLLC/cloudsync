@@ -1,12 +1,20 @@
 import logging
-from collections import namedtuple
-
+from dataclasses import dataclass
+from typing import Optional
 from .runnable import Runnable
 from .muxer import Muxer
+from .types import OType
 
 log = logging.getLogger(__name__)
 
-Event = namedtuple('EventBase', 'otype oid path hash exists mtime')
+@dataclass
+class Event:
+    otype: OType                           # fsobject type     (DIRECTORY or FILE)
+    oid: str                               # fsobject id
+    path: Optional[str]                    # path
+    hash: Optional[bytes]                  # fsobject hash     (better name: ohash)
+    exists: Optional[bool]
+    mtime: Optional[float]
 
 class EventManager(Runnable):
     def __init__(self, provider, state, side):

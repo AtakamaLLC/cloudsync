@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import re
 from typing import Generator
 
-from cloudsync.types import OInfo, DIRECTORY, ListDirOInfo
+from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 
 
@@ -12,32 +12,20 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive = ...                # TODO: implement support for this
     require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
 
-    # TODO: this should be an abstractproperty ... not an ABC init which is incorrect
-    def __init__(self, sync_root):
-        self.sync_root = sync_root
-        self.walked = False
-        self.__connected = False
-
-    @property
-    @abstractmethod
-    def connected(self):
-        ...
-
-
     @abstractmethod
     def _api(self, *args, **kwargs):
         ...
 
     def connect(self, creds):           # pylint: disable=unused-argument
         # some providers don't need connections, so just don't implement this
-        self.__connected = True
+        pass
 
     @abstractmethod
     def events(self):
         ...
 
     @abstractmethod
-    def walk(self, since=None):
+    def walk(self, path, since=None):
         ...
 
     @abstractmethod
@@ -73,7 +61,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
+    def listdir(self, oid) -> Generator[DirInfo, None, None]:
         ...
 
 #    @abstractmethod
