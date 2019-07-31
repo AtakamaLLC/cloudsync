@@ -1,32 +1,28 @@
 import logging
-import os
-
-
 from io import BytesIO
-
 import pytest
+from typing import NamedTuple
 
-from cloudsync import SyncManager, SyncState, EventManager, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
-from cloudsync.runnable import time_helper
-
+from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
 from .test_events import MockProvider
 from cloudsync.provider import Provider
 
-from typing import NamedTuple
 
 class WaitFor(NamedTuple):
-    side:int = None
-    path:str = None
-    hash:bytes = None
-    oid:str = None
-    exists:bool = True
+    side: int = None
+    path: str = None
+    hash: bytes = None
+    oid: str = None
+    exists: bool = True
+
 
 log = logging.getLogger(__name__)
 
 TIMEOUT = 2
 
-class RunUntilHelper():
-    def run_until_found(self, *files, timeout=TIMEOUT):
+
+class RunUntilHelper:
+    def run_until_found(self: SyncManager, *files, timeout=TIMEOUT):
         log.debug("running until found")
         last_error = None
 
@@ -39,10 +35,11 @@ class RunUntilHelper():
 
                 try:
                     other_info = self.providers[info.side].info_path(info.path)
-                except CloudFileNotFoundError as e:
+                except CloudFileNotFoundError:
                     other_info = None
 
                 if other_info is None:
+                    nonlocal last_error
                     if info.exists is False:
                         log.debug("waiting not exists %s", info.path)
                         continue
@@ -66,9 +63,13 @@ class RunUntilHelper():
 
         if not found():
             if last_error:
-                raise last_error
+                raise TimeoutError("timed out while waiting: %s" % last_error)
             else:
                 raise TimeoutError("timed out while waiting")
+
+
+class SyncMgrMixin(SyncManager, RunUntilHelper):
+    pass
 
 
 @pytest.fixture(name="sync")
@@ -84,12 +85,8 @@ def fixture_sync():
 
         raise ValueError()
 
-   
-    class SyncMgrMixin(SyncManager, RunUntilHelper):
-        pass
-
     # two providers and a translation function that converts paths in one to paths in the other
-    sync =  SyncMgrMixin(state, (MockProvider(), MockProvider()), translate)
+    sync = SyncMgrMixin(state, (MockProvider(), MockProvider()), translate)
 
     yield sync
 
@@ -119,14 +116,14 @@ def test_sync_state_multi():
     assert not state.lookup_path(LOCAL, path="foo")
 
 
-def test_sync_basic(sync):
+def test_sync_basic(sync: "SyncMgrMixin"):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_path1 = Provider.join(remote_parent, "stuff1")
     local_path1 = sync.translate(LOCAL, remote_path1)
     local_path1.replace("\\", "/")
     assert local_path1 == "/local/stuff1"
-    local_path2 = Provider.join(local_parent, "stuff2")  # "/local/stuff2"
+    Provider.join(local_parent, "stuff2")  # "/local/stuff2"
     remote_path2 = Provider.join(remote_parent, "stuff2")  # "/remote/stuff2"
 
     sync.providers[LOCAL].mkdir(local_parent)
@@ -148,17 +145,17 @@ def test_sync_basic(sync):
                       path=remote_path2, hash=rinfo.hash)
 
     def done():
-        info = [None] * 4
+        has_info = [None] * 4
         try:
-            info[0] = sync.providers[LOCAL].info_path("/local/stuff1")
-            info[1] = sync.providers[LOCAL].info_path("/local/stuff2")
-            info[2] = sync.providers[REMOTE].info_path("/remote/stuff2")
-            info[3] = sync.providers[REMOTE].info_path("/remote/stuff2")
+            has_info[0] = sync.providers[LOCAL].info_path("/local/stuff1")
+            has_info[1] = sync.providers[LOCAL].info_path("/local/stuff2")
+            has_info[2] = sync.providers[REMOTE].info_path("/remote/stuff2")
+            has_info[3] = sync.providers[REMOTE].info_path("/remote/stuff2")
         except CloudFileNotFoundError as e:
             log.debug("waiting for %s", e)
             pass
 
-        return all(info)
+        return all(has_info)
 
     # loop the sync until the file is found
     sync.run(timeout=TIMEOUT, until=done)
@@ -196,6 +193,7 @@ def test_sync_rename(sync):
 
     assert sync.providers[REMOTE].info_path("/remote/stuff") is None
 
+
 def test_sync_hash(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -225,6 +223,7 @@ def test_sync_hash(sync):
 
     assert check.getvalue() == b"hello2"
 
+
 def test_sync_rm(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -247,6 +246,7 @@ def test_sync_rm(sync):
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
+
 
 def test_sync_mkdir(sync):
     local_dir1 = "/local"
@@ -274,6 +274,7 @@ def test_sync_mkdir(sync):
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
+
 
 def test_sync_conflict_simul(sync):
     remote_parent = "/remote"
@@ -312,6 +313,7 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() != b2.getvalue()
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
+
 
 def test_sync_conflict_path(sync):
     remote_parent = "/remote"

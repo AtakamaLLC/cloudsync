@@ -105,10 +105,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         if index == -1 and self.alt_sep:
             index = path.rfind(self.alt_sep)
         if index == -1:
-            return (path, "")
+            return path, ""
         if index == 0:
-            return (self.sep, path[index+1:])
-        return (path[:index], path[index+1:])
+            return self.sep, path[index+1:]
+        return path[:index], path[index+1:]
 
     def normalize_path(self, path: str):
         norm_path = path.rstrip(self.sep)
