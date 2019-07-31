@@ -394,7 +394,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudFileNotFoundError("file %s not found" % oid)
                 else:
                     raise CloudTemporaryError("unknown response from drive")
-            except (TimeoutError, HttpLib2Error) as e:
+            except (TimeoutError, HttpLib2Error):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected during download")
 
@@ -599,8 +599,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
-            res = self._api('files', 'get',
-                    fileId=oid,
+            res = self._api('files', 'get', fileId=oid,
                     fields='name, md5Checksum, parents, mimeType',
                     )
         except CloudFileNotFoundError:

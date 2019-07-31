@@ -65,6 +65,7 @@ class MockEvent:  # pylint: disable=too-few-public-methods
                    }
         return ret_val
 
+
 class MockProvider(Provider):
     connected = True
     # TODO: normalize names to get rid of trailing slashes, etc.

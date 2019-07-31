@@ -19,7 +19,7 @@ def time_helper(timeout, sleep=None, multiply=1):
 
 class Runnable(ABC):
     def run(self, *, timeout=None, until=None, sleep=0.01):
-        self.stopped = False                                                    # pylint: disable=attribute-defined-outside-init
+        self.stopped = False                      # pylint: disable=attribute-defined-outside-init
 
         for _ in time_helper(timeout, sleep=sleep):
             if self.stopped or (until is not None and until()):
@@ -27,7 +27,7 @@ class Runnable(ABC):
             try:
                 self.do()
             except Exception:
-                log.exception("unhandled exception in %s", self.__class__)
+                log.exception("unhandled exception in %s", self.__class__, stack_info=True)
 
         if self.stopped:
             self.done()
