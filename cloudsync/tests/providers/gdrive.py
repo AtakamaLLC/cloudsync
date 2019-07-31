@@ -28,7 +28,7 @@ def gdrive_provider():
     cls.event_timeout = 60
     cls.event_sleep = 2
     cls.creds = gdrive_creds()
-    return cls
+    return cls()
 
 @pytest.fixture
 def cloudsync_provider():

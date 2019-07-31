@@ -1,18 +1,20 @@
-class CloudFileNotFoundError(Exception):
+class CloudException(Exception):
+    pass
+
+class CloudFileNotFoundError(CloudException):
+    pass
+
+class CloudTemporaryError(CloudException):
     pass
 
 
-class CloudTemporaryError(Exception):
+class CloudFileExistsError(CloudException):
+    pass
+
+class CloudTokenError(CloudException):
     pass
 
 
-class CloudFileExistsError(Exception):
-    pass
-
-class CloudTokenError(Exception):
-    pass
-
-
-class CloudDisconnectedError(Exception):
+class CloudDisconnectedError(CloudException):
     pass
 
