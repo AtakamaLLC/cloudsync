@@ -9,7 +9,7 @@ import arrow
 import dropbox
 from dropbox import Dropbox, exceptions, files
 
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, ListDirOInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
@@ -40,7 +40,7 @@ class _FolderIterator:
                 self.ls_res = self.api(
                     'files_list_folder_continue', self.ls_res.cursor)
 
-            if self.ls_res.entries:
+            if self.ls_res and self.ls_res.entries:
                 ret = self.ls_res.entries.pop()
                 ret.cursor = self.ls_res.cursor
                 return ret
@@ -57,10 +57,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     _max_simple_upload_size = 15 * 1024 * 1024
     _upload_block_size = 10 * 1024 * 1024
 
-    def __init__(self, sync_root):
-        super().__init__(sync_root)
+    def __init__(self):
+        super().__init__()
         self.__root_id = None
-        self.__sync_root_id = None
         self.__cursor = None
         self.client = None
         self.api_key = None
@@ -107,9 +106,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 log.debug("error connecting %s", e)
                 self.disconnect()
                 raise CloudDisconnectedError()
-
-        if not self.sync_root_id:
-            raise CloudFileNotFoundError("cant create sync root")
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
@@ -178,27 +174,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     @property
     def root_id(self):
-        if not self.__root_id:
-            info = self.info_path("/")
-            if not info and info.oid:
-                raise CloudFileNotFoundError("Cannot read root")
-            self.__root_id = info.oid
-        return self.__root_id
-
-    @property
-    def sync_root_id(self):
-        if not self.__sync_root_id:
-            oid = None
-            info = self.info_path(self.sync_root)
-            if info:
-                oid = info.oid
-            if not oid:
-                try:
-                    oid = self.mkdir(self.sync_root)
-                except (CloudFileNotFoundError, CloudFileExistsError):
-                    raise CloudFileNotFoundError("Cannot create sync root")
-            self.__sync_root_id = oid
-        return self.__sync_root_id
+        return ""
 
     def disconnect(self):
         self.client = None
@@ -207,12 +183,20 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def cursor(self):
         if not self.__cursor:
             res = self._api('files_list_folder_get_latest_cursor',
-                            self.sync_root_id, recursive=True, include_deleted=True, limit=200)
+                            self.root_id, recursive=True, include_deleted=True, limit=200)
             self.__cursor = res.cursor
         return self.__cursor
 
-    def _events(self, cursor):
-        for res in _FolderIterator(self._api, self.sync_root_id, recursive=True, cursor=cursor):
+    def _events(self, cursor, path=None):
+        if path and path != "/":
+            info = self.info_path(path)
+            if not info:
+                raise CloudFileNotFoundError(path)
+            oid = info.oid
+        else:
+            oid = self.root_id
+
+        for res in _FolderIterator(self._api, oid, recursive=True, cursor=cursor):
             exists = True
 
             log.debug("event %s", res)
@@ -259,14 +243,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def events(self):      # pylint: disable=too-many-locals
         yield from self._events(self.cursor)
 
-    def walk(self, since=None):
-        yield from self._events(None)
+    def walk(self, path, since=None):
+        yield from self._events(None, path=path)
         self.walked = True
 
-    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
+    def listdir(self, oid) -> Generator[DirInfo, None, None]:
         yield from self._listdir(oid, recursive=False)
 
-    def _listdir(self, oid, *, recursive) -> Generator[ListDirOInfo, None, None]:
+    def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
         info = self.info_oid(oid)
         for res in _FolderIterator(self._api, oid, recursive=recursive):
             if isinstance(res, files.DeletedMetadata):
@@ -281,7 +265,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             oid = res.id
             relative = self.is_subpath(info.path, path)
             if relative:
-                yield ListDirOInfo(otype, oid, ohash, info.path, name=relative)
+                yield DirInfo(otype, oid, ohash, info.path, name=relative)
 
     def create(self, path, file_like, metadata=None):
         self._verify_parent_folder_exists(path)
@@ -390,6 +374,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return bool(self.info_oid(oid))
 
     def info_path(self, path) -> Optional[OInfo]:
+        if path == "/":
+            return OInfo(DIRECTORY, "", None, "/")
+
         try:
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)

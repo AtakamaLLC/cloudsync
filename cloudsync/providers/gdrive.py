@@ -15,26 +15,19 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
 
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, ListDirOInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
-
-class GDriveInfo(ListDirOInfo):
+class GDriveInfo(DirInfo):
     pids = []
-    name = ""
-
-    # def __new__(cls, *a, name=None, **kwargs):
-    def __new__(cls, *a, pids=None, name=None, **kwargs):
-        self = super().__new__(cls, *a)
+    def __init__(self, *a, pids=None, **kws):
+        super().__init__(*a, **kws)
         if pids is None:
             pids = []
         self.pids = pids
-        self.name = name
-        return self
-
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = True
@@ -46,10 +39,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
-    def __init__(self, sync_root):
-        super().__init__(sync_root)
+    def __init__(self):
+        super().__init__()
         self.__root_id = None
-        self.__sync_root_id = None
         self.__cursor = None
         self.client = None
         self.api_key = None
@@ -124,9 +116,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.disconnect()
                 raise CloudTokenError()
 
-        if not self.sync_root_id:
-            raise CloudFileNotFoundError("cant create sync root")
-
         return self.client
 
     def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ
@@ -191,18 +180,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self._ids['/'] = self.__root_id
         return self.__root_id
 
-    @property
-    def sync_root_id(self):
-        if not self.__sync_root_id:
-            if not self.info_path(self.sync_root):
-                self.mkdir(self.sync_root)
-            if not self.info_path(self.sync_root):
-                raise CloudFileNotFoundError("Cannot create sync root")
-            info = self.info_path(self.sync_root)
-            self.__sync_root_id = info.oid
-
-        return self.__sync_root_id
-
     def disconnect(self):
         self.client = None
 
@@ -212,15 +189,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('changes', 'getStartPageToken')
             self.__cursor = res.get('startPageToken')
         return self.__cursor
-
-    def is_suboid(self, top, oid):
-        if top == oid:
-            return True
-        pid = self.get_parent_id(oid)  # TODO: get_parent_id takes a path not an oid, maybe we don't even need is_suboid
-        if pid == oid:
-            return False
-
-        return self.is_suboid(top, pid)
 
     def events(self):      # pylint: disable=too-many-locals
         page_token = self.cursor
@@ -254,15 +222,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 ohash = None
                 path = self._path_oid(oid)
 
-                if path:
-                    if not self.is_subpath(self.sync_root, path):
-                        log.debug("skipped event %s as %s", self.sync_root, path)
-                        continue
-                else:
-                    if not self.is_suboid(self.sync_root_id, oid):
-                        log.debug("skipped event %s", change)
-                        continue
-
                 event = Event(otype, oid, path, ohash, exists, ts)
 
                 log.debug("converted event %s as %s", change, event)
@@ -279,10 +238,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             log.debug("walk %s", event)
             yield event
             if ent.otype == DIRECTORY:
-                yield from self._walk(ent.oid)
+                if self.exists_oid(ent.oid):
+                    yield from self._walk(ent.oid)
  
-    def walk(self, since=None):
-        yield from self._walk(self.sync_root_id)
+    def walk(self, path, since=None):
+        info = self.info_path(path) 
+        if not info:
+            raise CloudFileNotFoundError(path)
+        yield from self._walk(info.oid)
         self.walked = True
 
     def __prep_upload(self, path, metadata):
@@ -514,6 +477,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return self._info_oid(oid) is not None
 
     def info_path(self, path) -> OInfo:
+        if path == "/":
+            return self.info_oid(self.root_id)
+
         try:
             parent_id = self.get_parent_id(path)
             _, name = self.split(path)

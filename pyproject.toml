@@ -13,7 +13,7 @@ classifiers=["Intended Audience :: Developers",
     "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires = ["arrow", "oauth2client", ]
+requires = ["arrow", "oauth2client", "dataclasses"]
 requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]

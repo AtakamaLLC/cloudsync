@@ -7,7 +7,7 @@ from re import split
 
 from cloudsync.event import Event
 from cloudsync.provider import Provider
-from cloudsync.types import OInfo, OType, ListDirOInfo
+from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
@@ -69,8 +69,8 @@ class MockProvider(Provider):
     connected = True
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, sync_root="/", case_sensitive=True, sep="/", recycle_oid=False):
-        super().__init__(sync_root)
+    def __init__(self, case_sensitive=True, sep="/", recycle_oid=False):
+        super().__init__()
         self.case_sensitive = case_sensitive
         self.sep = sep
         self._fs_by_path: Dict[str, MockFSObject] = {}
@@ -83,11 +83,6 @@ class MockProvider(Provider):
             MockFSObject.DIR: OType.DIRECTORY,
         }
         self._recycle_oid = recycle_oid
-
-        # init root and sicard events related to it
-        self._sync_root = sync_root
-        self.mkdir(self._sync_root)
-        list(self.events())
 
     def _register_event(self, action, target_object):
         event = MockEvent(action, target_object)
@@ -139,14 +134,13 @@ class MockProvider(Provider):
             pe = self._events[self._cursor]
             yield self._translate_event(pe)
 
-    def walk(self, since=None):
+    def walk(self, path, since=None):
         # TODO: implement "since" parameter
         self._api()
         now = time.time()
         for obj in self._fs_by_oid.values():
-            if self.is_subpath(self._sync_root, obj.path, strict=True):
-                yield Event(obj.type, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
-        self.walked = True
+            if self.is_subpath(path, obj.path, strict=False):
+                yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         self._api()
@@ -160,7 +154,7 @@ class MockProvider(Provider):
         self._register_event(MockEvent.ACTION_UPDATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
+    def listdir(self, oid) -> Generator[DirInfo, None, None]:
         folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockFSObject.DIR):
             raise CloudFileNotFoundError(oid)
@@ -171,7 +165,7 @@ class MockProvider(Provider):
                 if relative:
                     relative = relative.lstrip("/")
                     if "/" not in relative:
-                        yield ListDirOInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative)
+                        yield DirInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative)
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         # TODO: store the metadata
@@ -307,7 +301,7 @@ class MockProvider(Provider):
     #         x.write(contents)
 
     def log_debug_state(self, msg=""):
-        log.debug("%s: mock provider state %s", msg, list(self.walk()))
+        log.debug("%s: mock provider state %s", msg, list(self.walk("/")))
 
 
 def test_mock_basic():
