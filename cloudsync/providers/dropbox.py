@@ -111,6 +111,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
+        log.debug("_api: %s (%s %s)", method, args, kwargs)
+
         with self.mutex:
             try:
                 return getattr(self.client, method)(*args, **kwargs)
@@ -268,9 +270,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 ohash = res.content_hash
             path = res.path_display
             oid = res.id
-            relative = self.is_subpath(info.path, path)
+            relative = self.is_subpath(info.path, path).lstrip("/")
             if relative:
-                yield DirInfo(otype, oid, ohash, info.path, name=relative)
+                yield DirInfo(otype, oid, ohash, path, name=relative)
 
     def create(self, path, file_like, metadata=None):
         self._verify_parent_folder_exists(path)
@@ -365,7 +367,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
         res = self._api('files_create_folder_v2', path)
-        log.debug("dbx mkdir %s", res)
+        log.debug("dbx mkdir %s", res, stack_info=True)
         res = res.metadata
         return res.id
 

@@ -174,14 +174,17 @@ class ProviderHelper(Provider):
     def __cleanup(self: ProviderMixin, oid):
         for info in self.prov.listdir(oid):
             if info.otype == FILE:
+                log.debug("cleaning %s", info)
                 self.delete(info.oid)
             else:
                 self.__cleanup(info.oid)
+                log.debug("cleaning %s", info)
                 self.delete(info.oid)
 
         info = self.prov.info_path(self.test_root)
         if info:
             try:
+                log.debug("cleaning %s", info)
                 self.delete(info.oid)
             except CloudFileExistsError:
                 # deleting the root might now be supported
@@ -876,3 +879,42 @@ def test_listdir(provider: ProviderMixin):
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
     assert contents.sort() == expected.sort()
+
+def test_rename_away1(provider):
+    dat = os.urandom(32)
+
+    def data():
+        return BytesIO(dat)
+
+
+    def create_file(create_file_name=None):
+        if create_file_name is None:
+            create_file_name = provider.temp_name()
+        file_info = provider.create(create_file_name, data(), None)
+        return create_file_name, file_info.oid
+
+    def create_folder(create_folder_name=None):
+        if create_folder_name is None:
+            create_folder_name = provider.temp_name()
+        create_folder_oid = provider.mkdir(create_folder_name)
+        return create_folder_name, create_folder_oid
+
+    #   rename: target folder path existed, but was renamed away, file type as source
+    name1, oid1 = create_folder()
+    name2, oid2 = create_file()
+    temp = provider.temp_name()
+    provider.rename(oid1, temp)
+    provider.rename(oid2, name1)
+
+
+
+
+
+#def test_list_renamed_folder(provider: ProviderMixin):
+#    folder = provider.temp_name()
+#    folder_oid = provider.mkdir(folder)
+#
+#    filex = provider.temp_name()
+#    filex_oid = provider.create(filex, BytesIO(b"hello"))
+#
+#    provider.rename(
