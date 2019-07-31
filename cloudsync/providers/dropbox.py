@@ -245,7 +245,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def walk(self, path, since=None):
         yield from self._events(None, path=path)
-        self.walked = True
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         yield from self._listdir(oid, recursive=False)

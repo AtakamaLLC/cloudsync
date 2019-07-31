@@ -21,7 +21,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 
 log = logging.getLogger(__name__)
 
-class GDriveInfo(DirInfo):
+class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids = []
     def __init__(self, *a, pids=None, **kws):
         super().__init__(*a, **kws)
@@ -246,7 +246,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not info:
             raise CloudFileNotFoundError(path)
         yield from self._walk(info.oid)
-        self.walked = True
 
     def __prep_upload(self, path, metadata):
         # modification time

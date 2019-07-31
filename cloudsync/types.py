@@ -19,9 +19,6 @@ class OInfo:
     path: Optional[str]                    # path
 
 
-class DirInfo(OInfo):
-    name = ""
-
-    def __init__(self, *a, name=None, **kw):
-        super().__init__(*a, **kw)
-        self.name = name
+@dataclass
+class DirInfo(OInfo):                      #
+    name: str = ""
