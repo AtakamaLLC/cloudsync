@@ -75,7 +75,7 @@ def fixture_cs(mock_provider_generator):
     cs.done()
 
 @pytest.fixture(name="multi_cs")
-def fixture_multi_cs():
+def fixture_multi_cs(mock_provider_generator):
     storage_dict = dict()
     # storage1 = MockStorage("storage1", storage_dict)
     # storage2 = MockStorage("storage2", storage_dict)
@@ -88,9 +88,9 @@ def fixture_multi_cs():
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    p1 = MockProvider()
-    p2 = MockProvider()
-    p3 = MockProvider()
+    p1 = mock_provider_generator()
+    p2 = mock_provider_generator()
+    p3 = mock_provider_generator()
 
     def translate1(to, path):
         if to == LOCAL:

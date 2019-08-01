@@ -8,7 +8,9 @@ jobs:
         - pylint cloudsync --ignore tests
     - stage: test
       script:
-        - pytest --durations=0 -n=2 cloudsync/tests
+        # tempoarily skip the path tests
+        - pytest --durations=0 -n=2 cloudsync/tests -k "not mock_path"
+        - pytest --durations=0 -n=2 cloudsync/tests/test_provider.py -k "mock_path"
       python:
         - '3.6'
         - '3.7'
