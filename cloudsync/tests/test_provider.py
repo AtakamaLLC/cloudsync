@@ -609,18 +609,24 @@ def test_event_rename(provider: ProviderMixin):
                 path = info.path
 
         last_event = path
-        seen.add((e.oid, path))
+        seen.add(e.oid)
 
-        # 2 and 3 are in order
-        if path == dest2:
-            second_to_last = True
-        if path == dest3 and (second_to_last or not provider.oid_is_path):
-            done = True
+        if provider.oid_is_path:
+            # 2 and 3 are in order
+            if path == dest2:
+                second_to_last = True
+            if path == dest3 and (second_to_last or not provider.oid_is_path):
+                done = True
+        else:
+            done = info1.oid in seen
 
     if provider.oid_is_path:
         # providers with path based oids need to send intermediate renames accurately and in order
         assert len(seen) > 3
-    assert last_event == dest3
+        assert last_event == dest3
+    else:
+        # oid based providers just need to let us know something happend to that oid
+        assert info1.oid in seen
 
 
 def test_api_failure(provider):
