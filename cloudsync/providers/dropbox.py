@@ -12,7 +12,7 @@ from dropbox import Dropbox, exceptions, files
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, \
-    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudException
+    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def upload(self, oid: str, file_like, metadata=None) -> OInfo:
         if oid.startswith(self.sep):
-            raise CloudException("Called upload with a path instead of an OID: %s" % oid)
+            raise CloudFileNotFoundError("Called upload with a path instead of an OID: %s" % oid)
         if not self.exists_oid(oid):
             raise CloudFileNotFoundError(oid)
         return self._upload(oid, file_like, metadata)

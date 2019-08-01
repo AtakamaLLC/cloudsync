@@ -1,59 +1,12 @@
 from io import BytesIO
 import logging
-from threading import Lock
-from typing import Dict, Any, Tuple
-
 import pytest
 
-from cloudsync import CloudSync, SyncState, Storage, LOCAL, REMOTE
-
-from .fixtures import MockProvider
-
+from cloudsync import CloudSync, LOCAL, REMOTE
+from .fixtures import MockProvider, MockStorage
 from .test_sync import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
-
-
-class MockStorage(Storage):  # Does not actually persist the data... but it's just a mock
-    top_lock = Lock()
-    lock_dict = dict()
-
-    def __init__(self, storage_dict: Dict[str, Dict[int, bytes]]):
-        self.storage_dict = storage_dict
-        self.cursor: int = 0  # the next eid
-
-    def _get_internal_storage(self, tag: str) -> Tuple[Lock, Dict[int, bytes]]:
-        with self.top_lock:
-            lock: Lock = self.lock_dict.setdefault(tag, Lock())
-        return lock, self.storage_dict.setdefault(tag, dict())
-
-    def create(self, tag: str, serialization: bytes) -> Any:
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            current_index = self.cursor
-            self.cursor += 1
-            storage[current_index] = serialization
-            return current_index
-
-    def update(self, tag: str, serialization: bytes, eid: Any):
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            if eid not in storage:
-                raise ValueError("id %s doesn't exist" % eid)
-            storage[eid] = serialization
-
-    def delete(self, tag: str, eid: Any):
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            if eid not in storage:
-                raise ValueError("id %s doesn't exist" % eid)
-            del storage[eid]
-
-    def read_all(self, tag: str) -> Dict[Any, bytes]:
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            ret: Dict[Any, bytes] = storage.copy()
-            return ret
 
 
 @pytest.fixture(name="cs")
@@ -79,13 +32,7 @@ def fixture_cs():
 @pytest.fixture(name="multi_cs")
 def fixture_multi_cs():
     storage_dict = dict()
-    # storage1 = MockStorage("storage1", storage_dict)
-    # storage2 = MockStorage("storage2", storage_dict)
     storage = MockStorage(storage_dict)
-
-
-    # state1 = SyncState(storage1)
-    # state2 = SyncState(storage2)
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
