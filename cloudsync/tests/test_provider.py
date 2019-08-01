@@ -175,7 +175,6 @@ class ProviderHelper(Provider):
                 break
             elif until and until():
                 break
-            log.error("sleep %s", self.event_sleep)
 
     def __cleanup(self: ProviderMixin, oid):
         try:
@@ -484,8 +483,9 @@ def test_event_basic(provider: ProviderMixin):
     event_count = 0
     done = False
     waiting = None
-    timeout = min(provider.event_sleep * wait_sleep_cycles,2)
-    for e in provider.events_poll(until=lambda: done, timeout=timeout):
+    wait_secs = min(provider.event_sleep * wait_sleep_cycles,2)
+    for e in provider.events_poll(until=lambda: done):
+        log.debug("got event %s", e)
         # you might get events for the root folder here or other setup stuff
         if e.exists:
             received_event = e
@@ -499,7 +499,7 @@ def test_event_basic(provider: ProviderMixin):
                 event_count += 1
 
             if e.path == dest and not waiting:
-                waiting = time.monotonic() + timeout
+                waiting = time.monotonic() + wait_secs
 
         if waiting and time.monotonic() > waiting:
             # wait for extra events up to 10 sleep cycles, or 2 seconds
