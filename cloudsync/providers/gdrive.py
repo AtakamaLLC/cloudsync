@@ -420,7 +420,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             log.debug("listdir oid gone %s", oid)
             raise
 
-        if not res or (isinstance(res.get("files", False), list) and not res['files']):
+        if not res or not res['files']:
             if self.exists_oid(oid):
                 return
             raise CloudFileNotFoundError(oid)

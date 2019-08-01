@@ -111,6 +111,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
+        log.debug("_api: %s (%s %s)", method, args, kwargs)
+
         with self.mutex:
             try:
                 return getattr(self.client, method)(*args, **kwargs)
@@ -164,6 +166,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             except dropbox.stone_validators.ValidationError as e:
                 log.debug("f*ed up api error: %s", e)
                 if "never created" in str(e):
+                    raise CloudFileNotFoundError()
+                if "did not match" in str(e):
+                    log.warning("oid error %s", e)
                     raise CloudFileNotFoundError()
                 raise
             except requests.exceptions.ConnectionError as e:
@@ -268,9 +273,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 ohash = res.content_hash
             path = res.path_display
             oid = res.id
-            relative = self.is_subpath(info.path, path)
+            relative = self.is_subpath(info.path, path).lstrip("/")
             if relative:
-                yield DirInfo(otype, oid, ohash, info.path, name=relative)
+                yield DirInfo(otype, oid, ohash, path, name=relative)
 
     def create(self, path, file_like, metadata=None):
         self._verify_parent_folder_exists(path)
@@ -386,8 +391,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
             log.debug("res info path %s", res)
-
+            
             oid = res.id
+            if oid[0:3] != 'id:':
+                log.warning("invalid oid %s from path %s", oid, path)
+
             if isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
                 fhash = None
@@ -403,19 +411,23 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return self.info_path(path) is not None
 
     def info_oid(self, oid) -> Optional[OInfo]:
-        try:
-            res = self._api('files_get_metadata', oid)
-            log.debug("res info oid %s", res)
+        if oid == "":
+            otype = DIRECTORY
+            fhash = None
+            path = "/"
+        else:
+            try:
+                res = self._api('files_get_metadata', oid)
+                log.debug("res info oid %s", res)
 
-            path = res.path_display
+                path = res.path_display
 
-            if isinstance(res, files.FolderMetadata):
-                otype = DIRECTORY
-                fhash = None
-            else:
-                otype = FILE
-                fhash = res.content_hash
-
-            return OInfo(otype, oid, fhash, path)
-        except CloudFileNotFoundError:
-            return None
+                if isinstance(res, files.FolderMetadata):
+                    otype = DIRECTORY
+                    fhash = None
+                else:
+                    otype = FILE
+                    fhash = res.content_hash
+            except CloudFileNotFoundError:
+                return None
+        return OInfo(otype, oid, fhash, path)

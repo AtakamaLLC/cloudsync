@@ -24,7 +24,7 @@ def dropbox_provider():
     cls.event_timeout = 20
     cls.event_sleep = 2
     cls.creds = dropbox_creds()
-    return cls
+    return cls()
 
 @pytest.fixture
 def cloudsync_provider():
