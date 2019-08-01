@@ -7,6 +7,7 @@ import pytest
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
 
+# move this to provider ci_creds() function?
 def gdrive_creds():
     token_set = os.environ.get("GDRIVE_TOKEN")
     cli_sec = os.environ.get("GDRIVE_CLI_SECRET")

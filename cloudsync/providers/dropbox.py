@@ -167,6 +167,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 log.debug("f*ed up api error: %s", e)
                 if "never created" in str(e):
                     raise CloudFileNotFoundError()
+                if "did not match" in str(e):
+                    log.warning("oid error %s", e)
+                    raise CloudFileNotFoundError()
                 raise
             except requests.exceptions.ConnectionError as e:
                 log.exception('api error handled exception %s:%s',
@@ -388,8 +391,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
             log.debug("res info path %s", res)
-
+            
             oid = res.id
+            if oid[0:3] != 'id:':
+                log.warning("invalid oid %s from path %s", path)
+
             if isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
                 fhash = None
@@ -405,19 +411,23 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return self.info_path(path) is not None
 
     def info_oid(self, oid) -> Optional[OInfo]:
-        try:
-            res = self._api('files_get_metadata', oid)
-            log.debug("res info oid %s", res)
+        if oid == "":
+            otype = DIRECTORY
+            fhash = None
+            path = "/"
+        else:
+            try:
+                res = self._api('files_get_metadata', oid)
+                log.debug("res info oid %s", res)
 
-            path = res.path_display
+                path = res.path_display
 
-            if isinstance(res, files.FolderMetadata):
-                otype = DIRECTORY
-                fhash = None
-            else:
-                otype = FILE
-                fhash = res.content_hash
-
-            return OInfo(otype, oid, fhash, path)
-        except CloudFileNotFoundError:
-            return None
+                if isinstance(res, files.FolderMetadata):
+                    otype = DIRECTORY
+                    fhash = None
+                else:
+                    otype = FILE
+                    fhash = res.content_hash
+            except CloudFileNotFoundError:
+                return None
+        return OInfo(otype, oid, fhash, path)
