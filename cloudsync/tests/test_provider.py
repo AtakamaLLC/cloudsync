@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import pytest
 from io import BytesIO
@@ -174,6 +175,7 @@ class ProviderHelper(Provider):
                 break
             elif until and until():
                 break
+            log.error("sleep %s", self.event_sleep)
 
     def __cleanup(self: ProviderMixin, oid):
         try:
@@ -470,21 +472,39 @@ def test_event_basic(provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
+    for e in provider.events_poll(timeout=min(provider.event_sleep, 1)):
         log.debug("event %s", e)
+
+    wait_sleep_cycles = 10
 
     info1 = provider.create(dest, temp, None)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
     event_count = 0
-    for e in provider.events_poll():
-        log.debug("event %s", e)
+    done = False
+    waiting = None
+    timeout = min(provider.event_sleep * wait_sleep_cycles,2)
+    for e in provider.events_poll(until=lambda: done, timeout=timeout):
         # you might get events for the root folder here or other setup stuff
-        if not e.path or e.path == dest:
-            event_count += 1
+        if e.exists:
             received_event = e
 
+            if not e.path:
+                info = provider.info_oid(received_event.oid)
+                if info:
+                    e.path = info.path
+
+            if e.path == dest:
+                event_count += 1
+
+            if e.path == dest and not waiting:
+                waiting = time.monotonic() + timeout
+
+        if waiting and time.monotonic() > waiting:
+            # wait for extra events up to 10 sleep cycles, or 2 seconds
+            done = True
+            
     assert event_count == 1
     assert received_event is not None
     assert received_event.oid
