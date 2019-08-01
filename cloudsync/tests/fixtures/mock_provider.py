@@ -253,7 +253,14 @@ class MockProvider(Provider):
         self._api()
         file = self._fs_by_oid.get(oid, None)
         log.debug("got %s", file)
-        if not (file and file.exists):
+        if file and file.exists:
+            if file.otype == OType.DIRECTORY:
+                try:
+                    next(self.listdir(file.oid))
+                    raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, file.path))
+                except StopIteration:
+                    pass  # Folder is empty, delete it no problem
+        else:
             path = file.path if file else "<UNKNOWN>"
             log.debug("Deleting non-existent oid %s:%s ignored", oid, path)
             return None

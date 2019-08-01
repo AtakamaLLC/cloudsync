@@ -67,5 +67,3 @@ def test_restart_mux():
     assert len(list(m2)) == 8
     assert len(list(m1)) == 8
     assert len(list(m2)) == 8
-
-

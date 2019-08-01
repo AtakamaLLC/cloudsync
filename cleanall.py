@@ -25,7 +25,7 @@ def _rmtree(prov, oid, path):
                 count += 1
             else:
                 print(prov.name, "into", e.oid, e.path)
-                count += _rmtree(prov, e.oid, e.path) 
+                count += _rmtree(prov, e.oid, e.path)
                 print(prov.name, "rmdir", e.path)
                 prov.delete(e.oid)
                 count += 1

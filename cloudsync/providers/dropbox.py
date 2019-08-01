@@ -11,7 +11,8 @@ from dropbox import Dropbox, exceptions, files
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, \
+    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudException
 
 log = logging.getLogger(__name__)
 
@@ -277,13 +278,21 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             if relative:
                 yield DirInfo(otype, oid, ohash, path, name=relative)
 
-    def create(self, path, file_like, metadata=None):
+    def create(self, path: str, file_like, metadata=None) -> OInfo:
         self._verify_parent_folder_exists(path)
         if self.exists_path(path):
             raise CloudFileExistsError(path)
-        return self.upload(path, file_like, metadata)
+        return self._upload(path, file_like, metadata)
 
-    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
+    def upload(self, oid: str, file_like, metadata=None) -> OInfo:
+        if oid.startswith(self.sep):
+            raise CloudException("Called upload with a path instead of an OID: %s" % oid)
+        if not self.exists_oid(oid):
+            raise CloudFileNotFoundError(oid)
+        return self._upload(oid, file_like, metadata)
+
+    def _upload(self, oid, file_like, metadata=None) -> OInfo:
+        res = None
         metadata = metadata or {}
 
         file_like.seek(0, io.SEEK_END)
@@ -375,9 +384,18 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return res.id
 
     def delete(self, oid):
+        info = self.info_oid(oid)
+        if not info:
+            return  # file doesn't exist already...
+        if info.otype == DIRECTORY:
+            try:
+                next(self._listdir(oid, recursive=False))
+                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.path))
+            except StopIteration:
+                pass  # Folder is empty, delete it no problem
         try:
             self._api('files_delete_v2', oid)
-        except CloudFileNotFoundError:
+        except CloudFileNotFoundError:  # shouldn't happen because we are checking above...
             return
 
     def exists_oid(self, oid) -> bool:
@@ -391,7 +409,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
             log.debug("res info path %s", res)
-            
+
             oid = res.id
             if oid[0:3] != 'id:':
                 log.warning("invalid oid %s from path %s", oid, path)
