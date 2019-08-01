@@ -3,7 +3,7 @@ import logging
 import pytest
 from io import BytesIO
 from unittest.mock import patch
-from typing import Union
+from typing import Union, NamedTuple
 
 import cloudsync
 
@@ -22,6 +22,10 @@ class ProviderHelper(Provider):
     def __init__(self, prov):
         self.api_retry = True 
         self.prov = prov
+
+        # need to copy in all attrs that are defined in the ABC
+        self.oid_is_path = prov.oid_is_path
+        self.case_sensitive = prov.case_sensitive
 
         self.test_root = getattr(self.prov, "test_root", None)
         self.event_timeout = getattr(self.prov, "event_timeout", 20)
@@ -197,13 +201,16 @@ class ProviderHelper(Provider):
                 # deleting the root might now be supported
                 pass
 
-@pytest.fixture
+def new_mock_provider(oid_is_path, case_sensitive):
+    prov = MockProvider(oid_is_path, case_sensitive)
+    prov.event_timeout = 1
+    prov.event_sleep = 0.001
+    prov.creds = {}
+    return prov
+
+@pytest.fixture(params=[ (False, True), (True, True) ], ids=["oid_cs", "path_cs"])
 def mock_provider(request):
-    cls = MockProvider
-    cls.event_timeout = 1
-    cls.event_sleep = 0.001
-    cls.creds = {}
-    return cls()
+    return new_mock_provider(*request.param)
 
 def mixin_provider(prov):
     assert prov
@@ -216,38 +223,110 @@ def mixin_provider(prov):
     prov.test_cleanup()
 
 @pytest.fixture
-def config_provider(request, mock_provider, provider_name):
+def provider_params():
+    return None
+
+class ProviderConfig:
+    def __init__(self, name, param=(), param_id=None):
+        if param_id is None:
+            param_id = name
+        self.name = name
+        if name == "mock":
+            assert param
+        self.param = param
+        self.param_id = param_id
+
+    def __repr__(self):
+        return "%s(%s)" % (type(self), self.__dict__)
+
+@pytest.fixture
+def config_provider(request, provider_config):
     try:
         request.raiseerror("foo")
     except Exception as e:
         FixtureLookupError = type(e)
 
-    try:
+    if provider_config.name == "external":
         # if there's a fixture available, use it
         return request.getfixturevalue("cloudsync_provider")
-    except FixtureLookupError as e:
         # deferring imports to prevent needing deps we don't want to require for everyone
+    elif provider_config.name == "mock":
+        return new_mock_provider(*provider_config.param)
+    elif provider_config.name == "gdrive":
+        from .providers.gdrive import gdrive_provider
+        return gdrive_provider()
+    elif provider_config.name == "dropbox":
+        from .providers.dropbox import dropbox_provider
+        return dropbox_provider()
+    else:
+        assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
-        if provider_name == "mock":
-            return mock_provider
-        elif provider_name == "gdrive":
-            from .providers.gdrive import gdrive_provider
-            return gdrive_provider()
-        elif provider_name == "dropbox":
-            from .providers.dropbox import dropbox_provider
-            return dropbox_provider()
+known_providers = ('gdrive', 'external', 'dropbox', 'mock')
+
+def configs_from_name(name):
+    provs = []
+
+    if name == "mock":
+        provs += [ ProviderConfig("mock", (False, True), "mock_oid_cs") ]
+        provs += [ ProviderConfig("mock", (True, True), "mock_path_cs") ]
+    else:
+        provs += [ ProviderConfig(name) ]
+
+    return provs
+
+def configs_from_keyword(kw):
+    provs = []
+    # crappy approximation of pytest evaluation routine, because
+    false = {}
+    for known_prov in known_providers:
+        false[known_prov] = False
+
+    for known_prov in known_providers:
+        if known_prov == kw or '[' + known_prov + ']' == kw:
+            ok = True
         else:
-            assert False, "Must provide a valid --provider name or use the -p <plugin>"
+            ids = false.copy()
+            ids[known_prov]=True
+            try:
+                ok = eval(kw, ids, {})
+            except Exception as e:
+                log.error(e)
+                ok = False
+            if type(ok) is list:
+                ok = any(ok)
+        if ok:
+            provs += configs_from_name(known_prov)
+    return provs
 
-
+_registered = False
 def pytest_generate_tests(metafunc):
-    if "provider_name" in metafunc.fixturenames:
+    global _registered
+    if not _registered:
+        for known_prov in known_providers:
+            metafunc.config.addinivalue_line(
+                "markers", known_prov
+            )
+        _registered = True
+
+    if "provider_config" in metafunc.fixturenames:
         provs = []
+
         for e in metafunc.config.getoption("provider", []):
-            provs += e.split(",")
+            for n in e.split(","):
+                provs += cprovider_configsonfigs_from_name(n)
+
         if not provs:
-            provs += ["mock"]
-        metafunc.parametrize("provider_name", provs)
+            kw = metafunc.config.getoption("keyword", "")
+            if kw:
+                provs += configs_from_keyword(kw)
+
+        if not provs:
+            provs += configs_from_name("mock")
+
+        ids = [p.param_id for p in provs]
+        marks = [pytest.param(p, marks=[getattr(pytest.mark,p.name)]) for p in provs]
+
+        metafunc.parametrize("provider_config", marks, ids=ids)
 
 @pytest.fixture
 def provider(config_provider):
@@ -330,12 +409,15 @@ def test_rename(provider: ProviderMixin):
     assert not provider.exists_path(file_path1)
     assert provider.exists_path(sub_file_path2)
     assert not provider.exists_path(sub_file_path1)
-    assert provider.exists_oid(file_info.oid)
-    assert provider.exists_oid(sub_file_info.oid)
 
-    assert provider.info_oid(file_info.oid).path == file_path2
-    assert provider.info_oid(sub_file_info.oid).path == sub_file_path2
-
+    if not provider.oid_is_path:
+        assert provider.exists_oid(file_info.oid)
+        assert provider.exists_oid(sub_file_info.oid)
+        assert provider.info_oid(file_info.oid).path == file_path2
+        assert provider.info_oid(sub_file_info.oid).path == sub_file_path2
+    else:
+        assert not provider.exists_oid(file_info.oid)
+        assert not provider.exists_oid(sub_file_info.oid)
 
 def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)
@@ -725,22 +807,22 @@ def test_file_exists(provider: ProviderMixin):
     #   mkdir: creating a file, deleting it, then creating a folder at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_file()
     oid2 = provider.mkdir(name1)
-    assert oid1 != oid2
+    assert oid1 != oid2 or provider.oid_is_path
 
     #   mkdir: creating a folder, deleting it, then creating a folder at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_folder()
     oid2 = provider.mkdir(name1)
-    assert oid1 != oid2
+    assert oid1 != oid2 or provider.oid_is_path
 
     #   mkdir: target path existed as file, but was renamed
     name1, oid1 = create_and_rename_file()
     _, oid2 = create_folder(name1)
-    assert oid1 != oid2
+    assert oid1 != oid2 or provider.oid_is_path
 
     #   mkdir: target path existed as folder, but was renamed
     name1, oid1 = create_and_rename_folder()
     _, oid2 = create_folder(name1)
-    assert oid1 != oid2
+    assert oid1 != oid2 or provider.oid_is_path
 
     #   upload: where target OID is a folder, raises FEx
     _, oid = create_folder()
@@ -755,12 +837,12 @@ def test_file_exists(provider: ProviderMixin):
     #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_file()
     _, oid2 = create_file(name1)
-    assert oid1 != oid2
+    assert oid1 != oid2 or provider.oid_is_path 
 
     #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_folder()
     _, oid2 = create_file(name1)
-    assert oid1 != oid2
+    assert oid1 != oid or provider.oid_is_path
 
     #   create: where target path has a parent folder that already exists as a file, raises FEx
     name, _ = create_file()
@@ -782,10 +864,15 @@ def test_file_exists(provider: ProviderMixin):
     assert oid1 != oid2
     contents1 = [x.name for x in provider.listdir(oid1)]
     provider.rename(oid1, name2)
-    assert provider.exists_oid(oid1)
-    assert not provider.exists_oid(oid2)
-    contents2 = [x.name for x in provider.listdir(oid1)]
-    assert contents1 == contents2  # pytest MAGIC!
+    if provider.oid_is_path:
+        assert not provider.exists_oid(oid1)
+        assert provider.exists_oid(oid2)
+        contents2 = [x.name for x in provider.listdir(oid2)]
+    else:
+        assert provider.exists_oid(oid1)
+        assert not provider.exists_oid(oid2)
+        contents2 = [x.name for x in provider.listdir(oid1)]
+    assert contents1 == contents2
 
     #   rename: rename folder over non-empty folder raises FEx
     _, oid1 = create_folder()

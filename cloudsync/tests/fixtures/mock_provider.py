@@ -17,17 +17,24 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
     DIR = 'mock dir'
 
-    def __init__(self, path, object_type, contents=None):
+    def __init__(self, path, object_type, oid_is_path, contents=None):
         # self.display_path = path  # TODO: used for case insensitive file systems
         if contents is None and type == MockFSObject.FILE:
             contents = b""
         self.path = path
         self.contents = contents
-        self.oid = str(id(self))
+        self.oid_is_path = oid_is_path        
         self.exists = True
         self.type = object_type
         self.update()
         self.mtime = time.time()
+
+    @property
+    def oid(self):
+        if self.oid_is_path:
+            return self.path
+        else:
+            return str(id(self))
 
     @property
     def otype(self):
@@ -70,10 +77,11 @@ class MockProvider(Provider):
     connected = True
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, case_sensitive=True, sep="/", recycle_oid=False):
+    def __init__(self, oid_is_path, case_sensitive):
         super().__init__()
+        log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
+        self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
-        self.sep = sep
         self._fs_by_path: Dict[str, MockFSObject] = {}
         self._fs_by_oid: Dict[str, MockFSObject] = {}
         self._events: List[MockEvent] = []
@@ -83,7 +91,6 @@ class MockProvider(Provider):
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
         }
-        self._recycle_oid = recycle_oid
 
     def _register_event(self, action, target_object):
         event = MockEvent(action, target_object)
@@ -175,8 +182,8 @@ class MockProvider(Provider):
         if file is not None and file.exists:
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         self._verify_parent_folder_exists(path)
-        if file is None or not self._recycle_oid:
-            file = MockFSObject(path, MockFSObject.FILE)
+        if file is None or not file.exists:
+            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path)
             self._store_object(file)
         file.contents = file_like.read()
         file.exists = True
@@ -243,7 +250,7 @@ class MockProvider(Provider):
             else:
                 log.debug("Skipped creating already existing folder: %s", path)
                 return file.oid
-        new_fs_object = MockFSObject(path, MockFSObject.DIR)
+        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
         return new_fs_object.oid
