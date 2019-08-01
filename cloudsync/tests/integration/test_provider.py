@@ -10,7 +10,7 @@ import cloudsync
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 from cloudsync.tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
-
+from cloudsync.types import OInfo
 from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
@@ -436,8 +436,11 @@ def test_file_not_found(provider: ProviderMixin):
     #       to a deleted file raises FNF, or untrashes the file, either is OK
     #       to a made up oid raises FNF
     # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
+    assert provider.exists_oid(test_file_deleted_oid) is False
+    assert provider.exists_path(test_file_deleted_path) is False
     try:
         provider.upload(test_file_deleted_oid, data(), None)
+        assert provider.exists_oid(test_file_deleted_oid) is True
         assert provider.exists_path(test_file_deleted_path) is True
         re_delete = True
     except CloudFileNotFoundError:
@@ -456,6 +459,10 @@ def test_file_not_found(provider: ProviderMixin):
         provider.create(test_path_made_up + "/junk", data(), None)
     with pytest.raises(CloudFileNotFoundError):
         provider.create(test_folder_deleted_path + "/junk", data(), None)
+
+    #   upload: to the OID of a deleted folder, raises FNFE
+    with pytest.raises(CloudFileNotFoundError):
+        provider.upload(test_folder_deleted_oid, data(), None)
 
     #   download
     #       on a deleted oid raises FNF
@@ -620,6 +627,19 @@ def test_file_exists(provider: ProviderMixin):
     _, oid = create_folder()
     with pytest.raises(CloudFileExistsError):
         provider.upload(oid, data(), None)
+
+    # upload: to a deleted file, untrashes the file
+    # TODO: move this test to where it belongs -- it seems to be covered elsewhere but test for other things...
+    name1, oid1 = create_and_delete_file()
+    assert not provider.exists_oid(oid1)
+    provider.upload(oid1, data(), None)
+    assert provider.exists_oid(oid1)
+
+    #   delete: a non-empty folder, raises FEx
+    name1, oid1 = create_folder()
+    create_file(name1 + "/junk")
+    with pytest.raises(CloudFileExistsError):
+        provider.delete(oid1)
 
     #   create: where target path exists, raises FEx
     name, _ = create_file()

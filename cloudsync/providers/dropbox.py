@@ -381,6 +381,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return res.id
 
     def delete(self, oid):
+        info = self.info_oid(oid)
+        if info.otype == DIRECTORY:
+            try:
+                next(self._listdir(oid, recursive=False))
+                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.path))
+            except StopIteration:
+                pass  # Folder is empty, delete it no problem
         try:
             self._api('files_delete_v2', oid)
         except CloudFileNotFoundError:
