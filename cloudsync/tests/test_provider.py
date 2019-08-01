@@ -8,7 +8,7 @@ from typing import Union, NamedTuple
 import cloudsync
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, FILE
-from cloudsync.tests.fixtures.mock_provider import Provider, MockProvider
+from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 from cloudsync.providers import GDriveProvider, DropboxProvider
@@ -201,17 +201,6 @@ class ProviderHelper(Provider):
                 # deleting the root might now be supported
                 pass
 
-def new_mock_provider(oid_is_path, case_sensitive):
-    prov = MockProvider(oid_is_path, case_sensitive)
-    prov.event_timeout = 1
-    prov.event_sleep = 0.001
-    prov.creds = {}
-    return prov
-
-@pytest.fixture(params=[ (False, True), (True, True) ], ids=["oid_cs", "path_cs"])
-def mock_provider(request):
-    return new_mock_provider(*request.param)
-
 def mixin_provider(prov):
     assert prov
     assert isinstance(prov, Provider)
@@ -251,7 +240,7 @@ def config_provider(request, provider_config):
         return request.getfixturevalue("cloudsync_provider")
         # deferring imports to prevent needing deps we don't want to require for everyone
     elif provider_config.name == "mock":
-        return new_mock_provider(*provider_config.param)
+        return mock_provider_instance(*provider_config.param)
     elif provider_config.name == "gdrive":
         from .providers.gdrive import gdrive_provider
         return gdrive_provider()
@@ -288,9 +277,11 @@ def configs_from_keyword(kw):
             ids = false.copy()
             ids[known_prov]=True
             try:
-                ok = eval(kw, ids, {})
+                ok = eval(kw, {}, ids)
+            except NameError as e:
+                ok = False
             except Exception as e:
-                log.error(e)
+                log.error("%s %s", type(e), e)
                 ok = False
             if type(ok) is list:
                 ok = any(ok)
@@ -314,7 +305,7 @@ def pytest_generate_tests(metafunc):
 
         for e in metafunc.config.getoption("provider", []):
             for n in e.split(","):
-                provs += cprovider_configsonfigs_from_name(n)
+                provs += configs_from_name(n)
 
         if not provs:
             kw = metafunc.config.getoption("keyword", "")
@@ -564,6 +555,53 @@ def test_event_del_create(provider: ProviderMixin):
     assert last_event
     assert last_event.exists is True
 
+def test_event_rename(provider: ProviderMixin):
+    temp = BytesIO(os.urandom(32))
+    dest = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest")
+    dest3 = provider.temp_name("dest")
+
+    # just get the cursor going
+    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
+        log.debug("event %s", e)
+
+    info1 = provider.create(dest, temp)
+    provider.rename(info1.oid, dest2)
+    if provider.oid_is_path:
+        info1.oid = provider.info_path(dest2).oid
+    provider.rename(info1.oid, dest3)
+    if provider.oid_is_path:
+        info1.oid = provider.info_path(dest3).oid
+
+    seen = set()
+    last_event = None
+    second_to_last = None
+    done = False
+    for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
+        if provider.oid_is_path:
+            assert e.path
+        log.debug("event %s", e)
+        # you might get events for the root folder here or other setup stuff
+        path = e.path
+        if not e.path:
+            info = provider.info_oid(e.oid)
+            if info:
+                path = info.path
+
+        last_event = path
+        seen.add((e.oid, path))
+
+        # 2 and 3 are in order
+        if path == dest2:
+            second_to_last = True
+        if path == dest3 and (second_to_last or not provider.oid_is_path):
+            done = True
+
+    if provider.oid_is_path:
+        # providers with path based oids need to send intermediate renames accurately and in order
+        assert len(seen) > 3
+    assert last_event == dest3
+
 
 def test_api_failure(provider):
     # assert that the cloud
@@ -720,11 +758,16 @@ def test_file_not_found(provider: ProviderMixin):
     info1 = provider.create(temp_path, BytesIO(b"Hello"))
     provider.delete(info1.oid)
     info2 = provider.create(temp_path, BytesIO(b"world"))
-    assert not provider.exists_oid(info1.oid)
-    assert provider.exists_oid(info2.oid)
-    provider.delete(info1.oid)
-    assert provider.exists_path(temp_path)
-    assert provider.exists_oid(info2.oid)
+    if provider.oid_is_path:
+        assert provider.exists_oid(info1.oid)
+        assert provider.exists_path(temp_path)
+        assert provider.exists_oid(info2.oid)
+    else:
+        assert not provider.exists_oid(info1.oid)
+        assert provider.exists_oid(info2.oid)
+        provider.delete(info1.oid)
+        assert provider.exists_path(temp_path)
+        assert provider.exists_oid(info2.oid)
 
 
 
@@ -873,21 +916,26 @@ def test_file_exists(provider: ProviderMixin):
     name1, oid1 = create_and_delete_file()
     _, oid2 = create_file(name1)
     assert oid1 != oid2 or provider.oid_is_path 
-    assert not provider.exists_oid(oid1)
+    if provider.oid_is_path:
+        assert provider.exists_oid(oid1)
+    else:
+        assert not provider.exists_oid(oid1)
+
     assert provider.exists_oid(oid2)
     # piggyback test -- uploading to the deleted oid should not step on the file that replaced it at that path
-    try:
-        new_contents = b"yo"  # bytes(os.urandom(16).hex(), 'utf-8')
-        new_info = provider.upload(oid1, BytesIO(new_contents))
-        assert new_info.oid != oid1
-        assert new_info.oid != oid2
-        assert not provider.exists_oid(oid1)
-        contents2 = get_contents(oid2)
-        assert contents2 == new_contents
-        contents1 = get_contents(oid1)
-        assert contents1 == new_contents
-    except CloudFileNotFoundError:
-        pass
+    if not provider.oid_is_path:
+        try:
+            new_contents = b"yo"  # bytes(os.urandom(16).hex(), 'utf-8')
+            new_info = provider.upload(oid1, BytesIO(new_contents))
+            assert new_info.oid != oid1
+            assert new_info.oid != oid2
+            assert not provider.exists_oid(oid1)
+            contents2 = get_contents(oid2)
+            assert contents2 == new_contents
+            contents1 = get_contents(oid1)
+            assert contents1 == new_contents
+        except CloudFileNotFoundError:
+            pass
 
     #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_folder()
@@ -915,6 +963,7 @@ def test_file_exists(provider: ProviderMixin):
     contents1 = [x.name for x in provider.listdir(oid1)]
     provider.rename(oid1, name2)
     if provider.oid_is_path:
+        log.debug("oid1 %s, oid2 %s", oid1, oid2)
         assert not provider.exists_oid(oid1)
         assert provider.exists_oid(oid2)
         contents2 = [x.name for x in provider.listdir(oid2)]
@@ -1041,12 +1090,15 @@ def test_delete_doesnt_cross_oids(provider: ProviderMixin):
     info1 = provider.create(temp_name, BytesIO(b"test1"))
     provider.delete(info1.oid)
     info2 = provider.create(temp_name, BytesIO(b"test2"))
-    assert info1.oid != info2.oid
-    assert not provider.exists_oid(info1.oid)
+    if not provider.oid_is_path:
+        assert info1.oid != info2.oid
+        assert not provider.exists_oid(info1.oid)
     assert provider.exists_oid(info2.oid)
-    provider.delete(info1.oid)
-    assert not provider.exists_oid(info1.oid)
-    assert provider.exists_oid(info2.oid)
+
+    if not provider.oid_is_path:
+        provider.delete(info1.oid)
+        assert not provider.exists_oid(info1.oid)
+        assert provider.exists_oid(info2.oid)
 
     # test uploading to a path instead of an OID. should raise something
     # This test will need to flag off whether the provider uses paths as OIDs or not

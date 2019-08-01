@@ -1,4 +1,4 @@
-from .fixtures.util import util # pylint: disable=unused-import
+from .fixtures import * # pylint: disable=unused-import
 
 def pytest_addoption(parser):
     parser.addoption(
