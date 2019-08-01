@@ -869,7 +869,13 @@ def test_listdir(provider: ProviderMixin):
     outer = provider.temp_name()
     root = provider.dirname(outer)
     temp_name = provider.is_subpath(root, outer)
+
+    outer_oid_rm = provider.mkdir(outer)
+    assert [] == list(provider.listdir(outer_oid_rm))
+    provider.delete(outer_oid_rm)
+
     outer_oid = provider.mkdir(outer)
+
     assert provider.exists_path(outer)
     assert provider.exists_oid(outer_oid)
     inner = outer + temp_name
@@ -882,4 +888,3 @@ def test_listdir(provider: ProviderMixin):
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
     assert contents.sort() == expected.sort()
-
