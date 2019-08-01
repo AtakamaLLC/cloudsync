@@ -35,6 +35,7 @@ def gdrive_provider():
 def cloudsync_provider():
     gdrive_provider()
 
+
 def test_connect():
     creds = gdrive_creds()
     if not creds:
