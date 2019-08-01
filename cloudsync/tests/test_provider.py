@@ -184,6 +184,10 @@ class ProviderHelper(Provider):
         except CloudFileNotFoundError:
             pass
 
+    def test_cleanup(self: ProviderMixin, timeout=None, until=None):
+        info = self.prov.info_path(self.test_root)
+        self.__cleanup(info.oid)
+
         info = self.prov.info_path(self.test_root)
         if info:
             try:
@@ -192,10 +196,6 @@ class ProviderHelper(Provider):
             except CloudFileExistsError:
                 # deleting the root might now be supported
                 pass
-
-    def test_cleanup(self: ProviderMixin, timeout=None, until=None):
-        info = self.prov.info_path(self.test_root)
-        self.__cleanup(info.oid)
 
 @pytest.fixture
 def mock_provider(request):
