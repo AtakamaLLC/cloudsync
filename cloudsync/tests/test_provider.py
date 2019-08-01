@@ -7,7 +7,7 @@ from typing import Union
 
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, FILE
 from cloudsync.tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -18,13 +18,139 @@ log = logging.getLogger(__name__)
 
 ProviderMixin = Union[Provider, "ProviderHelper"]
 
-class ProviderHelper:
-    creds = None
-    event_timeout = 20
-    event_sleep = 1
+class ProviderHelper(Provider):
+    def __init__(self, prov):
+        self.api_retry = True
+        self.prov = prov
+
+        self.test_root = getattr(self.prov, "test_root", None)
+        self.event_timeout = getattr(self.prov, "event_timeout", 20)
+        self.event_sleep = getattr(self.prov, "event_sleep", 1)
+        self.creds = getattr(self.prov, "creds", {})
+
+        self.prov_api_func = self.prov._api
+        self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
+
+        self.prov.connect(self.creds)
+
+        if not self.test_root:
+            # if the provider class doesn't specify a testing root
+            # then just make one up
+            self.test_root = "/" + os.urandom(16).hex()
+            self.prov.mkdir(self.test_root)
+
+    def _api(self, *ar, **kw):
+        return self.prov_api_func(*ar, **kw)
+
+    def __api_retry(self: ProviderMixin, func, *ar, **kw):
+        # the cloud providers themselves should *not* have their own backoff logic
+        # rather, they should punt rate limit and temp errors to the sync system
+        # since we're not testing the sync system here, we need to make our own
+        if not self.api_retry:
+            return func(*ar, **kw)
+
+        for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
+            try:
+                return func(*ar, **kw)
+            except CloudTemporaryError:
+                log.info("api retry %s %s %s", func, ar, kw)
+
+    ############### TEST-ROOT WRAPPER
+
+    def __getattr__(self, k):
+        return getattr(self.prov, k)
+
+    def events(self):
+        for e in self.prov.events():
+            if self.__filter_root(e):
+                yield e
+
+    def walk(self, path):
+        path = self.__add_root(path)
+        log.debug("WALK %s", path)
+        for e in self.prov.walk(path):
+            if self.__filter_root(e):
+                yield e
+
+    def download(self, *args, **kwargs):
+        return self.__strip_root(self.prov.download(*args, **kwargs))
+
+    def create(self, path, file_like, metadata=None):
+        path = self.__add_root(path)
+        log.debug("CREATE %s", path)
+        return self.__strip_root(self.prov.create(path, file_like, metadata))
+
+    def upload(self, *args, **kwargs):
+        return self.__strip_root(self.prov.upload(*args, **kwargs))
+
+    def rename(self, oid, path):
+        path = self.__add_root(path)
+        return self.__strip_root(self.prov.rename(oid, path))
+
+    def mkdir(self, path):
+        path = self.__add_root(path)
+        return self.__strip_root(self.prov.mkdir(path))
+
+    def delete(self, *args, **kwargs):
+        return self.__strip_root(self.prov.delete(*args, **kwargs))
+
+    def exists_oid(self, oid):
+        return self.prov.exists_oid(oid)
+
+    def exists_path(self, path):
+        path = self.__add_root(path)
+        return self.prov.exists_path(path)
+
+    def info_path(self, path):
+        path = self.__add_root(path)
+        return self.__strip_root(self.prov.info_path(path))
+
+    def info_oid(self, oid):
+        return self.__strip_root(self.prov.info_oid(oid))
+
+    def listdir(self, oid):
+        for e in self.prov.listdir(oid):
+            if self.__filter_root(e):
+                yield e
+
+    def __add_root(self, path):
+        return self.join(self.test_root, path)
+
+    def __filter_root(self, obj):
+        if hasattr(obj, "path"):
+            raw_path = obj.path
+
+            if not raw_path:
+                info = self.prov.info_oid(obj.oid)
+                if info:
+                    raw_path = info.path
+
+            if not raw_path:
+                # pathless objects always get passed through
+                # so isolation is not perfect
+                return True
+
+            if not raw_path.startswith(self.test_root):
+                return False
+
+            self.__strip_root(obj)
+
+        return True
+
+    def __strip_root(self, obj):
+        if hasattr(obj, "path"):
+            path = obj.path
+            if path:
+                assert path.startswith(self.test_root)
+                path = obj.path[len(self.test_root):]
+                if not path.startswith("/"):
+                    path = "/" + path
+                obj.path = path
+        return obj
+    ############### HELPERS
 
     def temp_name(self: ProviderMixin, name="tmp", *, folder=None):
-        fname = self.join(folder or self.sync_root, os.urandom(16).hex() + "." + name)
+        fname = self.join(folder or "/", os.urandom(16).hex() + "." + name)
         return fname
 
     def events_poll(self: ProviderMixin, timeout=None, until=None):
@@ -45,94 +171,98 @@ class ProviderHelper:
             elif until and until():
                 break
 
+    def __cleanup(self: ProviderMixin, oid):
+        try:
+            for info in self.prov.listdir(oid):
+                if info.otype == FILE:
+                    log.debug("cleaning %s", info)
+                    self.delete(info.oid)
+                else:
+                    self.__cleanup(info.oid)
+                    log.debug("cleaning %s", info)
+                    self.delete(info.oid)
+        except CloudFileNotFoundError:
+            pass
+
     def test_cleanup(self: ProviderMixin, timeout=None, until=None):
-        _ = timeout  # TODO: get rid of the arguments, if we're not going to use them
-        _ = until
-        # remove everything in the sync_root
-        info = self.info_path(self.sync_root)
+        info = self.prov.info_path(self.test_root)
+        self.__cleanup(info.oid)
+
+        info = self.prov.info_path(self.test_root)
         if info:
-            # TODO: this is broken. Either deletion is recursive, in which case, this is unnecessary,
-            #       or it isn't, and this isn't sufficient because it's not recursive
-            #       plus, listdir shouldn't be returning oids
-            for info in self.listdir(info.oid):
-                self.delete(info.oid)
-
-        info = self.info_path(self.sync_root)
-        if info:
-            self.delete(info.oid)
-
-    def api_retry(self: ProviderMixin, func, *ar, **kw):
-        # the cloud providers themselves should *not* have their own backoff logic
-        # rather, they should punt rate limit and temp errors to the sync system
-        # since we're not testing the sync system here, we need to make our own
-
-        for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
             try:
-                return func(self, *ar, **kw)
-            except CloudTemporaryError:
-                log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
+                log.debug("cleaning %s", info)
+                self.delete(info.oid)
+            except CloudFileExistsError:
+                # deleting the root might now be supported
+                pass
 
-@pytest.fixture(params=['gdrive', 'dropbox', 'mock'])
-def cloudsync_provider(request, gdrive_creds, dropbox_creds):
-    if request.param == "gdrive":
-        cls = GDriveProvider
-        cls.event_timeout = 60
-        cls.event_sleep = 2
-        cls.creds = gdrive_creds
-    elif request.param == "dropbox":
-        cls = DropboxProvider
-        cls.event_timeout = 20
-        cls.event_sleep = 2
-        cls.creds = dropbox_creds
-    elif request.param == "mock":
-        cls = MockProvider
-        cls.event_timeout = 1
-        cls.event_sleep = 0.001
-        cls.creds = {}
-    return cls
+@pytest.fixture
+def mock_provider(request):
+    cls = MockProvider
+    cls.event_timeout = 1
+    cls.event_sleep = 0.001
+    cls.creds = {}
+    return cls()
 
-def mixin_provider(prov_cls):
-    assert issubclass(prov_cls, Provider)
+def mixin_provider(prov):
+    assert prov
+    assert isinstance(prov, Provider)
 
-    class ProviderMixin(prov_cls, ProviderHelper):
-        def __init__(self, *ar, **kw):
-            ProviderHelper.__init__(self)
-            prov_cls.__init__(self, *ar, **kw)
-        def _api(self, *ar, **kw):
-            return self.api_retry(prov_cls._api, *ar, **kw)
-
-    test_root = "/" + os.urandom(16).hex()
-
-    prov = ProviderMixin(test_root)
-
-    assert prov.temp_name
-
-    prov.connect(prov.creds)
+    prov = ProviderHelper(prov)
 
     yield prov
 
     prov.test_cleanup()
 
 @pytest.fixture
-def provider(cloudsync_provider):
-    yield from mixin_provider(cloudsync_provider)
+def config_provider(request, mock_provider, provider_name):
+    try:
+        request.raiseerror("foo")
+    except Exception as e:
+        FixtureLookupError = type(e)
+
+    try:
+        # if there's a fixture available, use it
+        return request.getfixturevalue("cloudsync_provider")
+    except FixtureLookupError as e:
+        # deferring imports to prevent needing deps we don't want to require for everyone
+
+        if provider_name == "mock":
+            return mock_provider
+        elif provider_name == "gdrive":
+            from .providers.gdrive import gdrive_provider
+            return gdrive_provider()
+        elif provider_name == "dropbox":
+            from .providers.dropbox import dropbox_provider
+            return dropbox_provider()
+        else:
+            assert False, "Must provide a valid --provider name or use the -p <plugin>"
+
+
+def pytest_generate_tests(metafunc):
+    if "provider_name" in metafunc.fixturenames:
+        provs = []
+        for e in metafunc.config.getoption("provider", []):
+            provs += e.split(",")
+        if not provs:
+            provs += ["mock"]
+        metafunc.parametrize("provider_name", provs)
 
 @pytest.fixture
-def mock():
-    yield from mixin_provider(MockProvider)
+def provider(config_provider):
+    yield from mixin_provider(config_provider)
 
-def test_join(mock):
-    assert "/a/b/c" == mock.join("a", "b", "c")
-    assert "/a/c" == mock.join("a", None, "c")
-    assert "/a/b/c" == mock.join("/a", "/b", "/c")
-    assert "/a/c" == mock.join("a", "/", "c")
-
+def test_join(mock_provider):
+    assert "/a/b/c" == mock_provider.join("a", "b", "c")
+    assert "/a/c" == mock_provider.join("a", None, "c")
+    assert "/a/b/c" == mock_provider.join("/a", "/b", "/c")
+    assert "/a/c" == mock_provider.join("a", "/", "c")
 
 def test_connect(provider):
     assert provider.connected
 
-
-def test_create_upload_download(util, provider):
+def test_create_upload_download(provider):
     dat = os.urandom(32)
 
     def data():
@@ -156,7 +286,7 @@ def test_create_upload_download(util, provider):
     assert dest.getvalue() == dat
 
 
-def test_rename(util, provider: ProviderMixin):
+def test_rename(provider: ProviderMixin):
     dat = os.urandom(32)
 
     def data():
@@ -207,7 +337,7 @@ def test_rename(util, provider: ProviderMixin):
     assert provider.info_oid(sub_file_info.oid).path == sub_file_path2
 
 
-def test_mkdir(util, provider: ProviderMixin):
+def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)
 
     def data():
@@ -225,19 +355,16 @@ def test_mkdir(util, provider: ProviderMixin):
     provider.create(sub_f, data(), None)
 
 
-def test_walk(util, provider: ProviderMixin):
+def test_walk(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
     info = provider.create(dest, temp, None)
-    assert not provider.walked
 
     got_event = False
-    for e in provider.walk():
-        got_event = True
-        if e is None:
-            break
+    for e in provider.walk("/"):
         if e.otype == cloudsync.DIRECTORY:
             continue
+        log.debug("WALK %s", e)
         assert e.oid == info.oid
         path = e.path
         if path is None:
@@ -245,8 +372,8 @@ def test_walk(util, provider: ProviderMixin):
         assert path == dest
         assert e.mtime
         assert e.exists
+        got_event = True
 
-    assert provider.walked
     assert got_event
 
 
@@ -264,7 +391,7 @@ def check_event_path(event: Event, provider: ProviderMixin, target_path):
                 raise
 
 
-def test_event_basic(util, provider: ProviderMixin):
+def test_event_basic(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
@@ -315,7 +442,7 @@ def test_event_basic(util, provider: ProviderMixin):
     assert received_event.mtime
 
 
-def test_event_del_create(util, provider: ProviderMixin):
+def test_event_del_create(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
@@ -341,7 +468,7 @@ def test_event_del_create(util, provider: ProviderMixin):
                 path = info.path
 
         if path == dest or e.exists is False:
-            last_event = e 
+            last_event = e
 
             if e.exists is True and saw_delete:
                 log.debug("done, we saw the delete and got a create after")
@@ -361,13 +488,12 @@ def test_api_failure(provider):
     # b) does not trap CloudTemporaryError's
 
     def side_effect(*a, **k):
-        if a or k:
-            pass
         raise CloudTemporaryError("fake disconnect")
 
     with patch.object(provider, "_api", side_effect=side_effect):
-        with pytest.raises(CloudTemporaryError):
-            provider.exists_path("/notexists")
+        with patch.object(provider, "api_retry", False):
+            with pytest.raises(CloudTemporaryError):
+                provider.exists_path("/notexists")
 
 
 def test_file_not_found(provider: ProviderMixin):
@@ -763,7 +889,13 @@ def test_listdir(provider: ProviderMixin):
     outer = provider.temp_name()
     root = provider.dirname(outer)
     temp_name = provider.is_subpath(root, outer)
+
+    outer_oid_rm = provider.mkdir(outer)
+    assert [] == list(provider.listdir(outer_oid_rm))
+    provider.delete(outer_oid_rm)
+
     outer_oid = provider.mkdir(outer)
+
     assert provider.exists_path(outer)
     assert provider.exists_oid(outer_oid)
     inner = outer + temp_name

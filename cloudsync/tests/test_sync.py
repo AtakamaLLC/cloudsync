@@ -349,7 +349,7 @@ def test_sync_conflict_path(sync):
 
     sync.syncs.update(LOCAL, FILE, path=local_path2,
                       oid=linfo.oid, hash=linfo.hash)
-   
+
     assert len(sync.syncs.get_all()) == 1
     assert ent[REMOTE].oid == rinfo.oid
 
@@ -357,9 +357,9 @@ def test_sync_conflict_path(sync):
                       oid=rinfo.oid, hash=rinfo.hash)
 
     assert len(sync.syncs.get_all()) == 1
-   
+
     # currently defers to the alphabetcially greater name, rather than conflicting
     sync.run_until_found((LOCAL, "/local/stuff-r"))
-   
+
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)

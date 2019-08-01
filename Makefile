@@ -8,7 +8,7 @@ requirements: env
 	. env/bin/activate && pip install -r requirements.txt
 
 lint:
-	pylint cloudsync
+	pylint cloudsync --ignore tests
 
 test:
 	pytest --durations=0 --workers=4 cloudsync/tests

@@ -9,7 +9,7 @@ import arrow
 import dropbox
 from dropbox import Dropbox, exceptions, files
 
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, ListDirOInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
@@ -40,7 +40,7 @@ class _FolderIterator:
                 self.ls_res = self.api(
                     'files_list_folder_continue', self.ls_res.cursor)
 
-            if self.ls_res.entries:
+            if self.ls_res and self.ls_res.entries:
                 ret = self.ls_res.entries.pop()
                 ret.cursor = self.ls_res.cursor
                 return ret
@@ -57,10 +57,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     _max_simple_upload_size = 15 * 1024 * 1024
     _upload_block_size = 10 * 1024 * 1024
 
-    def __init__(self, sync_root):
-        super().__init__(sync_root)
+    def __init__(self):
+        super().__init__()
         self.__root_id = None
-        self.__sync_root_id = None
         self.__cursor = None
         self.client = None
         self.api_key = None
@@ -108,12 +107,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.disconnect()
                 raise CloudDisconnectedError()
 
-        if not self.sync_root_id:
-            raise CloudFileNotFoundError("cant create sync root")
-
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
+
+        log.debug("_api: %s (%s %s)", method, args, kwargs)
 
         with self.mutex:
             try:
@@ -169,6 +167,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 log.debug("f*ed up api error: %s", e)
                 if "never created" in str(e):
                     raise CloudFileNotFoundError()
+                if "did not match" in str(e):
+                    log.warning("oid error %s", e)
+                    raise CloudFileNotFoundError()
                 raise
             except requests.exceptions.ConnectionError as e:
                 log.exception('api error handled exception %s:%s',
@@ -178,27 +179,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     @property
     def root_id(self):
-        if not self.__root_id:
-            info = self.info_path("/")
-            if not info and info.oid:
-                raise CloudFileNotFoundError("Cannot read root")
-            self.__root_id = info.oid
-        return self.__root_id
-
-    @property
-    def sync_root_id(self):
-        if not self.__sync_root_id:
-            oid = None
-            info = self.info_path(self.sync_root)
-            if info:
-                oid = info.oid
-            if not oid:
-                try:
-                    oid = self.mkdir(self.sync_root)
-                except (CloudFileNotFoundError, CloudFileExistsError):
-                    raise CloudFileNotFoundError("Cannot create sync root")
-            self.__sync_root_id = oid
-        return self.__sync_root_id
+        return ""
 
     def disconnect(self):
         self.client = None
@@ -207,12 +188,20 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def cursor(self):
         if not self.__cursor:
             res = self._api('files_list_folder_get_latest_cursor',
-                            self.sync_root_id, recursive=True, include_deleted=True, limit=200)
+                            self.root_id, recursive=True, include_deleted=True, limit=200)
             self.__cursor = res.cursor
         return self.__cursor
 
-    def _events(self, cursor):
-        for res in _FolderIterator(self._api, self.sync_root_id, recursive=True, cursor=cursor):
+    def _events(self, cursor, path=None):
+        if path and path != "/":
+            info = self.info_path(path)
+            if not info:
+                raise CloudFileNotFoundError(path)
+            oid = info.oid
+        else:
+            oid = self.root_id
+
+        for res in _FolderIterator(self._api, oid, recursive=True, cursor=cursor):
             exists = True
 
             log.debug("event %s", res)
@@ -225,6 +214,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 revs = self._api('files_list_revisions',
                                  res.path_lower, limit=10)
+                if revs is None:
+                    # dropbox will give a 409 conflict if the revision history was deleted
+                    # instead of raising an error, this gets converted to revs==None
+                    log.info("revs is none for %s %s", oid, path)
+                    continue
+
                 log.debug("revs %s", revs)
                 deleted_time = revs.server_deleted
                 latest_time = None
@@ -259,14 +254,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def events(self):      # pylint: disable=too-many-locals
         yield from self._events(self.cursor)
 
-    def walk(self, since=None):
-        yield from self._events(None)
-        self.walked = True
+    def walk(self, path, since=None):
+        yield from self._events(None, path=path)
 
-    def listdir(self, oid) -> Generator[ListDirOInfo, None, None]:
+    def listdir(self, oid) -> Generator[DirInfo, None, None]:
         yield from self._listdir(oid, recursive=False)
 
-    def _listdir(self, oid, *, recursive) -> Generator[ListDirOInfo, None, None]:
+    def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
         info = self.info_oid(oid)
         for res in _FolderIterator(self._api, oid, recursive=recursive):
             if isinstance(res, files.DeletedMetadata):
@@ -279,9 +273,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 ohash = res.content_hash
             path = res.path_display
             oid = res.id
-            relative = self.is_subpath(info.path, path)
+            relative = self.is_subpath(info.path, path).lstrip("/")
             if relative:
-                yield ListDirOInfo(otype, oid, ohash, info.path, name=relative)
+                yield DirInfo(otype, oid, ohash, path, name=relative)
 
     def create(self, path, file_like, metadata=None):
         self._verify_parent_folder_exists(path)
@@ -397,12 +391,18 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return bool(self.info_oid(oid))
 
     def info_path(self, path) -> Optional[OInfo]:
+        if path == "/":
+            return OInfo(DIRECTORY, "", None, "/")
+
         try:
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
             log.debug("res info path %s", res)
 
             oid = res.id
+            if oid[0:3] != 'id:':
+                log.warning("invalid oid %s from path %s", oid, path)
+
             if isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
                 fhash = None
@@ -418,19 +418,23 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return self.info_path(path) is not None
 
     def info_oid(self, oid) -> Optional[OInfo]:
-        try:
-            res = self._api('files_get_metadata', oid)
-            log.debug("res info oid %s", res)
+        if oid == "":
+            otype = DIRECTORY
+            fhash = None
+            path = "/"
+        else:
+            try:
+                res = self._api('files_get_metadata', oid)
+                log.debug("res info oid %s", res)
 
-            path = res.path_display
+                path = res.path_display
 
-            if isinstance(res, files.FolderMetadata):
-                otype = DIRECTORY
-                fhash = None
-            else:
-                otype = FILE
-                fhash = res.content_hash
-
-            return OInfo(otype, oid, fhash, path)
-        except CloudFileNotFoundError:
-            return None
+                if isinstance(res, files.FolderMetadata):
+                    otype = DIRECTORY
+                    fhash = None
+                else:
+                    otype = FILE
+                    fhash = res.content_hash
+            except CloudFileNotFoundError:
+                return None
+        return OInfo(otype, oid, fhash, path)

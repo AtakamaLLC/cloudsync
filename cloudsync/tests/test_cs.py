@@ -7,7 +7,7 @@ import pytest
 
 from cloudsync import CloudSync, SyncState, Storage, LOCAL, REMOTE
 
-from ..fixtures import MockProvider
+from .fixtures import MockProvider
 
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -157,7 +157,7 @@ def test_sync_multi(multi_cs):
 
     cs1.run(until=lambda:not cs1.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs1.state.pretty_print())
-    
+
     assert len(cs1.state) == 5      # two dirs, 3 files, 1 never synced (local2 file)
 
     try:
@@ -263,7 +263,7 @@ def test_sync_create_delete_same_name(cs):
     cs.emgrs[LOCAL].do()
 
     cs.providers[LOCAL].delete(linfo1.oid)
-    
+
     cs.emgrs[LOCAL].do()
 
     linfo2 = cs.providers[LOCAL].create(local_path1, BytesIO(b"goodbye"))
