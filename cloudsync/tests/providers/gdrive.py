@@ -21,7 +21,7 @@ def gdrive_creds():
             "client_secret" : cli_sec,
             "client_id" : '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com',
     }
-    
+
     return creds
 
 def gdrive_provider():
@@ -33,7 +33,8 @@ def gdrive_provider():
 
 @pytest.fixture
 def cloudsync_provider():
-    gdrive_provider()  
+    gdrive_provider()
+
 
 def test_connect():
     creds = gdrive_creds()

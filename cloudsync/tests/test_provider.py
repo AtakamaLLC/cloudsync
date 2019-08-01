@@ -10,7 +10,7 @@ import cloudsync
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, FILE
 from cloudsync.tests.fixtures.mock_provider import Provider, MockProvider
 from cloudsync.runnable import time_helper
-
+from cloudsync.types import OInfo
 from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
@@ -138,9 +138,9 @@ class ProviderHelper(Provider):
                 return False
 
             self.__strip_root(obj)
-            
+
         return True
- 
+
     def __strip_root(self, obj):
         if hasattr(obj, "path"):
             path = obj.path
@@ -299,6 +299,7 @@ def configs_from_keyword(kw):
     return provs
 
 _registered = False
+
 def pytest_generate_tests(metafunc):
     global _registered
     if not _registered:
@@ -550,7 +551,7 @@ def test_event_del_create(provider: ProviderMixin):
                 path = info.path
 
         if path == dest or e.exists is False:
-            last_event = e 
+            last_event = e
 
             if e.exists is True and saw_delete:
                 log.debug("done, we saw the delete and got a create after")
@@ -644,9 +645,14 @@ def test_file_not_found(provider: ProviderMixin):
     #       to a deleted file raises FNF, or untrashes the file, either is OK
     #       to a made up oid raises FNF
     # TODO: uploading to a deleted file might not raise an FNF, it might just untrash the file
+    assert provider.exists_oid(test_file_deleted_oid) is False
+    assert provider.exists_path(test_file_deleted_path) is False
     try:
-        provider.upload(test_file_deleted_oid, data(), None)
+        info = provider.upload(test_file_deleted_oid, data(), None)
+        # This succeeded so the file must exist now, at the same oid as before
+        assert info.oid == test_file_deleted_oid
         assert provider.exists_path(test_file_deleted_path) is True
+        assert provider.exists_oid(test_file_deleted_oid) is True
         re_delete = True
     except CloudFileNotFoundError:
         re_delete = False
@@ -664,6 +670,10 @@ def test_file_not_found(provider: ProviderMixin):
         provider.create(test_path_made_up + "/junk", data(), None)
     with pytest.raises(CloudFileNotFoundError):
         provider.create(test_folder_deleted_path + "/junk", data(), None)
+
+    #   upload: to the OID of a deleted folder, raises FNFE
+    with pytest.raises(CloudFileNotFoundError):
+        provider.upload(test_folder_deleted_oid, data(), None)
 
     #   download
     #       on a deleted oid raises FNF
@@ -704,6 +714,19 @@ def test_file_not_found(provider: ProviderMixin):
     provider.delete(test_file_deleted_oid)
     provider.delete(test_folder_deleted_oid)
     provider.delete(test_oid_made_up)
+
+    # delete: create a file, delete it, then create a new file at that path, then re-delete the deleted oid, raises FNFE
+    temp_path = provider.temp_name()
+    info1 = provider.create(temp_path, BytesIO(b"Hello"))
+    provider.delete(info1.oid)
+    info2 = provider.create(temp_path, BytesIO(b"world"))
+    assert not provider.exists_oid(info1.oid)
+    assert provider.exists_oid(info2.oid)
+    provider.delete(info1.oid)
+    assert provider.exists_path(temp_path)
+    assert provider.exists_oid(info2.oid)
+
+
 
     #   listdir
     #       on a deleted file raises FNF
@@ -829,15 +852,42 @@ def test_file_exists(provider: ProviderMixin):
     with pytest.raises(CloudFileExistsError):
         provider.upload(oid, data(), None)
 
+    #   delete: a non-empty folder, raises FEx
+    name1, oid1 = create_folder()
+    create_file(name1 + "/junk")
+    with pytest.raises(CloudFileExistsError):
+        provider.delete(oid1)
+
     #   create: where target path exists, raises FEx
     name, _ = create_file()
     with pytest.raises(CloudFileExistsError):
         create_file(name)
 
+    def get_contents(oid):
+        temp_contents = BytesIO()
+        provider.download(oid, temp_contents)
+        temp_contents.seek(0)
+        return temp_contents.getvalue()
+
     #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_file()
     _, oid2 = create_file(name1)
     assert oid1 != oid2 or provider.oid_is_path 
+    assert not provider.exists_oid(oid1)
+    assert provider.exists_oid(oid2)
+    # piggyback test -- uploading to the deleted oid should not step on the file that replaced it at that path
+    try:
+        new_contents = b"yo"  # bytes(os.urandom(16).hex(), 'utf-8')
+        new_info = provider.upload(oid1, BytesIO(new_contents))
+        assert new_info.oid != oid1
+        assert new_info.oid != oid2
+        assert not provider.exists_oid(oid1)
+        contents2 = get_contents(oid2)
+        assert contents2 == new_contents
+        contents1 = get_contents(oid1)
+        assert contents1 == new_contents
+    except CloudFileNotFoundError:
+        pass
 
     #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_folder()
@@ -975,3 +1025,30 @@ def test_listdir(provider: ProviderMixin):
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
     assert contents.sort() == expected.sort()
+
+
+def test_upload_to_a_path(provider: ProviderMixin):
+    temp_name = provider.temp_name()
+    provider.create(temp_name, BytesIO(b"test"))
+    # test uploading to a path instead of an OID. should raise something
+    # This test will need to flag off whether the provider uses paths as OIDs or not
+    with pytest.raises(Exception):
+        provider.upload(temp_name, BytesIO(b"test2"))
+
+
+def test_delete_doesnt_cross_oids(provider: ProviderMixin):
+    temp_name = provider.temp_name()
+    info1 = provider.create(temp_name, BytesIO(b"test1"))
+    provider.delete(info1.oid)
+    info2 = provider.create(temp_name, BytesIO(b"test2"))
+    assert info1.oid != info2.oid
+    assert not provider.exists_oid(info1.oid)
+    assert provider.exists_oid(info2.oid)
+    provider.delete(info1.oid)
+    assert not provider.exists_oid(info1.oid)
+    assert provider.exists_oid(info2.oid)
+
+    # test uploading to a path instead of an OID. should raise something
+    # This test will need to flag off whether the provider uses paths as OIDs or not
+    with pytest.raises(Exception):
+        provider.upload(temp_name, BytesIO(b"test2"))

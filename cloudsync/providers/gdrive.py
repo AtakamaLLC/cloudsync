@@ -242,7 +242,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     yield from self._walk(ent.oid)
  
     def walk(self, path, since=None):
-        info = self.info_path(path) 
+        info = self.info_path(path)
         if not info:
             raise CloudFileNotFoundError(path)
         yield from self._walk(info.oid)
@@ -463,6 +463,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return fileid
 
     def delete(self, oid):
+        info = self.info_oid(oid)
+        if not info:
+            log.debug("deleted non-existing oid %s", oid)
+            return  # file doesn't exist already...
+        if info.otype == DIRECTORY:
+            try:
+                next(self.listdir(oid))
+                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.path))
+            except StopIteration:
+                pass  # Folder is empty, delete it no problem
         try:
             self._api('files', 'delete', fileId=oid)
         except CloudFileNotFoundError:
