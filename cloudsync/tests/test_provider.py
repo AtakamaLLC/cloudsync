@@ -53,7 +53,7 @@ class ProviderHelper(Provider):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
-                log.info("api retry %s %s %s", func, ar, kw, stack_info=True)
+                log.info("api retry %s %s %s", func, ar, kw)
 
     ############### TEST-ROOT WRAPPER
 

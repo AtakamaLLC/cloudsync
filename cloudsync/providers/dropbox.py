@@ -370,7 +370,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
         res = self._api('files_create_folder_v2', path)
-        log.debug("dbx mkdir %s", res, stack_info=True)
+        log.debug("dbx mkdir %s", res)
         res = res.metadata
         return res.id
 
@@ -394,7 +394,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             
             oid = res.id
             if oid[0:3] != 'id:':
-                log.warning("invalid oid %s from path %s", path)
+                log.warning("invalid oid %s from path %s", oid, path)
 
             if isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
