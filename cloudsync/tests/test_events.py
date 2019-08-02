@@ -4,14 +4,12 @@ import pytest
 
 from cloudsync import EventManager, SyncState, LOCAL
 
-from .fixtures import MockProvider
-
 
 @pytest.fixture(name="manager")
-def fixture_manager():
+def fixture_manager(mock_provider_generator):
     # TODO extend this to take any provider
     state = SyncState()
-    provider = MockProvider("/")
+    provider = mock_provider_generator()
 
     yield EventManager(provider, state, LOCAL)
 

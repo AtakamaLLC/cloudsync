@@ -1,5 +1,5 @@
-pytest
-pytest-parallel
+pytest>=4.4.0
+pytest-xdist
 pytest-profiling
 pytest-repeat
 pytest-cov

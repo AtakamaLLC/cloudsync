@@ -4,7 +4,6 @@ import pytest
 from typing import NamedTuple
 
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
-from .test_events import MockProvider
 from cloudsync.provider import Provider
 
 
@@ -73,7 +72,7 @@ class SyncMgrMixin(SyncManager, RunUntilHelper):
 
 
 @pytest.fixture(name="sync")
-def fixture_sync():
+def fixture_sync(mock_provider_generator):
     state = SyncState()
 
     def translate(to, path):
@@ -86,7 +85,7 @@ def fixture_sync():
         raise ValueError()
 
     # two providers and a translation function that converts paths in one to paths in the other
-    sync = SyncMgrMixin(state, (MockProvider(), MockProvider()), translate)
+    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator()), translate)
 
     yield sync
 

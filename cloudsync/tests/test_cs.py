@@ -7,8 +7,6 @@ import pytest
 
 from cloudsync import CloudSync, SyncState, Storage, LOCAL, REMOTE
 
-from .fixtures import MockProvider
-
 from .test_sync import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -57,7 +55,7 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
 
 
 @pytest.fixture(name="cs")
-def fixture_cs():
+def fixture_cs(mock_provider_generator):
     def translate(to, path):
         if to == LOCAL:
             return "/local" + path.replace("/remote", "")
@@ -70,14 +68,14 @@ def fixture_cs():
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    cs = CloudSyncMixin((MockProvider(), MockProvider()), translate)
+    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), translate)
 
     yield cs
 
     cs.done()
 
 @pytest.fixture(name="multi_cs")
-def fixture_multi_cs():
+def fixture_multi_cs(mock_provider_generator):
     storage_dict = dict()
     # storage1 = MockStorage("storage1", storage_dict)
     # storage2 = MockStorage("storage2", storage_dict)
@@ -90,9 +88,9 @@ def fixture_multi_cs():
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    p1 = MockProvider()
-    p2 = MockProvider()
-    p3 = MockProvider()
+    p1 = mock_provider_generator()
+    p2 = mock_provider_generator()
+    p3 = mock_provider_generator()
 
     def translate1(to, path):
         if to == LOCAL:
