@@ -358,7 +358,11 @@ def test_sync_folder_conflicts_file(cs):
     cs.emgrs[REMOTE].do()
 
     log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
-    assert(len(cs.state) == 5)
+    if cs.providers[LOCAL].oid_is_path:
+        # there won't be 2 rows for /local/stuff1 is oid_is_path
+        assert(len(cs.state) == 4)
+    else:
+        assert(len(cs.state) == 5)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 

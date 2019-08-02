@@ -586,10 +586,10 @@ def test_event_rename(provider: ProviderMixin):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
-    provider.rename(info1.oid, dest2)
+    oid2 =provider.rename(info1.oid, dest2)
     if provider.oid_is_path:
         info1.oid = provider.info_path(dest2).oid
-    provider.rename(info1.oid, dest3)
+    oid3 = provider.rename(info1.oid, dest3)
     if provider.oid_is_path:
         info1.oid = provider.info_path(dest3).oid
 
@@ -608,7 +608,7 @@ def test_event_rename(provider: ProviderMixin):
             if info:
                 path = info.path
 
-        last_event = path
+        last_event = e
         seen.add(e.oid)
 
         if provider.oid_is_path:
@@ -622,8 +622,9 @@ def test_event_rename(provider: ProviderMixin):
 
     if provider.oid_is_path:
         # providers with path based oids need to send intermediate renames accurately and in order
-        assert len(seen) > 3
-        assert last_event == dest3
+        assert len(seen) > 2
+        assert last_event.path == dest3
+        assert last_event.prior_oid == oid2
     else:
         # oid based providers just need to let us know something happend to that oid
         assert info1.oid in seen

@@ -108,6 +108,16 @@ def test_sync_state_rename():
     assert not state.lookup_path(LOCAL, path="foo")
 
 
+def test_sync_state_rename2():
+    state = SyncState()
+    state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
+    state.update(LOCAL, FILE, path="foo2", oid="456", prior_oid="123")
+    assert state.lookup_path(LOCAL, path="foo2")
+    assert not state.lookup_path(LOCAL, path="foo")
+    assert state.lookup_oid(LOCAL, oid="456")
+    assert not state.lookup_oid(LOCAL, oid="123")
+
+
 def test_sync_state_multi():
     state = SyncState()
     state.update(LOCAL, FILE, path="foo2", oid="123")
@@ -185,8 +195,10 @@ def test_sync_rename(sync):
 
     sync.run_until_found((REMOTE, remote_path1))
 
+    new_oid = sync.providers[LOCAL].rename(linfo.oid, local_path2)
+
     sync.syncs.update(LOCAL, FILE, path=local_path2,
-                      oid=linfo.oid, hash=linfo.hash)
+                      oid=new_oid, hash=linfo.hash, prior_oid=linfo.oid)
 
     sync.run_until_found((REMOTE, remote_path2))
 
@@ -265,9 +277,12 @@ def test_sync_mkdir(sync):
     sync.run_until_found((REMOTE, remote_dir1))
     sync.run_until_found((REMOTE, remote_path1))
 
-    log.debug("delete")
+    log.debug("BEFORE DELETE\n %s", sync.syncs.pretty_print())
+
     sync.providers[LOCAL].delete(local_path_oid1)
     sync.syncs.update(LOCAL, FILE, local_path_oid1, exists=False)
+
+    log.debug("AFTER DELETE\n %s", sync.syncs.pretty_print())
 
     log.debug("wait for delete")
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
