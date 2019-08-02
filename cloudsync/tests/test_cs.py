@@ -270,7 +270,10 @@ def test_sync_create_delete_same_name(cs):
     cs.emgrs[LOCAL].do()
 
     log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
-    assert(len(cs.state) == 3)
+    if cs.providers[LOCAL].oid_is_path:
+        assert(len(cs.state) == 2)
+    else:
+        assert(len(cs.state) == 3)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
@@ -305,7 +308,11 @@ def test_sync_two_conflicts(cs):
     cs.emgrs[REMOTE].do()
 
     log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
-    assert(len(cs.state) == 4)
+    if cs.providers[LOCAL].oid_is_path:
+        # the local delete/create doesn't add entries
+        assert(len(cs.state) == 2)
+    else:
+        assert(len(cs.state) == 4)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 

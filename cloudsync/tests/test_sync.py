@@ -85,7 +85,7 @@ def fixture_sync(mock_provider_generator):
         raise ValueError()
 
     # two providers and a translation function that converts paths in one to paths in the other
-    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator()), translate)
+    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator(oid_is_path=False)), translate)
 
     yield sync
 
@@ -273,7 +273,6 @@ def test_sync_mkdir(sync):
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
-
 
 def test_sync_conflict_simul(sync):
     remote_parent = "/remote"

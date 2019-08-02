@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import random
 import json
+import copy
 from hashlib import md5
 from base64 import b64encode
 from enum import Enum
@@ -195,10 +196,20 @@ class SyncEntry(Reprable):
             if self[i].changed:
                 # get latest info from provider
                 if self.otype == FILE:
-                    self[i].hash = providers[i].hash_oid(self[i].oid)
+                    if providers[i].oid_is_path:
+                        assert self[i].path
+                        info = providers[i].info_path(self[i].path)
+                        if info:
+                            self[i].hash = info.hash
+                    else:
+                        self[i].hash = providers[i].hash_oid(self[i].oid)
                     self[i].exists = EXISTS if self[i].hash else TRASHED
                 else:
-                    self[i].exists = providers[i].exists_oid(self[i].oid)
+                    if providers[i].oid_is_path:
+                        assert self[i].path
+                        self[i].exists = providers[i].exists_path(self[i].path)
+                    else:
+                        self[i].exists = providers[i].exists_oid(self[i].oid)
     #        log.debug("after update state %s", self)
 
     def hash_conflict(self):
@@ -230,16 +241,31 @@ class SyncEntry(Reprable):
             else:
                 return 0
 
+        def abbrev_bool(b, tup=('T','F',' ')):
+            idx = 1-int(bool(b))
+            if b is None:
+                idx = 2
+            return tup[idx]
+
+        lexv = abbrev_bool(self[LOCAL].exists.value, ('E','X', '-'))
+        rexv = abbrev_bool(self[REMOTE].exists.value, ('E','X', '-'))
+        lhma = abbrev_bool(self[LOCAL].sync_hash != self[LOCAL].hash, ("H", "=", "-"))
+        rhma = abbrev_bool(self[REMOTE].sync_hash != self[REMOTE].hash, ("H", "=", "-"))
+
+
         ret = "%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s" % (
             debug_sig(id(self)),
             self.otype.value,
-            secs(self[LOCAL].changed), self[LOCAL].path, debug_sig(self[LOCAL].oid), str(
-                self[LOCAL].sync_path) + ":" + str(self[LOCAL].exists.value),
-            secs(self[REMOTE].changed), self[REMOTE].path, debug_sig(self[REMOTE].oid), str(
-                self[REMOTE].sync_path) + ":" + str(self[REMOTE].exists.value)
+            secs(self[LOCAL].changed), self[LOCAL].path, debug_sig(self[LOCAL].oid), 
+                str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+            secs(self[REMOTE].changed), self[REMOTE].path, debug_sig(self[REMOTE].oid),
+                str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
         )
 
         return ret
+
+    def __str__(self):
+        return self.pretty()
 
     def store(self, tag: str, storage: Storage):
         if not self.storage_id:
@@ -320,7 +346,7 @@ class SyncState:
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, path=None, hash=None, exists=True):  # pylint: disable=redefined-builtin
+    def update_entry(self, ent, side, oid, path=None, hash=None, exists=True, changed=False):  # pylint: disable=redefined-builtin
         if oid is not None:
             self._change_oid(side, ent, oid)
 
@@ -339,19 +365,28 @@ class SyncState:
             else:
                 self._storage.create(self._tag, ent.serialize())
 
+        if changed:
+            ent[side].changed = time.time()
+            self._changeset.add(ent)
+
     def __len__(self):
         return len(self.get_all())
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True):   # pylint: disable=redefined-builtin
+    def update(self, side, otype, oid, path=None, hash=None, exists=True, oid_is_path=False):   # pylint: disable=redefined-builtin
         ent = self.lookup_oid(side, oid)
+
+        if not ent and oid_is_path:
+            ents = self.lookup_path(side, path)
+            if ents:
+                ent = list(ents)[0]
+                log.debug("matched existing entry %s:%s", debug_sig(oid), path)
+
         if not ent:
             log.debug("creating new entry because %s not found", debug_sig(oid))
             ent = SyncEntry(otype)
-        self.update_entry(ent, side, oid, path, hash, exists)
-        log.debug("event changed %s", ent)
 
-        ent[side].changed = time.time()
-        self._changeset.add(ent)
+        self.update_entry(ent, side, oid, path, hash, exists, changed=True)
+        log.debug("event changed %s", ent)
 
     def change(self):
         # for now just get a random one
@@ -402,7 +437,44 @@ class SyncState:
     def entry_count(self):
         return len(self.get_all())
 
+    def split(self, ent):
+        log.debug("splitting %s", ent)
+        defer = REMOTE
+        replace = LOCAL
 
+        defer_ent = ent
+        replace_ent = SyncEntry(ent.otype)
+
+        replace_ent[replace] = copy.copy(ent[replace])       # copy in the replace state
+        defer_ent[replace] = SideState(replace)         # clear out
+
+        assert replace_ent[replace].oid
+        # fix indexes, so the replace ent works
+        self.update_entry(replace_ent, replace, oid=replace_ent[replace].oid, path=replace_ent[replace].path, changed=True)
+
+        # fix indexes, so the defer ent no longer has replace stuff
+        self.update_entry(defer_ent, replace, oid=None, path=None, exists = UNKNOWN)
+
+        # defer ent sync
+        self.update_entry(defer_ent, defer, oid=defer_ent[defer].oid, changed=True)
+
+        assert replace_ent[replace].oid
+        # we aren't synced
+        replace_ent[replace].sync_path = None
+        replace_ent[replace].sync_hash = None
+
+        # never synced
+        defer_ent[defer].sync_path = None
+        defer_ent[defer].sync_hash = None
+
+        log.debug("split: %s", defer_ent.pretty())
+        log.debug("split: %s", replace_ent.pretty())
+
+        log.info("SPLIT\n%s", self.pretty_print())
+
+        assert replace_ent[replace].oid
+        return defer_ent, defer, replace_ent, replace
+    
 class SyncManager(Runnable):
     def __init__(self, syncs, providers: Tuple[Provider, Provider], translate):
         self.syncs = syncs
@@ -417,7 +489,9 @@ class SyncManager(Runnable):
     def do(self):
         sync = self.syncs.change()
         if sync:
+            log.debug("TABLEBEFORE\n%s", self.syncs.pretty_print())
             self.sync(sync)
+            log.debug("TABLEAFTER\n%s", self.syncs.pretty_print())
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -583,7 +657,7 @@ class SyncManager(Runnable):
         sync[changed].sync_hash = sync[changed].hash
         sync[changed].sync_path = sync[changed].path
         self.syncs.update_entry(
-            sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
+            sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
 
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -657,6 +731,7 @@ class SyncManager(Runnable):
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             if sync[changed].exists == TRASHED:
+                log.debug("requeue trashed event %s", sync.pretty())
                 return REQUEUE
 
         translated_path = self.translate(synced, sync[changed].path)
@@ -665,7 +740,7 @@ class SyncManager(Runnable):
             return FINISHED
 
         if not sync[changed].path:
-            log.debug("can't sync, no path %s", sync)
+            log.debug("can't sync, no path %s", sync.pretty())
 
         if sync.is_creation(changed):
             # never synced this before, maybe there's another local path with
@@ -689,11 +764,11 @@ class SyncManager(Runnable):
             assert sync[synced].oid
             log.debug("rename %s %s",
                       sync[synced].sync_path, translated_path)
-            self.providers[synced].rename(
+            new_oid = self.providers[synced].rename(
                 sync[synced].oid, translated_path)
-            sync[synced].path = translated_path
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
+            self.syncs.update_entry(sync, synced, path=translated_path, oid=new_oid)
         return FINISHED
 
     def embrace_change(self, sync, changed, synced):
@@ -709,7 +784,7 @@ class SyncManager(Runnable):
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info
 
-            log.debug("needs upload: %s", sync)
+            log.debug("needs upload: %s index: %s", sync, synced)
 
             assert sync[synced].oid
 
@@ -743,19 +818,23 @@ class SyncManager(Runnable):
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
-        defer = defer_ent[defer_side]
-        replace = replace_ent[replace_side]
+        log.info("BEFORE\n%s", self.syncs.pretty_print())
 
-        log.debug("DEFER %s", defer)
-        log.debug("REPLACE %s", replace)
+        conflict_path = replace_ent[replace_side].path + ".conflicted"
 
-        conflict_path = replace.path + ".conflicted"
-        self.providers[replace.side].rename(replace.oid, conflict_path)
+        new_oid = self.providers[replace_side].rename(replace_ent[replace_side].oid, conflict_path)
+
         self.syncs.update_entry(replace_ent, replace_side,
-                                replace.oid, path=conflict_path)
+                                new_oid, path=conflict_path)
+
+        log.debug("REPLACE %s", replace_ent.pretty())
 
         # force download of other side
-        defer.changed = time.time()
+        defer_ent[defer_side].changed = time.time()
+        defer_ent[defer_side].sync_path = None
+        defer_ent[defer_side].sync_hash = None
+
+        log.debug("SPLITTY\n%s", self.syncs.pretty_print())
 
     def handle_path_conflict(self, sync):
         # consistent handling
@@ -772,5 +851,5 @@ class SyncManager(Runnable):
             return 
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
-        self.providers[other.side].rename(other.oid, other_path)
-        self.syncs.update_entry(sync, other.side, other.oid, path=other_path)
+        new_oid = self.providers[other.side].rename(other.oid, other_path)
+        self.syncs.update_entry(sync, other.side, new_oid, path=other_path)

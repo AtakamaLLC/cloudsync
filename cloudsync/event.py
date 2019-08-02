@@ -19,6 +19,7 @@ class Event:
 class EventManager(Runnable):
     def __init__(self, provider, state, side):
         self.provider = provider
+        self.oid_is_path = provider.oid_is_path
         self.events = Muxer(provider.events, restart=True)
         self.state = state
         self.side = side
@@ -29,6 +30,9 @@ class EventManager(Runnable):
             path = event.path
             exists = event.exists
             otype = event.otype
+
+            if self.oid_is_path:
+                assert path
 
             if not event.path and not self.state.lookup_oid(self.side, event.oid):
                 info = self.provider.info_oid(event.oid)
@@ -41,5 +45,5 @@ class EventManager(Runnable):
                     log.debug("ignoring delete of something that can't exist")
                     continue
 
-            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists)
+            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, oid_is_path=self.oid_is_path)
 

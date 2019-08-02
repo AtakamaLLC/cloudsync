@@ -196,7 +196,7 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         file_like.write(file.contents)
 
-    def rename(self, oid, new_path):
+    def rename(self, oid, new_path) -> str:
         log.debug("renaming %s -> %s", oid, new_path)
         self._api()
         # TODO: folders are implied by the path of the file...
@@ -219,7 +219,7 @@ class MockProvider(Provider):
             self.delete(possible_conflict.oid)
 
         if object_to_rename.path == new_path:
-            return
+            return oid
 
         if self.oid_is_path:
             event_object = object_to_rename.copy()
@@ -241,6 +241,8 @@ class MockProvider(Provider):
             assert event_object.oid != new_path
 
         self._register_event(MockEvent.ACTION_RENAME, event_object)
+
+        return object_to_rename.oid
 
     def _rename_single_object(self, source_object: MockFSObject, destination_path):
         destination_path = destination_path.rstrip("/")
@@ -352,7 +354,10 @@ def mock_provider(request):
 
 @pytest.fixture(params=[ (False, True), (True, True) ], ids=["mock_oid_cs", "mock_path_cs"])
 def mock_provider_generator(request):
-    return lambda: mock_provider_instance(*request.param)
+    return lambda oid_is_path=None, case_sensitive=None: \
+            mock_provider_instance(
+                    request.param[0] if oid_is_path is None else oid_is_path, 
+                    request.param[1] if case_sensitive is None else case_sensitive)
 
 def test_mock_basic():
     """
