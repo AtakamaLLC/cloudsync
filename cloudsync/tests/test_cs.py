@@ -1,8 +1,10 @@
 from io import BytesIO
 import logging
 import pytest
+from typing import List
 
 from cloudsync import CloudSync, LOCAL, REMOTE
+from cloudsync.sync import SyncEntry, SyncState
 from .fixtures import MockProvider, MockStorage
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -175,6 +177,7 @@ def test_sync_basic(cs):
     assert len(cs.state) == 3
     assert not cs.state.has_changes()
 
+
 def setup_remote_local(cs, *names):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -311,3 +314,56 @@ def test_sync_folder_conflicts_file(cs):
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+
+def test_storage():
+    def translate(to, path):
+        (old, new) = ("/local", "/remote") if to == REMOTE else ("/remote", "/local")
+        return new + path.replace(old, "")
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    storage_dict = dict()
+    p1 = MockProvider()
+    p2 = MockProvider()
+
+    storage1 = MockStorage(storage_dict)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag")
+
+    test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
+
+    storage2 = MockStorage(storage_dict)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag")
+
+    print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
+    print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
+
+    def not_dirty(s: SyncState):
+        for se in s.get_all():
+            se: SyncEntry
+            assert not se.dirty
+
+    def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
+        ret = []
+        found = False
+        for e1 in s1.get_all():
+            e1: SyncEntry
+            for e2 in s2.get_all():
+                e2: SyncEntry
+                if e1.serialize() == e2.serialize():
+                    found = True
+            if not found:
+                ret.append(e1)
+        return ret
+
+    missing1 = compare_states(cs1.state, cs2.state)
+    missing2 = compare_states(cs2.state, cs1.state)
+    for e in missing1:
+        print(f"entry in 1 not found in 2 {e.pretty()}")
+    for e in missing2:
+        print(f"entry in 2 not found in 1 {e.pretty()}")
+
+    assert not missing1
+    assert not missing2
+    not_dirty(cs1.state)
