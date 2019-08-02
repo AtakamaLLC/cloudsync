@@ -21,7 +21,7 @@ ProviderMixin = Union[Provider, "ProviderHelper"]
 
 class ProviderHelper(Provider):
     def __init__(self, prov):
-        self.api_retry = True 
+        self.api_retry = True
         self.prov = prov
 
         # need to copy in all attrs that are defined in the ABC
@@ -504,7 +504,7 @@ def test_event_basic(provider: ProviderMixin):
         if waiting and time.monotonic() > waiting:
             # wait for extra events up to 10 sleep cycles, or 2 seconds
             done = True
-            
+
     assert event_count == 1
     assert received_event is not None
     assert received_event.oid
@@ -941,7 +941,7 @@ def test_file_exists(provider: ProviderMixin):
     #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_file()
     _, oid2 = create_file(name1)
-    assert oid1 != oid2 or provider.oid_is_path 
+    assert oid1 != oid2 or provider.oid_is_path
     if provider.oid_is_path:
         assert provider.exists_oid(oid1)
     else:

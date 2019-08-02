@@ -225,7 +225,7 @@ class MockProvider(Provider):
             event_object = object_to_rename.copy()
         else:
             event_object = object_to_rename
-        
+
         if object_to_rename.type == MockFSObject.FILE:
             self._rename_single_object(object_to_rename, new_path)
         else:  # object to rename is a directory
