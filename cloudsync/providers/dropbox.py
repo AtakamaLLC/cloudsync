@@ -162,7 +162,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
                                 'File already exists when executing %s(%s)' % (method, kwargs))
-            except (exceptions.InternalServerError, exceptions.RateLimitError):
+            except (exceptions.InternalServerError, exceptions.RateLimitError, requests.exceptions.ReadTimeout):
                 raise CloudTemporaryError()
             except dropbox.stone_validators.ValidationError as e:
                 log.debug("f*ed up api error: %s", e)

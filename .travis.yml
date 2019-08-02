@@ -3,11 +3,12 @@ cache: pip
 
 jobs:
     include: 
-    - stage: lint
+    - stage: lint/unit
       script:
+      name: lint
         - pylint cloudsync --ignore tests
-    - stage: test
-      script:
+    - script:
+      name: unit
         - pytest --durations=0 --workers=2 cloudsync/tests
       python:
         - '3.6'
