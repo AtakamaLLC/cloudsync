@@ -504,7 +504,7 @@ def test_event_basic(provider: ProviderMixin):
         if waiting and time.monotonic() > waiting:
             # wait for extra events up to 10 sleep cycles, or 2 seconds
             done = True
-            
+
     assert event_count == 1
     assert received_event is not None
     assert received_event.oid
@@ -586,7 +586,7 @@ def test_event_rename(provider: ProviderMixin):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
-    oid2 =provider.rename(info1.oid, dest2)
+    oid2 = provider.rename(info1.oid, dest2)
     if provider.oid_is_path:
         info1.oid = provider.info_path(dest2).oid
     oid3 = provider.rename(info1.oid, dest3)

@@ -1,57 +1,14 @@
 from io import BytesIO
 import logging
-from threading import Lock
-from typing import Dict, Any, Tuple
-
 import pytest
+from typing import List
 
-from cloudsync import CloudSync, SyncState, Storage, LOCAL, REMOTE
+from .fixtures import MockProvider, MockStorage
+from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE
 
 from .test_sync import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
-
-
-class MockStorage(Storage):  # Does not actually persist the data... but it's just a mock
-    top_lock = Lock()
-    lock_dict = dict()
-
-    def __init__(self, storage_dict: Dict[str, Dict[int, bytes]]):
-        self.storage_dict = storage_dict
-        self.cursor: int = 0  # the next eid
-
-    def _get_internal_storage(self, tag: str) -> Tuple[Lock, Dict[int, bytes]]:
-        with self.top_lock:
-            lock: Lock = self.lock_dict.setdefault(tag, Lock())
-        return lock, self.storage_dict.setdefault(tag, dict())
-
-    def create(self, tag: str, serialization: bytes) -> Any:
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            current_index = self.cursor
-            self.cursor += 1
-            storage[current_index] = serialization
-            return current_index
-
-    def update(self, tag: str, serialization: bytes, eid: Any):
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            if eid not in storage:
-                raise ValueError("id %s doesn't exist" % eid)
-            storage[eid] = serialization
-
-    def delete(self, tag: str, eid: Any):
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            if eid not in storage:
-                raise ValueError("id %s doesn't exist" % eid)
-            del storage[eid]
-
-    def read_all(self, tag: str) -> Dict[Any, bytes]:
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            ret: Dict[Any, bytes] = storage.copy()
-            return ret
 
 
 @pytest.fixture(name="cs")
@@ -77,13 +34,7 @@ def fixture_cs(mock_provider_generator):
 @pytest.fixture(name="multi_cs")
 def fixture_multi_cs(mock_provider_generator):
     storage_dict = dict()
-    # storage1 = MockStorage("storage1", storage_dict)
-    # storage2 = MockStorage("storage2", storage_dict)
     storage = MockStorage(storage_dict)
-
-
-    # state1 = SyncState(storage1)
-    # state2 = SyncState(storage2)
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
@@ -225,6 +176,7 @@ def test_sync_basic(cs):
 
     assert len(cs.state) == 3
     assert not cs.state.has_changes()
+
 
 def setup_remote_local(cs, *names):
     remote_parent = "/remote"
@@ -373,3 +325,56 @@ def test_sync_folder_conflicts_file(cs):
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+
+def test_storage():
+    def translate(to, path):
+        (old, new) = ("/local", "/remote") if to == REMOTE else ("/remote", "/local")
+        return new + path.replace(old, "")
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    storage_dict = dict()
+    p1 = MockProvider(oid_is_path=False, case_sensitive=True)
+    p2 = MockProvider(oid_is_path=False, case_sensitive=True)
+
+    storage1 = MockStorage(storage_dict)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag")
+
+    test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
+
+    storage2 = MockStorage(storage_dict)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag")
+
+    print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
+    print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
+
+    def not_dirty(s: SyncState):
+        for se in s.get_all():
+            se: SyncEntry
+            assert not se.dirty
+
+    def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
+        ret = []
+        found = False
+        for e1 in s1.get_all():
+            e1: SyncEntry
+            for e2 in s2.get_all():
+                e2: SyncEntry
+                if e1.serialize() == e2.serialize():
+                    found = True
+            if not found:
+                ret.append(e1)
+        return ret
+
+    missing1 = compare_states(cs1.state, cs2.state)
+    missing2 = compare_states(cs2.state, cs1.state)
+    for e in missing1:
+        print(f"entry in 1 not found in 2 {e.pretty()}")
+    for e in missing2:
+        print(f"entry in 2 not found in 1 {e.pretty()}")
+
+    assert not missing1
+    assert not missing2
+    not_dirty(cs1.state)
