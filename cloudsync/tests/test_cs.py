@@ -4,7 +4,7 @@ import pytest
 from typing import List
 
 from .fixtures import MockProvider, MockStorage
-from cloudsync import CloudSync, SyncState, LOCAL, REMOTE
+from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE
 
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -325,8 +325,8 @@ def test_storage():
         pass
 
     storage_dict = dict()
-    p1 = MockProvider()
-    p2 = MockProvider()
+    p1 = MockProvider(oid_is_path=False, case_sensitive=True)
+    p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
     storage1 = MockStorage(storage_dict)
     cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag")
