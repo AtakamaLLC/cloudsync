@@ -333,6 +333,8 @@ class SyncState:
             ent[side].oid = oid
             self._oids[side][oid] = ent
 
+        assert ent in self.get_all()
+
         other = other_side(side)
         if ent[other].path:
             assert ent in self.lookup_path(other, ent[other].path), ("%s %s path not indexed" % (other, ent))
@@ -392,6 +394,8 @@ class SyncState:
         if oid is not None:
             self._change_oid(side, ent, oid)
 
+        assert ent in self.get_all()
+
         if otype is not None:
             ent[side].otype = otype
 
@@ -401,6 +405,7 @@ class SyncState:
             self._change_path(side, ent, path)
 
         self._assert_index_is_correct()
+        assert ent in self.get_all()
 
         if hash is not None:
             ent[side].hash = hash
@@ -422,6 +427,8 @@ class SyncState:
             log.debug("add %s to changeset", ent)
             ent[side].changed = time.time()
             self._changeset.add(ent)
+
+        assert ent in self.get_all()
 
         log.debug("updated %s", ent)
         self._assert_index_is_correct()
@@ -549,8 +556,9 @@ class SyncState:
                           oid=defer_ent[defer].oid, changed=True)
 
         # add to index
+        assert replace_ent[replace].oid
         self.update_entry(
-            replace_ent, replace, oid=ent[replace].oid, path=ent[replace].path, changed=True)
+            replace_ent, replace, oid=replace_ent[replace].oid, path=replace_ent[replace].path, changed=True)
 
         assert replace_ent[replace].oid
         # we aren't synced
