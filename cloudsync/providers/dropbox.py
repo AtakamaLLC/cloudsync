@@ -437,9 +437,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             try:
                 res = self._api('files_get_metadata', oid)
                 log.debug("res info oid %s", res)
-
                 path = res.path_display
-
                 if isinstance(res, files.FolderMetadata):
                     otype = DIRECTORY
                     fhash = None

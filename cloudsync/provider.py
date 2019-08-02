@@ -9,8 +9,8 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
-    case_sensitive = ...                # TODO: implement support for this
-    require_parent_folder = ...         # TODO: move this to the fixture, this is only needed for testing
+    oid_is_path = False
+    case_sensitive = True
 
     @abstractmethod
     def _api(self, *args, **kwargs):

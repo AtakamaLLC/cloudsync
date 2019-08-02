@@ -11,4 +11,4 @@ lint:
 	pylint cloudsync --ignore tests
 
 test:
-	pytest --durations=0 --workers=4 cloudsync/tests
+	pytest --durations=0 -n=4 cloudsync/tests
