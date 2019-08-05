@@ -11,11 +11,11 @@ from enum import Enum
 from typing import Union
 from abc import ABC, abstractmethod
 
-from typing import Optional, Tuple, Any, List, Dict
+from typing import Optional, Tuple, Any, List, Dict, Set
 from cloudsync.provider import Provider
 from cloudsync.types import OType
 
-__all__ = ['SyncManager', 'SyncState', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
+__all__ = ['SyncManager', 'SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.types import DIRECTORY, FILE
@@ -132,9 +132,11 @@ class SyncEntry(Reprable):
         self.temp_file: Optional[str] = None
         self.discarded: bool = False
         self.storage_id: Any = None
+        self.dirty: bool = True
         if storage_init is not None:
             self.storage_id = storage_init[0]
             self.deserialize(storage_init)
+            self.dirty = False
 
     def serialize(self) -> bytes:
         """converts SyncEntry into a json str"""
@@ -177,7 +179,7 @@ class SyncEntry(Reprable):
         ser: dict = json.loads(storage_init[1].decode('utf-8'))
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
-        self.otype = ser['otype']
+        self.otype = OType(ser['otype'])
         self.temp_file = ser['temp_file']
         self.discarded = ser['discarded']
 
@@ -188,6 +190,7 @@ class SyncEntry(Reprable):
         assert type(val) is SideState
         assert val.side is None or val.side == i
         self.__states[i] = val
+        self.dirty = True
 
     def get_latest_state(self, providers):
         #        log.debug("before update state %s", self)
@@ -199,6 +202,7 @@ class SyncEntry(Reprable):
                     self[i].exists = EXISTS if self[i].hash else TRASHED
                 else:
                     self[i].exists = providers[i].exists_oid(self[i].oid)
+                self.dirty = True
     #        log.debug("after update state %s", self)
 
     def hash_conflict(self):
@@ -219,6 +223,7 @@ class SyncEntry(Reprable):
 
     def discard(self):
         self.discarded = True
+        self.dirty = True
 
     def pretty(self):
         if self.discarded:
@@ -230,22 +235,22 @@ class SyncEntry(Reprable):
             else:
                 return 0
 
-        ret = "%3s %5s %6s %20s %6s %20s -- %6s %20s %16s %s" % (
-            debug_sig(id(self)),
-            self.otype.value,
-            secs(self[LOCAL].changed), self[LOCAL].path, debug_sig(self[LOCAL].oid), str(
-                self[LOCAL].sync_path) + ":" + str(self[LOCAL].exists.value),
-            secs(self[REMOTE].changed), self[REMOTE].path, debug_sig(self[REMOTE].oid), str(
-                self[REMOTE].sync_path) + ":" + str(self[REMOTE].exists.value)
+        ret = "S%3s I%3s T%5s C%6s P%20s O%6s SPE%20s D%1s C%6s P%20s O%16s SPE%s" % (
+            debug_sig(id(self)),  # S
+            self.storage_id,  # I
+            self.otype.value,  # T
+            secs(self[LOCAL].changed),  # C
+            self[LOCAL].path,  # P
+            debug_sig(self[LOCAL].oid),  # O
+            str(self[LOCAL].sync_path) + ":" + str(self[LOCAL].exists.value),  # SPE
+            "T" if self.discarded else "F",  # D
+            secs(self[REMOTE].changed),  # C
+            self[REMOTE].path,  # P
+            debug_sig(self[REMOTE].oid),  # O
+            str(self[REMOTE].sync_path) + ":" + str(self[REMOTE].exists.value)  # SPE
         )
 
         return ret
-
-    def store(self, tag: str, storage: Storage):
-        if not self.storage_id:
-            self.storage_id = storage.create(tag, self.serialize())
-        else:
-            storage.update(tag, self.serialize(), self.storage_id)
 
 
 class SyncState:
@@ -280,6 +285,7 @@ class SyncState:
                 self._paths[side][path] = {}
             self._paths[side][path][ent[side].oid] = ent
             ent[side].path = path
+            ent.dirty = True
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
@@ -289,6 +295,7 @@ class SyncState:
         if oid:
             self._oids[side][oid] = ent
             ent[side].oid = oid
+            ent.dirty = True
 
     def lookup_oid(self, side, oid):
         try:
@@ -311,11 +318,13 @@ class SyncState:
         # TODO: refactor this so that a list of affected items is gathered, then the alterations happen to the final
         #    list, which will avoid having to remove after adding, which feels mildly risky
         # TODO: is this function called anywhere? ATM, it looks like no... It should be called or removed
+        # TODO: it looks like this loop has a bug... items() does not return path, sub it returns path, Dict[oid, sub]
         for path, sub in self._paths[side].items():
             if is_subpath(from_dir, sub.path):
                 sub.path = replace_path(sub.path, from_dir, to_dir)
                 remove.append(path)
                 self._paths[side][sub.path] = sub
+                sub.dirty = True
 
         for path in remove:
             self._paths[side].pop(path)
@@ -329,15 +338,27 @@ class SyncState:
 
         if hash is not None:
             ent[side].hash = hash
+            ent.dirty = True
 
         if exists is not None:
             ent[side].exists = exists
+            ent.dirty = True
 
+    def storage_update(self, ent: SyncEntry):
+        log.debug("storage_update eid%s", ent.storage_id)
         if self._storage is not None:
-            if ent.storage_id:
-                self._storage.update(self._tag, ent.serialize(), ent.storage_id)
+            if ent.storage_id is not None:
+                if ent.discarded:
+                    log.debug("storage_update deleting eid%s", ent.storage_id)
+                    self._storage.delete(self._tag, ent.storage_id)
+                else:
+                    self._storage.update(self._tag, ent.serialize(), ent.storage_id)
             else:
-                self._storage.create(self._tag, ent.serialize())
+                assert not ent.discarded
+                new_id = self._storage.create(self._tag, ent.serialize())
+                ent.storage_id = new_id
+                log.debug("storage_update creating eid%s", ent.storage_id)
+            ent.dirty = False
 
     def __len__(self):
         return len(self.get_all())
@@ -352,6 +373,7 @@ class SyncState:
 
         ent[side].changed = time.time()
         self._changeset.add(ent)
+        self.storage_update(ent)
 
     def change(self):
         # for now just get a random one
@@ -375,6 +397,7 @@ class SyncState:
     def pretty_print(self, ignore_dirs=False):
         ret = ""
         for e in self.get_all():
+            e: SyncEntry
             if ignore_dirs:
                 if e.otype == DIRECTORY:
                     continue
@@ -384,7 +407,7 @@ class SyncState:
             ret += e.pretty() + "\n"
         return ret
 
-    def get_all(self, discarded=False):
+    def get_all(self, discarded=False) -> Set['SyncState']:
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
@@ -405,7 +428,7 @@ class SyncState:
 
 class SyncManager(Runnable):
     def __init__(self, syncs, providers: Tuple[Provider, Provider], translate):
-        self.syncs = syncs
+        self.syncs: SyncState = syncs
         self.providers = providers
         self.providers[LOCAL].debug_name = "local"
         self.providers[REMOTE].debug_name = "remote"
@@ -415,15 +438,18 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def do(self):
-        sync = self.syncs.change()
+        sync: SyncEntry = self.syncs.change()
         if sync:
+            log.debug("doing eid%s", sync.storage_id)
             self.sync(sync)
+            self.syncs.storage_update(sync)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
     def sync(self, sync):
+        log.debug("syncing eid%s", sync.storage_id)
         sync.get_latest_state(self.providers)
 
         if sync.hash_conflict():
@@ -513,6 +539,7 @@ class SyncManager(Runnable):
                     # these we can toss, they are other folders
                     # keep the current one, since it exists for sure
                     ent.discard()
+                    self.syncs.storage_update(ent)
         ents = [ent for ent in ents if not ent.discarded]
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
@@ -534,6 +561,7 @@ class SyncManager(Runnable):
                 if ent.otype == DIRECTORY:
                     log.debug("discard duplicate dir entry, caused by a mkdirs")
                     ent.discard()
+                    self.syncs.storage_update(ent)
 
             log.debug("mkdir %s as path %s oid %s",
                       self.providers[synced].debug_name, translated_path, debug_sig(oid))
