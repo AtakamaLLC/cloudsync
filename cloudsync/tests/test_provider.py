@@ -489,7 +489,7 @@ def test_event_basic(provider: ProviderMixin):
         # you might get events for the root folder here or other setup stuff
         if e.exists:
             if not e.path:
-                info = provider.info_oid(received_event.oid)
+                info = provider.info_oid(e.oid)
                 if info:
                     e.path = info.path
 

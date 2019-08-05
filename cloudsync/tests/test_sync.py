@@ -419,3 +419,53 @@ def test_sync_conflict_path(sync):
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
     sync.state._assert_index_is_correct()
+
+def test_sync_conflict_path_combine(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = "/local/stuff1"
+    remote_path1 = "/remote/stuff2"
+    local_path2 = "/local/stuff"
+    remote_path2 = "/remote/stuff"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    # inserts info about some local path
+    sync.state.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+
+    sync.run_until_found((REMOTE, remote_path1))
+
+    rinfo = sync.providers[REMOTE].info_path(remote_path1)
+
+    assert len(sync.state.get_all()) == 1
+
+    ent = sync.state.get_all().pop()
+
+    sync.providers[REMOTE].log_debug_state("BEFORE")
+
+    sync.providers[LOCAL].rename(linfo.oid, local_path2)
+    sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
+
+    sync.providers[REMOTE].log_debug_state("AFTER")
+
+    sync.state.update(LOCAL, FILE, path=local_path2,
+                      oid=linfo.oid, hash=linfo.hash)
+
+    assert len(sync.state.get_all()) == 1
+    assert ent[REMOTE].oid == rinfo.oid
+
+    sync.state.update(REMOTE, FILE, path=remote_path2,
+                      oid=rinfo.oid, hash=rinfo.hash)
+
+    assert len(sync.state.get_all()) == 1
+
+    # currently defers to the alphabetcially greater name, rather than conflicting
+    sync.run_until_found((LOCAL, "/local/stuff-r"))
+
+    assert not sync.providers[LOCAL].exists_path(local_path1)
+    assert not sync.providers[LOCAL].exists_path(local_path2)
+    sync.state._assert_index_is_correct()   
