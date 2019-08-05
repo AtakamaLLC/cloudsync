@@ -1,6 +1,5 @@
 import time
 import logging
-import random
 import json
 import copy
 from enum import Enum
@@ -225,8 +224,8 @@ class SyncEntry(Reprable):
                 idx = 2
             return tup[idx]
 
-        lexv = abbrev_bool(self[LOCAL].exists.value, ("Z", "X", "?"))
-        rexv = abbrev_bool(self[REMOTE].exists.value, ("Z", "X", "?"))
+        lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
+        rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
         lhma = abbrev_bool(self[LOCAL].sync_hash !=
                            self[LOCAL].hash, ("H", "=", "?"))
         rhma = abbrev_bool(self[REMOTE].sync_hash !=
@@ -362,7 +361,7 @@ class SyncState:
 
         if oid and ent[side].path:
             if ent[side].path not in self._paths[side]:
-                self._paths[side] = {}
+                self._paths[side][ent[side].path] = {}
             self._paths[side][ent[side].path][oid] = ent
 
         if prior_ent and prior_ent is not ent and prior_ent in self._changeset:
@@ -446,7 +445,6 @@ class SyncState:
         log.debug("updated %s", ent)
 
     def mark_changed(self, side, ent):
-        assert ent
         ent[side].changed = time.time()
         self._changeset.add(ent)
 

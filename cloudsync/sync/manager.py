@@ -2,7 +2,6 @@ import os
 import logging
 import tempfile
 import shutil
-import itertools
 
 from typing import Tuple
 
@@ -27,10 +26,6 @@ REQUEUE = 0
 
 def other_side(index):
     return 1-index
-
-counter = itertools.count()
-def serial():
-    return next(counter)
 
 class SyncManager(Runnable):
     def __init__(self, state, providers: Tuple[Provider, Provider], translate):
@@ -283,7 +278,6 @@ class SyncManager(Runnable):
         sync[changed].sync_path = sync[changed].path
         self.state.update_entry(
             sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
-        assert self.state.lookup_oid(synced, info.oid)
 
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -363,7 +357,7 @@ class SyncManager(Runnable):
 
         return True
 
-    def handle_path_change_or_creation(self, sync, changed, synced):
+    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
@@ -418,7 +412,7 @@ class SyncManager(Runnable):
                 sync, synced, path=translated_path, oid=new_oid)
         return FINISHED
 
-    def rename_to_fix_conflict(self, sync, changed, synced):
+    def rename_to_fix_conflict(self, sync, changed, _synced):
         print("renaming to fix conflict")
 
         conflict_name = sync[changed].path + ".conflicted"
