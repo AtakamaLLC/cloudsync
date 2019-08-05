@@ -488,14 +488,13 @@ def test_event_basic(provider: ProviderMixin):
         log.debug("got event %s", e)
         # you might get events for the root folder here or other setup stuff
         if e.exists:
-            received_event = e
-
             if not e.path:
                 info = provider.info_oid(received_event.oid)
                 if info:
                     e.path = info.path
 
             if e.path == dest:
+                received_event = e
                 event_count += 1
 
             if e.path == dest and not waiting:
