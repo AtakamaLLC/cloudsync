@@ -286,6 +286,9 @@ def test_sync_two_conflicts(cs):
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
 
+# this test is sensitive to the order in which things are processed
+# so run it a few times
+@pytest.mark.repeat(10)
 def test_sync_folder_conflicts_file(cs):
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
@@ -314,6 +317,7 @@ def test_sync_folder_conflicts_file(cs):
         # there won't be 2 rows for /local/stuff1 is oid_is_path
         assert(len(cs.state) == 4)
     else:
+        # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
         assert(len(cs.state) == 5)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)

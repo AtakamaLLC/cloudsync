@@ -98,6 +98,7 @@ def test_sync_state_basic():
 
     assert state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, oid="123")
+    state._assert_index_is_correct()
 
 
 def test_sync_state_rename():
@@ -106,6 +107,7 @@ def test_sync_state_rename():
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
+    state._assert_index_is_correct()
 
 
 def test_sync_state_rename2():
@@ -116,13 +118,47 @@ def test_sync_state_rename2():
     assert not state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, oid="456")
     assert not state.lookup_oid(LOCAL, oid="123")
+    state._assert_index_is_correct()
 
+def test_sync_state_rename3():
+    state = SyncState()
+    ahash = "ah"
+    bhash = "bh"
+    state.update(LOCAL, FILE, path="a", oid="a", hash=ahash)
+    state.update(LOCAL, FILE, path="b", oid="b", hash=bhash)
+
+    infoa = state.lookup_oid(LOCAL, "a")
+    infob = state.lookup_oid(LOCAL, "b")
+
+    assert infoa[LOCAL].hash == ahash
+    assert infob[LOCAL].hash == bhash
+
+    # rename in a circle
+
+    state.update(LOCAL, FILE, path="c", oid="c", prior_oid="a")
+    log.debug("TABLE 0:\n%s", state.pretty_print(use_sigs=False))
+    state.update(LOCAL, FILE, path="a", oid="a", prior_oid="b")
+    log.debug("TABLE 1:\n%s", state.pretty_print(use_sigs=False))
+    state.update(LOCAL, FILE, path="b", oid="b", prior_oid="c")
+    log.debug("TABLE 2:\n%s", state.pretty_print(use_sigs=False))
+
+    assert state.lookup_path(LOCAL, "a")
+    assert state.lookup_path(LOCAL, "b")
+    infoa = state.lookup_oid(LOCAL, "a")
+    infob = state.lookup_oid(LOCAL, "b")
+
+    # hashes should be flipped
+    assert infoa[LOCAL].hash == bhash
+    assert infob[LOCAL].hash == ahash
+
+    state._assert_index_is_correct()
 
 def test_sync_state_multi():
     state = SyncState()
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
+    state._assert_index_is_correct()
 
 
 def test_sync_basic(sync: "SyncMgrMixin"):
@@ -176,7 +212,8 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     assert info.oid
     log.debug("all syncs %s", sync.syncs.get_all())
 
-
+    sync.syncs._assert_index_is_correct()
+    
 def test_sync_rename(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -203,6 +240,7 @@ def test_sync_rename(sync):
     sync.run_until_found((REMOTE, remote_path2))
 
     assert sync.providers[REMOTE].info_path("/remote/stuff") is None
+    sync.syncs._assert_index_is_correct()
 
 
 def test_sync_hash(sync):
@@ -233,6 +271,7 @@ def test_sync_hash(sync):
     sync.providers[REMOTE].download(info.oid, check)
 
     assert check.getvalue() == b"hello2"
+    sync.syncs._assert_index_is_correct()
 
 
 def test_sync_rm(sync):
@@ -258,6 +297,7 @@ def test_sync_rm(sync):
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
+    sync.syncs._assert_index_is_correct()
 
 def test_sync_mkdir(sync):
     local_dir1 = "/local"
@@ -288,6 +328,7 @@ def test_sync_mkdir(sync):
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
+    sync.syncs._assert_index_is_correct()
 
 def test_sync_conflict_simul(sync):
     remote_parent = "/remote"
@@ -326,6 +367,7 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() != b2.getvalue()
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
+    sync.syncs._assert_index_is_correct()
 
 
 def test_sync_conflict_path(sync):
@@ -376,3 +418,4 @@ def test_sync_conflict_path(sync):
 
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
+    sync.syncs._assert_index_is_correct()
