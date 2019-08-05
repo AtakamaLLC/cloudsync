@@ -28,8 +28,8 @@ def other_side(index):
     return 1-index
 
 class SyncManager(Runnable):
-    def __init__(self, syncs, providers: Tuple[Provider, Provider], translate):
-        self.syncs: SyncState = syncs
+    def __init__(self, state, providers: Tuple[Provider, Provider], translate):
+        self.state: SyncState = state
         self.providers = providers
         self.providers[LOCAL].debug_name = "local"
         self.providers[REMOTE].debug_name = "remote"
@@ -39,11 +39,11 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def do(self):
-        sync: SyncEntry = self.syncs.change()
+        sync: SyncEntry = self.state.change()
         if sync:
             try:
                 self.sync(sync)
-                self.syncs.storage_update(sync)
+                self.state.storage_update(sync)
             except Exception as e:
                 log.exception(
                     "exception %s[%s] while processing %s", type(e), e, sync)
@@ -65,7 +65,7 @@ class SyncManager(Runnable):
                     if info:
                         ent[i].hash = info.hash
                         if ent[i].oid != info.oid:
-                            self.syncs.update_entry(ent, i, oid=info.oid)
+                            self.state.update_entry(ent, i, oid=info.oid)
                     else:
                         ent[i].hash = None
                 else:
@@ -97,7 +97,7 @@ class SyncManager(Runnable):
                     self.finished(i, sync)
                 break
 
-        log.debug("table\n%s", self.syncs.pretty_print())
+        log.debug("table\n%s", self.state.pretty_print())
 
     def temp_file(self, ohash):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
@@ -106,7 +106,7 @@ class SyncManager(Runnable):
 
     def finished(self, side, sync):
         sync[side].changed = None
-        self.syncs.finished(sync)
+        self.state.finished(sync)
 
         if sync.temp_file:
             try:
@@ -166,7 +166,7 @@ class SyncManager(Runnable):
     def mkdir_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         # see if there are other entries for the same path, but other ids
-        ents = list(self.syncs.lookup_path(changed, sync[changed].path))
+        ents = list(self.state.lookup_path(changed, sync[changed].path))
         ents = [ent for ent in ents if ent != sync]
         if ents:
             for ent in ents:
@@ -175,7 +175,7 @@ class SyncManager(Runnable):
                     # keep the current one, since it exists for sure
                     log.debug("discard %s", ent)
                     ent.discard()
-                    self.syncs.storage_update(ent)
+                    self.state.storage_update(ent)
         ents = [ent for ent in ents if not ent.discarded]
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
@@ -190,8 +190,8 @@ class SyncManager(Runnable):
 
             # could have made a dir that already existed on my side or other side
         
-            chents = list(self.syncs.lookup_path(changed, sync[changed].path))
-            syents = list(self.syncs.lookup_path(synced, translated_path))
+            chents = list(self.state.lookup_path(changed, sync[changed].path))
+            syents = list(self.state.lookup_path(synced, translated_path))
             ents = chents + syents
             notme_ents = [ent for ent in ents if ent != sync]
 
@@ -201,7 +201,7 @@ class SyncManager(Runnable):
                 if ent[synced].otype == DIRECTORY:
                     log.debug("discard duplicate dir entry, caused by a mkdirs %s", ent)
                     ent.discard()
-                    self.syncs.storage_update(ent)
+                    self.state.storage_update(ent)
                 else:
                     conflicts.append(ent)
 
@@ -218,7 +218,7 @@ class SyncManager(Runnable):
                       self.providers[synced].debug_name, translated_path, debug_sig(oid))
 
             # did i already have that oid? if so, chuck it
-            already_dir = self.syncs.lookup_oid(synced, oid)
+            already_dir = self.state.lookup_oid(synced, oid)
             if already_dir and already_dir != sync and already_dir[synced].otype == DIRECTORY:
                 log.debug("discard %s", already_dir)
                 already_dir.discard() 
@@ -226,12 +226,12 @@ class SyncManager(Runnable):
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
 
-            self.syncs.update_entry(
+            self.state.update_entry(
                 sync, synced, exists=True, oid=oid, path=translated_path)
         except CloudFileNotFoundError:
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].debug_name, translated_path)
-            raise NotImplementedError("TODO mkdir, and make syncs etc")
+            raise NotImplementedError("TODO mkdir, and make state etc")
 
     def upload_synced(self, changed, sync):
         synced = other_side(changed)
@@ -248,18 +248,18 @@ class SyncManager(Runnable):
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
 
-            self.syncs.update_entry(
+            self.state.update_entry(
                 sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
         except CloudFileNotFoundError:
             log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].debug_name)
-            raise NotImplementedError("TODO mkdir, and make syncs etc")
+            raise NotImplementedError("TODO mkdir, and make state etc")
         except CloudFileExistsError:
             # this happens if the remote oid is a folder
             log.debug("split bc upload to folder")
 
             defer_ent, defer_side, replace_ent, replace_side \
-                    = self.syncs.split(sync)
+                    = self.state.split(sync)
 
             self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
@@ -277,7 +277,7 @@ class SyncManager(Runnable):
             sync[synced].sync_path = translated_path
         sync[changed].sync_hash = sync[changed].hash
         sync[changed].sync_path = sync[changed].path
-        self.syncs.update_entry(
+        self.state.update_entry(
             sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
 
     def create_synced(self, changed, sync, translated_path):
@@ -297,7 +297,7 @@ class SyncManager(Runnable):
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
         # see if there are other entries for the same path, but other ids
-        ents = list(self.syncs.lookup_path(changed, sync[changed].path))
+        ents = list(self.state.lookup_path(changed, sync[changed].path))
         ents = [ent for ent in ents if ent != sync]
 
         if not ents:
@@ -327,7 +327,7 @@ class SyncManager(Runnable):
         if sync[changed].otype != FILE:
             return False
 
-        ents = list(self.syncs.lookup_path(synced, translated_path))
+        ents = list(self.state.lookup_path(synced, translated_path))
 
         # filter for exists
         other_ents = [ent for ent in ents if ent != sync]
@@ -394,7 +394,7 @@ class SyncManager(Runnable):
                 sync[synced].oid, translated_path)
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
-            self.syncs.update_entry(
+            self.state.update_entry(
                 sync, synced, path=translated_path, oid=new_oid)
         return FINISHED
 
@@ -434,7 +434,7 @@ class SyncManager(Runnable):
             assert False, "impossible sync, no path %s" % sync[changed]
 
         log.debug("UPDATE PATH %s->%s", sync, info.path)
-        self.syncs.update_entry(
+        self.state.update_entry(
             sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
@@ -442,29 +442,29 @@ class SyncManager(Runnable):
 
         # split the sync in two
         defer_ent, defer_side, replace_ent, replace_side \
-                = self.syncs.split(sync)
+                = self.state.split(sync)
         self.handle_split_conflict(
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
-        log.info("BEFORE\n%s", self.syncs.pretty_print())
+        log.info("BEFORE\n%s", self.state.pretty_print())
 
         conflict_path = replace_ent[replace_side].path + ".conflicted"
 
         new_oid = self.providers[replace_side].rename(
             replace_ent[replace_side].oid, conflict_path)
 
-        self.syncs.update_entry(replace_ent, replace_side,
+        self.state.update_entry(replace_ent, replace_side,
                                 new_oid, path=conflict_path)
 
         log.debug("REPLACE %s", replace_ent)
 
         # force download of other side
-        self.syncs.mark_changed(defer_side, defer_ent)
+        self.state.mark_changed(defer_side, defer_ent)
         defer_ent[defer_side].sync_path = None
         defer_ent[defer_side].sync_hash = None
 
-        log.debug("SPLITTY\n%s", self.syncs.pretty_print())
+        log.debug("SPLITTY\n%s", self.state.pretty_print())
 
     def handle_path_conflict(self, sync):
         # consistent handling
@@ -482,4 +482,4 @@ class SyncManager(Runnable):
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
         new_oid = self.providers[other.side].rename(other.oid, other_path)
-        self.syncs.update_entry(sync, other.side, new_oid, path=other_path)
+        self.state.update_entry(sync, other.side, new_oid, path=other_path)
