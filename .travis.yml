@@ -1,5 +1,6 @@
 language: python
 cache: pip
+sudo: false
 
 jobs:
     include: 
@@ -10,8 +11,7 @@ jobs:
     - name: unit
       script:
         # tempoarily skip the path tests
-        - pytest --durations=0 -n=2 cloudsync/tests -k "not mock_path"
-        - pytest --durations=0 -n=2 cloudsync/tests/test_provider.py -k "mock_path"
+        - pytest --durations=0 -n=2 cloudsync/tests
       python:
         - '3.6'
         - '3.7'
