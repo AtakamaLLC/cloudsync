@@ -1015,6 +1015,7 @@ def test_file_exists(provider: ProviderMixin):
     #   rename: renaming file over empty folder, raises FEx
     folder_name, folder_oid = create_folder()
     file_name, file_oid = create_file()
+    other_file_name, other_file_oid = create_file()
     with pytest.raises(CloudFileExistsError):
         provider.rename(file_oid, folder_name)
 
@@ -1026,6 +1027,10 @@ def test_file_exists(provider: ProviderMixin):
     #   rename: renaming a folder over a file, raises FEx
     with pytest.raises(CloudFileExistsError):
         provider.rename(folder_oid, file_name)  # reuse the same file and folder from the last test
+
+    #   rename: renaming a folder over a file, raises FEx
+    with pytest.raises(CloudFileExistsError):
+        provider.rename(file_oid, other_file_name)  # reuse the same file and folder from the last test
 
     #   rename: create a file, delete it, then rename a file to the same path as the deleted, does not raise
     deleted_file_name, deleted_file_oid = create_and_delete_file()

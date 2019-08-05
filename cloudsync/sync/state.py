@@ -111,6 +111,8 @@ class SyncEntry(Reprable):
         self.discarded: bool = False
         self.storage_id: Any = None
         self.dirty: bool = True
+        self.punted: int = 0
+
         if storage_init is not None:
             self.storage_id = storage_init[0]
             self.deserialize(storage_init)
@@ -223,8 +225,8 @@ class SyncEntry(Reprable):
                 idx = 2
             return tup[idx]
 
-        lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
-        rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
+        lexv = abbrev_bool(self[LOCAL].exists.value, ("Z", "X", "?"))
+        rexv = abbrev_bool(self[REMOTE].exists.value, ("Z", "X", "?"))
         lhma = abbrev_bool(self[LOCAL].sync_hash !=
                            self[LOCAL].hash, ("H", "=", "?"))
         rhma = abbrev_bool(self[REMOTE].sync_hash !=
@@ -245,9 +247,9 @@ class SyncEntry(Reprable):
                             self[LOCAL].oid), str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma),
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + lexv + ":" + lhma),
-                        ))
+                        self.punted))
 
-        ret = "%3s C%3s %3s %6s %20s O%6s %22s -- %6s %20s O%6s %22s" % (
+        ret = "%3s S%3s %3s %6s %20s O%6s %22s -- %6s %20s O%6s %22s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),  # S
             otype,
@@ -259,6 +261,7 @@ class SyncEntry(Reprable):
             self[REMOTE].path, 
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+            self.punted or ""
         )
 
         return ret
@@ -271,6 +274,11 @@ class SyncEntry(Reprable):
             self.storage_id = storage.create(tag, self.serialize())
         else:
             storage.update(tag, self.serialize(), self.storage_id)
+
+    def punt(self):
+        # do this one later
+        self.punted += 1
+
 
 class SyncState:
     def __init__(self, storage: Optional[Storage] = None, tag: Optional[str] = None):
@@ -347,11 +355,14 @@ class SyncState:
         if prior_ent and prior_ent is not ent and prior_ent in self._changeset:
             maybe_remove.add(prior_ent)
             self._changeset.add(ent)
+            prior_ent = None
 
         if prior_oid and path and path in self._paths[side]:
             prior_ent = self._paths[side][path].pop(prior_oid, None)
 
-        if oid and ent[side].path and ent[side].path in self._paths[side]:
+        if oid and ent[side].path:
+            if ent[side].path not in self._paths[side]:
+                self._paths[side] = {}
             self._paths[side][ent[side].path][oid] = ent
 
         if prior_ent and prior_ent is not ent and prior_ent in self._changeset:
@@ -435,6 +446,7 @@ class SyncState:
         log.debug("updated %s", ent)
 
     def mark_changed(self, side, ent):
+        assert ent
         ent[side].changed = time.time()
         self._changeset.add(ent)
 
@@ -476,7 +488,7 @@ class SyncState:
             prior_ent.discard()
 
 
-        if prior_oid:
+        if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             path_ents = self.lookup_path(side, path)
             if path_ents:
@@ -498,12 +510,16 @@ class SyncState:
 
     def change(self):
         # for now just get a random one
-        if self._changeset:
-            ret = random.sample(self._changeset, 1)[0]
-            if ret.discarded:
-                self._changeset.remove(ret)
-                return self.change()
-            return ret
+        for e in self._changeset:
+            if not e.discarded and not e.punted:
+                return e
+
+        for e in list(self._changeset):
+            if e.discarded:
+                self._changeset.remove(e)
+            else:
+                return e
+            
         return None
 
     def has_changes(self):
@@ -513,7 +529,11 @@ class SyncState:
         if ent[1].changed or ent[0].changed:
             log.info("not marking finished: %s", ent)
             return
+
         self._changeset.remove(ent)
+
+        for e in self._changeset:
+            e.punted = 0
 
     def pretty_print(self, use_sigs=True):
         ret = ""
@@ -579,7 +599,6 @@ class SyncState:
                           path=None, exists=UNKNOWN)
         self.update_entry(defer_ent, defer,
                           oid=defer_ent[defer].oid, changed=True)
-
         # add to index
         assert replace_ent[replace].oid
         self.update_entry(
@@ -600,6 +619,10 @@ class SyncState:
         log.info("SPLIT\n%s", self.pretty_print())
 
         assert replace_ent[replace].oid
+
+        self.storage_update(defer_ent)
+        self.storage_update(replace_ent)
+
         return defer_ent, defer, replace_ent, replace
 
 

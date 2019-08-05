@@ -219,6 +219,9 @@ class MockProvider(Provider):
                     raise CloudFileExistsError(new_path)
                 except StopIteration:
                     pass # Folder is empty, rename over it no problem
+            else:
+                raise CloudFileExistsError(new_path)
+            log.debug("secretly deleting folder%s", new_path)
             self.delete(possible_conflict.oid)
 
         if object_to_rename.path == new_path:

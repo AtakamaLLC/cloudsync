@@ -2,6 +2,7 @@ import os
 import logging
 import tempfile
 import shutil
+import itertools
 
 from typing import Tuple
 
@@ -26,6 +27,10 @@ REQUEUE = 0
 
 def other_side(index):
     return 1-index
+
+counter = itertools.count()
+def serial():
+    return next(counter)
 
 class SyncManager(Runnable):
     def __init__(self, state, providers: Tuple[Provider, Provider], translate):
@@ -72,11 +77,7 @@ class SyncManager(Runnable):
                     ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
                 ent[i].exists = EXISTS if ent[i].hash else TRASHED
             else:
-                if self.providers[i].oid_is_path:
-                    assert ent[i].path
-                    ent[i].exists = self.providers[i].exists_path(ent[i].path)
-                else:
-                    ent[i].exists = self.providers[i].exists_oid(ent[i].oid)
+                ent[i].exists = self.providers[i].exists_oid(ent[i].oid)
         log.debug("after update state %s", self)
 
     def sync(self, sync):
@@ -111,10 +112,12 @@ class SyncManager(Runnable):
         if sync.temp_file:
             try:
                 os.unlink(sync.temp_file)
-            except OSError:
+            except FileNotFoundError:
                 pass
-            except Exception as e:  # any exceptions here are pointless
+            except OSError:
                 log.debug("exception unlinking %s", e)
+            except Exception as e:  # any exceptions here are pointless
+                log.warning("exception unlinking %s", e)
             sync.temp_file = None
 
     def download_changed(self, changed, sync):
@@ -270,6 +273,7 @@ class SyncManager(Runnable):
                   self.providers[synced].debug_name, translated_path)
         info = self.providers[synced].create(
             translated_path, open(sync.temp_file, "rb"))
+        log.debug("created %s", info)
         sync[synced].sync_hash = info.hash
         if info.path:
             sync[synced].sync_path = info.path
@@ -279,6 +283,7 @@ class SyncManager(Runnable):
         sync[changed].sync_path = sync[changed].path
         self.state.update_entry(
             sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
+        assert self.state.lookup_oid(synced, info.oid)
 
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -286,12 +291,18 @@ class SyncManager(Runnable):
             self._create_synced(changed, sync, translated_path)
             return FINISHED
         except CloudFileNotFoundError:
+            log.debug("can't create %s, try mkdirs", translated_path)
             parent, _ = self.providers[synced].split(translated_path)
             self.mkdirs(self.providers[synced], parent)
             self._create_synced(changed, sync, translated_path)
             return FINISHED
         except CloudFileExistsError:
             # there's a folder in the way, let that resolve later
+            log.debug("can't create %s, try punting", translated_path)
+            if sync.punted > 1:
+                self.rename_to_fix_conflict(sync, changed, synced)
+            else:
+                sync.punt()
             return REQUEUE
 
     def delete_synced(self, sync, changed, synced):
@@ -387,16 +398,34 @@ class SyncManager(Runnable):
             else:
                 return self.create_synced(changed, sync, translated_path)
         else:
-            assert sync[synced].oid
             log.debug("rename %s %s",
                       sync[synced].sync_path, translated_path)
-            new_oid = self.providers[synced].rename(
-                sync[synced].oid, translated_path)
+            try:
+                new_oid = self.providers[synced].rename(
+                    sync[synced].oid, translated_path)
+            except CloudFileExistsError:
+                log.debug("can't rename, file exists")
+                if sync.punted > 1:
+                    # never punt twice
+                    self.rename_to_fix_conflict(sync, changed, synced)
+                else:
+                    sync.punt()
+                return REQUEUE
+
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
             self.state.update_entry(
                 sync, synced, path=translated_path, oid=new_oid)
         return FINISHED
+
+    def rename_to_fix_conflict(self, sync, changed, synced):
+        print("renaming to fix conflict")
+
+        conflict_name = sync[changed].path + ".conflicted"
+
+        new_oid = self.providers[changed].rename(sync[changed].oid, conflict_name)
+
+        self.state.update(changed, sync[changed].otype, oid=new_oid, path=conflict_name, prior_oid=sync[changed].oid)
 
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
