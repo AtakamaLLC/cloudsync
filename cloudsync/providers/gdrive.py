@@ -541,7 +541,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return self._ids[parent]
 
-    def _path_oid(self, oid) -> str:
+    def _path_oid(self, oid, info=None) -> str:
         "convert oid to path"
         for p, pid in self._ids.items():
             if pid == oid:
@@ -553,7 +553,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         # todo, better cache, keep up to date, etc.
 
-        info = self._info_oid(oid)
+        if not info:
+            info = self._info_oid(oid)
+
         if info and info.pids and info.name:
             ppath = self._path_oid(info.pids[0])
             if ppath:
@@ -567,7 +569,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if info is None:
             return None
         # expensive
-        path = self._path_oid(oid)
+        path = self._path_oid(oid, info)
         ret = OInfo(info.otype, info.oid, info.hash, path)
         log.debug("info oid ret: %s", ret)
         return ret

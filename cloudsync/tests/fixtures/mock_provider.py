@@ -51,9 +51,10 @@ class MockEvent:  # pylint: disable=too-few-public-methods
     ACTION_UPDATE = "provider modify"
     ACTION_DELETE = "provider delete"
 
-    def __init__(self, action, target_object: MockFSObject):
+    def __init__(self, action, target_object: MockFSObject, prior_oid=None):
         self._target_object = copy.copy(target_object)
         self._action = action
+        self._prior_oid = prior_oid
         self._timestamp = time.time()
 
     def serialize(self):
@@ -62,6 +63,7 @@ class MockEvent:  # pylint: disable=too-few-public-methods
                    "object type": self._target_object.type,
                    "path": self._target_object.path,
                    "mtime": self._target_object.mtime,
+                   "prior_oid": self._prior_oid,
                    "trashed": not self._target_object.exists,
                    }
         return ret_val
@@ -86,8 +88,8 @@ class MockProvider(Provider):
             MockFSObject.DIR: OType.DIRECTORY,
         }
 
-    def _register_event(self, action, target_object):
-        event = MockEvent(action, target_object)
+    def _register_event(self, action, target_object, prior_oid=None):
+        event = MockEvent(action, target_object, prior_oid)
         self._events.append(event)
         target_object.update()
         self._latest_event = len(self._events) - 1
@@ -122,10 +124,11 @@ class MockProvider(Provider):
         oid = event.get("id", None)
         mtime = event.get("mtime", None)
         trashed = event.get("trashed", None)
+        prior_oid = event.get("prior_oid", None)
         path = None
         if self.oid_is_path:
             path = event.get("path")
-        retval = Event(standard_type, oid, path, None, not trashed, mtime)
+        retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid)
         return retval
 
     def _api(self, *args, **kwargs):
@@ -196,7 +199,7 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         file_like.write(file.contents)
 
-    def rename(self, oid, new_path):
+    def rename(self, oid, new_path) -> str:
         log.debug("renaming %s -> %s", oid, new_path)
         self._api()
         # TODO: folders are implied by the path of the file...
@@ -216,16 +219,18 @@ class MockProvider(Provider):
                     raise CloudFileExistsError(new_path)
                 except StopIteration:
                     pass # Folder is empty, rename over it no problem
+            else:
+                raise CloudFileExistsError(new_path)
+            log.debug("secretly deleting folder%s", new_path)
             self.delete(possible_conflict.oid)
 
         if object_to_rename.path == new_path:
-            return
+            return oid
 
+        prior_oid = None
         if self.oid_is_path:
-            event_object = object_to_rename.copy()
-        else:
-            event_object = object_to_rename
-
+            prior_oid = object_to_rename.oid
+        
         if object_to_rename.type == MockFSObject.FILE:
             self._rename_single_object(object_to_rename, new_path)
         else:  # object to rename is a directory
@@ -237,23 +242,24 @@ class MockProvider(Provider):
             assert NotImplementedError()
 
         if self.oid_is_path:
-            event_object.path = new_path
-            assert event_object.oid != new_path
+            assert object_to_rename.oid != prior_oid, "rename %s to %s" % (prior_oid, new_path)
 
-        self._register_event(MockEvent.ACTION_RENAME, event_object)
+        self._register_event(MockEvent.ACTION_RENAME, object_to_rename, prior_oid)
+
+        return object_to_rename.oid
 
     def _rename_single_object(self, source_object: MockFSObject, destination_path):
         destination_path = destination_path.rstrip("/")
         # This will assume all validation has already been done, and just rename the thing
         # without trying to rename contents of folders, just rename the object itself
         log.debug("renaming %s to %s", source_object.path, destination_path)
-        rename_object = source_object.copy()
+        prior_oid = source_object.oid if self.oid_is_path else None
         self._unstore_object(source_object)
         source_object.path = destination_path
         if self.oid_is_path:
             source_object.oid = destination_path
         self._store_object(source_object)
-        self._register_event(MockEvent.ACTION_RENAME, rename_object)
+        self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
         log.debug("rename complete %s", source_object.path)
         self.log_debug_state()
 
@@ -352,7 +358,10 @@ def mock_provider(request):
 
 @pytest.fixture(params=[ (False, True), (True, True) ], ids=["mock_oid_cs", "mock_path_cs"])
 def mock_provider_generator(request):
-    return lambda: mock_provider_instance(*request.param)
+    return lambda oid_is_path=None, case_sensitive=None: \
+            mock_provider_instance(
+                    request.param[0] if oid_is_path is None else oid_is_path, 
+                    request.param[1] if case_sensitive is None else case_sensitive)
 
 def test_mock_basic():
     """

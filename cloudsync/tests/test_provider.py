@@ -21,7 +21,7 @@ ProviderMixin = Union[Provider, "ProviderHelper"]
 
 class ProviderHelper(Provider):
     def __init__(self, prov):
-        self.api_retry = True
+        self.api_retry = True 
         self.prov = prov
 
         # need to copy in all attrs that are defined in the ABC
@@ -488,15 +488,16 @@ def test_event_basic(provider: ProviderMixin):
         log.debug("got event %s", e)
         # you might get events for the root folder here or other setup stuff
         if e.exists:
-            received_event = e
-
             if not e.path:
-                info = provider.info_oid(received_event.oid)
+                info = provider.info_oid(e.oid)
                 if info:
                     e.path = info.path
 
             if e.path == dest:
+                received_event = e
                 event_count += 1
+
+            log.debug("%s vs %s", e.path, dest)
 
             if e.path == dest and not waiting:
                 waiting = time.monotonic() + wait_secs
@@ -586,10 +587,10 @@ def test_event_rename(provider: ProviderMixin):
         log.debug("event %s", e)
 
     info1 = provider.create(dest, temp)
-    provider.rename(info1.oid, dest2)
+    oid2 = provider.rename(info1.oid, dest2)
     if provider.oid_is_path:
         info1.oid = provider.info_path(dest2).oid
-    provider.rename(info1.oid, dest3)
+    oid3 = provider.rename(info1.oid, dest3)
     if provider.oid_is_path:
         info1.oid = provider.info_path(dest3).oid
 
@@ -608,7 +609,7 @@ def test_event_rename(provider: ProviderMixin):
             if info:
                 path = info.path
 
-        last_event = path
+        last_event = e
         seen.add(e.oid)
 
         if provider.oid_is_path:
@@ -622,8 +623,9 @@ def test_event_rename(provider: ProviderMixin):
 
     if provider.oid_is_path:
         # providers with path based oids need to send intermediate renames accurately and in order
-        #assert len(seen) > 3
-        assert last_event == dest3
+        assert len(seen) > 2
+        assert last_event.path == dest3
+        assert last_event.prior_oid == oid2
     else:
         # oid based providers just need to let us know something happend to that oid
         assert info1.oid in seen
@@ -941,7 +943,7 @@ def test_file_exists(provider: ProviderMixin):
     #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_file()
     _, oid2 = create_file(name1)
-    assert oid1 != oid2 or provider.oid_is_path
+    assert oid1 != oid2 or provider.oid_is_path 
     if provider.oid_is_path:
         assert provider.exists_oid(oid1)
     else:
@@ -1015,6 +1017,7 @@ def test_file_exists(provider: ProviderMixin):
     #   rename: renaming file over empty folder, raises FEx
     folder_name, folder_oid = create_folder()
     file_name, file_oid = create_file()
+    other_file_name, other_file_oid = create_file()
     with pytest.raises(CloudFileExistsError):
         provider.rename(file_oid, folder_name)
 
@@ -1026,6 +1029,10 @@ def test_file_exists(provider: ProviderMixin):
     #   rename: renaming a folder over a file, raises FEx
     with pytest.raises(CloudFileExistsError):
         provider.rename(folder_oid, file_name)  # reuse the same file and folder from the last test
+
+    #   rename: renaming a folder over a file, raises FEx
+    with pytest.raises(CloudFileExistsError):
+        provider.rename(file_oid, other_file_name)  # reuse the same file and folder from the last test
 
     #   rename: create a file, delete it, then rename a file to the same path as the deleted, does not raise
     deleted_file_name, deleted_file_oid = create_and_delete_file()

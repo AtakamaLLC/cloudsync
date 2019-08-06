@@ -27,7 +27,7 @@ class Runnable(ABC):
             try:
                 self.do()
             except Exception:
-                log.error("unhandled exception in %s", self.__class__)
+                log.exception("unhandled exception in %s", self.__class__)
 
         if self.stopped:
             self.done()

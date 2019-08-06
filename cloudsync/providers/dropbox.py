@@ -409,7 +409,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             log.debug("res info path %s", path)
             res = self._api('files_get_metadata', path)
             log.debug("res info path %s", res)
-
+            
             oid = res.id
             if oid[0:3] != 'id:':
                 log.warning("invalid oid %s from path %s", oid, path)

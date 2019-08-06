@@ -4,7 +4,7 @@ import pytest
 from typing import List
 
 from .fixtures import MockProvider, MockStorage
-from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE
+from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
 
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -221,14 +221,17 @@ def test_sync_create_delete_same_name(cs):
     # run local event manager only... not sync
     cs.emgrs[LOCAL].do()
 
-    log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
-    assert(len(cs.state) == 3)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    if cs.providers[LOCAL].oid_is_path:
+        assert(len(cs.state) == 2)
+    else:
+        assert(len(cs.state) == 3)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
 
-    log.info("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 2)
 
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
@@ -241,7 +244,7 @@ def test_sync_two_conflicts(cs):
 
     setup_remote_local(cs, "stuff1")
 
-    log.info("TABLE 0\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -256,14 +259,18 @@ def test_sync_two_conflicts(cs):
     cs.emgrs[LOCAL].do()
     cs.emgrs[REMOTE].do()
 
-    log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
-    assert(len(cs.state) == 4)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    if cs.providers[LOCAL].oid_is_path:
+        # the local delete/create doesn't add entries
+        assert(len(cs.state) == 2)
+    else:
+        assert(len(cs.state) == 4)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
 
-    log.info("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 3)
 
     assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
@@ -279,6 +286,9 @@ def test_sync_two_conflicts(cs):
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
 
+# this test is sensitive to the order in which things are processed
+# so run it a few times
+@pytest.mark.repeat(10)
 def test_sync_folder_conflicts_file(cs):
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
@@ -286,7 +296,7 @@ def test_sync_folder_conflicts_file(cs):
 
     setup_remote_local(cs, "stuff1")
 
-    log.info("TABLE 0\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -302,19 +312,28 @@ def test_sync_folder_conflicts_file(cs):
     cs.emgrs[LOCAL].do()
     cs.emgrs[REMOTE].do()
 
-    log.info("TABLE 1\n%s", cs.state.pretty_print(ignore_dirs=False))
-    assert(len(cs.state) == 5)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    if cs.providers[LOCAL].oid_is_path:
+        # there won't be 2 rows for /local/stuff1 is oid_is_path
+        assert(len(cs.state) == 3)
+        locs = cs.state.lookup_path(LOCAL, local_path1)
+        assert locs and len(locs) == 1
+        loc = locs[0]
+        assert loc[LOCAL].otype == FILE
+        assert loc[REMOTE].otype == DIRECTORY
+    else:
+        # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
+        assert(len(cs.state) == 5)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
 
-    log.info("TABLE 2\n%s", cs.state.pretty_print(ignore_dirs=False))
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 4)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
-
 
 def test_storage():
     def translate(to, path):
