@@ -23,13 +23,13 @@ class CloudSync(Runnable):
 
         self.smgr = smgr
         self.emgrs = (
-                EventManager(smgr.providers[0], state, 0),
-                EventManager(smgr.providers[1], state, 1)
+            EventManager(smgr.providers[0], state, 0),
+            EventManager(smgr.providers[1], state, 1)
         )
         self.sthread = threading.Thread(target=smgr.run)
         self.ethreads = (
-                threading.Thread(target=self.emgrs[0].run),
-                threading.Thread(target=self.emgrs[1].run)
+            threading.Thread(target=self.emgrs[0].run),
+            threading.Thread(target=self.emgrs[1].run)
         )
 
     def start(self):
@@ -52,4 +52,3 @@ class CloudSync(Runnable):
         self.smgr.done()
         self.emgrs[0].done()
         self.emgrs[1].done()
-

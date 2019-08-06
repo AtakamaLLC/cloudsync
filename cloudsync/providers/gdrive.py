@@ -10,10 +10,10 @@ from apiclient.discovery import build   # pylint: disable=import-error
 from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
-from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=import-error
+from oauth2client.client import HttpAccessTokenRefreshError  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 
-from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
+from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
@@ -21,13 +21,16 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 
 log = logging.getLogger(__name__)
 
+
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids = []
+
     def __init__(self, *a, pids=None, **kws):
         super().__init__(*a, **kws)
         if pids is None:
             pids = []
         self.pids = pids
+
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = True
@@ -132,7 +135,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError()
             except HttpError as e:
                 # gets a default something (actually the message, not the reason) using their secret interface
-                reason = e._get_reason() # pylint: disable=protected-access
+                reason = e._get_reason()  # pylint: disable=protected-access
 
                 # parses the JSON of the content to get the reason from where it really lives in the content
                 try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
@@ -173,9 +176,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def root_id(self):
         if not self.__root_id:
             res = self._api('files', 'get',
-                    fileId='root',
-                    fields='id',
-                    )
+                            fileId='root',
+                            fields='id',
+                            )
             self.__root_id = res['id']
             self._ids['/'] = self.__root_id
         return self.__root_id
@@ -199,16 +202,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             for change in response.get('changes'):
                 log.debug("got event %s", change)
 
-                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z', 
-                # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file', 
+                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z',
+                # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file',
                 # 'id': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'name': 'dest', 'mimeType': 'application/octet-stream'}}
 
-                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z', 
+                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z',
                 # 'removed': True, 'fileId': '1lhRe0nDplA6I5JS18642rg0KIbYN66lR'}
 
                 ts = arrow.get(change.get('time')).float_timestamp
                 oid = change.get('fileId')
-                exists = not change.get('removed') 
+                exists = not change.get('removed')
 
                 fil = change.get('file')
                 if fil:
@@ -240,7 +243,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if ent.otype == DIRECTORY:
                 if self.exists_oid(ent.oid):
                     yield from self._walk(ent.oid)
- 
+
     def walk(self, path, since=None):
         info = self.info_path(path)
         if not info:
@@ -252,8 +255,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         mtime = metadata.get("modifiedTime", time.time())
         mtime = arrow.get(mtime).isoformat()
         gdrive_info = {
-                'modifiedTime':  mtime
-                }
+            'modifiedTime':  mtime
+        }
 
         # mime type, if provided
         mime_type = metadata.get("mimeType", None)
@@ -283,7 +286,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         if not metadata:
-            metadata = {} 
+            metadata = {}
         gdrive_info = self.__prep_upload(None, metadata)
 
         ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024)
@@ -310,7 +313,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
-            metadata = {} 
+            metadata = {}
         gdrive_info = self.__prep_upload(path, metadata)
 
         if self.exists_path(path):
@@ -325,9 +328,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         gdrive_info['parents'] = [parent_oid]
 
         res = self._api('files', 'create',
-                body=gdrive_info,
-                media_body=ul,
-                fields=fields)
+                        body=gdrive_info,
+                        media_body=ul,
+                        fields=fields)
 
         log.debug("response from create %s : %s", path, res)
 
@@ -385,7 +388,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 next(self.listdir(possible_conflict.oid))
                 raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
             except StopIteration:
-                pass # Folder is empty, rename over it no problem
+                pass  # Folder is empty, rename over it no problem
             self.delete(possible_conflict.oid)
 
         if not old_path:
@@ -457,7 +460,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if metadata:
             file_metadata.update(metadata)
         res = self._api('files', 'create',
-                body=file_metadata, fields='id')
+                        body=file_metadata, fields='id')
         fileid = res.get('id')
         self._ids[path] = fileid
         return fileid
@@ -496,10 +499,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             query = f"'{parent_id}' in parents and name='{name}'"
 
             res = self._api('files', 'list',
-                    q=query,
-                    spaces='drive',
-                    fields='files(id, md5Checksum, parents, mimeType)',
-                    pageToken=None)
+                            q=query,
+                            spaces='drive',
+                            fields='files(id, md5Checksum, parents, mimeType)',
+                            pageToken=None)
         except CloudFileNotFoundError:
             return None
 
@@ -520,7 +523,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._ids[path] = oid
 
-        return GDriveInfo(otype, oid, fhash, path, pids=pids) 
+        return GDriveInfo(otype, oid, fhash, path, pids=pids)
 
     def exists_path(self, path) -> bool:
         if path in self._ids:
@@ -577,8 +580,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                    fields='name, md5Checksum, parents, mimeType',
-                    )
+                            fields='name, md5Checksum, parents, mimeType',
+                            )
         except CloudFileNotFoundError:
             return None
 

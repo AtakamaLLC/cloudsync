@@ -18,11 +18,15 @@ log = logging.getLogger(__name__)
 __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
 
 # adds a repr to some classes
+
+
 class Reprable:                                     # pylint: disable=too-few-public-methods
     def __repr__(self):
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(self.__dict__)
 
 # safe ternary, don't allow traditional comparisons
+
+
 class Exists(Enum):
     UNKNOWN = None
     EXISTS = True
@@ -30,6 +34,7 @@ class Exists(Enum):
 
     def __bool__(self):
         raise ValueError("never bool enums")
+
 
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
@@ -74,6 +79,7 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
 # but it's easier to reason about using these labels
 LOCAL = 0
 REMOTE = 1
+
 
 def other_side(index):
     return 1-index
@@ -252,12 +258,12 @@ class SyncEntry(Reprable):
             _sig(id(self)),
             _sig(self.storage_id),  # S
             otype,
-            secs(self[LOCAL].changed), 
-            self[LOCAL].path, 
+            secs(self[LOCAL].changed),
+            self[LOCAL].path,
             _sig(self[LOCAL].oid),
             str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
-            secs(self[REMOTE].changed), 
-            self[REMOTE].path, 
+            secs(self[REMOTE].changed),
+            self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
             self.punted or ""
@@ -468,23 +474,22 @@ class SyncState:
         return len(self.get_all())
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-        
+
         log.debug("lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
-       
+
         prior_ent = None
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
             if not ent:
                 ent = prior_ent
                 prior_ent = None
-           
+
         if ent and prior_ent:
             # oid_is_path conflict
             # the new entry has the same name as an old entry
             log.debug("discarding old entry in favor of new %s", prior_ent)
             prior_ent.discard()
-
 
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
@@ -501,7 +506,6 @@ class SyncState:
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(otype)
 
-        
         self.update_entry(ent, side, oid, path, hash, exists, changed=True, otype=otype)
 
         self.storage_update(ent)
@@ -517,7 +521,7 @@ class SyncState:
                 self._changeset.remove(e)
             else:
                 return e
-            
+
         return None
 
     def has_changes(self):
@@ -540,7 +544,6 @@ class SyncState:
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
         return ret
 
-
     def _assert_index_is_correct(self):
         for ent in self._changeset:
             if not ent.discarded:
@@ -548,7 +551,7 @@ class SyncState:
 
         for ent in self.get_all():
             assert ent
-                        
+
             if ent[LOCAL].path:
                 assert ent in self.lookup_path(LOCAL, ent[LOCAL].path), ("%s local path not indexed" % ent)
             if ent[REMOTE].path:
@@ -587,7 +590,7 @@ class SyncState:
         replace = LOCAL
 
         defer_ent = ent
-        
+
         replace_ent = SyncEntry(ent[replace].otype)
         replace_ent[replace] = copy.copy(ent[replace])       # copy in the replace state
         defer_ent[replace] = SideState(replace, ent[replace].otype)              # clear out
@@ -622,5 +625,3 @@ class SyncState:
         self.storage_update(replace_ent)
 
         return defer_ent, defer, replace_ent, replace
-
-

@@ -8,6 +8,8 @@ from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
 
 # move this to provider ci_creds() function?
+
+
 def gdrive_creds():
     token_set = os.environ.get("GDRIVE_TOKEN")
     cli_sec = os.environ.get("GDRIVE_CLI_SECRET")
@@ -17,12 +19,13 @@ def gdrive_creds():
     tokens = token_set.split(",")
 
     creds = {
-            "refresh_token" : tokens[random.randrange(0, len(tokens))],
-            "client_secret" : cli_sec,
-            "client_id" : '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com',
+        "refresh_token": tokens[random.randrange(0, len(tokens))],
+        "client_secret": cli_sec,
+        "client_id": '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com',
     }
 
     return creds
+
 
 def gdrive_provider():
     cls = GDriveProvider
@@ -30,6 +33,7 @@ def gdrive_provider():
     cls.event_sleep = 2
     cls.creds = gdrive_creds()
     return cls()
+
 
 @pytest.fixture
 def cloudsync_provider():
