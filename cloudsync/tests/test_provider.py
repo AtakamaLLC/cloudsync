@@ -497,6 +497,8 @@ def test_event_basic(provider: ProviderMixin):
                 received_event = e
                 event_count += 1
 
+            log.debug("%s vs %s", e.path, dest)
+
             if e.path == dest and not waiting:
                 waiting = time.monotonic() + wait_secs
 
