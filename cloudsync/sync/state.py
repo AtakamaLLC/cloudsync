@@ -240,7 +240,7 @@ class SyncEntry(Reprable):
         if use_sigs:
             _sig = debug_sig
         else:
-            def _sig(a): return a
+            _sig = lambda a: a
 
         otype = self[LOCAL].otype.value[0:3]
         if self[REMOTE].otype != self[LOCAL].otype:
