@@ -120,6 +120,7 @@ def test_sync_state_rename2():
     assert not state.lookup_oid(LOCAL, oid="123")
     state._assert_index_is_correct()
 
+
 def test_sync_state_rename3():
     state = SyncState()
     ahash = "ah"
@@ -152,6 +153,7 @@ def test_sync_state_rename3():
     assert infob[LOCAL].hash == ahash
 
     state._assert_index_is_correct()
+
 
 def test_sync_state_multi():
     state = SyncState()
@@ -213,7 +215,8 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     log.debug("all state %s", sync.state.get_all())
 
     sync.state._assert_index_is_correct()
-    
+
+
 def test_sync_rename(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -299,6 +302,7 @@ def test_sync_rm(sync):
 
     sync.state._assert_index_is_correct()
 
+
 def test_sync_mkdir(sync):
     local_dir1 = "/local"
     local_path1 = "/local/stuff"
@@ -330,6 +334,7 @@ def test_sync_mkdir(sync):
     assert sync.providers[REMOTE].info_path(remote_path1) is None
     sync.state._assert_index_is_correct()
 
+
 def test_sync_conflict_simul(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -349,11 +354,11 @@ def test_sync_conflict_simul(sync):
                       oid=rinfo.oid, hash=rinfo.hash)
 
     sync.run_until_found(
-            (REMOTE, "/remote/stuff1.conflicted"),
-            (LOCAL, "/local/stuff1.conflicted"),
-            (REMOTE, "/remote/stuff1"),
-            (LOCAL, "/local/stuff1")
-            )
+        (REMOTE, "/remote/stuff1.conflicted"),
+        (LOCAL, "/local/stuff1.conflicted"),
+        (REMOTE, "/remote/stuff1"),
+        (LOCAL, "/local/stuff1")
+    )
 
     sync.providers[LOCAL].log_debug_state("LOCAL")
     sync.providers[REMOTE].log_debug_state("REMOTE")
@@ -424,6 +429,7 @@ def test_sync_conflict_path(sync):
     assert not sync.providers[LOCAL].exists_path(local_path2)
     sync.state._assert_index_is_correct()
 
+
 def test_sync_conflict_path_combine(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -454,7 +460,6 @@ def test_sync_conflict_path_combine(sync):
     new_oid1 = sync.providers[LOCAL].rename(linfo1.oid, local_path3)
     prior_oid = sync.providers[LOCAL].oid_is_path and linfo1.oid
     sync.state.update(LOCAL, FILE, path=local_path3, oid=new_oid1, prior_oid=prior_oid)
-
 
     new_oid2 = sync.providers[REMOTE].rename(rinfo2.oid, remote_path3)
     prior_oid = sync.providers[REMOTE].oid_is_path and rinfo2.oid

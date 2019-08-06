@@ -42,6 +42,7 @@ class Runnable(ABC):
     def done(self):
         pass
 
+
 def test_runnable():
     class TestRun(Runnable):
         def __init__(self):

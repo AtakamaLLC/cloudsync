@@ -11,12 +11,14 @@ class OType(Enum):
 DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
 
+
 @dataclass
 class OInfo:
     otype: OType                           # fsobject type     (DIRECTORY or FILE)
     oid: str                               # fsobject id
     hash: Optional[bytes]                  # fsobject hash     (better name: ohash)
     path: Optional[str]                    # path
+
 
 @dataclass
 class DirInfo(OInfo):

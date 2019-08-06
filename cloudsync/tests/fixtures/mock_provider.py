@@ -1,3 +1,4 @@
+import pytest
 import time
 import copy
 import logging
@@ -11,6 +12,7 @@ from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
+
 
 class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
@@ -44,6 +46,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
     def copy(self):
         return copy.copy(self)
+
 
 class MockEvent:  # pylint: disable=too-few-public-methods
     ACTION_CREATE = "provider create"
@@ -218,7 +221,7 @@ class MockProvider(Provider):
                     next(self.listdir(possible_conflict.oid))
                     raise CloudFileExistsError(new_path)
                 except StopIteration:
-                    pass # Folder is empty, rename over it no problem
+                    pass  # Folder is empty, rename over it no problem
             else:
                 raise CloudFileExistsError(new_path)
             log.debug("secretly deleting folder%s", new_path)
@@ -230,7 +233,7 @@ class MockProvider(Provider):
         prior_oid = None
         if self.oid_is_path:
             prior_oid = object_to_rename.oid
-        
+
         if object_to_rename.type == MockFSObject.FILE:
             self._rename_single_object(object_to_rename, new_path)
         else:  # object to rename is a directory
@@ -343,7 +346,6 @@ class MockProvider(Provider):
 
 ###################
 
-import pytest
 
 def mock_provider_instance(oid_is_path, case_sensitive):
     prov = MockProvider(oid_is_path, case_sensitive)
@@ -352,16 +354,19 @@ def mock_provider_instance(oid_is_path, case_sensitive):
     prov.creds = {}
     return prov
 
-@pytest.fixture(params=[ (False, True), (True, True) ], ids=["mock_oid_cs", "mock_path_cs"])
+
+@pytest.fixture(params=[(False, True), (True, True)], ids=["mock_oid_cs", "mock_path_cs"])
 def mock_provider(request):
     return mock_provider_instance(*request.param)
 
-@pytest.fixture(params=[ (False, True), (True, True) ], ids=["mock_oid_cs", "mock_path_cs"])
+
+@pytest.fixture(params=[(False, True), (True, True)], ids=["mock_oid_cs", "mock_path_cs"])
 def mock_provider_generator(request):
     return lambda oid_is_path=None, case_sensitive=None: \
-            mock_provider_instance(
-                    request.param[0] if oid_is_path is None else oid_is_path, 
-                    request.param[1] if case_sensitive is None else case_sensitive)
+        mock_provider_instance(
+            request.param[0] if oid_is_path is None else oid_is_path,
+            request.param[1] if case_sensitive is None else case_sensitive)
+
 
 def test_mock_basic():
     """

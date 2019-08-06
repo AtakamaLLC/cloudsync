@@ -24,8 +24,10 @@ log = logging.getLogger(__name__)
 FINISHED = 1
 REQUEUE = 0
 
+
 def other_side(index):
     return 1-index
+
 
 class SyncManager(Runnable):
     def __init__(self, state, providers: Tuple[Provider, Provider], translate):
@@ -178,7 +180,7 @@ class SyncManager(Runnable):
                       sync[changed].path, translated_path)
 
             # could have made a dir that already existed on my side or other side
-        
+
             chents = list(self.state.lookup_path(changed, sync[changed].path))
             syents = list(self.state.lookup_path(synced, translated_path))
             ents = chents + syents
@@ -210,7 +212,7 @@ class SyncManager(Runnable):
             already_dir = self.state.lookup_oid(synced, oid)
             if already_dir and already_dir != sync and already_dir[synced].otype == DIRECTORY:
                 log.debug("discard %s", already_dir)
-                already_dir.discard() 
+                already_dir.discard()
 
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
@@ -248,7 +250,7 @@ class SyncManager(Runnable):
             log.debug("split bc upload to folder")
 
             defer_ent, defer_side, replace_ent, replace_side \
-                    = self.state.split(sync)
+                = self.state.split(sync)
 
             self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
@@ -456,7 +458,7 @@ class SyncManager(Runnable):
 
         # split the sync in two
         defer_ent, defer_side, replace_ent, replace_side \
-                = self.state.split(sync)
+            = self.state.split(sync)
         self.handle_split_conflict(
             defer_ent, defer_side, replace_ent, replace_side)
 

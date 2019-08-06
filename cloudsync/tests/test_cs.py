@@ -31,6 +31,7 @@ def fixture_cs(mock_provider_generator):
 
     cs.done()
 
+
 @pytest.fixture(name="multi_cs")
 def fixture_multi_cs(mock_provider_generator):
     storage_dict = dict()
@@ -98,24 +99,24 @@ def test_sync_multi(multi_cs):
     rinfo2 = cs2.providers[REMOTE].create(remote_path2, BytesIO(b"hello4"), None)
 
     cs1.run_until_found(
-            (LOCAL, local_path11),
-            (LOCAL, local_path21),
-            (REMOTE, remote_path1),
-            (REMOTE, remote_path2),
-    timeout=2)
+        (LOCAL, local_path11),
+        (LOCAL, local_path21),
+        (REMOTE, remote_path1),
+        (REMOTE, remote_path2),
+        timeout=2)
 
-    cs1.run(until=lambda:not cs1.state.has_changes(), timeout=1)
+    cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs1.state.pretty_print())
 
     assert len(cs1.state) == 5      # two dirs, 3 files, 1 never synced (local2 file)
 
     try:
         cs2.run_until_found(
-                (LOCAL, local_path12),
-                (LOCAL, local_path22),
-                (REMOTE, remote_path1),
-                (REMOTE, remote_path2),
-        timeout=2)
+            (LOCAL, local_path12),
+            (LOCAL, local_path22),
+            (REMOTE, remote_path1),
+            (REMOTE, remote_path2),
+            timeout=2)
     except TimeoutError:
         log.info("TABLE\n%s", cs2.state.pretty_print())
         raise
@@ -133,7 +134,7 @@ def test_sync_multi(multi_cs):
     assert linfo22.hash == rinfo2.hash
 
     # let cleanups/discards/dedups happen if needed
-    cs2.run(until=lambda:not cs2.state.has_changes(), timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs2.state.pretty_print())
 
     assert len(cs2.state) == 6  # two dirs, 4 files, 2 never synced (local1 files)
@@ -153,11 +154,11 @@ def test_sync_basic(cs):
     rinfo2 = cs.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"), None)
 
     cs.run_until_found(
-            (LOCAL, local_path1),
-            (LOCAL, local_path2),
-            (REMOTE, remote_path1),
-            (REMOTE, remote_path2),
-    timeout=2)
+        (LOCAL, local_path1),
+        (LOCAL, local_path2),
+        (REMOTE, remote_path1),
+        (REMOTE, remote_path2),
+        timeout=2)
 
     linfo2 = cs.providers[LOCAL].info_path(local_path2)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -171,7 +172,7 @@ def test_sync_basic(cs):
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
     # let cleanups/discards/dedups happen if needed
-    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
 
     assert len(cs.state) == 3
@@ -190,10 +191,11 @@ def setup_remote_local(cs, *names):
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
         linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
-        found.append( (REMOTE, remote_path1) )
+        found.append((REMOTE, remote_path1))
 
     cs.run_until_found(*found)
-    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
 
 def test_sync_create_delete_same_name(cs):
     remote_parent = "/remote"
@@ -206,7 +208,7 @@ def test_sync_create_delete_same_name(cs):
 
     linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
-    cs.run(until=lambda:not cs.state.has_changes(), timeout=2)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=2)
 
     rinfo = cs.providers[REMOTE].info_path(remote_path1)
 
@@ -229,7 +231,7 @@ def test_sync_create_delete_same_name(cs):
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 2)
@@ -268,7 +270,7 @@ def test_sync_two_conflicts(cs):
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 3)
@@ -288,6 +290,8 @@ def test_sync_two_conflicts(cs):
 
 # this test is sensitive to the order in which things are processed
 # so run it a few times
+
+
 @pytest.mark.repeat(10)
 def test_sync_folder_conflicts_file(cs):
     remote_path1 = "/remote/stuff1"
@@ -327,13 +331,14 @@ def test_sync_folder_conflicts_file(cs):
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda:not cs.state.has_changes(), timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 4)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
 
 def test_storage():
     def translate(to, path):
