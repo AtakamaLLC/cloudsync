@@ -60,16 +60,7 @@ class SyncManager(Runnable):
 
             # get latest info from provider
             if ent[i].otype == FILE:
-                if self.providers[i].oid_is_path and ent[i].path:
-                    info = self.providers[i].info_path(ent[i].path)
-                    if info:
-                        ent[i].hash = info.hash
-                        if ent[i].oid != info.oid:
-                            self.state.update_entry(ent, i, oid=info.oid)
-                    else:
-                        ent[i].hash = None
-                else:
-                    ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
                 ent[i].exists = EXISTS if ent[i].hash else TRASHED
             else:
                 ent[i].exists = self.providers[i].exists_oid(ent[i].oid)

@@ -397,24 +397,28 @@ def test_sync_conflict_path(sync):
 
     sync.providers[REMOTE].log_debug_state("BEFORE")
 
-    sync.providers[LOCAL].rename(linfo.oid, local_path2)
-    sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
+    new_oid_l = sync.providers[LOCAL].rename(linfo.oid, local_path2)
+    new_oid_r = sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
 
     sync.providers[REMOTE].log_debug_state("AFTER")
 
     sync.state.update(LOCAL, FILE, path=local_path2,
-                      oid=linfo.oid, hash=linfo.hash)
+                      oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
 
     assert len(sync.state.get_all()) == 1
-    assert ent[REMOTE].oid == rinfo.oid
+    assert ent[REMOTE].oid == new_oid_r
 
     sync.state.update(REMOTE, FILE, path=remote_path2,
-                      oid=rinfo.oid, hash=rinfo.hash)
+                      oid=new_oid_r, hash=rinfo.hash, prior_oid=rinfo.oid)
 
     assert len(sync.state.get_all()) == 1
+
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
 
     # currently defers to the alphabetcially greater name, rather than conflicting
     sync.run_until_found((LOCAL, "/local/stuff-r"))
+    
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
