@@ -7,6 +7,7 @@ from .types import OType
 
 log = logging.getLogger(__name__)
 
+
 @dataclass
 class Event:
     otype: OType                           # fsobject type     (DIRECTORY or FILE)
@@ -16,6 +17,7 @@ class Event:
     exists: Optional[bool]
     mtime: Optional[float] = None
     prior_oid: Optional[str] = None        # path basesd systems use this on renames
+
 
 class EventManager(Runnable):
     def __init__(self, provider, state, side):
@@ -43,4 +45,3 @@ class EventManager(Runnable):
                     continue
 
             self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
-

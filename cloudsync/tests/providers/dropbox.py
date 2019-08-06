@@ -7,6 +7,7 @@ import pytest
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.dropbox import DropboxProvider
 
+
 def dropbox_creds():
     token_set = os.environ.get("DROPBOX_TOKEN")
     if not token_set:
@@ -15,9 +16,10 @@ def dropbox_creds():
     tokens = token_set.split(",")
 
     creds = {
-            "key" : tokens[random.randrange(0, len(tokens))],
+        "key": tokens[random.randrange(0, len(tokens))],
     }
     return creds
+
 
 def dropbox_provider():
     cls = DropboxProvider
@@ -26,9 +28,11 @@ def dropbox_provider():
     cls.creds = dropbox_creds()
     return cls()
 
+
 @pytest.fixture
 def cloudsync_provider():
     return dropbox_provider()
+
 
 def test_connect():
     creds = dropbox_creds()

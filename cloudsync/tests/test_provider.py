@@ -19,9 +19,10 @@ log = logging.getLogger(__name__)
 
 ProviderMixin = Union[Provider, "ProviderHelper"]
 
+
 class ProviderHelper(Provider):
     def __init__(self, prov):
-        self.api_retry = True 
+        self.api_retry = True
         self.prov = prov
 
         # need to copy in all attrs that are defined in the ABC
@@ -60,7 +61,7 @@ class ProviderHelper(Provider):
             except CloudTemporaryError:
                 log.info("api retry %s %s %s", func, ar, kw)
 
-    ############### TEST-ROOT WRAPPER
+    # TEST-ROOT WRAPPER
 
     def __getattr__(self, k):
         return getattr(self.prov, k)
@@ -152,7 +153,7 @@ class ProviderHelper(Provider):
                     path = "/" + path
                 obj.path = path
         return obj
-    ############### HELPERS
+    # HELPERS
 
     def temp_name(self: ProviderMixin, name="tmp", *, folder=None):
         fname = self.join(folder or "/", os.urandom(16).hex() + "." + name)
@@ -202,6 +203,7 @@ class ProviderHelper(Provider):
                 # deleting the root might now be supported
                 pass
 
+
 def mixin_provider(prov):
     assert prov
     assert isinstance(prov, Provider)
@@ -212,9 +214,11 @@ def mixin_provider(prov):
 
     prov.test_cleanup()
 
+
 @pytest.fixture
 def provider_params():
     return None
+
 
 class ProviderConfig:
     def __init__(self, name, param=(), param_id=None):
@@ -228,6 +232,7 @@ class ProviderConfig:
 
     def __repr__(self):
         return "%s(%s)" % (type(self), self.__dict__)
+
 
 @pytest.fixture
 def config_provider(request, provider_config):
@@ -251,18 +256,21 @@ def config_provider(request, provider_config):
     else:
         assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
+
 known_providers = ('gdrive', 'external', 'dropbox', 'mock')
+
 
 def configs_from_name(name):
     provs = []
 
     if name == "mock":
-        provs += [ ProviderConfig("mock", (False, True), "mock_oid_cs") ]
-        provs += [ ProviderConfig("mock", (True, True), "mock_path_cs") ]
+        provs += [ProviderConfig("mock", (False, True), "mock_oid_cs")]
+        provs += [ProviderConfig("mock", (True, True), "mock_path_cs")]
     else:
-        provs += [ ProviderConfig(name) ]
+        provs += [ProviderConfig(name)]
 
     return provs
+
 
 def configs_from_keyword(kw):
     provs = []
@@ -276,7 +284,7 @@ def configs_from_keyword(kw):
             ok = True
         else:
             ids = false.copy()
-            ids[known_prov]=True
+            ids[known_prov] = True
             try:
                 ok = eval(kw, {}, ids)
             except NameError as e:
@@ -290,7 +298,9 @@ def configs_from_keyword(kw):
             provs += configs_from_name(known_prov)
     return provs
 
+
 _registered = False
+
 
 def pytest_generate_tests(metafunc):
     global _registered
@@ -317,13 +327,15 @@ def pytest_generate_tests(metafunc):
             provs += configs_from_name("mock")
 
         ids = [p.param_id for p in provs]
-        marks = [pytest.param(p, marks=[getattr(pytest.mark,p.name)]) for p in provs]
+        marks = [pytest.param(p, marks=[getattr(pytest.mark, p.name)]) for p in provs]
 
         metafunc.parametrize("provider_config", marks, ids=ids)
+
 
 @pytest.fixture
 def provider(config_provider):
     yield from mixin_provider(config_provider)
+
 
 def test_join(mock_provider):
     assert "/a/b/c" == mock_provider.join("a", "b", "c")
@@ -331,8 +343,10 @@ def test_join(mock_provider):
     assert "/a/b/c" == mock_provider.join("/a", "/b", "/c")
     assert "/a/c" == mock_provider.join("a", "/", "c")
 
+
 def test_connect(provider):
     assert provider.connected
+
 
 def test_create_upload_download(provider):
     dat = os.urandom(32)
@@ -412,6 +426,7 @@ def test_rename(provider: ProviderMixin):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
+
 def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)
 
@@ -483,7 +498,7 @@ def test_event_basic(provider: ProviderMixin):
     event_count = 0
     done = False
     waiting = None
-    wait_secs = min(provider.event_sleep * wait_sleep_cycles,2)
+    wait_secs = min(provider.event_sleep * wait_sleep_cycles, 2)
     for e in provider.events_poll(until=lambda: done):
         log.debug("got event %s", e)
         # you might get events for the root folder here or other setup stuff
@@ -575,6 +590,7 @@ def test_event_del_create(provider: ProviderMixin):
     # the important thing is that we always get a create after the delete event
     assert last_event
     assert last_event.exists is True
+
 
 def test_event_rename(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
@@ -797,8 +813,6 @@ def test_file_not_found(provider: ProviderMixin):
         assert provider.exists_path(temp_path)
         assert provider.exists_oid(info2.oid)
 
-
-
     #   listdir
     #       on a deleted file raises FNF
     #       on a deleted folder raises FNF
@@ -943,7 +957,7 @@ def test_file_exists(provider: ProviderMixin):
     #   create: creating a file, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_file()
     _, oid2 = create_file(name1)
-    assert oid1 != oid2 or provider.oid_is_path 
+    assert oid1 != oid2 or provider.oid_is_path
     if provider.oid_is_path:
         assert provider.exists_oid(oid1)
     else:
