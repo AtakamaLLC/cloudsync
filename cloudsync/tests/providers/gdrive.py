@@ -1,11 +1,9 @@
 import os
 import random
-
 import pytest
-
-
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
+
 
 # move this to provider ci_creds() function?
 def gdrive_creds():
@@ -17,12 +15,13 @@ def gdrive_creds():
     tokens = token_set.split(",")
 
     creds = {
-            "refresh_token" : tokens[random.randrange(0, len(tokens))],
-            "client_secret" : cli_sec,
-            "client_id" : '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com',
+            "refresh_token": tokens[random.randrange(0, len(tokens))],
+            "client_secret": cli_sec,
+            "client_id": '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com',
     }
 
     return creds
+
 
 def gdrive_provider():
     cls = GDriveProvider
@@ -30,6 +29,7 @@ def gdrive_provider():
     cls.event_sleep = 2
     cls.creds = gdrive_creds()
     return cls()
+
 
 @pytest.fixture
 def cloudsync_provider():
@@ -41,10 +41,29 @@ def test_connect():
     if not creds:
         pytest.skip('requires gdrive token and client secret')
     sync_root = "/" + os.urandom(16).hex()
-    gd = GDriveProvider(sync_root)
+    gd = GDriveProvider()
     gd.connect(creds)
     assert gd.client
-    quota = gd.get_quota()
+    gd.get_quota()
+    try:
+        info = gd.info_path(sync_root)
+        if info and info.oid:
+            gd.delete(info.oid)
+    except CloudFileNotFoundError:
+        pass
+
+
+def test_oauth_connect():
+    creds = gdrive_creds()
+    if not creds:
+        pytest.skip('requires gdrive token and client secret')
+    creds.pop("refresh_token", None)
+    sync_root = "/" + os.urandom(16).hex()
+    gd = GDriveProvider()
+    return
+    gd.connect(creds)
+    assert gd.client
+    gd.get_quota()
     try:
         info = gd.info_path(sync_root)
         if info and info.oid:

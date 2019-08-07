@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import re
-from typing import Generator
+from typing import Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
@@ -69,11 +69,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 #        ...
 
     @abstractmethod
-    def info_path(self, path) -> OInfo:
+    def info_path(self, path: str) -> Optional[OInfo]:
         ...
 
     @abstractmethod
-    def info_oid(self, oid) -> OInfo:
+    def info_oid(self, oid) -> Optional[OInfo]:
         ...
 
 ### CONVENIENCE

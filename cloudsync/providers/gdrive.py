@@ -1,6 +1,7 @@
 import time
 import logging
 import threading
+import webbrowser
 from ssl import SSLError
 import json
 from typing import Generator, Optional
@@ -10,30 +11,38 @@ from apiclient.discovery import build   # pylint: disable=import-error
 from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
-from oauth2client.client import HttpAccessTokenRefreshError # pylint: disable=import-error
+from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
-
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
-
+from cloudsync.oauth_redir_server import OAuthRedirServer, OAuthFlowException
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
-
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
 
+
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids = []
+
     def __init__(self, *a, pids=None, **kws):
         super().__init__(*a, **kws)
         if pids is None:
             pids = []
         self.pids = pids
 
+
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = True
     require_parent_folder = True
 
-    _scope = "https://www.googleapis.com/auth/drive"
+    provider = 'googledrive'
+    name = 'Google Drive'
+    # name = StorageProvider._DISPLAY_NAMES[PROVIDER]  # TODO?
+    _scope = ['https://www.googleapis.com/auth/drive',
+              'https://www.googleapis.com/auth/drive.activity.readonly'
+              ]
+    _client_id = '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com'
+    _client_secret = 'Y-GBVYGO2v5V9cV4WsjMSXDV'
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _token_uri = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
@@ -50,10 +59,68 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids = {}
+        self.flow = None
+        self.redir_server = None
 
     @property
     def connected(self):
         return self.client is not None
+
+    def get_display_name(self):
+        return self.name
+
+    def initialize(self, localhost_redir=True):
+        if localhost_redir:
+            try:
+                if not self.redir_server:
+                    self.redir_server = OAuthRedirServer(self.authenticate,
+                                                         self.get_display_name(),
+                                                         use_predefined_ports=False)
+                self.flow = OAuth2WebServerFlow(client_id=self._client_id,
+                                                client_secret=self._client_secret,
+                                                scope=self._scope,
+                                                redirect_uri=self.redir_server.uri('/auth/'))
+            except OSError:
+                log.exception('Unable to use redir server. Falling back to manual mode')
+                localhost_redir = False
+        if not localhost_redir:
+            self.flow = OAuth2WebServerFlow(client_id=self._client_id,
+                                            client_secret=self._client_secret,
+                                            scope=self._scope,
+                                            redirect_uri=self._redir)
+        url = self.flow.step1_get_authorize_url()
+        webbrowser.open(url)
+
+        return localhost_redir, url
+
+    # def authenticate(self, auth_string=None, key=None, refresh_token=None, auth_dict=None):
+    def authenticate(self, auth_string=None, key=None, refresh_token=None, auth_dict=None):
+        api_key = None
+        try:
+            self.initialize()
+            if key or refresh_token:
+                # self._update_account(api_key=key, refresh_token=refresh_token)  # TODO
+                pass
+            else:
+                if not self.flow:
+                    raise OAuthFlowException('Run Initialize() before Authenticate()')
+                try:
+                    if auth_dict and not auth_string:
+                        auth_string = auth_dict['code'][0]
+                    res: OAuth2Credentials = self.flow.step2_exchange(auth_string)
+                    refresh_token = res.refresh_token
+                    api_key = res.access_token
+                    self.flow = None
+                except Exception:
+                    log.exception('Authentication failed')
+                    raise
+            # self.connect(authenticating=True, refresh_token=refresh_token)
+            # return self.api_key
+        finally:
+            if self.redir_server:
+                self.redir_server.shutdown()
+                self.redir_server = None
+        return api_key, refresh_token
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
@@ -78,11 +145,53 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return res
 
+    # def Connect_from_cryptvfs(self, authenticating=False, api_key=None, refresh_token=None):
+    #     log.debug('Connecting to googledrive')
+    #     if not self.client:
+    #         creds = None
+    #         if not api_key:
+    #             api_key = self.api_key
+    #         if not refresh_token:
+    #             refresh_token = self.refresh_token
+    #         kwargs = {}
+    #         try:
+    #             with self.mutex:
+    #                 creds = client.GoogleCredentials(access_token=api_key,
+    #                                                  client_id=self._client_id,
+    #                                                  client_secret=self._client_secret,
+    #                                                  refresh_token=refresh_token,
+    #                                                  token_expiry=None,
+    #                                                  token_uri=self._token_uri,
+    #                                                  user_agent=self.user_agent)
+    #                 creds.refresh(Http())
+    #                 self.client = build('drive', 'v3', http=creds.authorize(Http()))
+    #                 self.driveactivity = build('driveactivity', 'v2', credentials=creds)
+    #                 kwargs['api_key'] = creds.access_token
+    #
+    #             if getattr(creds, 'refresh_token', None):
+    #                 kwargs['refresh_token'] = creds.refresh_token
+    #             else:
+    #                 kwargs['refresh_token'] = refresh_token
+    #
+    #             try:
+    #                 self.get_quota()
+    #             except SSLError:  # pragma: no cover
+    #                 # Seeing some intermittent SSL failures that resolve on retry
+    #                 log.warning('Retrying intermittent SSLError')
+    #                 self.get_quota()
+    #         except HttpAccessTokenRefreshError:
+    #             self.bad_token_raise()
+    #         self._on_connect(self)
+    #         self._update_state(ConnectionState.CONNECTED)
+    #     return self.client
+
     def connect(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
             api_key = creds.get('api_key', self.api_key)
             refresh_token = creds.get('refresh_token', self.refresh_token)
+            if not refresh_token:
+                self.authenticate()
             kwargs = {}
             try:
                 with self.mutex:
@@ -132,7 +241,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError()
             except HttpError as e:
                 # gets a default something (actually the message, not the reason) using their secret interface
-                reason = e._get_reason() # pylint: disable=protected-access
+                reason = e._get_reason()  # pylint: disable=protected-access
 
                 # parses the JSON of the content to get the reason from where it really lives in the content
                 try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
@@ -152,13 +261,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
 
-                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) or str(e.resp.status) == '429':
+                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) \
+                        or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
 
                 # At this point, _should_retry_response() returns true for error codes >=500, 429, and 403 with
                 #  the reason 'userRateLimitExceeded' or 'rateLimitExceeded'. 403 without content, or any other
-                #  response is not retried. We have already taken care of some of those cases above, but we call this below
-                #  to catch the rest, and in case they improve their library with more conditions. If we called
+                #  response is not retried. We have already taken care of some of those cases above, but we call this
+                #  below to catch the rest, and in case they improve their library with more conditions. If we called
                 #  meth.execute() above with a num_retries argument, all this retrying would happen in the google api
                 #  library, and we wouldn't have to think about retries.
                 should_retry = _should_retry_response(e.resp.status, e.content)
@@ -173,9 +283,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def root_id(self):
         if not self.__root_id:
             res = self._api('files', 'get',
-                    fileId='root',
-                    fields='id',
-                    )
+                            fileId='root',
+                            fields='id',
+                            )
             self.__root_id = res['id']
             self._ids['/'] = self.__root_id
         return self.__root_id
@@ -325,9 +435,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         gdrive_info['parents'] = [parent_oid]
 
         res = self._api('files', 'create',
-                body=gdrive_info,
-                media_body=ul,
-                fields=fields)
+                        body=gdrive_info,
+                        media_body=ul,
+                        fields=fields)
 
         log.debug("response from create %s : %s", path, res)
 
@@ -385,7 +495,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 next(self.listdir(possible_conflict.oid))
                 raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
             except StopIteration:
-                pass # Folder is empty, rename over it no problem
+                pass  # Folder is empty, rename over it no problem
             self.delete(possible_conflict.oid)
 
         if not old_path:
@@ -457,7 +567,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if metadata:
             file_metadata.update(metadata)
         res = self._api('files', 'create',
-                body=file_metadata, fields='id')
+                        body=file_metadata, fields='id')
         fileid = res.get('id')
         self._ids[path] = fileid
         return fileid
@@ -485,7 +595,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def exists_oid(self, oid):
         return self._info_oid(oid) is not None
 
-    def info_path(self, path) -> OInfo:
+    def info_path(self, path: str) -> Optional[OInfo]:
         if path == "/":
             return self.info_oid(self.root_id)
 
@@ -496,10 +606,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             query = f"'{parent_id}' in parents and name='{name}'"
 
             res = self._api('files', 'list',
-                    q=query,
-                    spaces='drive',
-                    fields='files(id, md5Checksum, parents, mimeType)',
-                    pageToken=None)
+                            q=query,
+                            spaces='drive',
+                            fields='files(id, md5Checksum, parents, mimeType)',
+                            pageToken=None)
         except CloudFileNotFoundError:
             return None
 
@@ -541,8 +651,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return self._ids[parent]
 
-    def _path_oid(self, oid) -> str:
-        "convert oid to path"
+    def _path_oid(self, oid) -> Optional[str]:
+        """convert oid to path"""
         for p, pid in self._ids.items():
             if pid == oid:
                 return p
@@ -562,7 +672,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid) -> OInfo:
+    def info_oid(self, oid) -> Optional[OInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None
@@ -575,8 +685,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                    fields='name, md5Checksum, parents, mimeType',
-                    )
+                            fields='name, md5Checksum, parents, mimeType',
+                            )
         except CloudFileNotFoundError:
             return None
 

@@ -4,7 +4,7 @@ import logging
 import pytest
 from io import BytesIO
 from unittest.mock import patch
-from typing import Union, NamedTuple
+from typing import Union, NamedTuple, Optional
 
 import cloudsync
 
@@ -12,7 +12,7 @@ from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudF
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
-from cloudsync.providers import GDriveProvider, DropboxProvider
+# from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
@@ -106,11 +106,11 @@ class ProviderHelper(Provider):
         path = self.__add_root(path)
         return self.prov.exists_path(path)
 
-    def info_path(self, path):
+    def info_path(self, path: str) -> Optional[OInfo]:
         path = self.__add_root(path)
         return self.__strip_root(self.prov.info_path(path))
 
-    def info_oid(self, oid):
+    def info_oid(self, oid) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
     def listdir(self, oid):
