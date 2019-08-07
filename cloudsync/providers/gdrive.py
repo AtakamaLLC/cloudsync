@@ -139,46 +139,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return res
 
-    # def Connect_from_cryptvfs(self, authenticating=False, api_key=None, refresh_token=None):
-    #     log.debug('Connecting to googledrive')
-    #     if not self.client:
-    #         creds = None
-    #         if not api_key:
-    #             api_key = self.api_key
-    #         if not refresh_token:
-    #             refresh_token = self.refresh_token
-    #         kwargs = {}
-    #         try:
-    #             with self.mutex:
-    #                 creds = client.GoogleCredentials(access_token=api_key,
-    #                                                  client_id=self._client_id,
-    #                                                  client_secret=self._client_secret,
-    #                                                  refresh_token=refresh_token,
-    #                                                  token_expiry=None,
-    #                                                  token_uri=self._token_uri,
-    #                                                  user_agent=self.user_agent)
-    #                 creds.refresh(Http())
-    #                 self.client = build('drive', 'v3', http=creds.authorize(Http()))
-    #                 self.driveactivity = build('driveactivity', 'v2', credentials=creds)
-    #                 kwargs['api_key'] = creds.access_token
-    #
-    #             if getattr(creds, 'refresh_token', None):
-    #                 kwargs['refresh_token'] = creds.refresh_token
-    #             else:
-    #                 kwargs['refresh_token'] = refresh_token
-    #
-    #             try:
-    #                 self.get_quota()
-    #             except SSLError:  # pragma: no cover
-    #                 # Seeing some intermittent SSL failures that resolve on retry
-    #                 log.warning('Retrying intermittent SSLError')
-    #                 self.get_quota()
-    #         except HttpAccessTokenRefreshError:
-    #             self.bad_token_raise()
-    #         self._on_connect(self)
-    #         self._update_state(ConnectionState.CONNECTED)
-    #     return self.client
-
     def connect(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
