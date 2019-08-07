@@ -77,7 +77,7 @@ class ApiServer:
         self.__headers = headers if headers else []
         self.__log_level = log_level
 
-        self.__server = waitress.server.create_server(self, host=self.__addr, port=self.__port)
+        self.__server = waitress.server.create_server(self, host=self.__addr, port=self.__port, clear_untrusted_proxy_headers=False)
 
         self.__started = False
         self.__routes = {}

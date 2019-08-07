@@ -6,8 +6,6 @@ from cloudsync.providers.gdrive import GDriveProvider
 
 
 # move this to provider ci_creds() function?
-
-
 def gdrive_creds():
     token_set = os.environ.get("GDRIVE_TOKEN")
     cli_sec = os.environ.get("GDRIVE_CLI_SECRET")
@@ -38,10 +36,12 @@ def cloudsync_provider():
     gdrive_provider()
 
 
-def test_connect():
+def connect_test(want_oauth: bool):
     creds = gdrive_creds()
     if not creds:
         pytest.skip('requires gdrive token and client secret')
+    if want_oauth:
+        creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
     gd = GDriveProvider()
     gd.connect(creds)
@@ -55,20 +55,10 @@ def test_connect():
         pass
 
 
+def test_connect():
+    connect_test(False)
+
+
+@pytest.mark.manual
 def test_oauth_connect():
-    creds = gdrive_creds()
-    if not creds:
-        pytest.skip('requires gdrive token and client secret')
-    creds.pop("refresh_token", None)
-    sync_root = "/" + os.urandom(16).hex()
-    gd = GDriveProvider()
-    gd.connect(creds)
-    assert gd.client
-    quota = gd.get_quota()
-    print(quota)
-    try:
-        info = gd.info_path(sync_root)
-        if info and info.oid:
-            gd.delete(info.oid)
-    except CloudFileNotFoundError:
-        pass
+    connect_test(True)

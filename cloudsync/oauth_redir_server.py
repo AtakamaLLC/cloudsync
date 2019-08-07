@@ -27,8 +27,9 @@ class OAuthRedirServer:
     PORT_MAX = 52450
     GUI_TIMEOUT = 15
 
-    def __init__(self, on_success, display_name, use_predefined_ports=False):
+    def __init__(self, on_success, display_name, use_predefined_ports=False, on_failure=None):
         self.on_success = on_success
+        self.on_failure = on_failure
         self.display_name = display_name
         # self.template = os.path.join(config.get().assetdir, 'oauth_result_template.html')
 
@@ -59,8 +60,9 @@ class OAuthRedirServer:
         if not self.api_server:
             raise OSError(errno.EADDRINUSE, "Unable to open any port in range 52400-52405")
 
-        self.api_server.add_route('/auth/', self.auth_redir_success,
-                                  content_type='text/html')
+        self.api_server.add_route('/auth/', self.auth_redir_success, content_type='text/html')
+        self.api_server.add_route('/favicon.ico', lambda x, y: "", content_type='text/html')
+
         self.__thread = threading.Thread(target=self.api_server.serve_forever,
                                          daemon=True)
         self.__thread.start()
@@ -72,6 +74,10 @@ class OAuthRedirServer:
         if info and ('error' in info or 'error_description' in info):
             err = info['error'] if 'error' in info else \
                 info['error_description'][0]
+            if isinstance(err, list):
+                err = err[0]
+            if self.on_failure:
+                self.on_failure(err)
             return self.auth_failure(err)
         try:
             self.on_success(auth_dict=info)

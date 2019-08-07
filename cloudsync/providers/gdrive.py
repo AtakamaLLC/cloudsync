@@ -37,7 +37,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     provider = 'googledrive'
     name = 'Google Drive'
-    # name = StorageProvider._DISPLAY_NAMES[PROVIDER]  # TODO?
     _scope = ['https://www.googleapis.com/auth/drive',
               'https://www.googleapis.com/auth/drive.activity.readonly'
               ]
@@ -76,7 +75,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if not self._redir_server:
                     self._redir_server = OAuthRedirServer(self._on_oauth_success,
                                                           self.get_display_name(),
-                                                          use_predefined_ports=False)
+                                                          use_predefined_ports=False,
+                                                          on_failure=self._on_oauth_failure)
                 self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                                  client_secret=self._client_secret,
                                                  scope=self._scope,
@@ -106,7 +106,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             log.exception('Authentication failed')
             raise
 
-    # def authenticate(self, auth_string=None, key=None, refresh_token=None, auth_dict=None):
+    def _on_oauth_failure(self, err):
+        log.error("oauth failure: %s", err)
+        self._oauth_done.set()
+
     def authenticate(self):
         try:
             self.initialize()
