@@ -14,7 +14,7 @@ from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
-from cloudsync.oauth_redir_server import OAuthRedirServer, OAuthFlowException
+from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
@@ -59,8 +59,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids = {}
-        self.flow = None
-        self.redir_server = None
+        self._flow = None
+        self._redir_server: Optional[OAuthRedirServer] = None
+        self._oauth_done = threading.Event()
 
     @property
     def connected(self):
@@ -72,55 +73,48 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def initialize(self, localhost_redir=True):
         if localhost_redir:
             try:
-                if not self.redir_server:
-                    self.redir_server = OAuthRedirServer(self.authenticate,
-                                                         self.get_display_name(),
-                                                         use_predefined_ports=False)
-                self.flow = OAuth2WebServerFlow(client_id=self._client_id,
-                                                client_secret=self._client_secret,
-                                                scope=self._scope,
-                                                redirect_uri=self.redir_server.uri('/auth/'))
+                if not self._redir_server:
+                    self._redir_server = OAuthRedirServer(self._on_oauth_success,
+                                                          self.get_display_name(),
+                                                          use_predefined_ports=False)
+                self._flow = OAuth2WebServerFlow(client_id=self._client_id,
+                                                 client_secret=self._client_secret,
+                                                 scope=self._scope,
+                                                 redirect_uri=self._redir_server.uri('/auth/'))
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
                 localhost_redir = False
         if not localhost_redir:
-            self.flow = OAuth2WebServerFlow(client_id=self._client_id,
-                                            client_secret=self._client_secret,
-                                            scope=self._scope,
-                                            redirect_uri=self._redir)
-        url = self.flow.step1_get_authorize_url()
+            self._flow = OAuth2WebServerFlow(client_id=self._client_id,
+                                             client_secret=self._client_secret,
+                                             scope=self._scope,
+                                             redirect_uri=self._redir)
+        url = self._flow.step1_get_authorize_url()
+        self._oauth_done.clear()
         webbrowser.open(url)
 
         return localhost_redir, url
 
+    def _on_oauth_success(self, auth_dict):
+        auth_string = auth_dict['code'][0]
+        try:
+            res: OAuth2Credentials = self._flow.step2_exchange(auth_string)
+            self.refresh_token = res.refresh_token
+            self.api_key = res.access_token
+            self._oauth_done.set()
+        except Exception:
+            log.exception('Authentication failed')
+            raise
+
     # def authenticate(self, auth_string=None, key=None, refresh_token=None, auth_dict=None):
-    def authenticate(self, auth_string=None, key=None, refresh_token=None, auth_dict=None):
-        api_key = None
+    def authenticate(self):
         try:
             self.initialize()
-            if key or refresh_token:
-                # self._update_account(api_key=key, refresh_token=refresh_token)  # TODO
-                pass
-            else:
-                if not self.flow:
-                    raise OAuthFlowException('Run Initialize() before Authenticate()')
-                try:
-                    if auth_dict and not auth_string:
-                        auth_string = auth_dict['code'][0]
-                    res: OAuth2Credentials = self.flow.step2_exchange(auth_string)
-                    refresh_token = res.refresh_token
-                    api_key = res.access_token
-                    self.flow = None
-                except Exception:
-                    log.exception('Authentication failed')
-                    raise
-            # self.connect(authenticating=True, refresh_token=refresh_token)
-            # return self.api_key
+            self._oauth_done.wait()
         finally:
-            if self.redir_server:
-                self.redir_server.shutdown()
-                self.redir_server = None
-        return api_key, refresh_token
+            if self._redir_server:
+                self._redir_server.shutdown()
+                self._redir_server = None
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
@@ -192,6 +186,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             refresh_token = creds.get('refresh_token', self.refresh_token)
             if not refresh_token:
                 self.authenticate()
+                api_key = self.api_key
+                refresh_token = self.refresh_token
             kwargs = {}
             try:
                 with self.mutex:

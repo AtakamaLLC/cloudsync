@@ -62,10 +62,10 @@ def test_oauth_connect():
     creds.pop("refresh_token", None)
     sync_root = "/" + os.urandom(16).hex()
     gd = GDriveProvider()
-    return
     gd.connect(creds)
     assert gd.client
-    gd.get_quota()
+    quota = gd.get_quota()
+    print(quota)
     try:
         info = gd.info_path(sync_root)
         if info and info.oid:
