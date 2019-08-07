@@ -12,3 +12,6 @@ lint:
 
 test:
 	pytest --durations=0 -n=4 cloudsync/tests
+
+format:
+	autopep8 --in-place -r -j 8 cloudsync/

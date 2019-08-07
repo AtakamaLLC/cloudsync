@@ -14,6 +14,7 @@ db = DropboxProvider()
 db.connect(dropbox_creds())
 db.name = "dropbox"
 
+
 def _rmtree(prov, oid, path):
     count = 0
     try:
@@ -32,6 +33,8 @@ def _rmtree(prov, oid, path):
     except CloudFileNotFoundError:
         pass
     return count
+
+
 threads = []
 
 for prov in (gd, db):

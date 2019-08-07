@@ -326,7 +326,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         res.session_id, len(data))
                 else:
                     self._api('files_upload_session_append_v2',
-                         data, cursor)
+                              data, cursor)
                     cursor.offset += len(data)
 
         if res is None:
@@ -352,7 +352,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 next(self._listdir(possible_conflict.oid, recursive=False))
                 raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
             except StopIteration:
-                pass # Folder is empty, rename over it no problem
+                pass  # Folder is empty, rename over it no problem
             self.delete(possible_conflict.oid)
             self._api('files_move_v2', info.oid, path)
             return

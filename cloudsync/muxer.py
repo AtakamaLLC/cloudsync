@@ -2,6 +2,7 @@ import queue
 from threading import Lock
 from collections import namedtuple
 
+
 class Muxer():
     Entry = namedtuple('Entry', 'genref listeners, lock')
 
@@ -46,3 +47,11 @@ class Muxer():
                         raise
         return e
 
+    def __del__(self):
+        with self.top_lock:
+            try:
+                self.listeners.remove(self)
+            except ValueError:
+                pass
+            if not self.listeners and self.func in self.already:
+                del self.already[self.func]

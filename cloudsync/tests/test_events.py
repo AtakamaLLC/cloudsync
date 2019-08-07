@@ -13,9 +13,10 @@ def fixture_manager(mock_provider_generator):
 
     yield EventManager(provider, state, LOCAL)
 
+
 def test_event_basic(util, manager):
     provider = manager.provider
-    state  = manager.state
+    state = manager.state
     info = provider.create("/dest", BytesIO(b'hello'))
 
     assert not state.lookup_path(LOCAL, "/dest")

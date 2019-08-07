@@ -27,7 +27,7 @@ class Runnable(ABC):
             try:
                 self.do()
             except Exception as e:
-                log.error("unhandled exception %s in %s", e, self.__class__, exc_info=True)
+                log.exception("unhandled exception %s in %s", e, self.__class__)
 
         if self.stopped:
             self.done()
@@ -41,6 +41,7 @@ class Runnable(ABC):
 
     def done(self):
         pass
+
 
 def test_runnable():
     class TestRun(Runnable):

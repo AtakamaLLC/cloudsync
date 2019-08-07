@@ -82,10 +82,10 @@ def fixture_sync(mock_provider_generator):
         if to == REMOTE:
             return "/remote" + path.replace("/local", "")
 
-        raise ValueError()
+        raise ValueError("bad path: %s", path)
 
     # two providers and a translation function that converts paths in one to paths in the other
-    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator()), translate)
+    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator(oid_is_path=False)), translate)
 
     yield sync
 
@@ -98,6 +98,7 @@ def test_sync_state_basic():
 
     assert state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, oid="123")
+    state._assert_index_is_correct()
 
 
 def test_sync_state_rename():
@@ -106,6 +107,52 @@ def test_sync_state_rename():
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
+    state._assert_index_is_correct()
+
+
+def test_sync_state_rename2():
+    state = SyncState()
+    state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
+    state.update(LOCAL, FILE, path="foo2", oid="456", prior_oid="123")
+    assert state.lookup_path(LOCAL, path="foo2")
+    assert not state.lookup_path(LOCAL, path="foo")
+    assert state.lookup_oid(LOCAL, oid="456")
+    assert not state.lookup_oid(LOCAL, oid="123")
+    state._assert_index_is_correct()
+
+
+def test_sync_state_rename3():
+    state = SyncState()
+    ahash = "ah"
+    bhash = "bh"
+    state.update(LOCAL, FILE, path="a", oid="a", hash=ahash)
+    state.update(LOCAL, FILE, path="b", oid="b", hash=bhash)
+
+    infoa = state.lookup_oid(LOCAL, "a")
+    infob = state.lookup_oid(LOCAL, "b")
+
+    assert infoa[LOCAL].hash == ahash
+    assert infob[LOCAL].hash == bhash
+
+    # rename in a circle
+
+    state.update(LOCAL, FILE, path="c", oid="c", prior_oid="a")
+    log.debug("TABLE 0:\n%s", state.pretty_print(use_sigs=False))
+    state.update(LOCAL, FILE, path="a", oid="a", prior_oid="b")
+    log.debug("TABLE 1:\n%s", state.pretty_print(use_sigs=False))
+    state.update(LOCAL, FILE, path="b", oid="b", prior_oid="c")
+    log.debug("TABLE 2:\n%s", state.pretty_print(use_sigs=False))
+
+    assert state.lookup_path(LOCAL, "a")
+    assert state.lookup_path(LOCAL, "b")
+    infoa = state.lookup_oid(LOCAL, "a")
+    infob = state.lookup_oid(LOCAL, "b")
+
+    # hashes should be flipped
+    assert infoa[LOCAL].hash == bhash
+    assert infob[LOCAL].hash == ahash
+
+    state._assert_index_is_correct()
 
 
 def test_sync_state_multi():
@@ -113,6 +160,7 @@ def test_sync_state_multi():
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
+    state._assert_index_is_correct()
 
 
 def test_sync_basic(sync: "SyncMgrMixin"):
@@ -130,17 +178,17 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, FILE, path=local_path1,
+    sync.state.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.syncs.update(LOCAL, FILE, oid=linfo.oid, exists=True)
+    sync.state.update(LOCAL, FILE, oid=linfo.oid, exists=True)
 
-    assert sync.syncs.entry_count() == 1
+    assert sync.state.entry_count() == 1
 
     rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
 
     # inserts info about some cloud path
-    sync.syncs.update(REMOTE, FILE, oid=rinfo.oid,
+    sync.state.update(REMOTE, FILE, oid=rinfo.oid,
                       path=remote_path2, hash=rinfo.hash)
 
     def done():
@@ -164,7 +212,9 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     info = sync.providers[LOCAL].info_path("/local/stuff2")
     assert info.hash == sync.providers[LOCAL].hash_oid(info.oid)
     assert info.oid
-    log.debug("all syncs %s", sync.syncs.get_all())
+    log.debug("all state %s", sync.state.get_all())
+
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_rename(sync):
@@ -180,17 +230,20 @@ def test_sync_rename(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, FILE, path=local_path1,
+    sync.state.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
-    sync.syncs.update(LOCAL, FILE, path=local_path2,
-                      oid=linfo.oid, hash=linfo.hash)
+    new_oid = sync.providers[LOCAL].rename(linfo.oid, local_path2)
+
+    sync.state.update(LOCAL, FILE, path=local_path2,
+                      oid=new_oid, hash=linfo.hash, prior_oid=linfo.oid)
 
     sync.run_until_found((REMOTE, remote_path2))
 
     assert sync.providers[REMOTE].info_path("/remote/stuff") is None
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_hash(sync):
@@ -204,14 +257,14 @@ def test_sync_hash(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, FILE, path=local_path1,
+    sync.state.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
     linfo = sync.providers[LOCAL].upload(linfo.oid, BytesIO(b"hello2"))
 
-    sync.syncs.update(LOCAL, FILE, linfo.oid, hash=linfo.hash)
+    sync.state.update(LOCAL, FILE, linfo.oid, hash=linfo.hash)
 
     sync.run_until_found(WaitFor(REMOTE, remote_path1, hash=linfo.hash))
 
@@ -221,6 +274,7 @@ def test_sync_hash(sync):
     sync.providers[REMOTE].download(info.oid, check)
 
     assert check.getvalue() == b"hello2"
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_rm(sync):
@@ -234,17 +288,19 @@ def test_sync_rm(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, FILE, path=local_path1,
+    sync.state.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
     sync.providers[LOCAL].delete(linfo.oid)
-    sync.syncs.update(LOCAL, FILE, linfo.oid, exists=False)
+    sync.state.update(LOCAL, FILE, linfo.oid, exists=False)
 
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
+
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_mkdir(sync):
@@ -257,22 +313,26 @@ def test_sync_mkdir(sync):
     local_path_oid1 = sync.providers[LOCAL].mkdir(local_path1)
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, DIRECTORY, path=local_dir1,
+    sync.state.update(LOCAL, DIRECTORY, path=local_dir1,
                       oid=local_dir_oid1)
-    sync.syncs.update(LOCAL, DIRECTORY, path=local_path1,
+    sync.state.update(LOCAL, DIRECTORY, path=local_path1,
                       oid=local_path_oid1)
 
     sync.run_until_found((REMOTE, remote_dir1))
     sync.run_until_found((REMOTE, remote_path1))
 
-    log.debug("delete")
+    log.debug("BEFORE DELETE\n %s", sync.state.pretty_print())
+
     sync.providers[LOCAL].delete(local_path_oid1)
-    sync.syncs.update(LOCAL, FILE, local_path_oid1, exists=False)
+    sync.state.update(LOCAL, FILE, local_path_oid1, exists=False)
+
+    log.debug("AFTER DELETE\n %s", sync.state.pretty_print())
 
     log.debug("wait for delete")
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_conflict_simul(sync):
@@ -288,17 +348,17 @@ def test_sync_conflict_simul(sync):
     rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"))
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, FILE, path=local_path1,
+    sync.state.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
-    sync.syncs.update(REMOTE, FILE, path=remote_path1,
+    sync.state.update(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
     sync.run_until_found(
-            (REMOTE, "/remote/stuff1.conflicted"),
-            (LOCAL, "/local/stuff1.conflicted"),
-            (REMOTE, "/remote/stuff1"),
-            (LOCAL, "/local/stuff1")
-            )
+        (REMOTE, "/remote/stuff1.conflicted"),
+        (LOCAL, "/local/stuff1.conflicted"),
+        (REMOTE, "/remote/stuff1"),
+        (LOCAL, "/local/stuff1")
+    )
 
     sync.providers[LOCAL].log_debug_state("LOCAL")
     sync.providers[REMOTE].log_debug_state("REMOTE")
@@ -312,6 +372,7 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() != b2.getvalue()
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_conflict_path(sync):
@@ -328,16 +389,16 @@ def test_sync_conflict_path(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.syncs.update(LOCAL, FILE, path=local_path1,
+    sync.state.update(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
     rinfo = sync.providers[REMOTE].info_path(remote_path1)
 
-    assert len(sync.syncs.get_all()) == 1
+    assert len(sync.state.get_all()) == 1
 
-    ent = sync.syncs.get_all().pop()
+    ent = sync.state.get_all().pop()
 
     sync.providers[REMOTE].log_debug_state("BEFORE")
 
@@ -346,22 +407,23 @@ def test_sync_conflict_path(sync):
 
     sync.providers[REMOTE].log_debug_state("AFTER")
 
-    sync.syncs.update(LOCAL, FILE, path=local_path2,
+    sync.state.update(LOCAL, FILE, path=local_path2,
                       oid=linfo.oid, hash=linfo.hash)
 
-    assert len(sync.syncs.get_all()) == 1
+    assert len(sync.state.get_all()) == 1
     assert ent[REMOTE].oid == rinfo.oid
 
-    sync.syncs.update(REMOTE, FILE, path=remote_path2,
+    sync.state.update(REMOTE, FILE, path=remote_path2,
                       oid=rinfo.oid, hash=rinfo.hash)
 
-    assert len(sync.syncs.get_all()) == 1
+    assert len(sync.state.get_all()) == 1
 
     # currently defers to the alphabetcially greater name, rather than conflicting
     sync.run_until_found((LOCAL, "/local/stuff-r"))
 
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
+    sync.state._assert_index_is_correct()
 
 
 def test_sync_cycle(sync):
@@ -404,3 +466,45 @@ def test_sync_cycle(sync):
 
     sync.run(until=lambda:not sync.syncs.has_changes(), timeout=1)
     sync.providers[REMOTE].log_debug_state("AFTER")
+
+
+def test_sync_conflict_path_combine(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = "/local/stuff1"
+    local_path2 = "/local/stuff2"
+    remote_path1 = "/remote/stuff1"
+    remote_path2 = "/remote/stuff2"
+    local_path3 = "/local/stuff"
+    remote_path3 = "/remote/stuff"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    linfo1 = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+    rinfo2 = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello"))
+
+    # inserts info about some local path
+    sync.state.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo1.oid, hash=linfo1.hash)
+
+    sync.state.update(REMOTE, FILE, path=remote_path2,
+                      oid=rinfo2.oid, hash=rinfo2.hash)
+
+    sync.run_until_found((REMOTE, remote_path1), (LOCAL, local_path2))
+
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+
+    new_oid1 = sync.providers[LOCAL].rename(linfo1.oid, local_path3)
+    prior_oid = sync.providers[LOCAL].oid_is_path and linfo1.oid
+    sync.state.update(LOCAL, FILE, path=local_path3, oid=new_oid1, prior_oid=prior_oid)
+
+    new_oid2 = sync.providers[REMOTE].rename(rinfo2.oid, remote_path3)
+    prior_oid = sync.providers[REMOTE].oid_is_path and rinfo2.oid
+    sync.state.update(REMOTE, FILE, path=remote_path3, oid=new_oid2, prior_oid=prior_oid)
+
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+
+    sync.run_until_found((LOCAL, "/local/stuff.conflicted"))
+
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())

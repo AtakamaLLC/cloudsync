@@ -309,16 +309,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             for change in response.get('changes'):
                 log.debug("got event %s", change)
 
-                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z', 
-                # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file', 
+                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z',
+                # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file',
                 # 'id': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'name': 'dest', 'mimeType': 'application/octet-stream'}}
 
-                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z', 
+                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z',
                 # 'removed': True, 'fileId': '1lhRe0nDplA6I5JS18642rg0KIbYN66lR'}
 
                 ts = arrow.get(change.get('time')).float_timestamp
                 oid = change.get('fileId')
-                exists = not change.get('removed') 
+                exists = not change.get('removed')
 
                 fil = change.get('file')
                 if fil:
@@ -350,7 +350,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if ent.otype == DIRECTORY:
                 if self.exists_oid(ent.oid):
                     yield from self._walk(ent.oid)
- 
+
     def walk(self, path, since=None):
         info = self.info_path(path)
         if not info:
@@ -362,8 +362,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         mtime = metadata.get("modifiedTime", time.time())
         mtime = arrow.get(mtime).isoformat()
         gdrive_info = {
-                'modifiedTime':  mtime
-                }
+            'modifiedTime':  mtime
+        }
 
         # mime type, if provided
         mime_type = metadata.get("mimeType", None)
@@ -393,7 +393,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         if not metadata:
-            metadata = {} 
+            metadata = {}
         gdrive_info = self.__prep_upload(None, metadata)
 
         ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024)
@@ -420,7 +420,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
-            metadata = {} 
+            metadata = {}
         gdrive_info = self.__prep_upload(path, metadata)
 
         if self.exists_path(path):
@@ -630,7 +630,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._ids[path] = oid
 
-        return GDriveInfo(otype, oid, fhash, path, pids=pids) 
+        return GDriveInfo(otype, oid, fhash, path, pids=pids)
 
     def exists_path(self, path) -> bool:
         if path in self._ids:
@@ -651,7 +651,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return self._ids[parent]
 
-    def _path_oid(self, oid) -> Optional[str]:
+    def _path_oid(self, oid, info=None) -> Optional[str]:
         """convert oid to path"""
         for p, pid in self._ids.items():
             if pid == oid:
@@ -663,7 +663,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         # todo, better cache, keep up to date, etc.
 
-        info = self._info_oid(oid)
+        if not info:
+            info = self._info_oid(oid)
+
         if info and info.pids and info.name:
             ppath = self._path_oid(info.pids[0])
             if ppath:
@@ -677,7 +679,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if info is None:
             return None
         # expensive
-        path = self._path_oid(oid)
+        path = self._path_oid(oid, info)
         ret = OInfo(info.otype, info.oid, info.hash, path)
         log.debug("info oid ret: %s", ret)
         return ret

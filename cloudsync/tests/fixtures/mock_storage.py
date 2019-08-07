@@ -5,6 +5,7 @@ from cloudsync import CloudSync, SyncState, Storage, LOCAL, REMOTE
 
 log = logging.getLogger(__name__)
 
+
 class MockStorage(Storage):  # Does not actually persist the data... but it's just a mock
     top_lock = Lock()
     lock_dict = dict()

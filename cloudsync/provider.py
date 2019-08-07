@@ -76,14 +76,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def info_oid(self, oid) -> Optional[OInfo]:
         ...
 
-### CONVENIENCE
+# CONVENIENCE
     def download_path(self, path, io):
         info = self.info_path(path)
         if not info or not info.oid:
             raise CloudFileNotFoundError()
-        self.download(info.oid, io) 
+        self.download(info.oid, io)
 
-### HELPER
+# HELPER
     @classmethod
     def join(cls, *paths):
         res = ""
@@ -173,4 +173,3 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 raise CloudFileNotFoundError(parent_path)
             if parent_obj.otype != DIRECTORY:
                 raise CloudFileExistsError(parent_path)
-
