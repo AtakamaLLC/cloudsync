@@ -1,6 +1,11 @@
 from .fixtures import *  # pylint: disable=unused-import
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "repeat")
+    config.addinivalue_line("markers", "manual")
+
+
 def pytest_runtest_setup(item):
     if 'manual' in item.keywords and not item.config.getoption("--manual"):
         pytest.skip("need --manual option to run this test")
