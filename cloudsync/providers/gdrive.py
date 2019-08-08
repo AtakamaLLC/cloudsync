@@ -259,7 +259,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self.__cursor = res.get('startPageToken')
         return self.__cursor
 
-    def events(self):      # pylint: disable=too-many-locals
+    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals
         page_token = self.cursor
         while page_token is not None:
             # log.debug("looking for events, timeout: %s", timeout)

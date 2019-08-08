@@ -137,7 +137,7 @@ class MockProvider(Provider):
     def _api(self, *args, **kwargs):
         pass
 
-    def events(self):
+    def events(self) -> Generator[Event, None, None]:
         self._api()
         done = False
         found = False

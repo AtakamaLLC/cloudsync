@@ -2,7 +2,6 @@ from .fixtures import *  # pylint: disable=unused-import
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "repeat")
     config.addinivalue_line("markers", "manual")
 
 

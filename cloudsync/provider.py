@@ -4,6 +4,7 @@ from typing import Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.event import Event
 
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
@@ -21,7 +22,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         pass
 
     @abstractmethod
-    def events(self):
+    def events(self) -> Generator[Event, None, None]:
         ...
 
     @abstractmethod
