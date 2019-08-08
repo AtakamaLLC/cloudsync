@@ -76,7 +76,7 @@ class SyncManager(Runnable):
             if ent[i].path != info.path:
                 self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
 
-        log.debug("after update state %s", self)
+        log.debug("after update state %s", ent)
 
     def path_conflict(self, ent):
         if ent[0].path and ent[1].path:
