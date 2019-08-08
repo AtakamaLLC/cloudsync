@@ -186,11 +186,6 @@ class SyncEntry(Reprable):
             return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash
         return False
 
-    def path_conflict(self):
-        if self[0].path and self[1].path:
-            return self[0].path != self[0].sync_path and self[1].path != self[1].sync_path
-        return False
-
     def is_path_change(self, changed):
         return self[changed].path != self[changed].sync_path
 

@@ -78,6 +78,12 @@ class SyncManager(Runnable):
 
         log.debug("after update state %s", self)
 
+    def path_conflict(self, ent):
+        if ent[0].path and ent[1].path:
+            return not self.providers[0].paths_match(ent[0].path,ent[0].sync_path) and \
+		   not self.providers[1].paths_match(ent[1].path,ent[1].sync_path)
+        return False
+
     def sync(self, sync):
         self.get_latest_state(sync)
 
@@ -85,7 +91,7 @@ class SyncManager(Runnable):
             self.handle_hash_conflict(sync)
             return
 
-        if sync.path_conflict():
+        if self.path_conflict(sync):
             self.handle_path_conflict(sync)
             return
 
