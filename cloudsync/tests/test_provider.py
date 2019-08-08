@@ -9,7 +9,7 @@ from typing import Union, NamedTuple, Optional, Generator
 import cloudsync
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, FILE
-from cloudsync.tests.fixtures import Provider, mock_provider_instance
+from cloudsync.tests.fixtures import Provider, mock_provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 # from cloudsync.providers import GDriveProvider, DropboxProvider
@@ -20,14 +20,10 @@ log = logging.getLogger(__name__)
 ProviderMixin = Union[Provider, "ProviderHelper"]
 
 
-class ProviderHelper(Provider):
+class ProviderHelper():
     def __init__(self, prov):
         self.api_retry = True
         self.prov = prov
-
-        # need to copy in all attrs that are defined in the ABC
-        self.oid_is_path = prov.oid_is_path
-        self.case_sensitive = prov.case_sensitive
 
         self.test_root = getattr(self.prov, "test_root", None)
         self.event_timeout = getattr(self.prov, "event_timeout", 20)
@@ -136,7 +132,7 @@ class ProviderHelper(Provider):
                 # so isolation is not perfect
                 return True
 
-            if not raw_path.startswith(self.test_root):
+            if not self.is_subpath(self.test_root, raw_path):
                 return False
 
             self.__strip_root(obj)
@@ -147,16 +143,17 @@ class ProviderHelper(Provider):
         if hasattr(obj, "path"):
             path = obj.path
             if path:
-                assert path.startswith(self.test_root)
-                path = obj.path[len(self.test_root):]
-                if not path.startswith("/"):
-                    path = "/" + path
+                relative = self.is_subpath(self.test_root, path)
+                assert relative
+                path = relative
+                if not path.startswith(self.sep):
+                    path = self.sep + path
                 obj.path = path
         return obj
     # HELPERS
 
     def temp_name(self: ProviderMixin, name="tmp", *, folder=None):
-        fname = self.join(folder or "/", os.urandom(16).hex() + "." + name)
+        fname = self.join(folder or self.sep, os.urandom(16).hex() + "." + name)
         return fname
 
     def events_poll(self: ProviderMixin, timeout=None, until=None) -> Generator[Event, None, None]:

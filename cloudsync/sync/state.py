@@ -181,19 +181,6 @@ class SyncEntry(Reprable):
         self.__states[i] = val
         self.dirty = True
 
-    def get_latest_state(self, providers):
-        #        log.debug("before update state %s", self)
-        for i in (LOCAL, REMOTE):
-            if self[i].changed:
-                # get latest info from provider
-                if self[i].otype == FILE:
-                    self[i].hash = providers[i].hash_oid(self[i].oid)
-                    self[i].exists = EXISTS if self[i].hash else TRASHED
-                else:
-                    self[i].exists = providers[i].exists_oid(self[i].oid)
-                self.dirty = True
-    #        log.debug("after update state %s", self)
-
     def hash_conflict(self):
         if self[0].hash and self[1].hash:
             return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash

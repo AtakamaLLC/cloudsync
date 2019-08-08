@@ -12,6 +12,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     alt_sep: str = '\\'                 # alternate path delimiter
     oid_is_path = False
     case_sensitive = True
+    win_paths = False
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -88,17 +89,29 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     @classmethod
     def join(cls, *paths):
         res = ""
+        rl = []
         for path in paths:
             if path is None or path == cls.sep:
                 continue
+
             if isinstance(path, str):
-                res = res + cls.sep + path.strip(cls.sep)
+                rl = rl + [path.strip(cls.sep).strip(cls.alt_sep)]
                 continue
+
             for sub_path in path:
-                if sub_path is None or sub_path == cls.sep:
+                if sub_path is None or sub_path == cls.sep or sub_path == cls.alt_sep:
                     continue
-                res = res + cls.sep + sub_path.strip(cls.sep)
-        return res or cls.sep
+                rl = rl + [sub_path.strip(cls.sep)]
+
+        if not rl:
+            return cls.sep
+
+        res = cls.sep.join(rl)
+
+        if not cls.win_paths or res[1] != ':':
+            res = cls.sep + res
+
+        return res
 
     def split(self, path):
         # todo cache regex
@@ -120,14 +133,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         norm_path = self.join(*parts)
         return norm_path
 
-    def is_subpath(self, folder, target, sep=None, anysep=False, strict=False):
-        if sep is None:
-            if anysep:
-                sep = "/"
-                folder = folder.replace("\\", "/")
-                target = target.replace("\\", "/")
-            else:
-                sep = self.sep
+    def is_subpath(self, folder, target, sep=None, alt_sep=None, strict=False):
+        sep = sep or self.sep
+        alt_sep = alt_sep or self.alt_sep
+        if alt_sep:
+            folder = folder.replace(alt_sep, sep)
+            target = target.replace(alt_sep, sep)
+
         # Will return True for is-same-path in addition to target
         folder_full = str(folder)
         folder_full = folder_full.rstrip(sep)
