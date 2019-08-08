@@ -288,6 +288,7 @@ def test_sync_two_conflicts(cs):
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
 
+@pytest.mark.repeat(10)
 def test_sync_subdir_rename(cs):
     local_dir     = "/local/a"
     local_base    = "/local/a/stuff"
