@@ -192,10 +192,10 @@ class SyncManager(Runnable):
                     conflicts.append(ent)
 
             # if a file exists with the same name
-            conflicts = [ent for ent in notme_ents if ent[synced].exists != TRASHED]
+            conflicts = [ent for ent in chents if ent[synced].exists != TRASHED and ent != sync]
 
             if conflicts:
-                log.warning("mkdir conflict %s letting other side handle it", sync)
+                log.info("mkdir conflict %s letting other side handle it", sync)
                 return
 
             # make the dir
@@ -499,5 +499,9 @@ class SyncManager(Runnable):
             return
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
-        new_oid = self.providers[other.side].rename(other.oid, other_path)
-        self.state.update_entry(sync, other.side, new_oid, path=other_path)
+        try:
+            new_oid = self.providers[other.side].rename(other.oid, other_path)
+            self.state.update_entry(sync, other.side, new_oid, path=other_path)
+        except CloudFileExistsError:
+            # other side already agrees
+            pass
