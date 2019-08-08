@@ -4,7 +4,7 @@ import logging
 import pytest
 from io import BytesIO
 from unittest.mock import patch
-from typing import Union, NamedTuple
+from typing import Union, NamedTuple, Optional, Generator
 
 import cloudsync
 
@@ -12,7 +12,7 @@ from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudF
 from cloudsync.tests.fixtures import Provider, mock_provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
-from cloudsync.providers import GDriveProvider, DropboxProvider
+# from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
@@ -62,12 +62,12 @@ class ProviderHelper():
     def __getattr__(self, k):
         return getattr(self.prov, k)
 
-    def events(self):
+    def events(self) -> Generator[Event, None, None]:
         for e in self.prov.events():
             if self.__filter_root(e):
                 yield e
 
-    def walk(self, path):
+    def walk(self, path, since=None):
         path = self.__add_root(path)
         log.debug("WALK %s", path)
         for e in self.prov.walk(path):
@@ -103,11 +103,11 @@ class ProviderHelper():
         path = self.__add_root(path)
         return self.prov.exists_path(path)
 
-    def info_path(self, path):
+    def info_path(self, path: str) -> Optional[OInfo]:
         path = self.__add_root(path)
         return self.__strip_root(self.prov.info_path(path))
 
-    def info_oid(self, oid):
+    def info_oid(self, oid) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
     def listdir(self, oid):
@@ -156,7 +156,7 @@ class ProviderHelper():
         fname = self.join(folder or self.sep, os.urandom(16).hex() + "." + name)
         return fname
 
-    def events_poll(self: ProviderMixin, timeout=None, until=None):
+    def events_poll(self: ProviderMixin, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
             timeout = self.event_timeout
 
@@ -486,7 +486,7 @@ def test_event_basic(provider: ProviderMixin):
     for e in provider.events_poll(timeout=min(provider.event_sleep, 1)):
         log.debug("event %s", e)
 
-    wait_sleep_cycles = 10
+    wait_sleep_cycles = 30
 
     info1 = provider.create(dest, temp, None)
     assert info1 is not None  # TODO: check info1 for more things
@@ -535,7 +535,17 @@ def test_event_basic(provider: ProviderMixin):
     event_count = 0
     for e in provider.events_poll():
         log.debug("event %s", e)
-        if not e.exists or path in e.path:
+        if e.exists and e.path is None:
+            info2 = provider.info_oid(e.oid)
+            if info2:
+                e.path = info2.path
+            else:
+                e.exists = False
+            assert not e.exists or e.path is not None
+
+        log.debug("event %s", e)
+        if (not e.exists and e.oid == deleted_oid) or path in e.path:
+            assert not e.exists or e.path is not None, "non-trashed event without a path? %s" % e
             received_event = e
             event_count += 1
 
@@ -560,10 +570,12 @@ def test_event_del_create(provider: ProviderMixin):
 
     info1 = provider.create(dest, temp)
     provider.delete(info1.oid)
-    provider.create(dest, temp2)
+    info2 = provider.create(dest, temp2)
 
     last_event = None
-    saw_delete = False
+    saw_first_delete = False
+    saw_first_create = False
+    disordered = False
     done = False
     for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
         log.debug("event %s", e)
@@ -577,16 +589,33 @@ def test_event_del_create(provider: ProviderMixin):
         if path == dest or e.exists is False:
             last_event = e
 
-            if e.exists is True and saw_delete:
-                log.debug("done, we saw the delete and got a create after")
-                done = True
+            if e.oid == info1.oid:
+                if e.exists:
+                    saw_first_create = True
+                    if saw_first_delete and not provider.oid_is_path:
+                        log.debug("disordered!")
+                        disordered = True
+                else:
+                    saw_first_delete = True
 
-            if e.exists is False:
-                saw_delete = True
+            if e.exists and e.oid == info2.oid:
+                if provider.oid_is_path:
+                    if saw_first_delete and saw_first_create:
+                        done = True
+                else:
+                    done = True
 
     # the important thing is that we always get a create after the delete event
-    assert last_event
+    assert last_event, "Event loop timed out before getting any events"
+    assert done, "Event loop timed out after the delete, but before the create, " \
+                 "saw_first_delete=%s, saw_first_create=%s, disordered=%s" % (saw_first_delete, saw_first_create, disordered)
     assert last_event.exists is True
+    # The provider may compress out the first create, or compress out the first create and delete, or deliver both
+    # So, if we saw the first create, make sure we got the delete. If we didn't see the first create,
+    # it doesn't matter if we saw the first delete.
+    if saw_first_create:
+        assert saw_first_delete
+    assert not disordered
 
 
 def test_event_rename(provider: ProviderMixin):

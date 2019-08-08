@@ -1,6 +1,7 @@
 import time
 import logging
 import threading
+import webbrowser
 from ssl import SSLError
 import json
 from typing import Generator, Optional
@@ -10,13 +11,11 @@ from apiclient.discovery import build   # pylint: disable=import-error
 from apiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
-from oauth2client.client import HttpAccessTokenRefreshError  # pylint: disable=import-error
+from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
-
-from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
-
+from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
+from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
-
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
@@ -36,7 +35,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     case_sensitive = True
     require_parent_folder = True
 
-    _scope = "https://www.googleapis.com/auth/drive"
+    provider = 'googledrive'
+    name = 'Google Drive'
+    _scope = ['https://www.googleapis.com/auth/drive',
+              'https://www.googleapis.com/auth/drive.activity.readonly'
+              ]
+    _client_id = '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com'
+    _client_secret = 'Y-GBVYGO2v5V9cV4WsjMSXDV'
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _token_uri = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
@@ -53,10 +58,66 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids = {}
+        self._flow = None
+        self._redir_server: Optional[OAuthRedirServer] = None
+        self._oauth_done = threading.Event()
 
     @property
     def connected(self):
         return self.client is not None
+
+    def get_display_name(self):
+        return self.name
+
+    def initialize(self, localhost_redir=True):
+        if localhost_redir:
+            try:
+                if not self._redir_server:
+                    self._redir_server = OAuthRedirServer(self._on_oauth_success,
+                                                          self.get_display_name(),
+                                                          use_predefined_ports=False,
+                                                          on_failure=self._on_oauth_failure)
+                self._flow = OAuth2WebServerFlow(client_id=self._client_id,
+                                                 client_secret=self._client_secret,
+                                                 scope=self._scope,
+                                                 redirect_uri=self._redir_server.uri('/auth/'))
+            except OSError:
+                log.exception('Unable to use redir server. Falling back to manual mode')
+                localhost_redir = False
+        if not localhost_redir:
+            self._flow = OAuth2WebServerFlow(client_id=self._client_id,
+                                             client_secret=self._client_secret,
+                                             scope=self._scope,
+                                             redirect_uri=self._redir)
+        url = self._flow.step1_get_authorize_url()
+        self._oauth_done.clear()
+        webbrowser.open(url)
+
+        return localhost_redir, url
+
+    def _on_oauth_success(self, auth_dict):
+        auth_string = auth_dict['code'][0]
+        try:
+            res: OAuth2Credentials = self._flow.step2_exchange(auth_string)
+            self.refresh_token = res.refresh_token
+            self.api_key = res.access_token
+            self._oauth_done.set()
+        except Exception:
+            log.exception('Authentication failed')
+            raise
+
+    def _on_oauth_failure(self, err):
+        log.error("oauth failure: %s", err)
+        self._oauth_done.set()
+
+    def authenticate(self):
+        try:
+            self.initialize()
+            self._oauth_done.wait()
+        finally:
+            if self._redir_server:
+                self._redir_server.shutdown()
+                self._redir_server = None
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
@@ -86,6 +147,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not self.client:
             api_key = creds.get('api_key', self.api_key)
             refresh_token = creds.get('refresh_token', self.refresh_token)
+            if not refresh_token:
+                self.authenticate()
+                api_key = self.api_key
+                refresh_token = self.refresh_token
             kwargs = {}
             try:
                 with self.mutex:
@@ -155,13 +220,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
 
-                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) or str(e.resp.status) == '429':
+                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) \
+                        or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
 
                 # At this point, _should_retry_response() returns true for error codes >=500, 429, and 403 with
                 #  the reason 'userRateLimitExceeded' or 'rateLimitExceeded'. 403 without content, or any other
-                #  response is not retried. We have already taken care of some of those cases above, but we call this below
-                #  to catch the rest, and in case they improve their library with more conditions. If we called
+                #  response is not retried. We have already taken care of some of those cases above, but we call this
+                #  below to catch the rest, and in case they improve their library with more conditions. If we called
                 #  meth.execute() above with a num_retries argument, all this retrying would happen in the google api
                 #  library, and we wouldn't have to think about retries.
                 should_retry = _should_retry_response(e.resp.status, e.content)
@@ -193,7 +259,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self.__cursor = res.get('startPageToken')
         return self.__cursor
 
-    def events(self):      # pylint: disable=too-many-locals
+    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals
         page_token = self.cursor
         while page_token is not None:
             # log.debug("looking for events, timeout: %s", timeout)
@@ -488,7 +554,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def exists_oid(self, oid):
         return self._info_oid(oid) is not None
 
-    def info_path(self, path) -> OInfo:
+    def info_path(self, path: str) -> Optional[OInfo]:
         if path == "/":
             return self.info_oid(self.root_id)
 
@@ -544,8 +610,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return self._ids[parent]
 
-    def _path_oid(self, oid, info=None) -> str:
-        "convert oid to path"
+    def _path_oid(self, oid, info=None) -> Optional[str]:
+        """convert oid to path"""
         for p, pid in self._ids.items():
             if pid == oid:
                 return p
@@ -567,7 +633,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid) -> OInfo:
+    def info_oid(self, oid) -> Optional[OInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None
