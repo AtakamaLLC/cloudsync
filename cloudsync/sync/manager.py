@@ -178,12 +178,11 @@ class SyncManager(Runnable):
 
             chents = list(self.state.lookup_path(changed, sync[changed].path))
             syents = list(self.state.lookup_path(synced, translated_path))
-            ents = chents + syents
-            notme_ents = [ent for ent in ents if ent != sync]
+            notme_chents = [ent for ent in chents if ent != sync]
 
             conflicts = []
-            for ent in notme_ents:
-                # any dup dirs on either side can be ignored
+            for ent in notme_chents:
+                # dup dirs on remote side can be ignored
                 if ent[synced].otype == DIRECTORY:
                     log.debug("discard duplicate dir entry, caused by a mkdirs %s", ent)
                     ent.discard()
@@ -191,8 +190,8 @@ class SyncManager(Runnable):
                 else:
                     conflicts.append(ent)
 
-            # if a file exists with the same name
-            conflicts = [ent for ent in chents if ent[synced].exists != TRASHED and ent != sync]
+            # if a file exists with the same name on the sync side
+            conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync]
 
             if conflicts:
                 log.info("mkdir conflict %s letting other side handle it", sync)
