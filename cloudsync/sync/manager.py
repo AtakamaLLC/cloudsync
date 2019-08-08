@@ -390,11 +390,7 @@ class SyncManager(Runnable):
                     sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
                 log.debug("can't rename, do parent first maybe")
-                if sync.punted > 1:
-                    # never punt twice
-                    self.rename_to_fix_conflict(sync, changed, synced)
-                else:
-                    sync.punt()
+                sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
                 log.debug("can't rename, file exists")
