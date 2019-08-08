@@ -379,7 +379,7 @@ def test_sync_folder_conflicts_file(cs):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 5)
+    assert(len(cs.state) == 6)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
