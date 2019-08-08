@@ -229,9 +229,13 @@ class SyncEntry(Reprable):
         else:
             _sig = lambda a: a
 
-        otype = self[LOCAL].otype.value[0:3]
-        if self[REMOTE].otype != self[LOCAL].otype:
-            otype = self[LOCAL].otype.value[0] + "-" + self[REMOTE].otype.value[0]
+        local_otype = self[LOCAL].otype.value if self[LOCAL].otype else '?'
+        remote_otype = self[REMOTE].otype.value if self[REMOTE].otype else '?'
+
+        if local_otype != remote_otype:
+            otype = local_otype[0] + "-" + remote_otype[0]
+        else:
+            otype = local_otype
 
         if not fixed:
             return str((_sig(id(self)), otype,
@@ -396,13 +400,13 @@ class SyncState:
         # TODO: refactor this so that a list of affected items is gathered, then the alterations happen to the final
         #    list, which will avoid having to remove after adding, which feels mildly risky
         # TODO: is this function called anywhere? ATM, it looks like no... It should be called or removed
-        # TODO: it looks like this loop has a bug... items() does not return path, sub it returns path, Dict[oid, sub]
-        for path, sub in self._paths[side].items():
-            if is_subpath(from_dir, sub.path):
-                sub.path = replace_path(sub.path, from_dir, to_dir)
+        for path, oid_dict in self._paths[side].items():
+            if is_subpath(from_dir, path):
+                new_path = replace_path(path, from_dir, to_dir)
                 remove.append(path)
-                self._paths[side][sub.path] = sub
-                sub.dirty = True
+                self._paths[side][new_path] = oid_dict
+                for ent in oid_dict.values():
+                    ent[side].path = new_path
 
         for path in remove:
             self._paths[side].pop(path)

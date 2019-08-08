@@ -6,10 +6,12 @@ from enum import Enum
 class OType(Enum):
     DIRECTORY = "dir"
     FILE = "file"
+    TRASHED = "trashed"
 
 
 DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
+TRASHED = OType.TRASHED                    # only allowed for deleted files
 
 
 @dataclass

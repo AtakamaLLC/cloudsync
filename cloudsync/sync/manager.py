@@ -9,7 +9,7 @@ from cloudsync.provider import Provider
 
 __all__ = ['SyncManager']
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError
 from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 
@@ -46,6 +46,9 @@ class SyncManager(Runnable):
             try:
                 self.sync(sync)
                 self.state.storage_update(sync)
+            except CloudTemporaryError as e:
+                log.error(
+                    "exception %s[%s] while processing %s", type(e), e, sync)
             except Exception as e:
                 log.exception(
                     "exception %s[%s] while processing %s", type(e), e, sync)
@@ -60,12 +63,19 @@ class SyncManager(Runnable):
             if not ent[i].changed:
                 continue
 
-            # get latest info from provider
-            if ent[i].otype == FILE:
-                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
-                ent[i].exists = EXISTS if ent[i].hash else TRASHED
-            else:
-                ent[i].exists = self.providers[i].exists_oid(ent[i].oid)
+            info = self.providers[i].info_oid(ent[i].oid)
+            
+            if not info:
+                ent[i].exists = TRASHED
+                continue
+
+            ent[i].exists = EXISTS
+            ent[i].hash = info.hash
+            ent[i].otype = info.otype
+
+            if ent[i].path != info.path:
+                self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
+
         log.debug("after update state %s", self)
 
     def sync(self, sync):
@@ -89,9 +99,10 @@ class SyncManager(Runnable):
         log.debug("table\n%s", self.state.pretty_print())
 
     def temp_file(self, ohash):
-        # prefer big random name over NamedTemp which can infinite loop in odd situations!
-        # Not a fan of importing Provider into sync.py for this...
-        return Provider.join(self.tempdir, ohash)
+        # prefer big random name over NamedTemp which can near-infinite loop when there are folder-issues
+        ret = os.path.join(self.tempdir, os.urandom(16).hex())
+        log.debug("tempdir %s -> %s", self.tempdir, ret)
+        return ret
 
     def finished(self, side, sync):
         sync[side].changed = None
@@ -118,41 +129,19 @@ class SyncManager(Runnable):
             return True
 
         try:
+            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, sync.temp_file + ".tmp")
             self.providers[changed].download(
                 sync[changed].oid, open(sync.temp_file + ".tmp", "wb"))
             os.rename(sync.temp_file + ".tmp", sync.temp_file)
             return True
+        except PermissionError as e:
+            raise CloudTemporaryError("download or rename exception %s" % e)
+
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
                       self.providers[changed].debug_name)
             sync[changed].exists = TRASHED
             return False
-
-    def mkdirs(self, prov, path):
-        log.debug("mkdirs %s", path)
-        try:
-            oid = prov.mkdir(path)
-            # todo update state
-        except CloudFileExistsError:
-            # todo: mabye CloudFileExistsError needs to have an oid and/or path in it
-            # at least optionally
-            info = prov.info_path(path)
-            if info:
-                oid = info.oid
-            else:
-                raise
-        except CloudFileNotFoundError:
-            ppath, _ = prov.split(path)
-            if ppath == path:
-                raise
-            log.debug("mkdirs parent, %s", ppath)
-            oid = self.mkdirs(prov, ppath)
-            try:
-                oid = prov.mkdir(path)
-                # todo update state
-            except CloudFileNotFoundError:
-                raise CloudFileExistsError("f'ed up mkdir")
-        return oid
 
     def mkdir_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -204,7 +193,7 @@ class SyncManager(Runnable):
                 return
 
             # make the dir
-            oid = self.mkdirs(self.providers[synced], translated_path)
+            oid = self.providers[synced].mkdirs(translated_path)
             log.debug("mkdir %s as path %s oid %s",
                       self.providers[synced].debug_name, translated_path, debug_sig(oid))
 
@@ -280,7 +269,7 @@ class SyncManager(Runnable):
         except CloudFileNotFoundError:
             log.debug("can't create %s, try mkdirs", translated_path)
             parent, _ = self.providers[synced].split(translated_path)
-            self.mkdirs(self.providers[synced], parent)
+            self.providers[synced].mkdirs(parent)
             self._create_synced(changed, sync, translated_path)
             return FINISHED
         except CloudFileExistsError:
@@ -385,11 +374,22 @@ class SyncManager(Runnable):
             else:
                 return self.create_synced(changed, sync, translated_path)
         else:
+            if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
+                return FINISHED
+
             log.debug("rename %s %s",
                       sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(
                     sync[synced].oid, translated_path)
+            except CloudFileNotFoundError:
+                log.debug("can't rename, do parent first maybe")
+                if sync.punted > 1:
+                    # never punt twice
+                    self.rename_to_fix_conflict(sync, changed, synced)
+                else:
+                    sync.punt()
+                return REQUEUE
             except CloudFileExistsError:
                 log.debug("can't rename, file exists")
                 if sync.punted > 1:

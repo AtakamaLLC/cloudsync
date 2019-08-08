@@ -288,6 +288,50 @@ def test_sync_two_conflicts(cs):
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
 
+def test_sync_subdir_rename(cs):
+    local_dir     = "/local/a"
+    local_base    = "/local/a/stuff"
+    local_dir2    = "/local/b"
+    local_base2   = "/local/b/stuff"
+    remote_dir    = "/remote/a"
+    remote_dir2   = "/remote/b"
+    remote_base   = "/remote/a/stuff"
+    remote_base2  = "/remote/b/stuff"
+
+    kid_count = 4
+    cs.providers[LOCAL].mkdir("/local")
+
+    lpoid  = cs.providers[LOCAL].mkdir(local_dir)
+
+    lpaths = []
+    rpaths = []
+    rpaths2 = []
+    for i in range(kid_count):
+        lpath = local_base + str(i)
+        rpath = remote_base + str(i)
+        rpath2 = remote_base2 + str(i)
+
+        cs.providers[LOCAL].create(lpath, BytesIO(b'hello'))
+
+        lpaths.append(lpath) 
+        rpaths.append((REMOTE,rpath))
+        rpaths2.append((REMOTE,rpath2))
+
+    cs.run_until_found(*rpaths, timeout=2)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs.providers[LOCAL].rename(lpoid, local_dir2)
+
+    for _ in range(10):
+        cs.do()
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.run_until_found(*rpaths2, timeout=2)
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
 # this test is sensitive to the order in which things are processed
 # so run it a few times
 
