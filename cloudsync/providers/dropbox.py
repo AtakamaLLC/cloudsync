@@ -193,7 +193,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             self.__cursor = res.cursor
         return self.__cursor
 
-    def _events(self, cursor, path=None):
+    def _events(self, cursor, path=None):  # pylint: disable=too-many-branches
         if path and path != "/":
             info = self.info_path(path)
             if not info:
@@ -223,8 +223,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 log.debug("revs %s", revs)
                 deleted_time = revs.server_deleted
+                if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
+                    log.error("revs %s has no deleted time?", revs)
+                    continue
                 latest_time = None
                 for ent in revs.entries:
+                    assert ent.server_modified is not None
                     if ent.server_modified <= deleted_time and \
                             (latest_time is None or ent.server_modified >= latest_time):
                         oid = ent.id
@@ -252,7 +256,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             if getattr(res, "cursor", False):
                 self.__cursor = res.cursor
 
-    def events(self):      # pylint: disable=too-many-locals
+    def events(self) -> Generator[Event, None, None]:
         yield from self._events(self.cursor)
 
     def walk(self, path, since=None):
@@ -332,7 +336,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if res is None:
             raise CloudFileExistsError()
 
-        return OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display)
+        ret = OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display)
+        log.debug('upload result is %s', ret)
+        return ret
 
     def download(self, oid, file_like):
         ok = self._api('files_download', oid)
@@ -401,7 +407,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
 
-    def info_path(self, path) -> Optional[OInfo]:
+    def info_path(self, path: str) -> Optional[OInfo]:
         if path == "/":
             return OInfo(DIRECTORY, "", None, "/")
 

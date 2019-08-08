@@ -430,6 +430,48 @@ def test_sync_conflict_path(sync):
     sync.state._assert_index_is_correct()
 
 
+def test_sync_cycle(sync):
+    sync: SyncMgrMixin
+    l_parent = "/local"
+    r_parent = "/remote"
+    lp1, lp2, lp3 = "/local/a", "/local/b", "/local/c",
+    rp1, rp2, rp3 = "/remote/a", "/remote/b", "/remote/c",
+    templ = "/local/d"
+
+    sync.providers[LOCAL].mkdir(l_parent)
+    sync.providers[REMOTE].mkdir(r_parent)
+
+    linfo1 = sync.providers[LOCAL].create(lp1, BytesIO(b"hello1"))
+    sync.state.update(LOCAL, FILE, path=lp1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.run_until_found((REMOTE, rp1), timeout=1)
+    rinfo1 = sync.providers[REMOTE].info_path(rp1)
+
+    linfo2 = sync.providers[LOCAL].create(lp2, BytesIO(b"hello2"))
+    sync.state.update(LOCAL, FILE, path=lp2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.run_until_found((REMOTE, rp2))
+    rinfo2 = sync.providers[REMOTE].info_path(rp2)
+
+    linfo3 = sync.providers[LOCAL].create(lp3, BytesIO(b"hello3"))
+    sync.state.update(LOCAL, FILE, path=lp3, oid=linfo3.oid, hash=linfo3.hash)
+    sync.run_until_found((REMOTE, rp3))
+    rinfo3 = sync.providers[REMOTE].info_path(rp3)
+
+    sync.providers[REMOTE].log_debug_state("BEFORE")
+    sync.providers[LOCAL].rename(linfo1.oid, templ)
+    sync.providers[LOCAL].rename(linfo3.oid, lp1)
+    sync.providers[LOCAL].rename(linfo2.oid, lp3)
+    sync.providers[LOCAL].rename(linfo1.oid, lp2)
+
+    sync.state.update(LOCAL, FILE, path=lp2, oid=linfo1.oid, hash=linfo1.hash)
+    sync.state.update(LOCAL, FILE, path=lp3, oid=linfo2.oid, hash=linfo2.hash)
+    sync.state.update(LOCAL, FILE, path=lp1, oid=linfo3.oid, hash=linfo3.hash)
+    assert len(sync.state.get_all()) == 3
+    sync.providers[REMOTE].log_debug_state("MIDDLE")
+
+    sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
+    sync.providers[REMOTE].log_debug_state("AFTER")
+
+
 def test_sync_conflict_path_combine(sync):
     remote_parent = "/remote"
     local_parent = "/local"

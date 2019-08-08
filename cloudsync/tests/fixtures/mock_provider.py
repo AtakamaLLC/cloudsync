@@ -137,7 +137,7 @@ class MockProvider(Provider):
     def _api(self, *args, **kwargs):
         pass
 
-    def events(self):
+    def events(self) -> Generator[Event, None, None]:
         self._api()
         done = False
         found = False
@@ -317,14 +317,14 @@ class MockProvider(Provider):
         else:
             return None
 
-    def info_path(self, path):
+    def info_path(self, path: str) -> Optional[OInfo]:
         self._api()
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
-    def info_oid(self, oid):
+    def info_oid(self, oid) -> Optional[OInfo]:
         self._api()
         file: MockFSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
