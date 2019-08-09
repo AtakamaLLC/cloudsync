@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Any, List, Dict, Set
 from cloudsync.types import OType
 
-from cloudsync.types import DIRECTORY, FILE
+from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
 
 from .util import debug_sig
 
@@ -413,6 +413,9 @@ class SyncState:
 
         if otype is not None:
             ent[side].otype = otype
+
+        if otype is NOTKNOWN:
+            assert not exists
 
         if path is not None:
             self._change_path(side, ent, path)

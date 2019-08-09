@@ -6,12 +6,12 @@ from dataclasses import dataclass
 class OType(Enum):
     DIRECTORY = "dir"
     FILE = "file"
-    TRASHED = "trashed"
+    NOTKNOWN = "trashed"
 
 
 DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
-TRASHED = OType.TRASHED                    # only allowed for deleted files
+NOTKNOWN = OType.NOTKNOWN                  # only allowed for deleted files!
 
 
 @dataclass

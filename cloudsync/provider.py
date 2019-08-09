@@ -212,5 +212,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 oid = self.mkdir(path)
                 # todo update state
             except CloudFileNotFoundError:
+                # when syncing, file exists seems to hit better conflict code for these sorts of situations
+                # but this is a guess.  todo: scenarios that make this happen
                 raise CloudFileExistsError("f'ed up mkdir")
         return oid
