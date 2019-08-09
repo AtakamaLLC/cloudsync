@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 import re
+import logging
 from typing import Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.event import Event
-
-import logging
 
 log = logging.getLogger(__name__)
 

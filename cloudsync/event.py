@@ -1,6 +1,6 @@
 import logging
-from dataclasses import dataclass
 from typing import Optional
+from dataclasses import dataclass
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType

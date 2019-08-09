@@ -80,8 +80,8 @@ class SyncManager(Runnable):
 
     def path_conflict(self, ent):
         if ent[0].path and ent[1].path:
-            return not self.providers[0].paths_match(ent[0].path,ent[0].sync_path) and \
-		   not self.providers[1].paths_match(ent[1].path,ent[1].sync_path)
+            return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
+		   not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
     def sync(self, sync):
@@ -104,7 +104,7 @@ class SyncManager(Runnable):
 
         log.debug("table\n%s", self.state.pretty_print())
 
-    def temp_file(self, ohash):
+    def temp_file(self):
         # prefer big random name over NamedTemp which can near-infinite loop when there are folder-issues
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
@@ -126,8 +126,7 @@ class SyncManager(Runnable):
             sync.temp_file = None
 
     def download_changed(self, changed, sync):
-        sync.temp_file = sync.temp_file or self.temp_file(
-            str(sync[changed].hash))
+        sync.temp_file = sync.temp_file or self.temp_file()
 
         assert sync[changed].oid
 
@@ -344,7 +343,7 @@ class SyncManager(Runnable):
 
         return True
 
-    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches
+    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
@@ -373,7 +372,7 @@ class SyncManager(Runnable):
             if sync[changed].otype == DIRECTORY:
                 self.mkdir_synced(changed, sync, translated_path)
             elif not self.download_changed(changed, sync):
-                pass
+                return REQUEUE
             elif sync[synced].oid:
                 self.upload_synced(changed, sync)
             else:

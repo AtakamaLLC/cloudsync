@@ -1,6 +1,6 @@
 from typing import Optional
-from dataclasses import dataclass
 from enum import Enum
+from dataclasses import dataclass
 
 
 class OType(Enum):
