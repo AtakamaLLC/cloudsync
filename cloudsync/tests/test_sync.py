@@ -422,7 +422,7 @@ def test_sync_conflict_path(sync):
 
     # currently defers to the alphabetcially greater name, rather than conflicting
     sync.run_until_found((LOCAL, "/local/stuff-r"))
-    
+
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
     assert not sync.providers[LOCAL].exists_path(local_path1)

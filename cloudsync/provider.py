@@ -95,11 +95,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         for path in paths:
             if not path or path == cls.sep:
                 continue
-            
+
             if isinstance(path, str):
                 rl = rl + [path.strip(cls.sep).strip(cls.alt_sep)]
                 continue
-            
+
             for sub_path in path:
                 if sub_path is None or sub_path == cls.sep or sub_path == cls.alt_sep:
                     continue
