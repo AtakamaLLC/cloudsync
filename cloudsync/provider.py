@@ -198,7 +198,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             # todo: mabye CloudFileExistsError needs to have an oid and/or path in it
             # at least optionally
             info = self.info_path(path)
-            if info:
+            if info and info.otype == DIRECTORY:
                 oid = info.oid
             else:
                 raise
