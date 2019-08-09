@@ -246,7 +246,7 @@ class TestApiServer(unittest.TestCase):
     def test_error(self):
         class MyServer(ApiServer):
             @api_route("/popup")
-            def popup(ctx, req):        # pylint: disable=no-self-argument,no-self-use
+            def popup(ctx, unused_req):        # pylint: disable=no-self-argument,no-self-use
                 raise ApiError(501, "BLAH")
 
         httpd = MyServer('127.0.0.1', 0)

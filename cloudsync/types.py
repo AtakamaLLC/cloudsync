@@ -1,15 +1,17 @@
 from typing import Optional
-from dataclasses import dataclass
 from enum import Enum
+from dataclasses import dataclass
 
 
 class OType(Enum):
     DIRECTORY = "dir"
     FILE = "file"
+    NOTKNOWN = "trashed"
 
 
 DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
+NOTKNOWN = OType.NOTKNOWN                  # only allowed for deleted files!
 
 
 @dataclass

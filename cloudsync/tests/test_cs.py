@@ -108,7 +108,7 @@ def test_sync_multi(multi_cs):
     cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs1.state.pretty_print())
 
-    assert len(cs1.state) == 5      # two dirs, 3 files, 1 never synced (local2 file)
+    assert len(cs1.state) == 6      # three dirs, 3 files, 1 never synced (local2 file)
 
     try:
         cs2.run_until_found(
@@ -137,7 +137,7 @@ def test_sync_multi(multi_cs):
     cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs2.state.pretty_print())
 
-    assert len(cs2.state) == 6  # two dirs, 4 files, 2 never synced (local1 files)
+    assert len(cs2.state) == 7  # three dirs, 4 files, 2 never synced (local1 files)
 
 
 def test_sync_basic(cs):
@@ -175,7 +175,7 @@ def test_sync_basic(cs):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
 
-    assert len(cs.state) == 3
+    assert len(cs.state) == 4
     assert not cs.state.has_changes()
 
 
@@ -234,10 +234,17 @@ def test_sync_create_delete_same_name(cs):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 2)
+
+    # local and remote dirs can be disjoint
+    assert(len(cs.state) == 3 or len(cs.state) == 2)
 
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+    rinfo = cs.providers[REMOTE].info_path(remote_path1)
+    bio = BytesIO()
+    cs.providers[REMOTE].download(rinfo.oid, bio)
+    assert bio.getvalue() == b'goodbye'
 
 
 def test_sync_two_conflicts(cs):
@@ -264,16 +271,16 @@ def test_sync_two_conflicts(cs):
     log.info("TABLE 1\n%s", cs.state.pretty_print())
     if cs.providers[LOCAL].oid_is_path:
         # the local delete/create doesn't add entries
-        assert(len(cs.state) == 2)
+        assert(len(cs.state) == 3)
     else:
-        assert(len(cs.state) == 4)
+        assert(len(cs.state) == 5)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 3)
+    assert(len(cs.state) == 4)
 
     assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
@@ -287,6 +294,51 @@ def test_sync_two_conflicts(cs):
     assert b1.getvalue() in (b'goodbye', b'world')
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
+
+@pytest.mark.repeat(10)
+def test_sync_subdir_rename(cs):
+    local_dir     = "/local/a"
+    local_base    = "/local/a/stuff"
+    local_dir2    = "/local/b"
+    local_base2   = "/local/b/stuff"
+    remote_dir    = "/remote/a"
+    remote_dir2   = "/remote/b"
+    remote_base   = "/remote/a/stuff"
+    remote_base2  = "/remote/b/stuff"
+
+    kid_count = 4
+    cs.providers[LOCAL].mkdir("/local")
+
+    lpoid  = cs.providers[LOCAL].mkdir(local_dir)
+
+    lpaths = []
+    rpaths = []
+    rpaths2 = []
+    for i in range(kid_count):
+        lpath = local_base + str(i)
+        rpath = remote_base + str(i)
+        rpath2 = remote_base2 + str(i)
+
+        cs.providers[LOCAL].create(lpath, BytesIO(b'hello'))
+
+        lpaths.append(lpath) 
+        rpaths.append((REMOTE,rpath))
+        rpaths2.append((REMOTE,rpath2))
+
+    cs.run_until_found(*rpaths, timeout=2)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs.providers[LOCAL].rename(lpoid, local_dir2)
+
+    for _ in range(10):
+        cs.do()
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.run_until_found(*rpaths2, timeout=2)
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
 
 # this test is sensitive to the order in which things are processed
 # so run it a few times
@@ -319,7 +371,7 @@ def test_sync_folder_conflicts_file(cs):
     log.info("TABLE 1\n%s", cs.state.pretty_print())
     if cs.providers[LOCAL].oid_is_path:
         # there won't be 2 rows for /local/stuff1 is oid_is_path
-        assert(len(cs.state) == 3)
+        assert(len(cs.state) == 4)
         locs = cs.state.lookup_path(LOCAL, local_path1)
         assert locs and len(locs) == 1
         loc = locs[0]
@@ -327,14 +379,14 @@ def test_sync_folder_conflicts_file(cs):
         assert loc[REMOTE].otype == DIRECTORY
     else:
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
-        assert(len(cs.state) == 5)
+        assert(len(cs.state) == 6)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 4)
+    assert(len(cs.state) == 6 or len(cs.state) == 5)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")

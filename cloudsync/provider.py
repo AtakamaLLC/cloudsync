@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 import re
+import logging
 from typing import Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.event import Event
 
+log = logging.getLogger(__name__)
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
@@ -91,7 +93,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         res = ""
         rl = []
         for path in paths:
-            if path is None or path == cls.sep:
+            if not path or path == cls.sep:
                 continue
 
             if isinstance(path, str):
@@ -168,7 +170,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb):
-        pass
+        return self.normalize_path(patha) == self.normalize_path(pathb)
 
     def dirname(self, path: str):
         norm_path = self.normalize_path(path).lstrip(self.sep)
@@ -186,3 +188,31 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 raise CloudFileNotFoundError(parent_path)
             if parent_obj.otype != DIRECTORY:
                 raise CloudFileExistsError(parent_path)
+
+    def mkdirs(self, path):
+        log.debug("mkdirs %s", path)
+        try:
+            oid = self.mkdir(path)
+            # todo update state
+        except CloudFileExistsError:
+            # todo: mabye CloudFileExistsError needs to have an oid and/or path in it
+            # at least optionally
+            info = self.info_path(path)
+            if info and info.otype == DIRECTORY:
+                oid = info.oid
+            else:
+                raise
+        except CloudFileNotFoundError:
+            ppath, _ = self.split(path)
+            if ppath == path:
+                raise
+            log.debug("mkdirs parent, %s", ppath)
+            oid = self.mkdirs(ppath)
+            try:
+                oid = self.mkdir(path)
+                # todo update state
+            except CloudFileNotFoundError:
+                # when syncing, file exists seems to hit better conflict code for these sorts of situations
+                # but this is a guess.  todo: scenarios that make this happen
+                raise CloudFileExistsError("f'ed up mkdir")
+        return oid
