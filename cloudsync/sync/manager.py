@@ -111,7 +111,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         #   is windows, it will use windows join. However, this will break on remote<->remote type syncing, so we
         #   need an actual concept of what local means that really means local, and not some disambiguation
         #   of two symmetrical sync providers.
-        ret = self.providers[LOCAL].join(self.tempdir, os.urandom(16).hex())
+        ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         return ret
 

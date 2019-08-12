@@ -472,9 +472,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
-        for cpath, coid in list(self._ids.items()):  # TODO: this should check if its a folder
-            if self.is_subpath(old_path, cpath):  # and not do subitems if not, but still needs to do the main loop for renaming itself
-                new_cpath = self.replace_path(cpath, old_path, path)  # adds a /, even to files
+        for cpath, coid in list(self._ids.items()):
+            if self.is_subpath(old_path, cpath):
+                new_cpath = self.replace_path(cpath, old_path, path)
                 self._ids.pop(cpath)
                 self._ids[new_cpath] = oid
 
