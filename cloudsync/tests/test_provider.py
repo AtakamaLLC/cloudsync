@@ -24,7 +24,7 @@ class ProviderHelper():
     def __init__(self, prov):
         self.api_retry = True
         self.prov = prov
-    
+
         self.test_root = getattr(self.prov, "test_root", None)
         self.event_timeout = getattr(self.prov, "event_timeout", 20)
         self.event_sleep = getattr(self.prov, "event_sleep", 1)

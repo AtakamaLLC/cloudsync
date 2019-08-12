@@ -9,7 +9,7 @@ from cloudsync.provider import Provider
 
 __all__ = ['SyncManager']
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError
 from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 
@@ -29,7 +29,7 @@ def other_side(index):
     return 1-index
 
 
-class SyncManager(Runnable):
+class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def __init__(self, state, providers: Tuple[Provider, Provider], translate):
         self.state: SyncState = state
         self.providers = providers
@@ -46,6 +46,9 @@ class SyncManager(Runnable):
             try:
                 self.sync(sync)
                 self.state.storage_update(sync)
+            except CloudTemporaryError as e:
+                log.error(
+                    "exception %s[%s] while processing %s", type(e), e, sync)
             except Exception as e:
                 log.exception(
                     "exception %s[%s] while processing %s", type(e), e, sync)
@@ -60,13 +63,26 @@ class SyncManager(Runnable):
             if not ent[i].changed:
                 continue
 
-            # get latest info from provider
-            if ent[i].otype == FILE:
-                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
-                ent[i].exists = EXISTS if ent[i].hash else TRASHED
-            else:
-                ent[i].exists = self.providers[i].exists_oid(ent[i].oid)
-        log.debug("after update state %s", self)
+            info = self.providers[i].info_oid(ent[i].oid)
+
+            if not info:
+                ent[i].exists = TRASHED
+                continue
+
+            ent[i].exists = EXISTS
+            ent[i].hash = info.hash
+            ent[i].otype = info.otype
+
+            if ent[i].path != info.path:
+                self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
+
+        log.debug("after update state %s", ent)
+
+    def path_conflict(self, ent):
+        if ent[0].path and ent[1].path:
+            return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
+		   not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
+        return False
 
     def sync(self, sync):
         self.get_latest_state(sync)
@@ -75,7 +91,7 @@ class SyncManager(Runnable):
             self.handle_hash_conflict(sync)
             return
 
-        if sync.path_conflict():
+        if self.path_conflict(sync):
             self.handle_path_conflict(sync)
             return
 
@@ -88,10 +104,21 @@ class SyncManager(Runnable):
 
         log.debug("table\n%s", self.state.pretty_print())
 
-    def temp_file(self, ohash_str: str):
+    def temp_file(self):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
-        # Not a fan of importing Provider into sync.py for this...
-        return self.providers[LOCAL].join(self.tempdir, ohash_str)
+        # TODO: this assumes that LOCAL is the local machine, which is always where temp_file is assumed to live,
+        #   regardless of the direction of file transfer in process at the moment. That way, if the local machine
+        #   is windows, it will use windows join. However, this will break on remote<->remote type syncing, so we
+        #   need an actual concept of what local means that really means local, and not some disambiguation
+        #   of two symmetrical sync providers.
+        ret = self.providers[LOCAL].join(self.tempdir, os.urandom(16).hex())
+        log.debug("tempdir %s -> %s", self.tempdir, ret)
+        return ret
+
+    def temp_file_old(self):
+        # prefer big random name over NamedTemp which can near-infinite loop when there are folder-issues
+        ret = os.path.join(self.tempdir, os.urandom(16).hex())
+        return ret
 
     def finished(self, side, sync):
         sync[side].changed = None
@@ -112,7 +139,7 @@ class SyncManager(Runnable):
         hash_str = sync[changed].hash
         if isinstance(hash_str, bytes):
             hash_str = hash_str.hex()
-        sync.temp_file = sync.temp_file or self.temp_file(hash_str)
+        sync.temp_file = sync.temp_file or self.temp_file()
 
         assert sync[changed].oid
 
@@ -120,41 +147,19 @@ class SyncManager(Runnable):
             return True
 
         try:
+            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, sync.temp_file + ".tmp")
             self.providers[changed].download(
                 sync[changed].oid, open(sync.temp_file + ".tmp", "wb"))
             os.rename(sync.temp_file + ".tmp", sync.temp_file)
             return True
+        except PermissionError as e:
+            raise CloudTemporaryError("download or rename exception %s" % e)
+
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
                       self.providers[changed].debug_name)
             sync[changed].exists = TRASHED
             return False
-
-    def mkdirs(self, prov, path):
-        log.debug("mkdirs %s", path)
-        try:
-            oid = prov.mkdir(path)
-            # todo update state
-        except CloudFileExistsError:
-            # todo: mabye CloudFileExistsError needs to have an oid and/or path in it
-            # at least optionally
-            info = prov.info_path(path)
-            if info:
-                oid = info.oid
-            else:
-                raise
-        except CloudFileNotFoundError:
-            ppath, _ = prov.split(path)
-            if ppath == path:
-                raise
-            log.debug("mkdirs parent, %s", ppath)
-            oid = self.mkdirs(prov, ppath)
-            try:
-                oid = prov.mkdir(path)
-                # todo update state
-            except CloudFileNotFoundError:
-                raise CloudFileExistsError("f'ed up mkdir")
-        return oid
 
     def mkdir_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -185,12 +190,11 @@ class SyncManager(Runnable):
 
             chents = list(self.state.lookup_path(changed, sync[changed].path))
             syents = list(self.state.lookup_path(synced, translated_path))
-            ents = chents + syents
-            notme_ents = [ent for ent in ents if ent != sync]
+            notme_chents = [ent for ent in chents if ent != sync]
 
             conflicts = []
-            for ent in notme_ents:
-                # any dup dirs on either side can be ignored
+            for ent in notme_chents:
+                # dup dirs on remote side can be ignored
                 if ent[synced].otype == DIRECTORY:
                     log.debug("discard duplicate dir entry, caused by a mkdirs %s", ent)
                     ent.discard()
@@ -198,15 +202,15 @@ class SyncManager(Runnable):
                 else:
                     conflicts.append(ent)
 
-            # if a file exists with the same name
-            conflicts = [ent for ent in notme_ents if ent[synced].exists != TRASHED]
+            # if a file exists with the same name on the sync side
+            conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync]
 
             if conflicts:
-                log.warning("mkdir conflict %s letting other side handle it", sync)
+                log.info("mkdir conflict %s letting other side handle it", sync)
                 return
 
             # make the dir
-            oid = self.mkdirs(self.providers[synced], translated_path)
+            oid = self.providers[synced].mkdirs(translated_path)
             log.debug("mkdir %s as path %s oid %s",
                       self.providers[synced].debug_name, translated_path, debug_sig(oid))
 
@@ -282,7 +286,7 @@ class SyncManager(Runnable):
         except CloudFileNotFoundError:
             log.debug("can't create %s, try mkdirs", translated_path)
             parent, _ = self.providers[synced].split(translated_path)
-            self.mkdirs(self.providers[synced], parent)
+            self.providers[synced].mkdirs(parent)
             self._create_synced(changed, sync, translated_path)
             return FINISHED
         except CloudFileExistsError:
@@ -352,7 +356,7 @@ class SyncManager(Runnable):
 
         return True
 
-    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches
+    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
@@ -381,15 +385,22 @@ class SyncManager(Runnable):
             if sync[changed].otype == DIRECTORY:
                 self.mkdir_synced(changed, sync, translated_path)
             elif not self.download_changed(changed, sync):
-                pass
+                return REQUEUE
             elif sync[synced].oid:
                 self.upload_synced(changed, sync)
             else:
                 return self.create_synced(changed, sync, translated_path)
         else:
+            if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
+                return FINISHED
+
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
+            except CloudFileNotFoundError:
+                log.debug("can't rename, do parent first maybe")
+                sync.punt()  # TODO: don't punt forever... perhaps punt() should take care of that
+                return REQUEUE
             except CloudFileExistsError:
                 log.debug("can't rename, file exists")
                 if sync.punted > 1:
@@ -499,5 +510,9 @@ class SyncManager(Runnable):
             return
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
-        new_oid = self.providers[other.side].rename(other.oid, other_path)
-        self.state.update_entry(sync, other.side, new_oid, path=other_path)
+        try:
+            new_oid = self.providers[other.side].rename(other.oid, other_path)
+            self.state.update_entry(sync, other.side, new_oid, path=other_path)
+        except CloudFileExistsError:
+            # other side already agrees
+            pass

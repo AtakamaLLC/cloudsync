@@ -114,6 +114,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         try:
             self.initialize()
             self._oauth_done.wait()
+            return {"refresh_token": self.refresh_token,
+                    "api_key": self.api_key,
+                    "client_secret": self._client_secret,
+                    "client_id": self._client_id,
+                    }
         finally:
             if self._redir_server:
                 self._redir_server.shutdown()
@@ -148,9 +153,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             api_key = creds.get('api_key', self.api_key)
             refresh_token = creds.get('refresh_token', self.refresh_token)
             if not refresh_token:
-                self.authenticate()
-                api_key = self.api_key
-                refresh_token = self.refresh_token
+                new_creds = self.authenticate()
+                api_key = new_creds.get('api_key', None)
+                refresh_token = new_creds.get('refresh_token', None)
             kwargs = {}
             try:
                 with self.mutex:
@@ -441,7 +446,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
         old_path = info.path
-        is_folder = info.otype == DIRECTORY
 
         _, name = self.split(path)
         body = {'name': name}
