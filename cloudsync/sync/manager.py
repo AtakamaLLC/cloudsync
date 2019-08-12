@@ -115,11 +115,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         return ret
 
-    def temp_file_old(self):
-        # prefer big random name over NamedTemp which can near-infinite loop when there are folder-issues
-        ret = os.path.join(self.tempdir, os.urandom(16).hex())
-        return ret
-
     def finished(self, side, sync):
         sync[side].changed = None
         self.state.finished(sync)
@@ -136,9 +131,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             sync.temp_file = None
 
     def download_changed(self, changed, sync):
-        hash_str = sync[changed].hash
-        if isinstance(hash_str, bytes):
-            hash_str = hash_str.hex()
         sync.temp_file = sync.temp_file or self.temp_file()
 
         assert sync[changed].oid
