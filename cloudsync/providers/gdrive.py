@@ -294,7 +294,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     otype = None
 
                 ohash = None
-                path = self._path_oid(oid)
+                path = self._path_oid(oid, use_cache=False)
 
                 event = Event(otype, oid, path, ohash, exists, ts)
 
@@ -308,7 +308,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def _walk(self, oid):
         for ent in self.listdir(oid):
-            event = Event(ent.otype, ent.oid, ent.path, None, True, time.time())
+            event = Event(otype=ent.otype, oid=ent.oid, path=ent.path, hash=ent.hash, exists=True, mtime=time.time())
             log.debug("walk %s", event)
             yield event
             if ent.otype == DIRECTORY:
@@ -615,15 +615,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return self._ids[parent]
 
-    def _path_oid(self, oid, info=None) -> Optional[str]:
+    def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]:
         """convert oid to path"""
-        for p, pid in self._ids.items():
-            if pid == oid:
-                return p
+        if use_cache:
+            for p, pid in self._ids.items():
+                if pid == oid:
+                    return p
 
-        for p, pid in self._trashed_ids.items():
-            if pid == oid:
-                return p
+            for p, pid in self._trashed_ids.items():
+                if pid == oid:
+                    return p
 
         # todo, better cache, keep up to date, etc.
 
@@ -638,12 +639,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None
         # expensive
-        path = self._path_oid(oid, info)
+        path = self._path_oid(oid, info, use_cache=use_cache)
         ret = OInfo(info.otype, info.oid, info.hash, path)
         log.debug("info oid ret: %s", ret)
         return ret

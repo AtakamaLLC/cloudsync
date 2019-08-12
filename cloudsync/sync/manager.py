@@ -63,7 +63,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if not ent[i].changed:
                 continue
 
-            info = self.providers[i].info_oid(ent[i].oid)
+            info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
             if not info:
                 ent[i].exists = TRASHED

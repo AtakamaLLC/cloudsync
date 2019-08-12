@@ -107,7 +107,7 @@ class ProviderHelper():
         path = self.__add_root(path)
         return self.__strip_root(self.prov.info_path(path))
 
-    def info_oid(self, oid) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
     def listdir(self, oid):

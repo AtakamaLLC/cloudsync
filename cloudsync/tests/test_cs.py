@@ -4,6 +4,7 @@ import pytest
 from typing import List
 
 from .fixtures import MockProvider, MockStorage
+from cloudsync.sync.file_storage import FileStorage
 from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
 
 from .test_sync import WaitFor, RunUntilHelper
@@ -401,16 +402,17 @@ def test_storage():
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    storage_dict = dict()
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
-    storage1 = MockStorage(storage_dict)
+    storage_fn = CloudSyncMixin((p1, p2), translate).smgr.temp_file()
+    storage1 = FileStorage(storage_fn)
     cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", delay=None)
+    cs1.smgr.temp_file()
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
-    storage2 = MockStorage(storage_dict)
+    storage2 = FileStorage(storage_fn)
     cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", delay=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")

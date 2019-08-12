@@ -78,7 +78,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def info_oid(self, oid) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         ...
 
 # CONVENIENCE
