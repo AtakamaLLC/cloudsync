@@ -106,11 +106,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
     def temp_file(self):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
-        # TODO: this assumes that LOCAL is the local machine, which is always where temp_file is assumed to live,
-        #   regardless of the direction of file transfer in process at the moment. That way, if the local machine
-        #   is windows, it will use windows join. However, this will break on remote<->remote type syncing, so we
-        #   need an actual concept of what local means that really means local, and not some disambiguation
-        #   of two symmetrical sync providers.
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         return ret
