@@ -25,7 +25,7 @@ def fixture_cs(mock_provider_generator):
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), translate)
+    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), translate, delay=None)
 
     yield cs
 
@@ -66,8 +66,8 @@ def fixture_multi_cs(mock_provider_generator):
 
         raise ValueError()
 
-    cs1 = CloudSyncMixin((p1, p2), translate1, storage, "tag1")
-    cs2 = CloudSyncMixin((p1, p3), translate2, storage, "tag2")
+    cs1 = CloudSyncMixin((p1, p2), translate1, storage, "tag1", delay=None)
+    cs2 = CloudSyncMixin((p1, p3), translate2, storage, "tag2", delay=None)
 
     yield cs1, cs2
 
@@ -295,6 +295,7 @@ def test_sync_two_conflicts(cs):
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
 
+
 @pytest.mark.repeat(10)
 def test_sync_subdir_rename(cs):
     local_dir     = "/local/a"
@@ -321,7 +322,7 @@ def test_sync_subdir_rename(cs):
 
         cs.providers[LOCAL].create(lpath, BytesIO(b'hello'))
 
-        lpaths.append(lpath) 
+        lpaths.append(lpath)
         rpaths.append((REMOTE,rpath))
         rpaths2.append((REMOTE,rpath2))
 
@@ -405,12 +406,12 @@ def test_storage():
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
     storage1 = MockStorage(storage_dict)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag")
+    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", delay=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = MockStorage(storage_dict)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag")
+    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", delay=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")

@@ -74,6 +74,7 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 class MockProvider(Provider):
     connected = True
+    name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
     def __init__(self, oid_is_path, case_sensitive):

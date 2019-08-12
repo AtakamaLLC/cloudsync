@@ -268,6 +268,7 @@ class SyncEntry(Reprable):
 
     def punt(self):
         # do this one later
+        # TODO provide help for making sure that we don't punt too many times
         self.punted += 1
 
 

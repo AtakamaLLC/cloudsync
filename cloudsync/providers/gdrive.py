@@ -161,9 +161,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 with self.mutex:
                     creds = client.GoogleCredentials(access_token=api_key,
                                                      client_id=creds.get(
-                                                         'client_id'),
+                                                         'client_id', self._client_id),
                                                      client_secret=creds.get(
-                                                         'client_secret'),
+                                                         'client_secret', self._client_secret),
                                                      refresh_token=refresh_token,
                                                      token_expiry=None,
                                                      token_uri=self._token_uri,

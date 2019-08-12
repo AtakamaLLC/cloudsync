@@ -29,7 +29,7 @@ def other_side(index):
     return 1-index
 
 
-class SyncManager(Runnable):
+class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def __init__(self, state, providers: Tuple[Provider, Provider], translate):
         self.state: SyncState = state
         self.providers = providers
@@ -64,7 +64,7 @@ class SyncManager(Runnable):
                 continue
 
             info = self.providers[i].info_oid(ent[i].oid)
-            
+
             if not info:
                 ent[i].exists = TRASHED
                 continue
@@ -105,7 +105,7 @@ class SyncManager(Runnable):
         log.debug("table\n%s", self.state.pretty_print())
 
     def temp_file(self):
-        # prefer big random name over NamedTemp which can near-infinite loop when there are folder-issues
+        # prefer big random name over NamedTemp which can infinite loop in odd situations!
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         return ret
@@ -381,20 +381,20 @@ class SyncManager(Runnable):
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
                 return FINISHED
 
-            log.debug("rename %s %s",
-                      sync[synced].sync_path, translated_path)
+            log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
-                new_oid = self.providers[synced].rename(
-                    sync[synced].oid, translated_path)
+                new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
                 log.debug("can't rename, do parent first maybe")
-                sync.punt()
+                sync.punt()  # TODO: don't punt forever... perhaps punt() should take care of that
                 return REQUEUE
             except CloudFileExistsError:
                 log.debug("can't rename, file exists")
                 if sync.punted > 1:
                     # never punt twice
-                    self.rename_to_fix_conflict(sync, changed, synced)
+                    # TODO: handle if the rename fails due to FNFE, although that may not be a risk
+                    #     if we don't sync the rename? Perhaps this is a 'state table only' operation
+                    self.rename_to_fix_conflict(sync, changed, synced)  # TODO this should not sync this rename!
                 else:
                     sync.punt()
                 return REQUEUE

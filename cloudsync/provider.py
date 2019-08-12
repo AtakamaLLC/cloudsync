@@ -68,9 +68,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         ...
 
-#    @abstractmethod
-#    def hash_oid(self, oid) -> Any:
-#        ...
+    def hash_oid(self, oid) -> Optional[bytes]: # TODO add a test to FNFE
+        info = self.info_oid(oid)
+        return info.hash if info else None
+
 
     @abstractmethod
     def info_path(self, path: str) -> Optional[OInfo]:
@@ -166,7 +167,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def replace_path(self, path, from_dir, to_dir):
         relative = self.is_subpath(from_dir, path)
         if relative:
-            return to_dir + relative
+            retval = to_dir + (relative if relative != self.sep else "")
+            return retval if relative != "" else self.sep
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb):
