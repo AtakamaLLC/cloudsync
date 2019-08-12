@@ -156,9 +156,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 with self.mutex:
                     creds = client.GoogleCredentials(access_token=api_key,
                                                      client_id=creds.get(
-                                                         'client_id'),
+                                                         'client_id', self._client_id),
                                                      client_secret=creds.get(
-                                                         'client_secret'),
+                                                         'client_secret', self._client_secret),
                                                      refresh_token=refresh_token,
                                                      token_expiry=None,
                                                      token_uri=self._token_uri,
@@ -441,6 +441,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
         old_path = info.path
+        is_folder = info.otype == DIRECTORY
 
         _, name = self.split(path)
         body = {'name': name}
@@ -467,9 +468,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
-        for cpath, coid in list(self._ids.items()):
-            if self.is_subpath(old_path, cpath):
-                new_cpath = self.replace_path(cpath, old_path, path)
+        for cpath, coid in list(self._ids.items()):  # TODO: this should check if its a folder
+            if self.is_subpath(old_path, cpath):  # and not do subitems if not, but still needs to do the main loop for renaming itself
+                new_cpath = self.replace_path(cpath, old_path, path)  # adds a /, even to files
                 self._ids.pop(cpath)
                 self._ids[new_cpath] = oid
 

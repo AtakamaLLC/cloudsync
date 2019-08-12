@@ -18,13 +18,18 @@ class Event:
     mtime: Optional[float] = None
     prior_oid: Optional[str] = None        # path basesd systems use this on renames
 
-
 class EventManager(Runnable):
     def __init__(self, provider, state, side):
         self.provider = provider
-        self.events = Muxer(provider.events, restart=True)
+        self.events = Muxer(provider.events, restart=self.waitforit)
         self.state = state
         self.side = side
+
+    def waitforit(self):
+        import time
+        log.debug("events %s sleeping", self.provider.name)
+        time.sleep(15)
+
 
     def do(self):
         for event in self.events:
@@ -36,7 +41,7 @@ class EventManager(Runnable):
             if not event.path and not self.state.lookup_oid(self.side, event.oid):
                 info = self.provider.info_oid(event.oid)
                 if info.otype != event.otype:
-                    log.warning("provider gave a bad event: %s != %s, using %s", info.path, event.otype, info.otype)
+                    log.warning("provider %s gave a bad event: %s != %s, using %s", self.provider.name, info.path, event.otype, info.otype)
                 if info:
                     path = info.path
                     otype = info.otype

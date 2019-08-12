@@ -88,10 +88,10 @@ class SyncManager(Runnable):
 
         log.debug("table\n%s", self.state.pretty_print())
 
-    def temp_file(self, ohash):
+    def temp_file(self, ohash_str: str):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
         # Not a fan of importing Provider into sync.py for this...
-        return Provider.join(self.tempdir, ohash)
+        return self.providers[LOCAL].join(self.tempdir, ohash_str)
 
     def finished(self, side, sync):
         sync[side].changed = None
@@ -109,8 +109,10 @@ class SyncManager(Runnable):
             sync.temp_file = None
 
     def download_changed(self, changed, sync):
-        sync.temp_file = sync.temp_file or self.temp_file(
-            str(sync[changed].hash))
+        hash_str = sync[changed].hash
+        if isinstance(hash_str, bytes):
+            hash_str = hash_str.hex()
+        sync.temp_file = sync.temp_file or self.temp_file(hash_str)
 
         assert sync[changed].oid
 
@@ -385,16 +387,16 @@ class SyncManager(Runnable):
             else:
                 return self.create_synced(changed, sync, translated_path)
         else:
-            log.debug("rename %s %s",
-                      sync[synced].sync_path, translated_path)
+            log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
-                new_oid = self.providers[synced].rename(
-                    sync[synced].oid, translated_path)
+                new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileExistsError:
                 log.debug("can't rename, file exists")
                 if sync.punted > 1:
                     # never punt twice
-                    self.rename_to_fix_conflict(sync, changed, synced)
+                    # TODO: handle if the rename fails due to FNFE, although that may not be a risk
+                    #     if we don't sync the rename? Perhaps this is a 'state table only' operation
+                    self.rename_to_fix_conflict(sync, changed, synced)  # TODO this should not sync this rename!
                 else:
                     sync.punt()
                 return REQUEUE

@@ -43,6 +43,8 @@ class Muxer():
                                 other.queue.put(e)
                     except StopIteration:
                         if self.restart:
+                            if callable(self.restart):
+                                self.restart()
                             self.genref[0] = self.func()
                         raise
         return e
