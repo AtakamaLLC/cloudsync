@@ -18,18 +18,20 @@ class Event:
     mtime: Optional[float] = None
     prior_oid: Optional[str] = None        # path basesd systems use this on renames
 
+
 class EventManager(Runnable):
-    def __init__(self, provider, state, side):
+    def __init__(self, provider, state, side, delay=None):
         self.provider = provider
         self.events = Muxer(provider.events, restart=self.waitforit)
         self.state = state
         self.side = side
+        self._delay = delay
 
     def waitforit(self):
-        import time
-        log.debug("events %s sleeping", self.provider.name)
-        time.sleep(15)
-
+        if self._delay:
+            import time
+            log.debug("events %s sleeping", self.provider.name)
+            time.sleep(self._delay)
 
     def do(self):
         for event in self.events:
