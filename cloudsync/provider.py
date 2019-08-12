@@ -168,7 +168,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         relative = self.is_subpath(from_dir, path)
         if relative:
             retval = to_dir + (relative if relative != self.sep else "")
-            return relative if relative != "" else self.sep
+            return retval if relative != "" else self.sep
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb):
