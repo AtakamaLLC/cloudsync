@@ -3,14 +3,15 @@ import time
 import logging
 import threading
 import webbrowser
+from base64 import urlsafe_b64encode as u_b64enc
 from typing import Generator, Optional
+from os import urandom
 import requests
 import arrow
 
 import dropbox
-from os import urandom
-from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow, DropboxOAuth2FlowNoRedirect
-from base64 import urlsafe_b64encode as u_b64enc
+from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
+from dropbox.oauth import OAuth2FlowResult
 from cloudsync.oauth_redir_server import OAuthRedirServer
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
@@ -70,6 +71,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.__cursor = None
         self.client = None
         self.api_key = None
+        self._csrf = None
+        self._flow = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._session = {}
