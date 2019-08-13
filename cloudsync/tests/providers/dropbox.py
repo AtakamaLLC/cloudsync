@@ -34,12 +34,14 @@ def cloudsync_provider():
     return dropbox_provider()
 
 
-def test_connect():
+def connect_test(want_oauth: bool):
     creds = dropbox_creds()
     if not creds:
         pytest.skip('requires dropbox token and client secret')
+    if want_oauth:
+        creds.pop("key", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = DropboxProvider(sync_root)
+    gd = DropboxProvider()
     gd.connect(creds)
     assert gd.client
     quota = gd.get_quota()
@@ -49,3 +51,12 @@ def test_connect():
             gd.delete(info.oid)
     except CloudFileNotFoundError:
         pass
+
+
+def test_connect():
+    connect_test(False)
+
+
+@pytest.mark.manual
+def test_oauth_connect():
+    connect_test(True)
