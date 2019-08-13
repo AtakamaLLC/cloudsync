@@ -30,6 +30,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @abstractmethod
     def walk(self, path, since=None):
+        # Test that the root path does not show up in the walk
         ...
 
     @abstractmethod
@@ -46,6 +47,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @abstractmethod
     def rename(self, oid, path):
+        # TODO: test that a renamed file can be renamed again
+        # TODO: test that renaming a folder renames the children in the state file
         ...
 
     @abstractmethod

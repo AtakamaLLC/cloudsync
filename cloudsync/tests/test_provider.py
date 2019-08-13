@@ -444,24 +444,41 @@ def test_mkdir(provider: ProviderMixin):
 
 def test_walk(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
-    dest = provider.temp_name("dest")
-    info = provider.create(dest, temp, None)
+    folder = provider.temp_name("folder")
+    provider.mkdir(folder)
+    subfolder = provider.join(folder, provider.temp_name("subfolder"))
+    provider.mkdir(subfolder)
+    dest0 = provider.temp_name("dest0")
+    dest1 = provider.join(folder, provider.temp_name("dest1"))
+    dest2 = provider.join(subfolder, provider.temp_name("dest2"))
+    oids = {}
+    info = provider.create(dest0, temp, None)
+    oids[dest0] = info.oid
+    info = provider.create(dest1, temp, None)
+    oids[dest1] = info.oid
+    info = provider.create(dest2, temp, None)
+    oids[dest2] = info.oid
 
     got_event = False
+    found = {}
     for e in provider.walk("/"):
         if e.otype == cloudsync.DIRECTORY:
             continue
         log.debug("WALK %s", e)
-        assert e.oid == info.oid
         path = e.path
         if path is None:
             path = provider.info_oid(e.oid).path
-        assert path == dest
+        assert oids[path] == e.oid
+        found[path] = True
         assert e.mtime
         assert e.exists
         got_event = True
 
+    for x in [dest0, dest1, dest2]:
+        assert found.get(x, False) is True
+        log.debug("found %s", x)
     assert got_event
+    assert False
 
 
 def check_event_path(event: Event, provider: ProviderMixin, target_path):

@@ -32,7 +32,7 @@ def other_side(index):
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def __init__(self, state, providers: Tuple[Provider, Provider], translate):
         self.state: SyncState = state
-        self.providers = providers
+        self.providers: Tuple[Provider, Provider] = providers
         self.providers[LOCAL].debug_name = "local"
         self.providers[REMOTE].debug_name = "remote"
         self.translate = translate
@@ -377,7 +377,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 self.upload_synced(changed, sync)
             else:
                 return self.create_synced(changed, sync, translated_path)
-        else:
+        else:  # handle rename
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
                 return FINISHED
 
@@ -401,8 +401,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
-            self.state.update_entry(
-                sync, synced, path=translated_path, oid=new_oid)
+            self.state.update_entry(sync, synced, path=translated_path, oid=new_oid)
+            # TODO: update all the kids in a changed folder like so:
+            # if sync[changed].otype == DIRECTORY:
+            #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
     def rename_to_fix_conflict(self, sync, changed, _synced):
