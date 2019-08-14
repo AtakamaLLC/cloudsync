@@ -449,7 +449,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             return
 
         if not info.path:
-            assert False, "impossible sync, no path %s" % sync[changed]
+            log.warning("impossible sync, no path. "
+                        "Probably a file that was shared, but not placed into a folder. Discarding. %s",
+                        sync[changed])
+            sync.discarded = True
+            return
 
         log.debug("UPDATE PATH %s->%s", sync, info.path)
         self.state.update_entry(

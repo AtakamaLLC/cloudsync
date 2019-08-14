@@ -19,6 +19,7 @@ from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
+logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
@@ -199,7 +200,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             try:
                 res = getattr(self.client, resource)()
                 meth = getattr(res, method)(*args, **kwargs)
-                return meth.execute()
+                ret = meth.execute()
+                log.debug("api: %s %s (%s) -> %s", method, args, kwargs, ret)
+                return ret
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
