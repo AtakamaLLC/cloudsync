@@ -50,10 +50,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 self.state.storage_update(sync)
             except CloudTemporaryError as e:
                 log.error(
-                    "exception %s[%s] while processing %s", type(e), e, sync)
+                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                sync.punt()
             except Exception as e:
                 log.exception(
-                    "exception %s[%s] while processing %s", type(e), e, sync)
+                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                sync.punt()
+                time.sleep(self._sleep)
         else:
             if self._sleep:
                 log.debug("SyncManager sleeping %i", self._sleep)
