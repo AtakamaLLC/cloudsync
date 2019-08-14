@@ -19,6 +19,7 @@ from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
+logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
@@ -199,7 +200,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             try:
                 res = getattr(self.client, resource)()
                 meth = getattr(res, method)(*args, **kwargs)
-                return meth.execute()
+                ret = meth.execute()
+                log.debug("api: %s %s (%s) -> %s", method, args, kwargs, ret)
+                return ret
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
@@ -294,7 +297,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     otype = None
 
                 ohash = None
-                path = self._path_oid(oid)
+                path = self._path_oid(oid, use_cache=False)
 
                 event = Event(otype, oid, path, ohash, exists, ts)
 
@@ -306,20 +309,21 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if 'newStartPageToken' in response:
                 self.__cursor = response.get('newStartPageToken')
 
-    def _walk(self, oid):
+    def _walk(self, path, oid):
         for ent in self.listdir(oid):
-            event = Event(ent.otype, ent.oid, ent.path, None, True, time.time())
+            current_path = self.join(path, ent.name)
+            event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
             log.debug("walk %s", event)
             yield event
             if ent.otype == DIRECTORY:
                 if self.exists_oid(ent.oid):
-                    yield from self._walk(ent.oid)
+                    yield from self._walk(current_path, ent.oid)
 
     def walk(self, path, since=None):
         info = self.info_path(path)
         if not info:
             raise CloudFileNotFoundError(path)
-        yield from self._walk(info.oid)
+        yield from self._walk(path, info.oid)
 
     def __prep_upload(self, path, metadata):
         # modification time
@@ -615,15 +619,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return self._ids[parent]
 
-    def _path_oid(self, oid, info=None) -> Optional[str]:
+    def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]:
         """convert oid to path"""
-        for p, pid in self._ids.items():
-            if pid == oid:
-                return p
+        if use_cache:
+            for p, pid in self._ids.items():
+                if pid == oid:
+                    return p
 
-        for p, pid in self._trashed_ids.items():
-            if pid == oid:
-                return p
+            for p, pid in self._trashed_ids.items():
+                if pid == oid:
+                    return p
 
         # todo, better cache, keep up to date, etc.
 
@@ -638,12 +643,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None
         # expensive
-        path = self._path_oid(oid, info)
+        path = self._path_oid(oid, info, use_cache=use_cache)
         ret = OInfo(info.otype, info.oid, info.hash, path)
         log.debug("info oid ret: %s", ret)
         return ret

@@ -4,6 +4,7 @@ import pytest
 from typing import List
 
 from .fixtures import MockProvider, MockStorage
+from cloudsync.sync.file_storage import FileStorage
 from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
 
 from .test_sync import WaitFor, RunUntilHelper
@@ -411,6 +412,60 @@ def test_storage():
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = MockStorage(storage_dict)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", delay=None)
+
+    print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
+    print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
+
+    def not_dirty(s: SyncState):
+        for se in s.get_all():
+            se: SyncEntry
+            assert not se.dirty
+
+    def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
+        ret = []
+        found = False
+        for e1 in s1.get_all():
+            e1: SyncEntry
+            for e2 in s2.get_all():
+                e2: SyncEntry
+                if e1.serialize() == e2.serialize():
+                    found = True
+            if not found:
+                ret.append(e1)
+        return ret
+
+    missing1 = compare_states(cs1.state, cs2.state)
+    missing2 = compare_states(cs2.state, cs1.state)
+    for e in missing1:
+        print(f"entry in 1 not found in 2 {e.pretty()}")
+    for e in missing2:
+        print(f"entry in 2 not found in 1 {e.pretty()}")
+
+    assert not missing1
+    assert not missing2
+    not_dirty(cs1.state)
+
+
+def test_file_storage():
+    def translate(to, path):
+        (old, new) = ("/local", "/remote") if to == REMOTE else ("/remote", "/local")
+        return new + path.replace(old, "")
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    p1 = MockProvider(oid_is_path=False, case_sensitive=True)
+    p2 = MockProvider(oid_is_path=False, case_sensitive=True)
+
+    storage_fn = CloudSyncMixin((p1, p2), translate).smgr.temp_file()
+    storage1 = FileStorage(storage_fn)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", delay=None)
+    cs1.smgr.temp_file()
+
+    test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
+
+    storage2 = FileStorage(storage_fn)
     cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", delay=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
