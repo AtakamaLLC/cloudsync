@@ -26,7 +26,7 @@ def fixture_cs(mock_provider_generator):
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), translate, delay=None)
+    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), translate, sleep=None)
 
     yield cs
 
@@ -67,8 +67,8 @@ def fixture_multi_cs(mock_provider_generator):
 
         raise ValueError()
 
-    cs1 = CloudSyncMixin((p1, p2), translate1, storage, "tag1", delay=None)
-    cs2 = CloudSyncMixin((p1, p3), translate2, storage, "tag2", delay=None)
+    cs1 = CloudSyncMixin((p1, p2), translate1, storage, "tag1", sleep=None)
+    cs2 = CloudSyncMixin((p1, p3), translate2, storage, "tag2", sleep=None)
 
     yield cs1, cs2
 
@@ -407,12 +407,12 @@ def test_storage():
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
     storage1 = MockStorage(storage_dict)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", delay=None)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = MockStorage(storage_dict)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", delay=None)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
@@ -460,13 +460,13 @@ def test_file_storage():
 
     storage_fn = CloudSyncMixin((p1, p2), translate).smgr.temp_file()
     storage1 = FileStorage(storage_fn)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", delay=None)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
     cs1.smgr.temp_file()
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = FileStorage(storage_fn)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", delay=None)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
