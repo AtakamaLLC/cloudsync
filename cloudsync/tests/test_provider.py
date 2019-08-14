@@ -560,8 +560,8 @@ def test_event_basic(provider: ProviderMixin):
             assert not e.exists or e.path is not None
 
         log.debug("event %s", e)
-        if (not e.exists and e.oid == deleted_oid) or path in e.path:
-            assert not e.exists or e.path is not None, "non-trashed event without a path? %s" % e
+        if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
+            # assert not e.exists or e.path is not None, "non-trashed event without a path? %s" % e # this can happen on google, it's not a problem
             received_event = e
             event_count += 1
 
