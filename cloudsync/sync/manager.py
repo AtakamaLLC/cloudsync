@@ -2,6 +2,7 @@ import os
 import logging
 import tempfile
 import shutil
+import time
 
 from typing import Tuple
 
@@ -30,13 +31,14 @@ def other_side(index):
 
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
-    def __init__(self, state, providers: Tuple[Provider, Provider], translate):
+    def __init__(self, state, providers: Tuple[Provider, Provider], translate, sleep=0):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
         self.providers[LOCAL].debug_name = "local"
         self.providers[REMOTE].debug_name = "remote"
         self.translate = translate
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
+        self._sleep = sleep
 
         assert len(self.providers) == 2
 
@@ -52,6 +54,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             except Exception as e:
                 log.exception(
                     "exception %s[%s] while processing %s", type(e), e, sync)
+        else:
+            if self._sleep:
+                log.debug("SyncManager sleeping %i", self._sleep)
+                time.sleep(self._sleep)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -81,7 +87,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def path_conflict(self, ent):
         if ent[0].path and ent[1].path:
             return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-		   not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
+                   not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
     def sync(self, sync):
@@ -380,16 +386,24 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         else:  # handle rename
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
                 return FINISHED
+            if self.providers[synced].paths_match(sync[synced].sync_path.lower(), translated_path.lower()):
+                # TODO: handle renames, same name, different case. For now, just skip it, which of course
+                #   may break other things
+                log.error("Can't rename files just by case... yet %s", sync, stack_info=True)
+                # return FINISHED
 
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
-                log.debug("can't rename, do parent first maybe")
-                sync.punt()  # TODO: don't punt forever... perhaps punt() should take care of that
+                log.debug("can't rename, do parent first maybe: %s", sync, stack_info=True)
+                if sync.punted > 1000000:
+                    return FINISHED
+                else:
+                    sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
-                log.debug("can't rename, file exists")
+                log.debug("can't rename, file exists", stack_info=True)
                 if sync.punted > 1:
                     # never punt twice
                     # TODO: handle if the rename fails due to FNFE, although that may not be a risk
