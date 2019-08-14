@@ -557,7 +557,7 @@ def test_event_basic(provider: ProviderMixin):
                 e.path = info2.path
             else:
                 e.exists = False
-            assert not e.exists or e.path is not None
+            # assert not e.exists or e.path is not None  # This is actually OK, google will do this legitimately
 
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
