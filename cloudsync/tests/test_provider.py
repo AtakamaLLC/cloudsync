@@ -478,7 +478,6 @@ def test_walk(provider: ProviderMixin):
         assert found.get(x, False) is True
         log.debug("found %s", x)
     assert got_event
-    assert False
 
 
 def check_event_path(event: Event, provider: ProviderMixin, target_path):
