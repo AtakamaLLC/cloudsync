@@ -172,20 +172,29 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 new_creds = self.authenticate()
                 api_key = new_creds.get('api_key', None)
 
-                with self.mutex:
-                    self.client = Dropbox(api_key)
-
-                self.api_key = api_key
+            with self.mutex:
+                self.client = Dropbox(api_key)
 
             try:
                 self.get_quota()
             except exceptions.AuthError:
                 self.disconnect()
-                raise CloudTokenError()
+                if creds.get('key', None) is not None:
+                    log.debug('provided credentials were bad, forcing oauth')
+                    creds.pop('key')
+                    self.connect(creds)
+                else:
+                    raise CloudTokenError()
             except Exception as e:
-                log.debug("error connecting %s", e)
                 self.disconnect()
-                raise CloudDisconnectedError()
+                if creds.get('key', None) is not None:
+                    log.debug('provided credentials were bad, forcing oauth')
+                    creds.pop('key')
+                    self.connect(creds)
+                else:
+                    log.debug("error connecting %s", e)
+                    raise CloudDisconnectedError()
+            self.api_key = api_key
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
