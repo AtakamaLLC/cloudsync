@@ -510,7 +510,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def exists_path(self, path) -> bool:
         return self.info_path(path) is not None
 
-    def info_oid(self, oid) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         if oid == "":
             otype = DIRECTORY
             fhash = None
