@@ -20,6 +20,18 @@ def dropbox_creds():
     }
     return creds
 
+def bad_dropbox_creds():
+    token_set = os.environ.get("DROPBOX_TOKEN")
+    if not token_set:
+        return None
+
+    tokens = token_set.split(",")
+
+    creds = {
+        "key": 'im a bad bad key',
+    }
+    return creds
+
 
 def dropbox_provider():
     cls = DropboxProvider
@@ -34,8 +46,11 @@ def cloudsync_provider():
     return dropbox_provider()
 
 
-def connect_test(want_oauth: bool):
-    creds = dropbox_creds()
+def connect_test(want_oauth: bool, use_real_creds: bool):
+    if use_real_creds:
+        creds = dropbox_creds()
+    else:
+        creds = bad_dropbox_creds()
     if not creds:
         pytest.skip('requires dropbox token and client secret')
     if want_oauth:
@@ -54,9 +69,13 @@ def connect_test(want_oauth: bool):
 
 
 def test_connect():
-    connect_test(False)
+    connect_test(False, True)
 
 
 @pytest.mark.manual
 def test_oauth_connect():
-    connect_test(True)
+    connect_test(True, True)
+
+@pytest.mark.manual
+def test_oauth_connect_given_bad_creds():
+    connect_test(False, False)
