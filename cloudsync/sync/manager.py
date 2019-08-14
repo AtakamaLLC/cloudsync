@@ -74,6 +74,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
+            if ent.is_path_change(i) and self.providers[i].oid_is_path:
+                # if this is a rename, and this is an oid_is_path provider, then use the new path as the oid instead
+                # because the file has already been renamed, so the oid, which is the old path, should already be gone
+                info = self.providers[i].info_oid(ent[i].path, use_cache=False)
+
             if not info:
                 ent[i].exists = TRASHED
                 continue
