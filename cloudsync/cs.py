@@ -13,7 +13,7 @@ class CloudSync(Runnable):
                  translate,
                  storage: Optional[Storage] = None,
                  label: Optional[str] = None,
-                 sleep: Optional[int] = 5):
+                 sleep: Optional[int] = 15):
 
         state = SyncState(storage, label)
         smgr = SyncManager(state, providers, translate, sleep=sleep)

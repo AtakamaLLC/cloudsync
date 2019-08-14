@@ -405,7 +405,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
                 log.exception("can't rename, do parent first maybe: %s", sync, stack_info=True)
-                if sync.punted > 1000000:
+                if sync.punted > 100:
+                    log.exception("punted too many times, giving up")
                     return FINISHED
                 else:
                     sync.punt()

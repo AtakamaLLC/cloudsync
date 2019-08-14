@@ -540,3 +540,30 @@ def test_delete_then_move(sync):
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((REMOTE, remote_file2), timeout=2)
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+def test_delete_then_move_reverse(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_folder = "/remote/folder"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+    local_file2 = "/local/folder/file"
+    remote_file2 = "/remote/folder/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+    rinfo1 = sync.providers[REMOTE].create(remote_file1, BytesIO(b"hello"))
+    sync.state.update(REMOTE, FILE, path=remote_file1, oid=rinfo1.oid, hash=rinfo1.hash)
+    sync.run_until_found((LOCAL, local_file1))
+
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+
+    folder_oid = sync.providers[REMOTE].mkdir(remote_folder)
+    sync.state.update(REMOTE, DIRECTORY, path=remote_folder, oid=folder_oid, hash=None)
+
+    sync.providers[REMOTE].rename(rinfo1.oid, remote_file2)
+    sync.state.update(REMOTE, FILE, path=remote_file2, oid=rinfo1.oid, hash=rinfo1.hash)
+
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+    sync.run_until_found((LOCAL, local_file2), timeout=2)
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
