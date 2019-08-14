@@ -399,14 +399,14 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
-                log.debug("can't rename, do parent first maybe: %s", sync, stack_info=True)
+                log.exception("can't rename, do parent first maybe: %s", sync, stack_info=True)
                 if sync.punted > 1000000:
                     return FINISHED
                 else:
                     sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
-                log.debug("can't rename, file exists", stack_info=True)
+                log.exception("can't rename, file exists", stack_info=True)
                 if sync.punted > 1:
                     # never punt twice
                     # TODO: handle if the rename fails due to FNFE, although that may not be a risk
