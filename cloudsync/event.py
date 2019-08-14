@@ -20,18 +20,18 @@ class Event:
 
 
 class EventManager(Runnable):
-    def __init__(self, provider, state, side, delay=None):
+    def __init__(self, provider, state, side, sleep=None):
         self.provider = provider
         self.events = Muxer(provider.events, restart=self.waitforit)
         self.state = state
         self.side = side
-        self._delay = delay
+        self._sleep = sleep
 
     def waitforit(self):
-        if self._delay:
+        if self._sleep:
             import time
             log.debug("events %s sleeping", self.provider.name)
-            time.sleep(self._delay)
+            time.sleep(self._sleep)
 
     def do(self):
         for event in self.events:

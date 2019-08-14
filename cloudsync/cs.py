@@ -13,10 +13,10 @@ class CloudSync(Runnable):
                  translate,
                  storage: Optional[Storage] = None,
                  label: Optional[str] = None,
-                 delay: Optional[int] = 15):
+                 sleep: Optional[int] = 15):
 
         state = SyncState(storage, label)
-        smgr = SyncManager(state, providers, translate)
+        smgr = SyncManager(state, providers, translate, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
@@ -24,8 +24,8 @@ class CloudSync(Runnable):
 
         self.smgr = smgr
         self.emgrs = (
-            EventManager(smgr.providers[0], state, 0, delay=delay),
-            EventManager(smgr.providers[1], state, 1, delay=delay)
+            EventManager(smgr.providers[0], state, 0, sleep=sleep),
+            EventManager(smgr.providers[1], state, 1, sleep=sleep)
         )
         self.sthread = threading.Thread(target=smgr.run)
         self.ethreads = (
