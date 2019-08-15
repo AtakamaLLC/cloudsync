@@ -365,7 +365,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         return True
 
-    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
+    def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements, too-many-statements
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
@@ -375,6 +375,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         translated_path = self.translate(synced, sync[changed].path)
         if translated_path is None:
+            log.debug("ignored %s", sync[changed].path)
             # ignore these
             return FINISHED
 
@@ -392,15 +393,20 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
+                log.debug("mkdir %s", sync[changed].path)
                 self.mkdir_synced(changed, sync, translated_path)
             elif not self.download_changed(changed, sync):
+                log.debug("requeue %s", sync[changed].path)
                 return REQUEUE
             elif sync[synced].oid:
+                log.debug("upload %s", sync[changed].path)
                 self.upload_synced(changed, sync)
             else:
+                log.debug("create %s", sync[changed].path)
                 return self.create_synced(changed, sync, translated_path)
         else:  # handle rename
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
+                log.debug("file rename, already has new name, ignored: %s", sync[changed].path)
                 return FINISHED
             if self.providers[synced].paths_match(sync[synced].sync_path.lower(), translated_path.lower()):
                 # TODO: handle renames, same name, different case. For now, just skip it, which of course
@@ -458,10 +464,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         log.debug("embrace %s", sync)
 
         if sync[changed].exists == TRASHED:
+            log.debug("trashed")
             self.delete_synced(sync, changed, synced)
             return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
+            log.debug("path changed: %s, file created: %s", sync.is_path_change(changed), sync.is_creation(changed))
             return self.handle_path_change_or_creation(sync, changed, synced)
 
         if sync[changed].hash != sync[changed].sync_hash:
