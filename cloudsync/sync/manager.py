@@ -44,6 +44,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
     def do(self):
         sync: SyncEntry = self.state.change()
+        log.debug("got %s", sync)
         if sync:
             try:
                 self.sync(sync)
@@ -72,7 +73,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if not ent[i].changed:
                 continue
 
-            if ent.is_path_change(i) and self.providers[i].oid_is_path:
+            if ent.is_path_change(self.providers[i], i) and self.providers[i].oid_is_path:
                 # if this is a rename, and this is an oid_is_path provider, then use the new path as the oid instead
                 # because the file has already been renamed, so the oid, which is the old path, should already be gone
                 info = self.providers[i].info_oid(ent[i].path, use_cache=False)
@@ -462,15 +463,19 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
+        ret = None
 
         if sync[changed].exists == TRASHED:
             log.debug("trashed")
             self.delete_synced(sync, changed, synced)
             return FINISHED
 
-        if sync.is_path_change(changed) or sync.is_creation(changed):
-            log.debug("path changed: %s, file created: %s", sync.is_path_change(changed), sync.is_creation(changed))
-            return self.handle_path_change_or_creation(sync, changed, synced)
+        if sync.is_path_change(self.providers[changed], changed) or sync.is_creation(changed):
+            log.debug("path changed: %s, file created: %s", sync.is_path_change(self.providers[changed], changed), sync.is_creation(changed))
+            ret = self.handle_path_change_or_creation(sync, changed, synced)
+            if ret == REQUEUE:
+                return ret
+            # keep going to see if other stuff changed, if we are not requeuing
 
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info
@@ -481,7 +486,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             self.download_changed(changed, sync)
             self.upload_synced(changed, sync)
-            return FINISHED
+            ret = FINISHED
+
+        if ret is not None:
+            return ret
 
         log.info("nothing changed %s, but changed is true", sync)
         return FINISHED
@@ -564,7 +572,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             ents = list(self.state.lookup_path(changed, parent))
             for ent in ents:
                 ent: SyncEntry
-                if ent.is_path_change(changed):
+                if ent.is_path_change(self.providers[changed], changed):
                     return ent[changed].path
             path = parent
             parent = provider.dirname(path)

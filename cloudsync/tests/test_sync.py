@@ -603,3 +603,6 @@ def _test_rename_folder_with_kids(sync, source, dest):
 def test_rename_folder_with_kids(sync):
     _test_rename_folder_with_kids(sync, REMOTE, LOCAL)
     _test_rename_folder_with_kids(sync, LOCAL, REMOTE)
+
+# TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
+# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored

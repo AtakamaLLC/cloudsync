@@ -185,8 +185,8 @@ class SyncEntry(Reprable):
             return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash
         return False
 
-    def is_path_change(self, changed):
-        return self[changed].path != self[changed].sync_path
+    def is_path_change(self, provider, changed):
+        return not provider.paths_match(self[changed].path, self[changed].sync_path)
 
     def is_creation(self, changed):
         return not self[changed].sync_path
