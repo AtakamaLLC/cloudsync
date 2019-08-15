@@ -1193,3 +1193,10 @@ def test_delete_doesnt_cross_oids(provider: ProviderMixin):
     # This test will need to flag off whether the provider uses paths as OIDs or not
     with pytest.raises(Exception):
         provider.upload(temp_name, BytesIO(b"test2"))
+
+
+def test_rename_case_change(provider: ProviderMixin):
+    temp_namel = provider.temp_name().lower()
+    temp_nameu = temp_namel.upper()
+    infol = provider.create(temp_namel, BytesIO(b"test"))
+    provider.rename(infol.oid, temp_nameu)

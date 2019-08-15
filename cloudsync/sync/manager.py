@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple
+from typing import Tuple, Optional
 
 from cloudsync.provider import Provider
 
@@ -72,20 +72,28 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if not ent[i].changed:
                 continue
 
-            info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
-
             if ent.is_path_change(i) and self.providers[i].oid_is_path:
                 # if this is a rename, and this is an oid_is_path provider, then use the new path as the oid instead
                 # because the file has already been renamed, so the oid, which is the old path, should already be gone
                 info = self.providers[i].info_oid(ent[i].path, use_cache=False)
+            else:
+                info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
             if not info:
+                if ent[i].exists == EXISTS:
+                    log.warning("File is believed to exist, but info not found, so setting it to trashed. %s", ent, stack_info=True)
                 ent[i].exists = TRASHED
                 continue
 
             ent[i].exists = EXISTS
             ent[i].hash = info.hash
             ent[i].otype = info.otype
+
+            if ent[i].hash is None:
+                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+
+            if ent[i].exists == EXISTS and ent[i].otype == FILE:
+                assert ent[i].hash is not None, "Cannot sync if hash is None"
 
             if ent[i].path != info.path:
                 self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
@@ -400,12 +408,19 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.error("Can't rename files just by case... yet %s", sync, stack_info=True)
                 # return FINISHED
 
+            parent_conflict = self.detect_parent_conflict(sync, changed)
+            if parent_conflict:
+                log.info("can't rename %s->%s yet, do parent %s first. %s", sync[changed].sync_path, sync[changed].path, parent_conflict, sync)
+                sync.punt()
+                return REQUEUE
+
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
-                log.exception("can't rename, do parent first maybe: %s", sync, stack_info=True)
-                if sync.punted > 100:
+                log.exception("ERROR: can't rename %s", sync, stack_info=True)
+
+                if sync.punted > 5:
                     log.exception("punted too many times, giving up")
                     return FINISHED
                 else:
@@ -532,3 +547,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         except CloudFileExistsError:
             # other side already agrees
             pass
+
+    def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
+        provider = self.providers[changed]
+        path = sync[changed].path
+        parent = provider.dirname(path)
+        while path != parent:
+            ents = list(self.state.lookup_path(changed, parent))
+            for ent in ents:
+                ent: SyncEntry
+                if ent.is_path_change(changed):
+                    return ent[changed].path
+            path = parent
+            parent = provider.dirname(path)
+        return None
