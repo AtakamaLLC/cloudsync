@@ -175,6 +175,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb):
+        if (patha is None and pathb is not None) or (pathb is None and patha is not None):
+            return False
+        if patha is None and pathb is None:
+            return True
         return self.normalize_path(patha) == self.normalize_path(pathb)
 
     def dirname(self, path: str):
