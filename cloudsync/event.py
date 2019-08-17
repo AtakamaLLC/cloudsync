@@ -35,7 +35,7 @@ class EventManager(Runnable):
 
     def do(self):
         for event in self.events:
-            log.debug("got event %s", event)
+            log.debug("%s got event %s", self.provider.name, event)
             path = event.path
             exists = event.exists
             otype = event.otype
@@ -48,7 +48,7 @@ class EventManager(Runnable):
                     path = info.path
                     otype = info.otype
                 else:
-                    log.debug("ignoring delete of something that can't exist")
+                    log.debug("provider %s ignoring delete of something that can't exist", self.provider.name)
                     continue
 
             self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)

@@ -311,7 +311,7 @@ def test_sync_subdir_rename(cs):
     kid_count = 4
     cs.providers[LOCAL].mkdir("/local")
 
-    lpoid  = cs.providers[LOCAL].mkdir(local_dir)
+    lpoid = cs.providers[LOCAL].mkdir(local_dir)
 
     lpaths = []
     rpaths = []

@@ -109,6 +109,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
     def sync(self, sync):
         self.get_latest_state(sync)
+        log.debug("table\n%s", self.state.pretty_print())
 
         if sync.hash_conflict():
             self.handle_hash_conflict(sync)
@@ -216,11 +217,28 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync]
 
             if conflicts:
-                log.info("mkdir conflict %s letting other side handle it", sync)
+                log.info("mkdir conflict %s letting other side handle it, conflicts are: %s", sync, conflicts)
                 return
 
             # make the dir
-            oid = self.providers[synced].mkdirs(translated_path)
+            # This must not use mkdirs()! mkdirs will create parent folders
+            #   that are just waiting for another entry to sync first and which would be created at that time anyway.
+            #   Doing a mkdirs() here, and creating those folders now, will cause the synced side to generate a
+            #   creation event for those implicitly created parent folders, which will cause a new sync entry to appear.
+            #   This is BAD, because we would then have one unsynced state entry for the local parent folder,
+            #   and another for the remote. These two entries each want to wait for the other,
+            #   and never sync. Perhaps that should be detected in the cycle detection and recover,
+            #   but conflicting one or the other is weird too. Just wait for the parent folder
+            #   to be created before syncing this entry, by detecting the dependency, and we
+            #   would not have to mkdirs() here, mkdir() will be sufficient. This way, we won't have
+            #   to detect any cycles, which would be complicated to detect and complicated to
+            #   recover from, because the cycle wouldn't happen.
+            #   If you want to see what this bad behavior looks like,
+            #   perhaps to investigate trying to detect and resolve the cycle,
+            #   change this from mkdir() to mkdirs() and remove the
+            #   parent_conflict detection from handle_path_change_or_creation()
+            #   and run the test_sync_subdir_rename test
+            oid = self.providers[synced].mkdir(translated_path)
             log.debug("mkdir %s as path %s oid %s",
                       self.providers[synced].debug_name, translated_path, debug_sig(oid))
 
@@ -389,11 +407,21 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if self.check_disjoint_create(sync, changed, synced, translated_path):
                 return REQUEUE
 
+        parent_conflict = self.detect_parent_conflict(sync[changed].path, changed)
+        if not parent_conflict and sync[changed].sync_path:
+            # it's possible the path of the parent folder has changed, but the new path is not reflected in the state
+            # table yet. To resolve this, search for the parent folder using the sync_path instead
+            parent_conflict = self.detect_parent_conflict(sync[changed].sync_path, changed)
+
         if sync.is_creation(changed):
             assert not sync[changed].sync_hash
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
+                if parent_conflict:
+                    log.info("can't mkdir %s yet, do parent %s first. %s", sync[changed].path, parent_conflict, sync)
+                    sync.punt()
+                    return REQUEUE
                 log.debug("mkdir %s", sync[changed].path)
                 self.mkdir_synced(changed, sync, translated_path)
             elif not self.download_changed(changed, sync):
@@ -403,6 +431,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.debug("upload %s", sync[changed].path)
                 self.upload_synced(changed, sync)
             else:
+                if parent_conflict:
+                    log.info("can't create %s yet, do parent %s first. %s", sync[changed].path, parent_conflict, sync)
+                    sync.punt()
+                    return REQUEUE
                 log.debug("create %s", sync[changed].path)
                 return self.create_synced(changed, sync, translated_path)
         else:  # handle rename
@@ -415,7 +447,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.error("Can't rename files just by case... yet %s", sync, stack_info=True)
                 # return FINISHED
 
-            parent_conflict = self.detect_parent_conflict(sync, changed)
             if parent_conflict:
                 log.info("can't rename %s->%s yet, do parent %s first. %s", sync[changed].sync_path, sync[changed].path, parent_conflict, sync)
                 sync.punt()
@@ -564,16 +595,20 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             # other side already agrees
             pass
 
-    def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
+    def detect_parent_conflict(self, path_to_check, changed) -> Optional[str]:
         provider = self.providers[changed]
-        path = sync[changed].path
+        path = path_to_check
         parent = provider.dirname(path)
+        table = SyncEntry.prettyheaders() + "\n"
         while path != parent:
             ents = list(self.state.lookup_path(changed, parent))
             for ent in ents:
                 ent: SyncEntry
-                if ent.is_path_change(self.providers[changed], changed):
+                table += ent.pretty() + "\n"
+                if ent[changed].changed:
+                    log.debug("detect parent conflict - conflict found\n%s", table)
                     return ent[changed].path
             path = parent
             parent = provider.dirname(path)
+        log.debug("detect parent conflict - no conflict found\n%s", table)
         return None
