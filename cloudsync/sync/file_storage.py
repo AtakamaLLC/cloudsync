@@ -31,8 +31,9 @@ class FileStorage(Storage):
             self.db = sqlite3.connect(self._filename)
             self.db_cursor = self.db.cursor()
             if mk_table:
-                self.db_cursor.execute('CREATE TABLE cloud (id BLOB, tag TEXT NOT NULL,'
-                                       ' serialization BLOB, PRIMARY KEY (id, tag))')
+                # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
+                self.db_cursor.execute('CREATE TABLE cloud (id INTEGER PRIMARY KEY, '
+                                       'tag TEXT NOT NULL, serialization BLOB)')
                 self.db.commit()
             else:
                 self.db_cursor.execute('SELECT * FROM cloud')
@@ -41,11 +42,6 @@ class FileStorage(Storage):
                     lock: Lock = self.lock_dict.setdefault(tag, Lock())
                     with lock:
                         self.storage_dict.setdefault(tag, dict())[eid] = serialization
-            # if os.path.exists(self._filename):
-            #     with open(self._filename, 'rb') as file_obj:
-            #         storage_dict = pickle.load(file_obj)
-            #         if isinstance(storage_dict, dict):
-            #             self.storage_dict = storage_dict
 
     def _get_internal_storage(self, tag: str) -> Tuple[Lock, Dict[int, bytes]]:
         with self.top_lock:
@@ -58,9 +54,9 @@ class FileStorage(Storage):
         with lock:
             # current_index = self.cursor
             # self.cursor += 1
-            eid = os.urandom(16)
+            self.db_cursor.execute('INSERT INTO cloud (tag, serialization) VALUES (?, ?)', [tag, serialization])
+            eid = self.db_cursor.lastrowid
             storage[eid] = serialization
-            self.db_cursor.execute('INSERT INTO cloud VALUES (?, ?, ?)', [eid, tag, serialization])
             self._save()
             return eid
 
