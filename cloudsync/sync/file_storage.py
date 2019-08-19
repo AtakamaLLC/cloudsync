@@ -31,6 +31,15 @@ class FileStorage(Storage):
                     storage_dict = pickle.load(file_obj)
                     if isinstance(storage_dict, dict):
                         self.storage_dict = storage_dict
+            cursor = 0
+            for tag_dict in self.storage_dict.values():
+                for id in tag_dict.keys():
+                    log.debug("found id %s", id)
+                    if id > cursor:
+                        cursor = id
+            self.cursor = cursor + 1
+            log.debug("setting cursor to %s", self.cursor)
+
 
     def _get_internal_storage(self, tag: str) -> Tuple[Lock, Dict[int, bytes]]:
         with self.top_lock:
