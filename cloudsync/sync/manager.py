@@ -208,6 +208,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             # if a file exists with the same name on the sync side
             conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync]
 
+            # TODO: check for a cycle here. If there is a cycle this will never sync up. see below comment for more info
             if conflicts:
                 log.info("mkdir conflict %s letting other side handle it", sync)
                 return
