@@ -399,11 +399,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         else:  # handle rename
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
                 return FINISHED
-            if self.providers[synced].paths_match(sync[synced].sync_path.lower(), translated_path.lower()):
-                # TODO: handle renames, same name, different case. For now, just skip it, which of course
-                #   may break other things
-                log.error("Can't rename files just by case... yet %s", sync)
-                # return FINISHED
 
 #            parent_conflict = self.detect_parent_conflict(sync, changed)
 #            if parent_conflict:
@@ -465,7 +460,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
-            return self.handle_path_change_or_creation(sync, changed, synced)
+            ret = self.handle_path_change_or_creation(sync, changed, synced)
+            if ret == REQUEUE:
+                return ret
 
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info

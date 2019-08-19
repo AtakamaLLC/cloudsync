@@ -195,6 +195,24 @@ class SyncEntry(Reprable):
         self.discarded = ''.join(traceback.format_stack())
         self.dirty = True
 
+    @staticmethod
+    def prettyheaders():
+        ret = "%3s %3s %4s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+            "EID",  # _sig(id(self)),
+            "SID",  # _sig(self.storage_id),  # S
+            "Typ",  # otype,
+            "Change",  # secs(self[LOCAL].changed),
+            "Path",  # self[LOCAL].path,
+            "OID",  # _sig(self[LOCAL].oid),
+            "Last Sync Path E H",  # str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+            "Change",  # secs(self[REMOTE].changed),
+            "Path",  # self[REMOTE].path,
+            "OID",  # _sig(self[REMOTE].oid),
+            "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+            "Punt",  # self.punted or ""
+        )
+        return ret
+
     def pretty(self, fixed=True, use_sigs=True):
         if self.discarded:
             return "DISCARDED"
@@ -531,7 +549,7 @@ class SyncState:
             e.punted = 0
 
     def pretty_print(self, use_sigs=True):
-        ret = ""
+        ret = SyncEntry.prettyheaders() + "\n"
         for e in self.get_all():
             e: SyncEntry
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
