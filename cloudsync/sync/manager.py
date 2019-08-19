@@ -394,9 +394,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         translated_path = self.translate(synced, sync[changed].path)
         if translated_path is None:
-            log.debug("ignored %s", sync[changed].path)
             # ignore these
+            log.debug(">>>ignored %s", sync[changed].path)
+            # TODO should this discard?
             return FINISHED
+        else:
+            log.debug(">>>translated path for %s is %s", sync[changed].path, translated_path)
 
         if not sync[changed].path:
             log.debug("can't sync, no path %s", sync)
@@ -496,6 +499,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         log.debug("embrace %s", sync)
         ret = None
 
+        translated_path = self.translate(synced, sync[changed].path)
+        if not translated_path:
+            log.debug(">>>Not a cloud path %s", sync[changed].path)
+            sync.discard()
+            self.state.storage_update(sync)
+            return FINISHED
+
         if sync[changed].exists == TRASHED:
             log.debug("trashed")
             self.delete_synced(sync, changed, synced)
@@ -508,7 +518,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 return ret
             # keep going to see if other stuff changed, if we are not requeuing
 
-        if sync[changed].hash != sync[changed].sync_hash:
+        if sync[changed].hash != sync[changed].sync_hash and not sync.discarded:
             # not a new file, which means we must have last sync info
 
             log.debug("needs upload: %s index: %s", sync, synced)
