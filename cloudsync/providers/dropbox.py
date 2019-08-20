@@ -378,7 +378,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     temp_path = path + "." + os.urandom(16).hex()
                     self._api('files_move_v2', oid, temp_path)
                     self.rename(oid, path)
-                return
+                return oid
 
             if old_info.otype == DIRECTORY:
                 self._attempt_rename_folder_over_empty_folder(old_info, path)
