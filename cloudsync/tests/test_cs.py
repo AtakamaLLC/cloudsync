@@ -402,16 +402,17 @@ def test_storage():
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    storage_dict = dict()
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
-    storage1 = MockStorage(storage_dict)
+    # storage1 = MockStorage(storage_dict)
+    storage1 = FileStorage('file::memory:?cache=shared')
     cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
-    storage2 = MockStorage(storage_dict)
+    # storage2 = MockStorage(storage_dict)
+    storage2 = FileStorage('file::memory:?cache=shared')
     cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")

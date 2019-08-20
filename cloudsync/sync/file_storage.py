@@ -14,77 +14,50 @@ class FileStorage(Storage):
     lock_dict = dict()
 
     def __init__(self, filename):
-        self.storage_dict = dict()
         # self.cursor: int = 0  # the next eid
         self._filename = filename
-        self._load()
+        self._ensure_table_exists()
 
     def _save(self):
-        with self.top_lock:
-            self.db.commit()
-            # with open(self._filename, 'wb') as file_obj:
-            #     pickle.dump(self.storage_dict, file_obj, 2)
+        self.db.commit()
 
-    def _load(self):
+    def _ensure_table_exists(self):
         with self.top_lock:
-            mk_table = not os.path.exists(self._filename)
-            self.db = sqlite3.connect(self._filename)
+            self.db = sqlite3.connect(self._filename, uri=self._filename.startswith('file:'))
             self.db_cursor = self.db.cursor()
-            if mk_table:
-                # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
-                self.db_cursor.execute('CREATE TABLE cloud (id INTEGER PRIMARY KEY, '
-                                       'tag TEXT NOT NULL, serialization BLOB)')
-                self.db.commit()
-            else:
-                self.db_cursor.execute('SELECT * FROM cloud')
-                for row in self.db_cursor.fetchall():
-                    eid, tag, serialization = row
-                    lock: Lock = self.lock_dict.setdefault(tag, Lock())
-                    with lock:
-                        self.storage_dict.setdefault(tag, dict())[eid] = serialization
-
-    def _get_internal_storage(self, tag: str) -> Tuple[Lock, Dict[int, bytes]]:
-        with self.top_lock:
-            lock: Lock = self.lock_dict.setdefault(tag, Lock())
-        return lock, self.storage_dict.setdefault(tag, dict())
+            # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
+            self.db_cursor.execute('CREATE TABLE IF NOT EXISTS cloud (id INTEGER PRIMARY KEY, '
+                                   'tag TEXT NOT NULL, serialization BLOB)')
+            self._save()
 
     def create(self, tag: str, serialization: bytes) -> Any:
-        # self._load()
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            # current_index = self.cursor
-            # self.cursor += 1
+        with self.top_lock:
             self.db_cursor.execute('INSERT INTO cloud (tag, serialization) VALUES (?, ?)', [tag, serialization])
             eid = self.db_cursor.lastrowid
-            storage[eid] = serialization
             self._save()
             return eid
 
     def update(self, tag: str, serialization: bytes, eid: Any):
-        self._load()
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            if eid not in storage:
-                raise ValueError("id %s doesn't exist" % eid)
-            storage[eid] = serialization
+        with self.top_lock:
             self.db_cursor.execute('UPDATE cloud SET serialization = ? WHERE id = ? AND tag = ?', [serialization, eid, tag])
+            if self.db_cursor.rowcount == 0:
+                raise ValueError("id %s doesn't exist" % eid)
             self._save()
 
     def delete(self, tag: str, eid: Any):
-        self._load()
-        lock, storage = self._get_internal_storage(tag)
         log.debug("deleting eid%s", eid)
-        with lock:
-            if eid not in storage:
+        with self.top_lock:
+            self.db_cursor.execute('DELETE FROM cloud WHERE id = ? AND tag = ?', [eid, tag])
+            if self.db_cursor.rowcount == 0:
                 log.debug("ignoring delete: id %s doesn't exist", eid)
                 return
-            del storage[eid]
-            self.db_cursor.execute('DELETE FROM cloud WHERE id = ? AND tag = ?', [eid, tag])
             self._save()
 
     def read_all(self, tag: str) -> Dict[Any, bytes]:
-        self._load()
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            ret: Dict[Any, bytes] = storage.copy()
+        with self.top_lock:
+            ret = {}
+            self.db_cursor.execute('SELECT id, serialization FROM cloud WHERE tag = ?', [tag])
+            for row in self.db_cursor.fetchall():
+                eid, serialization = row
+                ret[eid] = serialization
             return ret
