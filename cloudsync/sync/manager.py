@@ -54,7 +54,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             except Exception as e:
                 log.exception(
-                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
                 sync.punt()
                 time.sleep(self._sleep)
         else:
@@ -74,11 +74,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
-#            if ent.is_path_change(i) and self.providers[i].oid_is_path:
-                # if this is a rename, and this is an oid_is_path provider, then use the new path as the oid instead
-                # because the file has already been renamed, so the oid, which is the old path, should already be gone
-#                info = self.providers[i].info_oid(ent[i].path, use_cache=False)
-
             if not info:
                 ent[i].exists = TRASHED
                 continue
@@ -86,6 +81,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             ent[i].exists = EXISTS
             ent[i].hash = info.hash
             ent[i].otype = info.otype
+
+            if ent[i].otype == FILE:
+                if ent[i].hash is None:
+                    ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+
+                if ent[i].exists == EXISTS:
+                    assert ent[i].hash is not None, "Cannot sync if hash is None"
 
             if ent[i].path != info.path:
                 self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
