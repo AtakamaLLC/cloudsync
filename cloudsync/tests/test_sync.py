@@ -605,6 +605,13 @@ def _test_rename_folder_with_kids(sync, source, dest):
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
 
-#def test_rename_folder_with_kids(sync):
-#    _test_rename_folder_with_kids(sync, REMOTE, LOCAL)
-#    _test_rename_folder_with_kids(sync, LOCAL, REMOTE)
+# TODO: this test FAILS! make it not manual, and fix the problem
+@pytest.mark.manual
+def test_rename_folder_with_kids(sync):
+    #TODO: do this stupid forward and reverse with a fixture
+    _test_rename_folder_with_kids(sync, REMOTE, LOCAL)
+    _test_rename_folder_with_kids(sync, LOCAL, REMOTE)
+
+# TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
+# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored
+
