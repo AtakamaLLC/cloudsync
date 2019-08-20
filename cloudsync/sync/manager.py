@@ -442,6 +442,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
 
+        translated_path = self.translate(synced, sync[changed].path)
+        if not translated_path:
+            log.debug(">>>Not a cloud path %s", sync[changed].path)
+            sync.discard()
+            self.state.storage_update(sync)
+            return FINISHED
+
         if sync[changed].exists == TRASHED:
             self.delete_synced(sync, changed, synced)
             return FINISHED

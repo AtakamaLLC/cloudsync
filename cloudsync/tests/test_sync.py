@@ -556,8 +556,8 @@ def test_delete_then_move_reverse(sync):
     local_file2 = "/local/folder/file"
     remote_file2 = "/remote/folder/file"
 
-    sync.providers[LOCAL].mkdir(local_parent)
-    sync.providers[REMOTE].mkdir(remote_parent)
+    oid = sync.providers[LOCAL].mkdir(local_parent)
+    oid = sync.providers[REMOTE].mkdir(remote_parent)
     rinfo1 = sync.providers[REMOTE].create(remote_file1, BytesIO(b"hello"))
     sync.state.update(REMOTE, FILE, path=remote_file1, oid=rinfo1.oid, hash=rinfo1.hash)
     sync.run_until_found((LOCAL, local_file1))
@@ -573,3 +573,4 @@ def test_delete_then_move_reverse(sync):
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((LOCAL, local_file2), timeout=2)
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
