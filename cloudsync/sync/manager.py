@@ -55,7 +55,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             except Exception as e:
                 log.exception(
-                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
                 sync.punt()
                 time.sleep(self._sleep)
         else:
@@ -90,11 +90,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             ent[i].hash = info.hash
             ent[i].otype = info.otype
 
-            if ent[i].hash is None:
-                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+            if ent[i].otype == FILE:
+                if ent[i].hash is None:
+                    ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
 
-            if ent[i].exists == EXISTS and ent[i].otype == FILE:
-                assert ent[i].hash is not None, "Cannot sync if hash is None"
+                if ent[i].exists == EXISTS:
+                    assert ent[i].hash is not None, "Cannot sync if hash is None"
 
             if ent[i].path != info.path:
                 self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)

@@ -33,10 +33,9 @@ class FileStorage(Storage):
                         self.storage_dict = storage_dict
             cursor = 0
             for tag_dict in self.storage_dict.values():
-                for id in tag_dict.keys():
-                    log.debug("found id %s", id)
-                    if id > cursor:
-                        cursor = id
+                for row_id in tag_dict.keys():
+                    if row_id > cursor:
+                        cursor = row_id
             self.cursor = cursor + 1
             log.debug("setting cursor to %s", self.cursor)
 
