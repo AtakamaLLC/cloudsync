@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple
+from typing import Tuple, Optional
 
 from cloudsync.provider import Provider
 
@@ -54,7 +54,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             except Exception as e:
                 log.exception(
-                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
                 sync.punt()
                 time.sleep(self._sleep)
         else:
@@ -74,18 +74,22 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
-            if ent.is_path_change(i) and self.providers[i].oid_is_path:
-                # if this is a rename, and this is an oid_is_path provider, then use the new path as the oid instead
-                # because the file has already been renamed, so the oid, which is the old path, should already be gone
-                info = self.providers[i].info_oid(ent[i].path, use_cache=False)
-
             if not info:
+                if ent[i].exists == EXISTS:
+                    log.warning("File is believed to exist, but info not found, so setting it to trashed. %s", ent, stack_info=True)
                 ent[i].exists = TRASHED
                 continue
 
             ent[i].exists = EXISTS
             ent[i].hash = info.hash
             ent[i].otype = info.otype
+
+            if ent[i].otype == FILE:
+                if ent[i].hash is None:
+                    ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+
+                if ent[i].exists == EXISTS:
+                    assert ent[i].hash is not None, "Cannot sync if hash is None"
 
             if ent[i].path != info.path:
                 self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
@@ -206,6 +210,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             # if a file exists with the same name on the sync side
             conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync]
 
+            # TODO: check for a cycle here. If there is a cycle this will never sync up. see below comment for more info
             if conflicts:
                 log.info("mkdir conflict %s letting other side handle it", sync)
                 return
@@ -394,25 +399,26 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         else:  # handle rename
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
                 return FINISHED
-            if self.providers[synced].paths_match(sync[synced].sync_path.lower(), translated_path.lower()):
-                # TODO: handle renames, same name, different case. For now, just skip it, which of course
-                #   may break other things
-                log.error("Can't rename files just by case... yet %s", sync, stack_info=True)
-                # return FINISHED
+
+#            parent_conflict = self.detect_parent_conflict(sync, changed)
+#            if parent_conflict:
+#                log.info("can't rename %s->%s yet, do parent %s first. %s", sync[changed].sync_path, sync[changed].path, parent_conflict, sync)
+#                sync.punt()
+#                return REQUEUE
 
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
-                log.exception("can't rename, do parent first maybe: %s", sync, stack_info=True)
-                if sync.punted > 100:
+                log.debug("ERROR: can't rename for now %s", sync)
+                if sync.punted > 5:
                     log.exception("punted too many times, giving up")
                     return FINISHED
                 else:
                     sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
-                log.exception("can't rename, file exists", stack_info=True)
+                log.debug("can't rename, file exists")
                 if sync.punted > 1:
                     # never punt twice
                     # TODO: handle if the rename fails due to FNFE, although that may not be a risk
@@ -442,12 +448,21 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
 
+        translated_path = self.translate(synced, sync[changed].path)
+        if not translated_path:
+            log.debug(">>>Not a cloud path %s", sync[changed].path)
+            sync.discard()
+            self.state.storage_update(sync)
+            return FINISHED
+
         if sync[changed].exists == TRASHED:
             self.delete_synced(sync, changed, synced)
             return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
-            return self.handle_path_change_or_creation(sync, changed, synced)
+            ret = self.handle_path_change_or_creation(sync, changed, synced)
+            if ret == REQUEUE:
+                return ret
 
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info
@@ -532,3 +547,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         except CloudFileExistsError:
             # other side already agrees
             pass
+
+    def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
+        provider = self.providers[changed]
+        path = sync[changed].sync_path
+        parent = provider.dirname(path)
+        while path != parent:
+            ents = list(self.state.lookup_path(changed, parent))
+            for ent in ents:
+                ent: SyncEntry
+                if ent[changed].changed:
+                    return ent[changed].path
+            path = parent
+            parent = provider.dirname(path)
+        return None

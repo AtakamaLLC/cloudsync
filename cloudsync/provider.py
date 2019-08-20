@@ -153,16 +153,18 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         target_full = target_full.rstrip(sep)
         # .lower() instead of normcase because normcase will also mess with separators
         if not self.case_sensitive:
-            folder_full = folder_full.lower()
-            target_full = target_full.lower()
+            folder_full_case = folder_full.lower()
+            target_full_case = target_full.lower()
+        else:
+            folder_full_case = folder_full
+            target_full_case = target_full
 
         # target is same as folder, or target is a subpath (ensuring separator is there for base)
-        if folder_full == target_full:
+        if folder_full_case == target_full_case:
             return False if strict else sep
-        elif len(target_full) > len(folder_full) and \
-                target_full[len(folder_full)] == sep:
-            if target_full.startswith(folder_full):
-                return target_full.replace(folder_full, "", 1)
+        elif len(target_full) > len(folder_full) and target_full[len(folder_full)] == sep:
+            if target_full_case.startswith(folder_full_case):
+                return target_full[len(folder_full):]
             else:
                 return False
         return False
@@ -175,6 +177,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb):
+        if patha is None and pathb is None:
+            return True
+        elif patha is None or pathb is None:
+            return False
+        
         return self.normalize_path(patha) == self.normalize_path(pathb)
 
     def dirname(self, path: str):

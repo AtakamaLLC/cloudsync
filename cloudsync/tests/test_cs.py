@@ -107,9 +107,9 @@ def test_sync_multi(multi_cs):
         timeout=2)
 
     cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
-    log.info("TABLE\n%s", cs1.state.pretty_print())
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
 
-    assert len(cs1.state) == 6      # three dirs, 3 files, 1 never synced (local2 file)
+    assert len(cs1.state) == 4      # 2 dirs, 2 files, 1 never synced (local2 file)
 
     try:
         cs2.run_until_found(
@@ -138,7 +138,8 @@ def test_sync_multi(multi_cs):
     cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs2.state.pretty_print())
 
-    assert len(cs2.state) == 7  # three dirs, 4 files, 2 never synced (local1 files)
+    assert len(cs1.state) == 4
+    assert len(cs2.state) == 4
 
 
 def test_sync_basic(cs):

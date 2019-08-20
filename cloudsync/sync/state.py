@@ -1,16 +1,15 @@
-import time
-import logging
-import json
 import copy
-from enum import Enum
-from typing import Union
+import json
+import logging
+import time
+import traceback
 from abc import ABC, abstractmethod
-
+from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set
-from cloudsync.types import OType
+from typing import Union
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
-
+from cloudsync.types import OType
 from .util import debug_sig
 
 log = logging.getLogger(__name__)
@@ -113,7 +112,7 @@ class SyncEntry(Reprable):
         super().__init__()
         self.__states: List[SideState] = [SideState(0, otype), SideState(1, otype)]
         self.temp_file: Optional[str] = None
-        self.discarded: bool = False
+        self.discarded: str = ""
         self.storage_id: Any = None
         self.dirty: bool = True
         self.punted: int = 0
@@ -193,8 +192,26 @@ class SyncEntry(Reprable):
         return not self[changed].sync_path
 
     def discard(self):
-        self.discarded = True
+        self.discarded = ''.join(traceback.format_stack())
         self.dirty = True
+
+    @staticmethod
+    def prettyheaders():
+        ret = "%3s %3s %4s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+            "EID",  # _sig(id(self)),
+            "SID",  # _sig(self.storage_id),  # S
+            "Typ",  # otype,
+            "Change",  # secs(self[LOCAL].changed),
+            "Path",  # self[LOCAL].path,
+            "OID",  # _sig(self[LOCAL].oid),
+            "Last Sync Path E H",  # str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+            "Change",  # secs(self[REMOTE].changed),
+            "Path",  # self[REMOTE].path,
+            "OID",  # _sig(self[REMOTE].oid),
+            "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+            "Punt",  # self.punted or ""
+        )
+        return ret
 
     def pretty(self, fixed=True, use_sigs=True):
         if self.discarded:
@@ -454,7 +471,9 @@ class SyncState:
                 else:
                     self._storage.update(self._tag, ent.serialize(), ent.storage_id)
             else:
-                assert not ent.discarded
+                if ent.discarded:
+                    log.error("Entry should not be discarded. Discard happened at: %s", ent.discarded)
+                    assert not ent.discarded  # always raises, due to being in this if condition
                 new_id = self._storage.create(self._tag, ent.serialize())
                 ent.storage_id = new_id
                 log.debug("storage_update creating eid%s", ent.storage_id)
@@ -478,8 +497,10 @@ class SyncState:
         if ent and prior_ent:
             # oid_is_path conflict
             # the new entry has the same name as an old entry
+            log.debug("rename o:%s path:%s prior:%s", debug_sig(oid), path, debug_sig(prior_oid))
             log.debug("discarding old entry in favor of new %s", prior_ent)
-            prior_ent.discard()
+            ent.discard()
+            ent = prior_ent
 
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
@@ -528,7 +549,7 @@ class SyncState:
             e.punted = 0
 
     def pretty_print(self, use_sigs=True):
-        ret = ""
+        ret = SyncEntry.prettyheaders() + "\n"
         for e in self.get_all():
             e: SyncEntry
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"

@@ -438,7 +438,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected during download")
 
-    def rename(self, oid, path):  # pylint: disable=too-many-locals
+    def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches
         pid = self.get_parent_id(path)
 
         add_pids = [pid]
@@ -457,14 +457,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if self.exists_path(path):
             possible_conflict = self.info_path(path)
             if FILE in (info.otype, possible_conflict.otype):
-                raise CloudFileExistsError(path)
-            # because of the preceding if, we know that the source and target must both be folders
-            try:
-                next(self.listdir(possible_conflict.oid))
-                raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-            except StopIteration:
-                pass  # Folder is empty, rename over it no problem
-            self.delete(possible_conflict.oid)
+                if possible_conflict.oid != oid:  # it's OK to rename a file over itself, frex, to change case
+                    raise CloudFileExistsError(path)
+            else:
+                try:
+                    next(self.listdir(possible_conflict.oid))
+                    raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
+                except StopIteration:
+                    # Folder is empty, rename over it no problem
+                    self.delete(possible_conflict.oid)
 
         if not old_path:
             for cpath, coid in list(self._ids.items()):
@@ -483,6 +484,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self._ids[new_cpath] = oid
 
         log.debug("renamed %s", body)
+
+        return oid
 
     def listdir(self, oid) -> Generator[GDriveInfo, None, None]:
         query = f"'{oid}' in parents"
