@@ -74,10 +74,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
-            if ent.is_path_change(i) and self.providers[i].oid_is_path:
+#            if ent.is_path_change(i) and self.providers[i].oid_is_path:
                 # if this is a rename, and this is an oid_is_path provider, then use the new path as the oid instead
                 # because the file has already been renamed, so the oid, which is the old path, should already be gone
-                info = self.providers[i].info_oid(ent[i].path, use_cache=False)
+#                info = self.providers[i].info_oid(ent[i].path, use_cache=False)
 
             if not info:
                 ent[i].exists = TRASHED
@@ -397,14 +397,14 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if self.providers[synced].paths_match(sync[synced].sync_path.lower(), translated_path.lower()):
                 # TODO: handle renames, same name, different case. For now, just skip it, which of course
                 #   may break other things
-                log.error("Can't rename files just by case... yet %s", sync, stack_info=True)
+                log.error("Can't rename files just by case... yet %s", sync)
                 # return FINISHED
 
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
-                log.exception("can't rename, do parent first maybe: %s", sync, stack_info=True)
+                log.exception("can't rename, do parent first maybe: %s", sync)
                 if sync.punted > 100:
                     log.exception("punted too many times, giving up")
                     return FINISHED
@@ -412,7 +412,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
-                log.exception("can't rename, file exists", stack_info=True)
+                log.exception("can't rename, file exists")
                 if sync.punted > 1:
                     # never punt twice
                     # TODO: handle if the rename fails due to FNFE, although that may not be a risk

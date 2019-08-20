@@ -457,14 +457,20 @@ def test_sync_cycle(sync):
     rinfo3 = sync.providers[REMOTE].info_path(rp3)
 
     sync.providers[REMOTE].log_debug_state("BEFORE")
-    sync.providers[LOCAL].rename(linfo1.oid, templ)
-    sync.providers[LOCAL].rename(linfo3.oid, lp1)
-    sync.providers[LOCAL].rename(linfo2.oid, lp3)
-    sync.providers[LOCAL].rename(linfo1.oid, lp2)
+    tmp1oid = sync.providers[LOCAL].rename(linfo1.oid, templ)
+    lp1oid = sync.providers[LOCAL].rename(linfo3.oid, lp1)
+    lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
+    lp2oid = sync.providers[LOCAL].rename(tmp1oid, lp2)
 
-    sync.state.update(LOCAL, FILE, path=lp2, oid=linfo1.oid, hash=linfo1.hash)
-    sync.state.update(LOCAL, FILE, path=lp3, oid=linfo2.oid, hash=linfo2.hash)
-    sync.state.update(LOCAL, FILE, path=lp1, oid=linfo3.oid, hash=linfo3.hash)
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=templ, oid=tmp1oid, hash=linfo1.hash, prior_oid=linfo1.oid)
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=lp1, oid=lp1oid, hash=linfo3.hash, prior_oid=linfo3.oid)
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=lp3, oid=lp3oid, hash=linfo2.hash, prior_oid=linfo2.oid)
+    log.debug("TABLE 3:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
+    log.debug("TABLE 4:\n%s", sync.state.pretty_print())
     assert len(sync.state.get_all()) == 3
     sync.providers[REMOTE].log_debug_state("MIDDLE")
 
@@ -534,8 +540,8 @@ def test_delete_then_move(sync):
     folder_oid = sync.providers[LOCAL].mkdir(local_folder)
     sync.state.update(LOCAL, DIRECTORY, path=local_folder, oid=folder_oid, hash=None)
 
-    sync.providers[LOCAL].rename(linfo1.oid, local_file2)
-    sync.state.update(LOCAL, FILE, path=local_file2, oid=linfo1.oid, hash=linfo1.hash)
+    new_oid = sync.providers[LOCAL].rename(linfo1.oid, local_file2)
+    sync.state.update(LOCAL, FILE, path=local_file2, oid=new_oid, hash=linfo1.hash, prior_oid=linfo1.oid)
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((REMOTE, remote_file2), timeout=2)

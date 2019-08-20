@@ -484,6 +484,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         log.debug("renamed %s", body)
 
+        return oid
+
     def listdir(self, oid) -> Generator[GDriveInfo, None, None]:
         query = f"'{oid}' in parents"
         try:

@@ -374,6 +374,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self._attempt_rename_folder_over_empty_folder(info, path)
             else:
                 raise
+        return oid
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
         # TODO: check if a regular filesystem lets you mkdir over a non-empty folder...

@@ -478,8 +478,10 @@ class SyncState:
         if ent and prior_ent:
             # oid_is_path conflict
             # the new entry has the same name as an old entry
+            log.debug("rename o:%s path:%s prior:%s", debug_sig(oid), path, debug_sig(prior_oid))
             log.debug("discarding old entry in favor of new %s", prior_ent)
-            prior_ent.discard()
+            ent.discard()
+            ent = prior_ent
 
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
