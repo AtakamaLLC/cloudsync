@@ -1,16 +1,15 @@
-import time
-import logging
-import json
 import copy
-from enum import Enum
-from typing import Union
+import json
+import logging
+import time
+import traceback
 from abc import ABC, abstractmethod
-
+from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set
-from cloudsync.types import OType
+from typing import Union
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
-
+from cloudsync.types import OType
 from .util import debug_sig
 
 log = logging.getLogger(__name__)
@@ -113,7 +112,7 @@ class SyncEntry(Reprable):
         super().__init__()
         self.__states: List[SideState] = [SideState(0, otype), SideState(1, otype)]
         self.temp_file: Optional[str] = None
-        self.discarded: bool = False
+        self.discarded: str = ""
         self.storage_id: Any = None
         self.dirty: bool = True
         self.punted: int = 0
@@ -193,7 +192,7 @@ class SyncEntry(Reprable):
         return not self[changed].sync_path
 
     def discard(self):
-        self.discarded = True
+        self.discarded = ''.join(traceback.format_stack())
         self.dirty = True
 
     def pretty(self, fixed=True, use_sigs=True):
@@ -454,7 +453,9 @@ class SyncState:
                 else:
                     self._storage.update(self._tag, ent.serialize(), ent.storage_id)
             else:
-                assert not ent.discarded
+                if ent.discarded:
+                    log.error("Entry should not be discarded. Discard happened at: %s", ent.discarded)
+                    assert not ent.discarded  # always raises, due to being in this if condition
                 new_id = self._storage.create(self._tag, ent.serialize())
                 ent.storage_id = new_id
                 log.debug("storage_update creating eid%s", ent.storage_id)

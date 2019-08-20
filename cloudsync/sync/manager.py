@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple
+from typing import Tuple, Optional
 
 from cloudsync.provider import Provider
 
@@ -75,6 +75,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
             if not info:
+                if ent[i].exists == EXISTS:
+                    log.warning("File is believed to exist, but info not found, so setting it to trashed. %s", ent, stack_info=True)
                 ent[i].exists = TRASHED
                 continue
 
@@ -403,19 +405,25 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.error("Can't rename files just by case... yet %s", sync)
                 # return FINISHED
 
+#            parent_conflict = self.detect_parent_conflict(sync, changed)
+#            if parent_conflict:
+#                log.info("can't rename %s->%s yet, do parent %s first. %s", sync[changed].sync_path, sync[changed].path, parent_conflict, sync)
+#                sync.punt()
+#                return REQUEUE
+
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
             except CloudFileNotFoundError:
-                log.exception("can't rename, do parent first maybe: %s", sync)
-                if sync.punted > 100:
+                log.debug("ERROR: can't rename for now %s", sync)
+                if sync.punted > 5:
                     log.exception("punted too many times, giving up")
                     return FINISHED
                 else:
                     sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
-                log.exception("can't rename, file exists")
+                log.debug("can't rename, file exists")
                 if sync.punted > 1:
                     # never punt twice
                     # TODO: handle if the rename fails due to FNFE, although that may not be a risk
@@ -542,3 +550,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         except CloudFileExistsError:
             # other side already agrees
             pass
+
+    def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
+        provider = self.providers[changed]
+        path = sync[changed].sync_path
+        parent = provider.dirname(path)
+        while path != parent:
+            ents = list(self.state.lookup_path(changed, parent))
+            for ent in ents:
+                ent: SyncEntry
+                if ent[changed].changed:
+                    return ent[changed].path
+            path = parent
+            parent = provider.dirname(path)
+        return None
