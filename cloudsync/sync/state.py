@@ -301,7 +301,7 @@ class SyncState:
         self._changeset = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
-        self.cursor_id = [None, None]
+        self.cursor_id = dict()
         if self._storage:
             storage_dict = self._storage.read_all(tag)
             for eid, ent_ser in storage_dict.items():
@@ -467,33 +467,29 @@ class SyncState:
         ent[side].changed = time.time()
         self._changeset.add(ent)
 
-    def cursor_tag(self, side):
-        return "%s_%s_cursor" % (self._tag, side)
-
-    def storage_get_cursor(self, side):
+    def storage_get_cursor(self, cursor_tag):
         retval = None
         if self._storage is not None:
-            if self.cursor_id[side]:
-                retval = self._storage.read(self.cursor_tag(side), self.cursor_id[side])
+            if cursor_tag in self.cursor_id:
+                retval = self._storage.read(cursor_tag, self.cursor_id[cursor_tag])
             if not retval:
-                cursors = self._storage.read_all(self.cursor_tag(side))
+                cursors = self._storage.read_all(cursor_tag)
                 for eid, cursor in cursors.items():
-                    self.cursor_id[side] = eid
+                    self.cursor_id[cursor_tag] = eid
                     retval = cursor
                 if len(cursors) > 1:
-                    log.warning("Multiple cursors found for %s", self.cursor_tag(side))
-
-        log.debug("storage_get_cursor id=%s cursor=%s", self.cursor_id[side], str(retval))
+                    log.warning("Multiple cursors found for %s", cursor_tag)
+        log.debug("storage_get_cursor id=%s cursor=%s", self.cursor_id[cursor_tag], str(retval))
         return retval
 
-    def storage_update_cursor(self, side, cursor):
-        log.debug("storage_update_cursor cursor %s", cursor)
+    def storage_update_cursor(self, cursor_tag, cursor):
+        log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
         updated = 0
         if self._storage is not None:
-            if self.cursor_id[side]:
-                updated = self._storage.update(self.cursor_tag(side), cursor, self.cursor_id[side])
+            if self.cursor_id[cursor_tag]:
+                updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
             if not updated:
-                self.cursor_id[side] = self._storage.create(self.cursor_tag(side), cursor)
+                self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)
 
     def storage_update(self, ent: SyncEntry):
         log.debug("storage_update eid%s", ent.storage_id)

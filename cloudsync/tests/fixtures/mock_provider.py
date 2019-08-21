@@ -120,7 +120,7 @@ class MockProvider(Provider):
         del self._fs_by_path[fo.path]
         del self._fs_by_oid[fo.oid]
 
-    def _translate_event(self, pe: MockEvent) -> Event:
+    def _translate_event(self, pe: MockEvent, cursor) -> Event:
         event = pe.serialize()
         provider_type = event.get("object type", None)
         standard_type = self._type_map.get(provider_type, None)
@@ -132,7 +132,7 @@ class MockProvider(Provider):
         path = None
         if self.oid_is_path:
             path = event.get("path")
-        retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid)
+        retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
 
     def _api(self, *args, **kwargs):
@@ -140,17 +140,14 @@ class MockProvider(Provider):
 
     def events(self) -> Generator[Event, None, None]:
         self._api()
-        done = False
-        found = False
         while self._cursor < self._latest_event:
             self._cursor += 1
             pe = self._events[self._cursor]
-            yield self._translate_event(pe)
+            yield self._translate_event(pe, self._cursor)
 
     def walk(self, path, since=None):
         # TODO: implement "since" parameter
         self._api()
-        now = time.time()
         for obj in self._fs_by_oid.values():
             if self.is_subpath(path, obj.path, strict=False):
                 yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)

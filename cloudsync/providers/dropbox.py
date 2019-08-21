@@ -58,6 +58,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     _max_simple_upload_size = 15 * 1024 * 1024
     _upload_block_size = 10 * 1024 * 1024
+    name = "Dropbox"
 
     def __init__(self):
         super().__init__()

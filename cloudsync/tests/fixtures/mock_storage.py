@@ -1,5 +1,5 @@
 from threading import Lock
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import logging
 from cloudsync import Storage, LOCAL, REMOTE
 
@@ -48,3 +48,10 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
         with lock:
             ret: Dict[Any, bytes] = storage.copy()
             return ret
+
+    def read(self, tag: str, eid: Any) -> Optional[bytes]:
+        lock, storage = self._get_internal_storage(tag)
+        with lock:
+            if eid not in storage:
+                raise ValueError("id %s doesn't exist" % eid)
+            return storage[eid]

@@ -3,13 +3,13 @@ from threading import Lock
 from collections import namedtuple
 
 
-class Muxer():
+class Muxer:
     Entry = namedtuple('Entry', 'genref listeners, lock')
 
     already = {}
     top_lock = Lock()
 
-    def __init__(self, func, restart=False):
+    def __init__(self, func, restart=False, wait_for_drain=False):
         self.restart = restart
         self.func = func
         self.queue = queue.Queue()
@@ -24,6 +24,7 @@ class Muxer():
         self.listeners = ent.listeners
 
         self.listeners.append(self)
+        self.wait_for_drain = wait_for_drain
 
     def __iter__(self):
         return self

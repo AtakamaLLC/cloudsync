@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 import re
 import logging
-from typing import Generator, Optional
+from typing import TYPE_CHECKING, Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
-from cloudsync.event import Event
+if TYPE_CHECKING:
+    from cloudsync.event import Event
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,17 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         pass
 
     @abstractmethod
-    def events(self) -> Generator[Event, None, None]:
+    @property
+    def name(self):
+        ...
+
+    @abstractmethod
+    @property
+    def cursor(self):
+        ...
+
+    @abstractmethod
+    def events(self) -> Generator["Event", None, None]:
         ...
 
     @abstractmethod
