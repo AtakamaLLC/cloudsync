@@ -354,9 +354,15 @@ def test_sync_conflict_simul(sync):
     sync.state.update(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
+
+    # one of them is a conflict
+    sync.run(until=lambda:
+        sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+        or
+        sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+    )
+
     sync.run_until_found(
-        (REMOTE, "/remote/stuff1.conflicted"),
-        (LOCAL, "/local/stuff1.conflicted"),
         (REMOTE, "/remote/stuff1"),
         (LOCAL, "/local/stuff1")
     )
@@ -366,8 +372,12 @@ def test_sync_conflict_simul(sync):
 
     b1 = BytesIO()
     b2 = BytesIO()
-    sync.providers[REMOTE].download_path("/remote/stuff1.conflicted", b1)
-    sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+    if sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted"):
+        sync.providers[REMOTE].download_path("/remote/stuff1.conflicted", b1)
+        sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+    else:
+        sync.providers[LOCAL].download_path("/local/stuff1.conflicted", b2)
+        sync.providers[LOCAL].download_path("/local/stuff1", b1)
 
     # both files are intact
     assert b1.getvalue() != b2.getvalue()

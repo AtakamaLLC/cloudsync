@@ -238,7 +238,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             return FINISHED
         except CloudFileNotFoundError:
-             if not sync.punted:
+            if not sync.punted:
                 sync.punt()
                 return REQUEUE
            
