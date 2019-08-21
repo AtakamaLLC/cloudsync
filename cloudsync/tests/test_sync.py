@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
 from cloudsync.provider import Provider
+from cloudsync.types import OInfo
 
 
 class WaitFor(NamedTuple):
@@ -457,14 +458,20 @@ def test_sync_cycle(sync):
     rinfo3 = sync.providers[REMOTE].info_path(rp3)
 
     sync.providers[REMOTE].log_debug_state("BEFORE")
-    sync.providers[LOCAL].rename(linfo1.oid, templ)
-    sync.providers[LOCAL].rename(linfo3.oid, lp1)
-    sync.providers[LOCAL].rename(linfo2.oid, lp3)
-    sync.providers[LOCAL].rename(linfo1.oid, lp2)
+    tmp1oid = sync.providers[LOCAL].rename(linfo1.oid, templ)
+    lp1oid = sync.providers[LOCAL].rename(linfo3.oid, lp1)
+    lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
+    lp2oid = sync.providers[LOCAL].rename(tmp1oid, lp2)
 
-    sync.state.update(LOCAL, FILE, path=lp2, oid=linfo1.oid, hash=linfo1.hash)
-    sync.state.update(LOCAL, FILE, path=lp3, oid=linfo2.oid, hash=linfo2.hash)
-    sync.state.update(LOCAL, FILE, path=lp1, oid=linfo3.oid, hash=linfo3.hash)
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=templ, oid=tmp1oid, hash=linfo1.hash, prior_oid=linfo1.oid)
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=lp1, oid=lp1oid, hash=linfo3.hash, prior_oid=linfo3.oid)
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=lp3, oid=lp3oid, hash=linfo2.hash, prior_oid=linfo2.oid)
+    log.debug("TABLE 3:\n%s", sync.state.pretty_print())
+    sync.state.update(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
+    log.debug("TABLE 4:\n%s", sync.state.pretty_print())
     assert len(sync.state.get_all()) == 3
     sync.providers[REMOTE].log_debug_state("MIDDLE")
 
@@ -514,7 +521,7 @@ def test_sync_conflict_path_combine(sync):
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
 
-def test_delete_then_move(sync):
+def test_create_then_move(sync):  # TODO: combine with the reverse test
     remote_parent = "/remote"
     local_parent = "/local"
     local_folder = "/local/folder"
@@ -534,14 +541,15 @@ def test_delete_then_move(sync):
     folder_oid = sync.providers[LOCAL].mkdir(local_folder)
     sync.state.update(LOCAL, DIRECTORY, path=local_folder, oid=folder_oid, hash=None)
 
-    sync.providers[LOCAL].rename(linfo1.oid, local_file2)
-    sync.state.update(LOCAL, FILE, path=local_file2, oid=linfo1.oid, hash=linfo1.hash)
+    new_oid = sync.providers[LOCAL].rename(linfo1.oid, local_file2)
+    sync.state.update(LOCAL, FILE, path=local_file2, oid=new_oid, hash=linfo1.hash, prior_oid=linfo1.oid)
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((REMOTE, remote_file2), timeout=2)
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
-def test_delete_then_move_reverse(sync):
+
+def test_create_then_move_reverse(sync):  # TODO: see if this can be combined with the reverse test
     remote_parent = "/remote"
     local_parent = "/local"
     remote_folder = "/remote/folder"
@@ -550,8 +558,8 @@ def test_delete_then_move_reverse(sync):
     local_file2 = "/local/folder/file"
     remote_file2 = "/remote/folder/file"
 
-    sync.providers[LOCAL].mkdir(local_parent)
-    sync.providers[REMOTE].mkdir(remote_parent)
+    oid = sync.providers[LOCAL].mkdir(local_parent)
+    oid = sync.providers[REMOTE].mkdir(remote_parent)
     rinfo1 = sync.providers[REMOTE].create(remote_file1, BytesIO(b"hello"))
     sync.state.update(REMOTE, FILE, path=remote_file1, oid=rinfo1.oid, hash=rinfo1.hash)
     sync.run_until_found((LOCAL, local_file1))
@@ -567,3 +575,42 @@ def test_delete_then_move_reverse(sync):
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((LOCAL, local_file2), timeout=2)
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+def _test_rename_folder_with_kids(sync, source, dest):
+    parent = ["/local", "/remote"]
+    folder1 = ["/local/folder1", "/remote/folder1"]
+    file1 = ["/local/folder1/file", "/remote/folder1/file"]
+    folder2 = ["/local/folder2", "/remote/folder2"]
+    file2 = ["/local/folder2/file", "/remote/folder2/file"]
+
+    for loc in (source, dest):
+        sync.providers[loc].mkdir(parent[loc])
+    folder_oid = sync.providers[source].mkdir(folder1[source])
+    sync.state.update(source, DIRECTORY, path=folder1[source], oid=folder_oid, hash=None)
+    file_info: OInfo = sync.providers[source].create(file1[source], BytesIO(b"hello"))
+    sync.state.update(source, FILE, path=file1[source], oid=file_info.oid, hash=None)
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+    sync.run_until_found((dest, folder1[dest]))
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+
+    sync.providers[source].rename(folder_oid, folder2[source])
+    sync.state.update(source, DIRECTORY, path=folder2[source], oid=folder_oid, hash=None)
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+    sync.run_until_found((source, file2[source]))
+    sync.run_until_found((dest, file2[dest]))
+    sync.run_until_found(
+        (source, file2[source]),
+        (dest, file2[dest]),
+    )
+    log.debug("TABLE 3:\n%s", sync.state.pretty_print())
+
+
+# TODO: this test FAILS! make it not manual, and fix the problem
+@pytest.mark.manual
+def test_rename_folder_with_kids(sync):
+    #TODO: do this stupid forward and reverse with a fixture
+    _test_rename_folder_with_kids(sync, REMOTE, LOCAL)
+    _test_rename_folder_with_kids(sync, LOCAL, REMOTE)
+
+# TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
+# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored

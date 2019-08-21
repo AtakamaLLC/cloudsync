@@ -1193,3 +1193,15 @@ def test_delete_doesnt_cross_oids(provider: ProviderMixin):
     # This test will need to flag off whether the provider uses paths as OIDs or not
     with pytest.raises(Exception):
         provider.upload(temp_name, BytesIO(b"test2"))
+
+
+# TODO: this test FAILS on gdrive. remove the "manual" mark, and fix the problem
+@pytest.mark.manual
+def test_rename_case_change(provider: ProviderMixin):
+    temp_namel = provider.temp_name().lower()
+    temp_nameu = temp_namel.upper()
+    infol = provider.create(temp_namel, BytesIO(b"test"))
+    assert infol.path == temp_namel
+    provider.rename(infol.oid, temp_nameu)
+    infou = provider.info_oid(infol.oid)
+    assert infou.path == temp_nameu

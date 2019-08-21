@@ -10,17 +10,19 @@ from .provider import Provider
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
-                 translate,
+                 roots: Tuple[str, str] = None,
                  storage: Optional[Storage] = None,
                  label: Optional[str] = None,
-                 sleep: Optional[int] = 15):
+                 sleep: Optional[int] = 15,
+                 ):
 
         state = SyncState(storage, tag=label)
-        smgr = SyncManager(state, providers, translate, sleep=sleep)
+        smgr = SyncManager(state, providers, self.translate, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
         self.providers = providers
+        self.roots = roots
 
         self.smgr = smgr
         self.emgrs = (
@@ -32,6 +34,20 @@ class CloudSync(Runnable):
             threading.Thread(target=self.emgrs[0].run),
             threading.Thread(target=self.emgrs[1].run)
         )
+
+    def walk(self):
+        if not self.roots:
+            raise ValueError("walk requires provider path roots")
+
+        for index, provider in enumerate(self.providers):
+            for event in provider.walk(self.roots[index]):
+                self.emgrs[index].process_event(event)
+
+    def translate(self, index, path):
+        relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
+        if not relative:
+            return None
+        return self.providers[index].join(self.roots[index], relative)
 
     def start(self):
         self.sthread.start()

@@ -247,6 +247,8 @@ class MockProvider(Provider):
 
         if self.oid_is_path:
             assert object_to_rename.oid != prior_oid, "rename %s to %s" % (prior_oid, new_path)
+        else:
+            assert object_to_rename.oid == oid, "rename %s to %s" % (object_to_rename.oid, oid)
 
         self._register_event(MockEvent.ACTION_RENAME, object_to_rename, prior_oid)
 

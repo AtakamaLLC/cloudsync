@@ -1,7 +1,7 @@
 from threading import Lock
 from typing import Dict, Any, Tuple
 import logging
-from cloudsync import CloudSync, SyncState, Storage, LOCAL, REMOTE
+from cloudsync import Storage, LOCAL, REMOTE
 
 log = logging.getLogger(__name__)
 
