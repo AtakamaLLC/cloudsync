@@ -38,9 +38,10 @@ class CloudSync(Runnable):
     def walk(self):
         if not self.roots:
             raise ValueError("walk requires provider path roots")
-            for index, provider in enumerate(self.providers):
-                for event in provider.walk(self.roots[i]):
-                    self.emgrs[index].process_event(event)
+
+        for index, provider in enumerate(self.providers):
+            for event in provider.walk(self.roots[i]):
+                self.emgrs[index].process_event(event)
 
     def translate(self, index, path):
         relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
