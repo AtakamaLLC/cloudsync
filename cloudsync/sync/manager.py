@@ -184,6 +184,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             ent[changed].exists, ent[synced].exists)]
 
         if ents:
+            if not sync.punted:
+                sync.punt()
+                return REQUEUE
+
             raise NotImplementedError(
                 "What to do if we create a folder when there's already a FILE")
 
@@ -231,6 +235,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             self.state.update_entry(
                 sync, synced, exists=True, oid=oid, path=translated_path)
+
+            return FINISHED
         except CloudFileNotFoundError:
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].debug_name, translated_path)
@@ -395,7 +401,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
-                self.mkdir_synced(changed, sync, translated_path)
+                return self.mkdir_synced(changed, sync, translated_path)
             elif not self.download_changed(changed, sync):
                 return REQUEUE
             elif sync[synced].oid:
@@ -443,7 +449,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def rename_to_fix_conflict(self, sync, side):
         new_oid, new_name = self.conflict_rename(side, sync[side].path, sync[side].oid)
 
-        self.state.update(side, sync[side].otype, oid=new_oid, path=new_name, prior_oid=sync[side].oid)
+#        self.state.update(side, sync[side].otype, oid=new_oid, path=new_name, prior_oid=sync[side].oid)
 
     def conflict_rename(self, side, path, oid):
         conflict_name = path + ".conflicted"
