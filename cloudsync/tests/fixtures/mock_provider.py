@@ -201,6 +201,8 @@ class MockProvider(Provider):
         file = self._fs_by_oid.get(oid, None)
         if file is None or file.exists is False:
             raise CloudFileNotFoundError(oid)
+        if file.type == MockFSObject.DIR:
+            raise CloudFileExistsError("is a directory")
         file_like.write(file.contents)
 
     def rename(self, oid, new_path) -> str:
@@ -319,6 +321,9 @@ class MockProvider(Provider):
             return file.hash()
         else:
             return None
+
+    def hash_data(self, data) -> Any:
+        return md5(data.read()).digest()
 
     def info_path(self, path: str) -> Optional[OInfo]:
         self._api()

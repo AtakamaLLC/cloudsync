@@ -38,7 +38,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         self.providers[REMOTE].debug_name = "remote"
         self.translate = translate
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
+
         self._sleep = sleep
+
+        if sleep is None:
+            sleep = 0
 
         assert len(self.providers) == 2
 
@@ -153,8 +157,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         try:
             log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, sync.temp_file + ".tmp")
-            self.providers[changed].download(
-                sync[changed].oid, open(sync.temp_file + ".tmp", "wb"))
+            with open(sync.temp_file + ".tmp", "wb") as f:
+                self.providers[changed].download(sync[changed].oid, f)
             os.rename(sync.temp_file + ".tmp", sync.temp_file)
             return True
         except PermissionError as e:
@@ -281,9 +285,20 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         synced = other_side(changed)
         log.debug("create on %s as path %s",
                   self.providers[synced].debug_name, translated_path)
-        info = self.providers[synced].create(
-            translated_path, open(sync.temp_file, "rb"))
-        log.debug("created %s", info)
+        try:
+            info = self.providers[synced].create(
+                translated_path, open(sync.temp_file, "rb"))
+            log.debug("created %s", info)
+        except CloudFileExistsError:
+            info = self.providers[synced].info_path(translated_path)
+            if not info:
+                raise
+            with open(sync.temp_file, "rb") as f:
+                existing_hash = self.providers[synced].hash_data(f)
+            if existing_hash != info.hash:
+                raise
+            log.debug("use existing %s", info)
+
         sync[synced].sync_hash = info.hash
         if info.path:
             sync[synced].sync_path = info.path
@@ -308,6 +323,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
+
             if sync.punted > 0:
                 # could be the same file...
                 if self.resolve_conflict(sync, changed, synced):
@@ -373,7 +389,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         assert len(other_untrashed_ents) == 1
 
-        log.debug("split conflict found")
+        log.debug("split conflict found : %s", other_untrashed_ents)
+        
         self.handle_split_conflict(
             other_untrashed_ents[0], synced, sync, changed)
 
@@ -450,8 +467,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
-    def rename_to_fix_conflict(self, sync, side, path):
-        old_oid, new_oid, new_name = self.conflict_rename(side, path)
+    def rename_to_fix_conflict(self, sync, side, path, oid=None):
+        old_oid, new_oid, new_name = self.conflict_rename(side, path, oid)
+        if new_name is None:
+            return False
+
         log.debug("rename to fix conflict %s -> %s", sync[side].path, new_name)
         # file can get renamed back, if there's a cycle
         if old_oid == sync[side].oid:
@@ -461,11 +481,15 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if ent:
                 self.state.update_entry(ent, side=side, oid=new_oid)
 
+        return True
 
-    def conflict_rename(self, side, path):
+    def conflict_rename(self, side, path, oid):
         conflict_name = path + ".conflicted"
 
         oinfo = self.providers[side].info_path(path)
+
+        if not oinfo:
+            return None, None, None
 
         i = 1
         new_oid = None
@@ -541,6 +565,16 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
+        if defer_ent[defer_side].otype == FILE:
+            self.download_changed(defer_side, defer_ent)
+
+            with open(defer_ent.temp_file, "rb") as f:
+                dhash = self.providers[replace_side].hash_data(f)
+                if dhash == replace_ent[replace_side].hash:
+                    log.debug("same hash as remote, discard entry")
+                    replace_ent.discard()
+                    return
+
         self.rename_to_fix_conflict(replace_ent, replace_side, replace_ent[replace_side].path)
 
         log.debug("REPLACE %s", replace_ent)
