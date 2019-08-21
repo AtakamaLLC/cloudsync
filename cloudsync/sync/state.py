@@ -383,8 +383,9 @@ class SyncState:
             log.debug("removing %s because oid and path not in index", r)
             self._changeset.remove(r)
 
-        log.debug("side is %s, oid is %s", side, debug_sig(oid))
-        assert self._oids[side][oid] is ent
+        if oid:
+            log.debug("side is %s, oid is %s", side, debug_sig(oid))
+            assert self._oids[side][oid] is ent
 
     def lookup_oid(self, side, oid):
         try:
@@ -427,7 +428,6 @@ class SyncState:
     def update_entry(self, ent, side, oid, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin, too-many-arguments
         if oid is not None:
             self._change_oid(side, ent, oid)
-            assert ent in self.get_all()
 
         if otype is not None:
             ent[side].otype = otype
@@ -438,7 +438,8 @@ class SyncState:
         if path is not None:
             self._change_path(side, ent, path)
 
-        assert ent in self.get_all()
+        if oid:
+            assert ent in self.get_all()
 
         if hash is not None:
             ent[side].hash = hash
@@ -453,7 +454,8 @@ class SyncState:
             log.debug("add %s to changeset", ent)
             self.mark_changed(side, ent)
 
-        assert ent in self.get_all()
+        if oid:
+            assert ent in self.get_all()
 
         log.debug("updated %s", ent)
 

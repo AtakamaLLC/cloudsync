@@ -368,6 +368,7 @@ def test_sync_folder_conflicts_file(cs):
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
+    assert local_conf and remote_conf
 
 def test_storage():
     roots = ("/local", "/remote")

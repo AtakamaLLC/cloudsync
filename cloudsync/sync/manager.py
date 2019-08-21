@@ -438,6 +438,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 if sync.punted > 1:
                     # never punt twice
                     self.rename_to_fix_conflict(sync, changed, temporary=True)
+                    return FINISHED
                 else:
                     sync.punt()
                 return REQUEUE
@@ -454,12 +455,14 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         new_oid, new_name = self.conflict_rename(side, sync[side].path, sync[side].oid)
 
         if not temporary:
+            log.debug("perm rename to fix conflict %s -> %s", sync[side].path, new_name)
             # file no longer exists for sync... it's a conflict file
             if not sync[other_side(side)].oid:
                 sync.discard()
             else:
-                self.state.update_entry(sync, side=side, oid="", path="", hash="", exists=False)
+                self.state.update_entry(sync, side=side, oid="", path="")
         else:
+            log.debug("temp rename to fix conflict %s -> %s", sync[side].path, new_name)
             # file should get renamed back
             self.state.update_entry(sync, side=side, oid=new_oid)
             sync[side].sync_path = new_name

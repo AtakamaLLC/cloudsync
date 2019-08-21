@@ -473,6 +473,8 @@ def test_sync_cycle(sync):
     lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
     lp2oid = sync.providers[LOCAL].rename(tmp1oid, lp2)
 
+    # a->temp, c->a, b->c, temp->b
+
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
     sync.state.update(LOCAL, FILE, path=templ, oid=tmp1oid, hash=linfo1.hash, prior_oid=linfo1.oid)
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
@@ -488,9 +490,16 @@ def test_sync_cycle(sync):
     sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
     sync.providers[REMOTE].log_debug_state("AFTER")
 
-    assert sync.providers[REMOTE].exists_path(rp1)
-    assert sync.providers[REMOTE].exists_path(rp2)
-    assert sync.providers[REMOTE].exists_path(rp3)
+    i1 = sync.providers[REMOTE].info_path(rp1)
+    i2 = sync.providers[REMOTE].info_path(rp2)
+    i3 = sync.providers[REMOTE].info_path(rp3)
+
+    assert i1 and i2 and i3
+
+    assert i1.hash == rinfo3.hash 
+    assert i2.hash == rinfo1.hash 
+    assert i3.hash == rinfo2.hash 
+
 
 
 def test_sync_conflict_path_combine(sync):
