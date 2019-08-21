@@ -217,7 +217,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             # TODO: check for a cycle here. If there is a cycle this will never sync up. see below comment for more info
             if conflicts:
                 log.info("mkdir conflict %s letting other side handle it", sync)
-                return
+                return FINISHED
 
             # make the dir
             oid = self.providers[synced].mkdirs(translated_path)
@@ -317,7 +317,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             return REQUEUE
 
-    def resolve_conflict(self, ent, changed, synced):
+    def resolve_conflict(self, _ent, _changed, _synced): # pylint: disable=no-self-use
         return False
 
     def delete_synced(self, sync, changed, synced):
