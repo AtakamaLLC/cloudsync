@@ -238,6 +238,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             return FINISHED
         except CloudFileNotFoundError:
+             if not sync.punted:
+                sync.punt()
+                return REQUEUE
+           
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].debug_name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
