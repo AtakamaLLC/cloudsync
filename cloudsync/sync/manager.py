@@ -467,8 +467,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
-    def rename_to_fix_conflict(self, sync, side, path, oid=None):
-        old_oid, new_oid, new_name = self.conflict_rename(side, path, oid)
+    def rename_to_fix_conflict(self, sync, side, path):
+        old_oid, new_oid, new_name = self.conflict_rename(side, path)
         if new_name is None:
             return False
 
@@ -483,7 +483,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         return True
 
-    def conflict_rename(self, side, path, oid):
+    def conflict_rename(self, side, path):
         conflict_name = path + ".conflicted"
 
         oinfo = self.providers[side].info_path(path)
