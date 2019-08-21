@@ -197,7 +197,7 @@ class SyncEntry(Reprable):
 
     @staticmethod
     def prettyheaders():
-        ret = "%3s %3s %4s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %4s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             "EID",  # _sig(id(self)),
             "SID",  # _sig(self.storage_id),  # S
             "Typ",  # otype,
@@ -257,10 +257,10 @@ class SyncEntry(Reprable):
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + lexv + ":" + lhma),
                         self.punted))
 
-        ret = "%3s S%3s %3s %6s %20s O%6s %22s -- %6s %20s O%6s %22s %s" % (
+        ret = "%3s S%3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),  # S
-            otype,
+            otype[:3],
             secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
@@ -525,9 +525,10 @@ class SyncState:
 
     def change(self):
         # for now just get a random one
-        for e in self._changeset:
-            if not e.discarded and not e.punted:
-                return e
+        for puntlevel in range(3):
+            for e in self._changeset:
+                if not e.discarded and e.punted == puntlevel:
+                    return e
 
         for e in list(self._changeset):
             if e.discarded:

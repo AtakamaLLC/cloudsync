@@ -120,7 +120,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     self.finished(i, sync)
                 break
 
-        log.debug("table\n%s", self.state.pretty_print())
+        log.debug("table\r\n%s", self.state.pretty_print())
 
     def temp_file(self):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
@@ -308,11 +308,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
-            if sync.punted > 1:
+            if sync.punted > 0:
                 # could be the same file...
                 if self.resolve_conflict(sync, changed, synced):
                     return FINISHED
-                self.rename_to_fix_conflict(sync, changed, temporary=True)
+                self.rename_to_fix_conflict(sync, changed, translated_path)
+                sync.punt()
             else:
                 sync.punt()
             return REQUEUE
@@ -435,12 +436,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 return REQUEUE
             except CloudFileExistsError:
                 log.debug("can't rename, file exists")
-                if sync.punted > 1:
-                    # never punt twice
-                    self.rename_to_fix_conflict(sync, changed, temporary=True)
-                    return FINISHED
-                else:
-                    sync.punt()
+                if sync.punted:
+                    log.debug("rename for conflict")
+                    self.rename_to_fix_conflict(sync, synced, translated_path)
+                sync.punt()
                 return REQUEUE
 
             sync[synced].sync_path = translated_path
@@ -451,35 +450,33 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
-    def rename_to_fix_conflict(self, sync, side, temporary=False):
-        new_oid, new_name = self.conflict_rename(side, sync[side].path, sync[side].oid)
-
-        if not temporary:
-            log.debug("perm rename to fix conflict %s -> %s", sync[side].path, new_name)
-            # file no longer exists for sync... it's a conflict file
-            if not sync[other_side(side)].oid:
-                sync.discard()
-            else:
-                self.state.update_entry(sync, side=side, oid="", path="")
-        else:
-            log.debug("temp rename to fix conflict %s -> %s", sync[side].path, new_name)
-            # file should get renamed back
+    def rename_to_fix_conflict(self, sync, side, path):
+        old_oid, new_oid, new_name = self.conflict_rename(side, path)
+        log.debug("rename to fix conflict %s -> %s", sync[side].path, new_name)
+        # file can get renamed back, if there's a cycle
+        if old_oid == sync[side].oid:
             self.state.update_entry(sync, side=side, oid=new_oid)
-            sync[side].sync_path = new_name
+        else:
+            ent = self.state.lookup_oid(side, old_oid)
+            if ent:
+                self.state.update_entry(ent, side=side, oid=new_oid)
 
-    def conflict_rename(self, side, path, oid):
+
+    def conflict_rename(self, side, path):
         conflict_name = path + ".conflicted"
+
+        oinfo = self.providers[side].info_path(path)
 
         i = 1
         new_oid = None
         while new_oid is None:
             try:
-                new_oid = self.providers[side].rename(oid, conflict_name)
+                new_oid = self.providers[side].rename(oinfo.oid, conflict_name)
             except CloudFileExistsError:
                 i = i + 1
                 conflict_name = path + ".conflicted" + str(i)
 
-        return new_oid, conflict_name
+        return oinfo.oid, new_oid, conflict_name
 
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
@@ -544,7 +541,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
-        self.rename_to_fix_conflict(replace_ent, replace_side, temporary=False)
+        self.rename_to_fix_conflict(replace_ent, replace_side, replace_ent[replace_side].path)
 
         log.debug("REPLACE %s", replace_ent)
 

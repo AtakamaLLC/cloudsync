@@ -539,13 +539,16 @@ def test_sync_conflict_path_combine(sync):
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
-    sync.run(until=lambda:
-        sync.providers[REMOTE].exists_path("/remote/stuff.conflicted")
-        or
-        sync.providers[LOCAL].exists_path("/local/stuff.conflicted")
-    )
+    ok = lambda: (
+            sync.providers[REMOTE].exists_path("/remote/stuff.conflicted")
+            or
+            sync.providers[LOCAL].exists_path("/local/stuff.conflicted")
+            )
+    sync.run(until=ok, timeout=3)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+    assert ok() 
 
 
 def test_create_then_move(sync):  # TODO: combine with the reverse test
