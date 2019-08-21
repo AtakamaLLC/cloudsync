@@ -383,10 +383,6 @@ class SyncState:
             log.debug("removing %s because oid and path not in index", r)
             self._changeset.remove(r)
 
-        if oid:
-            log.debug("side is %s, oid is %s", side, debug_sig(oid))
-            assert self._oids[side][oid] is ent
-
     def lookup_oid(self, side, oid):
         try:
             ret = self._oids[side][oid]
