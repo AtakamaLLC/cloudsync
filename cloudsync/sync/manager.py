@@ -464,7 +464,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             self.state.update_entry(sync, side=side, oid=new_oid)
             sync[side].sync_path = new_name
 
-
     def conflict_rename(self, side, path, oid):
         conflict_name = path + ".conflicted"
 
