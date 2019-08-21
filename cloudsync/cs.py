@@ -10,7 +10,7 @@ from .provider import Provider
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
-                 roots = None,
+                 roots: Tuple[str, str] = None,
                  storage: Optional[Storage] = None,
                  label: Optional[str] = None,
                  sleep: Optional[int] = 15,
@@ -40,7 +40,7 @@ class CloudSync(Runnable):
             raise ValueError("walk requires provider path roots")
 
         for index, provider in enumerate(self.providers):
-            for event in provider.walk(self.roots[i]):
+            for event in provider.walk(self.roots[index]):
                 self.emgrs[index].process_event(event)
 
     def translate(self, index, path):
