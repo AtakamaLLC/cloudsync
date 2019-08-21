@@ -441,19 +441,28 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         conflict_name = sync[changed].path + ".conflicted"
 
-        new_oid = self.providers[changed].rename(sync[changed].oid, conflict_name)
+        i = 1
+        renamed = False
+        while not renamed:
+            try:
+                new_oid = self.providers[changed].rename(sync[changed].oid, conflict_name)
+                renamed = True
+            except CloudFileExistsError:
+                i = i + 1
+                conflict_name = sync[changed].path + ".conflicted" + str(i)
 
         self.state.update(changed, sync[changed].otype, oid=new_oid, path=conflict_name, prior_oid=sync[changed].oid)
 
     def embrace_change(self, sync, changed, synced):
         log.debug("embrace %s", sync)
 
-        translated_path = self.translate(synced, sync[changed].path)
-        if not translated_path:
-            log.debug(">>>Not a cloud path %s", sync[changed].path)
-            sync.discard()
-            self.state.storage_update(sync)
-            return FINISHED
+        if sync[changed].path:
+            translated_path = self.translate(synced, sync[changed].path)
+            if not translated_path:
+                log.debug(">>>Not a cloud path %s", sync[changed].path)
+                sync.discard()
+                self.state.storage_update(sync)
+                return FINISHED
 
         if sync[changed].exists == TRASHED:
             self.delete_synced(sync, changed, synced)

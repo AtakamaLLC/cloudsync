@@ -35,20 +35,25 @@ class EventManager(Runnable):
 
     def do(self):
         for event in self.events:
-            log.debug("got event %s", event)
-            path = event.path
-            exists = event.exists
-            otype = event.otype
+            self.process_event(event)
 
-            if not event.path and not self.state.lookup_oid(self.side, event.oid):
-                info = self.provider.info_oid(event.oid)
-                if info and info.otype != event.otype:
-                    log.warning("provider %s gave a bad event: %s != %s, using %s", self.provider.name, info.path, event.otype, info.otype)
-                if info:
-                    path = info.path
-                    otype = info.otype
-                else:
-                    log.debug("ignoring delete of something that can't exist")
-                    continue
+    def process_event(self, event):
+        log.debug("got event %s", event)
+        path = event.path
+        exists = event.exists
+        otype = event.otype
 
-            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
+        if not event.path and not self.state.lookup_oid(self.side, event.oid):
+            info = self.provider.info_oid(event.oid)
+            if info and info.otype != event.otype:
+                log.warning("provider %s gave a bad event: %s != %s, using %s", self.provider.name, info.path, event.otype, info.otype)
+            if info:
+                path = info.path
+                otype = info.otype
+            else:
+                log.debug("ignoring delete of something that can't exist")
+                return
+
+        self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
+
+        # todo: save event.cursor in storage here
