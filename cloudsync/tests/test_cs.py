@@ -14,19 +14,12 @@ log = logging.getLogger(__name__)
 
 @pytest.fixture(name="cs")
 def fixture_cs(mock_provider_generator):
-    def translate(to, path):
-        if to == LOCAL:
-            return "/local" + path.replace("/remote", "")
-
-        if to == REMOTE:
-            return "/remote" + path.replace("/local", "")
-
-        raise ValueError()
+    roots = ("/local", "/remote")
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), translate, sleep=None)
+    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), roots, sleep=None)
 
     yield cs
 
@@ -45,30 +38,11 @@ def fixture_multi_cs(mock_provider_generator):
     p2 = mock_provider_generator()
     p3 = mock_provider_generator()
 
-    def translate1(to, path):
-        if to == LOCAL:
-            return "/local1" + path.replace("/remote", "")
+    roots1 = ("/local1", "/remote")
+    roots2 = ("/local2", "/remote")
 
-        if to == REMOTE:
-            if "/local1" in path:
-                return "/remote" + path.replace("/local1", "")
-            return None
-
-        raise ValueError()
-
-    def translate2(to, path):
-        if to == LOCAL:
-            return "/local2" + path.replace("/remote", "")
-
-        if to == REMOTE:
-            if "/local2" in path:
-                return "/remote" + path.replace("/local2", "")
-            return None
-
-        raise ValueError()
-
-    cs1 = CloudSyncMixin((p1, p2), translate1, storage, "tag1", sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), translate2, storage, "tag2", sleep=None)
+    cs1 = CloudSyncMixin((p1, p2), roots1, storage, "tag1", sleep=None)
+    cs2 = CloudSyncMixin((p1, p3), roots2, storage, "tag2", sleep=None)
 
     yield cs1, cs2
 
@@ -396,9 +370,7 @@ def test_sync_folder_conflicts_file(cs):
 
 
 def test_storage():
-    def translate(to, path):
-        (old, new) = ("/local", "/remote") if to == REMOTE else ("/remote", "/local")
-        return new + path.replace(old, "")
+    roots = ("/local", "/remote")
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
@@ -408,12 +380,12 @@ def test_storage():
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
     storage1 = MockStorage(storage_dict)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, "tag", sleep=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = MockStorage(storage_dict)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
@@ -449,9 +421,7 @@ def test_storage():
 
 
 def test_file_storage():
-    def translate(to, path):
-        (old, new) = ("/local", "/remote") if to == REMOTE else ("/remote", "/local")
-        return new + path.replace(old, "")
+    roots = ("/local", "/remote")
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
@@ -459,15 +429,15 @@ def test_file_storage():
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
-    storage_fn = CloudSyncMixin((p1, p2), translate).smgr.temp_file()
+    storage_fn = CloudSyncMixin((p1, p2), roots).smgr.temp_file()
     storage1 = FileStorage(storage_fn)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, "tag", sleep=None)
     cs1.smgr.temp_file()
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = FileStorage(storage_fn)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
