@@ -312,7 +312,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 # could be the same file...
                 if self.resolve_conflict(sync, changed, synced):
                     return FINISHED
-                self.rename_to_fix_conflict(sync, changed)
+                self.rename_to_fix_conflict(sync, changed, temporary=True)
             else:
                 sync.punt()
             return REQUEUE
@@ -437,7 +437,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.debug("can't rename, file exists")
                 if sync.punted > 1:
                     # never punt twice
-                    self.rename_to_fix_conflict(sync, changed)
+                    self.rename_to_fix_conflict(sync, changed, temporary=True)
                 else:
                     sync.punt()
                 return REQUEUE
@@ -450,10 +450,20 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
-    def rename_to_fix_conflict(self, sync, side):
+    def rename_to_fix_conflict(self, sync, side, temporary=False):
         new_oid, new_name = self.conflict_rename(side, sync[side].path, sync[side].oid)
 
-#        self.state.update(side, sync[side].otype, oid=new_oid, path=new_name, prior_oid=sync[side].oid)
+        if not temporary:
+            # file no longer exists for sync... it's a conflict file
+            if not sync[other_side(side)].oid:
+                sync.discard()
+            else:
+                self.state.update_entry(sync, side=side, oid="", path="", hash="", exists=False)
+        else:
+            # file should get renamed back
+            self.state.update_entry(sync, side=side, oid=new_oid)
+            sync[side].sync_path = new_name
+
 
     def conflict_rename(self, side, path, oid):
         conflict_name = path + ".conflicted"
@@ -532,7 +542,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
-        self.rename_to_fix_conflict(replace_ent, replace_side)
+        self.rename_to_fix_conflict(replace_ent, replace_side, temporary=False)
 
         log.debug("REPLACE %s", replace_ent)
 

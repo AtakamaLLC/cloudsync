@@ -488,6 +488,10 @@ def test_sync_cycle(sync):
     sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
     sync.providers[REMOTE].log_debug_state("AFTER")
 
+    assert sync.providers[REMOTE].exists_path(rp1)
+    assert sync.providers[REMOTE].exists_path(rp2)
+    assert sync.providers[REMOTE].exists_path(rp3)
+
 
 def test_sync_conflict_path_combine(sync):
     remote_parent = "/remote"
@@ -526,7 +530,11 @@ def test_sync_conflict_path_combine(sync):
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
-    sync.run_until_found((LOCAL, "/local/stuff.conflicted"))
+    sync.run(until=lambda:
+        sync.providers[REMOTE].exists_path("/remote/stuff.conflicted")
+        or
+        sync.providers[LOCAL].exists_path("/local/stuff.conflicted")
+    )
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
