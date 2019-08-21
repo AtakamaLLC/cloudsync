@@ -92,8 +92,8 @@ class Storage(ABC):
         ...
 
     @abstractmethod
-    def update(self, tag: str, serialization: bytes, eid: Any):
-        """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
+    def update(self, tag: str, serialization: bytes, eid: Any) -> int:
+        """ take a serialization str, update it in sqlite, return the count of rows updated """
         ...
 
     @abstractmethod
@@ -104,6 +104,11 @@ class Storage(ABC):
     @abstractmethod
     def read_all(self, tag: str) -> Dict[Any, bytes]:
         """yield all the serialized strings in a generator"""
+        ...
+
+    @abstractmethod
+    def read(self, tag: str, eid: Any) -> Optional[bytes]:
+        """return one serialized string or None"""
         ...
 
 
@@ -279,6 +284,7 @@ class SyncState:
         self._changeset = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
+        self.cursor_id = [None, None]
         if self._storage:
             storage_dict = self._storage.read_all(tag)
             for eid, ent_ser in storage_dict.items():
@@ -444,6 +450,34 @@ class SyncState:
         ent[side].changed = time.time()
         self._changeset.add(ent)
 
+    def cursor_tag(self, side):
+        return "%s_%s_cursor" % (self._tag, side)
+
+    def storage_get_cursor(self, side):
+        retval = None
+        if self._storage is not None:
+            if self.cursor_id[side]:
+                retval = self._storage.read(self.cursor_tag(side), self.cursor_id[side])
+            if not retval:
+                cursors = self._storage.read_all(self.cursor_tag(side))
+                for eid, cursor in cursors.items():
+                    self.cursor_id[side] = eid
+                    retval = cursor
+                if len(cursors) > 1:
+                    log.warning("Multiple cursors found for %s", self.cursor_tag(side))
+
+        log.debug("storage_get_cursor id=%s cursor=%s", self.cursor_id[side], str(retval))
+        return retval
+
+    def storage_update_cursor(self, side, cursor):
+        log.debug("storage_update_cursor cursor %s", cursor)
+        updated = 0
+        if self._storage is not None:
+            if self.cursor_id[side]:
+                updated = self._storage.update(self.cursor_tag(side), cursor, self.cursor_id[side])
+            if not updated:
+                self.cursor_id[side] = self._storage.create(self.cursor_tag(side), cursor)
+
     def storage_update(self, ent: SyncEntry):
         log.debug("storage_update eid%s", ent.storage_id)
         if self._storage is not None:
@@ -464,7 +498,6 @@ class SyncState:
         return len(self.get_all())
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-
         log.debug("lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
 

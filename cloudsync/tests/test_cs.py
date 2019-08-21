@@ -4,7 +4,7 @@ import pytest
 from typing import List
 
 from .fixtures import MockProvider, MockStorage
-from cloudsync.sync.file_storage import FileStorage
+from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
 
 from .test_sync import WaitFor, RunUntilHelper
@@ -406,13 +406,13 @@ def test_storage():
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
     # storage1 = MockStorage(storage_dict)
-    storage1 = FileStorage('file::memory:?cache=shared')
+    storage1 = SqliteStorage('file::memory:?cache=shared')
     cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     # storage2 = MockStorage(storage_dict)
-    storage2 = FileStorage('file::memory:?cache=shared')
+    storage2 = SqliteStorage('file::memory:?cache=shared')
     cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
@@ -448,7 +448,7 @@ def test_storage():
     not_dirty(cs1.state)
 
 
-def test_file_storage():
+def test_persistent_storage():
     def translate(to, path):
         (old, new) = ("/local", "/remote") if to == REMOTE else ("/remote", "/local")
         return new + path.replace(old, "")
@@ -460,13 +460,13 @@ def test_file_storage():
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
     storage_fn = CloudSyncMixin((p1, p2), translate).smgr.temp_file()
-    storage1 = FileStorage(storage_fn)
+    storage1 = SqliteStorage(storage_fn)
     cs1: CloudSync = CloudSyncMixin((p1, p2), translate, storage1, "tag", sleep=None)
     cs1.smgr.temp_file()
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
-    storage2 = FileStorage(storage_fn)
+    storage2 = SqliteStorage(storage_fn)
     cs2: CloudSync = CloudSyncMixin((p1, p2), translate, storage2, "tag", sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
