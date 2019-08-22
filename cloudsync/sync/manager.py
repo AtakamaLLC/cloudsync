@@ -125,7 +125,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     self.finished(i, sync)
                 break
 
-        log.debug("table\r\n%s", self.state.pretty_print())
+        log.debug("table\n%s", self.state.pretty_print())
 
     def temp_file(self):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
