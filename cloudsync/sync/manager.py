@@ -1,4 +1,5 @@
 import os
+import io
 import logging
 import tempfile
 import shutil
@@ -14,7 +15,7 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 
-from .state import SyncState, SyncEntry, TRASHED, EXISTS, LOCAL, REMOTE
+from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE
 from .util import debug_sig
 
 
@@ -29,6 +30,31 @@ REQUEUE = 0
 def other_side(index):
     return 1-index
 
+class ResolveFile():
+    def __init__(self, info, provider):
+        self.info = info
+        self.provider = provider
+        self.path = info.path
+        self.side = info.side
+        self.__fh = None
+
+    @property
+    def fh(self):
+        if not self.__fh:
+            self.__fh = io.BytesIO()
+            self.provider.download(self.info.oid, self.__fh)
+        return self.__fh
+
+    def read(self, *a):
+        return self.fh.read(*a)
+
+    def write(self, buf):
+        return self.fh.write(buf)
+
+    def close(self):
+        return self.fh.close()
+
+    
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=0):
@@ -46,6 +72,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             sleep = 0
 
         assert len(self.providers) == 2
+
+    def set_resolver(self, resolver):
+        self.__resolve_conflict = resolver
 
     def do(self):
         sync: SyncEntry = self.state.change()
@@ -329,7 +358,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             log.debug("can't create %s, try punting", translated_path)
 
             if sync.punted > 0:
-                if self.resolve_conflict(sync, changed, synced):
+                if self.resolve_conflict(sync[changed], sync[synced]):
                     return FINISHED
                 self.rename_to_fix_conflict(sync, changed, translated_path)
                 sync.punt()
@@ -337,21 +366,37 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             return REQUEUE
 
-    def resolve_conflict(self, ent, changed, synced): # pylint: disable=no-self-use
-        f1 = ResolveFile(ent, changed)
-        f2 = ResolveFile(ent, synced)
+    def resolve_conflict(self, ent1: SideState, ent2: SideState): # pylint: disable=no-self-use
+        assert type(ent1) is SideState
+        assert type(ent2) is SideState
 
-        ret = self.__resolve_conflict(f1, f2)
+        f1 = ResolveFile(ent1, self.providers[ent1.side])
+        f2 = ResolveFile(ent2, self.providers[ent2.side])
 
-        if ret is f1:
-            self.providers[synced].upload(ent[synced].oid, ret)
-        elif ret is f2:
-            self.providers[changed].upload(ent[changed].oid, ret)
-        elif is_file_like(ret):
-            self.providers[changed].upload(ent[changed].oid, ret)
-            self.providers[synced].upload(ent[synced].oid, ret)
-        else:
+        try:
+            ret = self.__resolve_conflict(f1, f2)
+        except Exception as e:
+            log.exception("exception during conflict resolution %s", e)
+            ret = None
+
+        if ret is None:
             return False
+
+        is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
+
+        if not is_file_like(ret):
+            log.error("bad return value for resolve conflict %s", ret)
+            return False
+
+        if ret is not f1:
+            info1 = self.providers[other_side(ent2.side)].upload(ent1.oid, ret)
+            ent1.hash = info1.hash
+            ent1.sync_hash = info1.hash
+
+        if ret is not f2:
+            info2 = self.providers[other_side(ent1.side)].upload(ent2.oid, ret)
+            ent2.hash = info2.hash
+            ent2.sync_hash = info2.hash
 
         return True
 
@@ -585,6 +630,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
+        if self.resolve_conflict(defer_ent[defer_side], replace_ent[replace_side]):
+            return
+
         if defer_ent[defer_side].otype == FILE:
             self.download_changed(defer_side, defer_ent)
             with open(defer_ent[defer_side].temp_file, "rb") as f:

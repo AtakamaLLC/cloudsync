@@ -389,6 +389,57 @@ def test_sync_conflict_simul(sync):
     sync.state._assert_index_is_correct()
 
 
+def test_sync_conflict_resolve(sync):
+    def resolver(f1, f2):
+        if f1.side == LOCAL:
+            return f1
+        return f2
+
+    sync.set_resolver(resolver)
+
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = Provider.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_path1 = Provider.join(remote_parent, "stuff1")  # "/remote/stuff1"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+    rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"))
+
+    # inserts info about some local path
+    sync.state.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+    sync.state.update(REMOTE, FILE, path=remote_path1,
+                      oid=rinfo.oid, hash=rinfo.hash)
+
+    sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
+
+    sync.run_until_found(
+        (REMOTE, "/remote/stuff1"),
+        (LOCAL, "/local/stuff1")
+    )
+
+    sync.providers[LOCAL].log_debug_state("LOCAL")
+    sync.providers[REMOTE].log_debug_state("REMOTE")
+
+    b1 = BytesIO()
+    b2 = BytesIO()
+    sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+    sync.providers[LOCAL].download_path("/local/stuff1", b1)
+
+    # both files are intact
+    assert b1.getvalue() in (b"hello")
+    assert b2.getvalue() in (b"hello")
+
+    assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+    assert not sync.providers[LOCAL].exists_path("/remote/stuff1.conflicted")
+    
+    sync.state._assert_index_is_correct()
+
+
+
 def test_sync_conflict_path(sync):
     remote_parent = "/remote"
     local_parent = "/local"
