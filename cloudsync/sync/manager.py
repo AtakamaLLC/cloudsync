@@ -125,7 +125,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     self.finished(i, sync)
                 break
 
-        log.debug("table\n%s", self.state.pretty_print())
+        log.debug("table\r\n%s", self.state.pretty_print())
 
     def temp_file(self):
         # prefer big random name over NamedTemp which can infinite loop in odd situations!
@@ -587,7 +587,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
         if defer_ent[defer_side].otype == FILE:
             self.download_changed(defer_side, defer_ent)
-
             with open(defer_ent[defer_side].temp_file, "rb") as f:
                 dhash = self.providers[replace_side].hash_data(f)
                 if dhash == replace_ent[replace_side].hash:
