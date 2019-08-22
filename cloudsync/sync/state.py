@@ -197,7 +197,7 @@ class SyncEntry(Reprable):
 
     @staticmethod
     def prettyheaders():
-        ret = "%3s %3s %4s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %4s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             "EID",  # _sig(id(self)),
             "SID",  # _sig(self.storage_id),  # S
             "Typ",  # otype,
@@ -257,10 +257,10 @@ class SyncEntry(Reprable):
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + lexv + ":" + lhma),
                         self.punted))
 
-        ret = "%3s S%3s %3s %6s %20s O%6s %22s -- %6s %20s O%6s %22s %s" % (
+        ret = "%3s S%3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),  # S
-            otype,
+            otype[:3],
             secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
@@ -383,9 +383,6 @@ class SyncState:
             log.debug("removing %s because oid and path not in index", r)
             self._changeset.remove(r)
 
-        log.debug("side is %s, oid is %s", side, debug_sig(oid))
-        assert self._oids[side][oid] is ent
-
     def lookup_oid(self, side, oid):
         try:
             ret = self._oids[side][oid]
@@ -427,7 +424,6 @@ class SyncState:
     def update_entry(self, ent, side, oid, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin, too-many-arguments
         if oid is not None:
             self._change_oid(side, ent, oid)
-            assert ent in self.get_all()
 
         if otype is not None:
             ent[side].otype = otype
@@ -438,7 +434,8 @@ class SyncState:
         if path is not None:
             self._change_path(side, ent, path)
 
-        assert ent in self.get_all()
+        if oid:
+            assert ent in self.get_all()
 
         if hash is not None:
             ent[side].hash = hash
@@ -453,7 +450,8 @@ class SyncState:
             log.debug("add %s to changeset", ent)
             self.mark_changed(side, ent)
 
-        assert ent in self.get_all()
+        if oid:
+            assert ent in self.get_all()
 
         log.debug("updated %s", ent)
 
@@ -523,9 +521,10 @@ class SyncState:
 
     def change(self):
         # for now just get a random one
-        for e in self._changeset:
-            if not e.discarded and not e.punted:
-                return e
+        for puntlevel in range(3):
+            for e in self._changeset:
+                if not e.discarded and e.punted == puntlevel:
+                    return e
 
         for e in list(self._changeset):
             if e.discarded:

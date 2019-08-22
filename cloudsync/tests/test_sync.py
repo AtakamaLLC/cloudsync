@@ -354,9 +354,15 @@ def test_sync_conflict_simul(sync):
     sync.state.update(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
+
+    # one of them is a conflict
+    sync.run(until=lambda:
+        sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+        or
+        sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+    )
+
     sync.run_until_found(
-        (REMOTE, "/remote/stuff1.conflicted"),
-        (LOCAL, "/local/stuff1.conflicted"),
         (REMOTE, "/remote/stuff1"),
         (LOCAL, "/local/stuff1")
     )
@@ -366,8 +372,12 @@ def test_sync_conflict_simul(sync):
 
     b1 = BytesIO()
     b2 = BytesIO()
-    sync.providers[REMOTE].download_path("/remote/stuff1.conflicted", b1)
-    sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+    if sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted"):
+        sync.providers[REMOTE].download_path("/remote/stuff1.conflicted", b1)
+        sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+    else:
+        sync.providers[LOCAL].download_path("/local/stuff1.conflicted", b2)
+        sync.providers[LOCAL].download_path("/local/stuff1", b1)
 
     # both files are intact
     assert b1.getvalue() != b2.getvalue()
@@ -463,6 +473,8 @@ def test_sync_cycle(sync):
     lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
     lp2oid = sync.providers[LOCAL].rename(tmp1oid, lp2)
 
+    # a->temp, c->a, b->c, temp->b
+
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
     sync.state.update(LOCAL, FILE, path=templ, oid=tmp1oid, hash=linfo1.hash, prior_oid=linfo1.oid)
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
@@ -477,6 +489,17 @@ def test_sync_cycle(sync):
 
     sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
     sync.providers[REMOTE].log_debug_state("AFTER")
+
+    i1 = sync.providers[REMOTE].info_path(rp1)
+    i2 = sync.providers[REMOTE].info_path(rp2)
+    i3 = sync.providers[REMOTE].info_path(rp3)
+
+    assert i1 and i2 and i3
+
+    assert i1.hash == rinfo3.hash 
+    assert i2.hash == rinfo1.hash 
+    assert i3.hash == rinfo2.hash 
+
 
 
 def test_sync_conflict_path_combine(sync):
@@ -516,9 +539,16 @@ def test_sync_conflict_path_combine(sync):
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
-    sync.run_until_found((LOCAL, "/local/stuff.conflicted"))
+    ok = lambda: (
+            sync.providers[REMOTE].exists_path("/remote/stuff.conflicted")
+            or
+            sync.providers[LOCAL].exists_path("/local/stuff.conflicted")
+            )
+    sync.run(until=ok, timeout=3)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+    assert ok() 
 
 
 def test_create_then_move(sync):  # TODO: combine with the reverse test

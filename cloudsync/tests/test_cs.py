@@ -368,6 +368,7 @@ def test_sync_folder_conflicts_file(cs):
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
+    assert local_conf and remote_conf
 
 def test_storage():
     roots = ("/local", "/remote")
@@ -470,3 +471,33 @@ def test_file_storage():
     assert not missing1
     assert not missing2
     not_dirty(cs1.state)
+
+@pytest.mark.parametrize("drain", [None, LOCAL, REMOTE])
+def test_sync_already_there(cs, drain: int):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    rinfo2 = cs.providers[REMOTE].create(remote_path1, BytesIO(b"hello"), None)
+
+    if drain is not None:
+        # one of the event managers is not reporting events
+        cs.emgrs[drain]._drain()
+
+    # fill up the state table
+    cs.do()
+
+    # all changes processed
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    assert linfo1.hash == rinfo1.hash
+
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")

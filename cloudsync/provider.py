@@ -75,6 +75,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         info = self.info_oid(oid)
         return info.hash if info else None
 
+    @abstractmethod
+    def hash_data(self, file_like) -> bytes:
+        ...
 
     @abstractmethod
     def info_path(self, path: str) -> Optional[OInfo]:
