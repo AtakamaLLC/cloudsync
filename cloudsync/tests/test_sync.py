@@ -85,8 +85,11 @@ def fixture_sync(mock_provider_generator):
 
         raise ValueError("bad path: %s", path)
 
+    def resolve(f1, f2):
+        return None
+
     # two providers and a translation function that converts paths in one to paths in the other
-    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator(oid_is_path=False)), translate)
+    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator(oid_is_path=False)), translate, resolve)
 
     yield sync
 

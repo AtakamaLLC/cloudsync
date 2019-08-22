@@ -31,12 +31,13 @@ def other_side(index):
 
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
-    def __init__(self, state, providers: Tuple[Provider, Provider], translate, sleep=0):
+    def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=0):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
         self.providers[LOCAL].debug_name = "local"
         self.providers[REMOTE].debug_name = "remote"
         self.translate = translate
+        self.__resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
 
         self._sleep = sleep
@@ -136,30 +137,31 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         sync[side].changed = None
         self.state.finished(sync)
 
-        if sync.temp_file:
-            try:
-                os.unlink(sync.temp_file)
-            except FileNotFoundError:
-                pass
-            except OSError as e:
-                log.debug("exception unlinking %s", e)
-            except Exception as e:  # any exceptions here are pointless
-                log.warning("exception unlinking %s", e)
-            sync.temp_file = None
+        for side in (LOCAL, REMOTE):
+            if sync[side].temp_file:
+                try:
+                    os.unlink(sync[side].temp_file)
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    log.debug("exception unlinking %s", e)
+                except Exception as e:  # any exceptions here are pointless
+                    log.warning("exception unlinking %s", e)
+                sync[side].temp_file = None
 
     def download_changed(self, changed, sync):
-        sync.temp_file = sync.temp_file or self.temp_file()
+        sync[changed].temp_file = sync[changed].temp_file or self.temp_file()
 
         assert sync[changed].oid
 
-        if os.path.exists(sync.temp_file):
+        if os.path.exists(sync[changed].temp_file):
             return True
 
         try:
-            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, sync.temp_file + ".tmp")
-            with open(sync.temp_file + ".tmp", "wb") as f:
+            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, sync[changed].temp_file + ".tmp")
+            with open(sync[changed].temp_file + ".tmp", "wb") as f:
                 self.providers[changed].download(sync[changed].oid, f)
-            os.rename(sync.temp_file + ".tmp", sync.temp_file)
+            os.rename(sync[changed].temp_file + ".tmp", sync[changed].temp_file)
             return True
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
@@ -251,10 +253,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             raise NotImplementedError("TODO mkdir, and make state etc")
 
     def upload_synced(self, changed, sync):
+        assert sync[changed].temp_file
+
         synced = other_side(changed)
         try:
             info = self.providers[synced].upload(
-                sync[synced].oid, open(sync.temp_file, "rb"))
+                sync[synced].oid, open(sync[changed].temp_file, "rb"))
             log.debug("upload to %s as path %s",
                       self.providers[synced].debug_name, sync[synced].sync_path)
             sync[synced].sync_hash = info.hash
@@ -287,13 +291,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                   self.providers[synced].debug_name, translated_path)
         try:
             info = self.providers[synced].create(
-                translated_path, open(sync.temp_file, "rb"))
+                translated_path, open(sync[changed].temp_file, "rb"))
             log.debug("created %s", info)
         except CloudFileExistsError:
             info = self.providers[synced].info_path(translated_path)
             if not info:
                 raise
-            with open(sync.temp_file, "rb") as f:
+            with open(sync[changed].temp_file, "rb") as f:
                 existing_hash = self.providers[synced].hash_data(f)
             if existing_hash != info.hash:
                 raise
@@ -325,7 +329,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             log.debug("can't create %s, try punting", translated_path)
 
             if sync.punted > 0:
-                # could be the same file...
                 if self.resolve_conflict(sync, changed, synced):
                     return FINISHED
                 self.rename_to_fix_conflict(sync, changed, translated_path)
@@ -334,8 +337,23 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             return REQUEUE
 
-    def resolve_conflict(self, _ent, _changed, _synced): # pylint: disable=no-self-use
-        return False
+    def resolve_conflict(self, ent, changed, synced): # pylint: disable=no-self-use
+        f1 = ResolveFile(ent, changed)
+        f2 = ResolveFile(ent, synced)
+
+        ret = self.__resolve_conflict(f1, f2)
+
+        if ret is f1:
+            self.providers[synced].upload(ent[synced].oid, ret)
+        elif ret is f2:
+            self.providers[changed].upload(ent[changed].oid, ret)
+        elif is_file_like(ret):
+            self.providers[changed].upload(ent[changed].oid, ret)
+            self.providers[synced].upload(ent[synced].oid, ret)
+        else:
+            return False
+
+        return True
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -424,9 +442,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             if sync[changed].otype == DIRECTORY:
                 return self.mkdir_synced(changed, sync, translated_path)
-            elif not self.download_changed(changed, sync):
+
+            if not self.download_changed(changed, sync):
                 return REQUEUE
-            elif sync[synced].oid:
+
+            if sync[synced].oid:
                 self.upload_synced(changed, sync)
             else:
                 return self.create_synced(changed, sync, translated_path)
@@ -568,7 +588,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         if defer_ent[defer_side].otype == FILE:
             self.download_changed(defer_side, defer_ent)
 
-            with open(defer_ent.temp_file, "rb") as f:
+            with open(defer_ent[defer_side].temp_file, "rb") as f:
                 dhash = self.providers[replace_side].hash_data(f)
                 if dhash == replace_ent[replace_side].hash:
                     log.debug("same hash as remote, discard entry")
