@@ -165,7 +165,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def finished(self, side, sync):
         sync[side].changed = None
         self.state.finished(sync)
+        self.clean_temps(sync)
 
+    @staticmethod
+    def clean_temps(sync):
+        #todo: move this to the sync obj
         for side in (LOCAL, REMOTE):
             if sync[side].temp_file:
                 try:
