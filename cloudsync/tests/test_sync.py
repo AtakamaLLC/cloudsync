@@ -389,10 +389,18 @@ def test_sync_conflict_simul(sync):
     sync.state._assert_index_is_correct()
 
 
-def test_sync_conflict_resolve(sync):
+MERGE=2
+@pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE])
+def test_sync_conflict_resolve(sync, side):
+    data = (b"hello", b"goodbye", b"merge")
+
     def resolver(f1, f2):
-        if f1.side == LOCAL:
+        if side == MERGE:
+            return BytesIO(data[MERGE])
+        
+        if f1.side == side:
             return f1
+        
         return f2
 
     sync.set_resolver(resolver)
@@ -405,8 +413,8 @@ def test_sync_conflict_resolve(sync):
     sync.providers[LOCAL].mkdir(local_parent)
     sync.providers[REMOTE].mkdir(remote_parent)
 
-    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
-    rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"))
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(data[LOCAL]))
+    rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(data[REMOTE]))
 
     # inserts info about some local path
     sync.state.update(LOCAL, FILE, path=local_path1,
@@ -414,12 +422,8 @@ def test_sync_conflict_resolve(sync):
     sync.state.update(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
+    # ensure events are flushed a couple times
     sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
-
-    sync.run_until_found(
-        (REMOTE, "/remote/stuff1"),
-        (LOCAL, "/local/stuff1")
-    )
 
     sync.providers[LOCAL].log_debug_state("LOCAL")
     sync.providers[REMOTE].log_debug_state("REMOTE")
@@ -430,11 +434,11 @@ def test_sync_conflict_resolve(sync):
     sync.providers[LOCAL].download_path("/local/stuff1", b1)
 
     # both files are intact
-    assert b1.getvalue() in (b"hello")
-    assert b2.getvalue() in (b"hello")
+    assert b1.getvalue() == data[side]
+    assert b2.getvalue() == data[side]
 
     assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
-    assert not sync.providers[LOCAL].exists_path("/remote/stuff1.conflicted")
+    assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
     
     sync.state._assert_index_is_correct()
 

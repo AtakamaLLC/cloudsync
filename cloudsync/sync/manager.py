@@ -36,17 +36,31 @@ class ResolveFile():
         self.provider = provider
         self.path = info.path
         self.side = info.side
+        assert info.temp_file
         self.__fh = None
 
     @property
     def fh(self):
         if not self.__fh:
-            self.__fh = io.BytesIO()
-            self.provider.download(self.info.oid, self.__fh)
+            if not os.path.exists(self.info.temp_file):
+                try:
+                    with open(self.info.temp_file, "wb") as f:
+                        self.provider.download(self.info.oid, f)
+                except Exception as e:
+                    log.debug("error downloading %s", e)
+                    try:
+                        os.unlink(self.info.temp_file)
+                    except FileNotFoundError:
+                        pass
+                    raise
+
+            self.__fh = open(self.info.temp_file, "rb")
         return self.__fh
 
     def read(self, *a):
-        return self.fh.read(*a)
+        ret = self.fh.read(*a)
+        log.debug("RESOLVE FILE %s", ret)
+        return ret
 
     def write(self, buf):
         return self.fh.write(buf)
@@ -54,7 +68,8 @@ class ResolveFile():
     def close(self):
         return self.fh.close()
 
-    
+    def seek(self, *a):    
+        return self.fh.seek(*a)
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
     def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=0):
@@ -362,8 +377,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             log.debug("can't create %s, try punting", translated_path)
 
             if sync.punted > 0:
-                if self.resolve_conflict(sync[changed], sync[synced]):
-                    return FINISHED
+#                if self.resolve_conflict(sync[changed], sync[synced]):
+#                    return FINISHED
                 self.rename_to_fix_conflict(sync, changed, translated_path)
                 sync.punt()
             else:
@@ -374,8 +389,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         assert type(ent1) is SideState
         assert type(ent2) is SideState
 
+        if not ent1.temp_file:
+            ent1.temp_file = self.temp_file()
+
+        if not ent2.temp_file:
+            ent2.temp_file = self.temp_file()
+
         f1 = ResolveFile(ent1, self.providers[ent1.side])
         f2 = ResolveFile(ent2, self.providers[ent2.side])
+
+        assert ent1.oid
+        assert ent2.oid
 
         try:
             ret = self.__resolve_conflict(f1, f2)
@@ -393,15 +417,20 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             return False
 
         if ret is not f1:
+            ret.seek(0)
             info1 = self.providers[other_side(ent2.side)].upload(ent1.oid, ret)
             ent1.hash = info1.hash
             ent1.sync_hash = info1.hash
+            ent1.sync_path = info1.path
 
         if ret is not f2:
+            ret.seek(0)
             info2 = self.providers[other_side(ent1.side)].upload(ent2.oid, ret)
             ent2.hash = info2.hash
             ent2.sync_hash = info2.hash
+            ent2.sync_path = info2.path
 
+        log.debug("RESOLVED CONFLICT: %s <-> %s", ent1, ent2)
         return True
 
     def delete_synced(self, sync, changed, synced):
@@ -644,6 +673,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
         if self.resolve_conflict(defer_ent[defer_side], replace_ent[replace_side]):
+            self.state.update_entry(defer_ent, replace_side, replace_ent[replace_side].oid, path=replace_ent[replace_side].path, hash=replace_ent[replace_side].hash)
+            defer_ent[defer_side].sync_hash = defer_ent[defer_side].hash
+            defer_ent[defer_side].path = defer_ent[defer_side].path
+            replace_ent.discard()
             return
 
         if defer_ent[defer_side].otype == FILE:
@@ -685,7 +718,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         try:
             new_oid = self.providers[other.side].rename(other.oid, other_path)
             self.state.update_entry(sync, other.side, new_oid, path=other_path)
+            sync[other.side].sync_path = sync[other.side].path
+            sync[picked.side].sync_path = sync[picked.side].path
         except CloudFileExistsError:
+            self.state.update_entry(sync, other.side, other.oid, path=other_path)
+            sync[other.side].sync_path = sync[other.side].path
+            sync[picked.side].sync_path = sync[picked.side].path
             # other side already agrees
             pass
 
