@@ -22,16 +22,11 @@ class Event:
 class EventManager(Runnable):
     def __init__(self, provider, state, side, sleep=None):
         self.provider = provider
-        self.events = Muxer(provider.events, restart=self.waitforit)
+        self.events = Muxer(provider.events, restart=True)
         self.state = state
         self.side = side
         self._sleep = sleep
-
-    def waitforit(self):
-        if self._sleep:
-            import time
-            log.debug("events %s sleeping", self.provider.name)
-            time.sleep(self._sleep)
+        self.shutdown = False
 
     def do(self):
         for event in self.events:
@@ -62,3 +57,8 @@ class EventManager(Runnable):
         self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
 
         # todo: save event.cursor in storage here
+
+    def stop(self):
+        self.events.shutdown = True
+        self.shutdown = True
+        super().stop()

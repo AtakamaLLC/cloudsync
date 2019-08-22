@@ -20,14 +20,19 @@ def time_helper(timeout, sleep=None, multiply=1):
 class Runnable(ABC):
     def run(self, *, timeout=None, until=None, sleep=0.01):
         self.stopped = False                      # pylint: disable=attribute-defined-outside-init
-
-        for _ in time_helper(timeout, sleep=sleep):
+        endtime = sleep + time.monotonic()
+        for _ in time_helper(timeout, sleep=sleep):#.01):
+            #while time.monotonic() < endtime and not self.stopped:
+            #    time.sleep(min(.1, endtime - time.monotonic()))
             if self.stopped or (until is not None and until()):
                 break
             try:
                 self.do()
             except Exception:
                 log.exception("unhandled exception in %s", self.__class__)
+            if self.stopped or (until is not None and until()):
+                break
+            endtime = sleep + time.monotonic()
 
         if self.stopped:
             self.done()

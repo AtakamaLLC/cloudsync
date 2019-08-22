@@ -26,13 +26,13 @@ class CloudSync(Runnable):
 
         self.smgr = smgr
         self.emgrs = (
-            EventManager(smgr.providers[0], state, 0, sleep=sleep),
-            EventManager(smgr.providers[1], state, 1, sleep=sleep)
+            EventManager(smgr.providers[0], state, 0),
+            EventManager(smgr.providers[1], state, 1)
         )
         self.sthread = threading.Thread(target=smgr.run)
         self.ethreads = (
-            threading.Thread(target=self.emgrs[0].run),
-            threading.Thread(target=self.emgrs[1].run)
+            threading.Thread(target=self.emgrs[0].run, **{'kwargs': {'sleep': 15}}),
+            threading.Thread(target=self.emgrs[1].run, **{'kwargs': {'sleep': 15}})
         )
 
     def walk(self):
