@@ -1,5 +1,4 @@
 import os
-import io
 import logging
 import tempfile
 import shutil
@@ -673,7 +672,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
         if self.resolve_conflict(defer_ent[defer_side], replace_ent[replace_side]):
-            self.state.update_entry(defer_ent, replace_side, replace_ent[replace_side].oid, path=replace_ent[replace_side].path, hash=replace_ent[replace_side].hash)
+            self.state.update_entry(defer_ent, replace_side, 
+                    replace_ent[replace_side].oid, path=replace_ent[replace_side].path, 
+                    hash=replace_ent[replace_side].hash)
+
             defer_ent[defer_side].sync_hash = defer_ent[defer_side].hash
             defer_ent[defer_side].path = defer_ent[defer_side].path
             replace_ent.discard()
@@ -721,11 +723,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             sync[other.side].sync_path = sync[other.side].path
             sync[picked.side].sync_path = sync[picked.side].path
         except CloudFileExistsError:
+            # other side already agrees
             self.state.update_entry(sync, other.side, other.oid, path=other_path)
             sync[other.side].sync_path = sync[other.side].path
             sync[picked.side].sync_path = sync[picked.side].path
-            # other side already agrees
-            pass
 
     def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
         provider = self.providers[changed]
