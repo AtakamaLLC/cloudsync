@@ -549,7 +549,16 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         return True
 
     def conflict_rename(self, side, path):
-        conflict_name = path + ".conflicted"
+
+        index = path.find(".")
+        if index >= 0:
+            base = path[:index]
+            ext = path[index:]
+        else:
+            base = path
+            ext = ""
+
+        conflict_name = base + ".conflicted" + ext
 
         oinfo = self.providers[side].info_path(path)
 

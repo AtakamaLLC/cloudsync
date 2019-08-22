@@ -60,7 +60,7 @@ class CloudSync(Runnable):
         #
         #     - A "merged" file-like which should be used as the data to replace both f1/f2 with
         #     - One of f1 or f2,  which is selected as the correct version
-        #     - "None", meaning there is no resolution
+        #     - "None", meaning there is no good resolution
         return None
 
     def start(self):
