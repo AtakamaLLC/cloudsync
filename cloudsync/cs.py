@@ -49,7 +49,8 @@ class CloudSync(Runnable):
             return None
         return self.providers[index].join(self.roots[index], relative)
 
-    def resolve_conflict(self, f1, f2):
+    @staticmethod
+    def resolve_conflict(_f1, _f2):
         # Input:
         #     - f1 and f2 are file-likes that will block on read, and can possibly pull data from the network, internet, etc
         #     - f1 and f2 also support the .path property to get a relative path to the file
