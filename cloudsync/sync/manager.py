@@ -2,7 +2,6 @@ import os
 import logging
 import tempfile
 import shutil
-import time
 
 from typing import Tuple, Optional
 
@@ -71,7 +70,7 @@ class ResolveFile():
         return self.fh.seek(*a)
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
-    def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=0):
+    def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
         self.providers[LOCAL].debug_name = "local"
@@ -79,11 +78,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         self.translate = translate
         self.__resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-
-        self._sleep = sleep
-
-        if sleep is None:
-            sleep = 0
 
         assert len(self.providers) == 2
 
@@ -104,12 +98,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.exception(
                     "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
                 sync.punt()
-                if self._sleep:
-                    time.sleep(self._sleep)
-        else:
-            if self._sleep:
-                log.debug("SyncManager sleeping %i", self._sleep)
-                time.sleep(self._sleep)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -522,29 +510,25 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
         ents = [ent for ent in ents if ent != sync]
-        ents2 = list(self.state.lookup_path(synced, sync[synced].path))
-        ents += [ent for ent in ents2 if ent != sync]
+#        ents2 = list(self.state.lookup_path(synced, sync[synced].path))
+#        ents += [ent for ent in ents2 if ent != sync]
 
-        if not ents:
-            if sync[synced].oid:
-                try:
-                    self.providers[synced].delete(sync[synced].oid)
-                except CloudFileNotFoundError:
-                    pass
-            else:
-                log.debug("was never synced, ignoring deletion")
-            sync[synced].exists = TRASHED
-            sync.discard()
+        for ent in ents:
+            if ent.is_creation(synced):
+                log.debug("discard delete, pending create %s:%s", synced, ent)
+                sync.discard()
+                return
+
+        if sync[synced].oid:
+            try:
+                self.providers[synced].delete(sync[synced].oid)
+            except CloudFileNotFoundError:
+                pass
         else:
-            has_log = False
-            for ent in ents:
-                if ent.is_creation(changed) or ent.is_creation(synced):
-                    log.debug("discard delete, pending create %s", sync)
-                    has_log = True
-            if not has_log:
-                log.warning("conflict delete %s <-> %s", set(ents), sync)
-            log.debug("discard %s", sync)
-            sync.discard()
+            log.debug("was never synced, ignoring deletion")
+
+        sync[synced].exists = TRASHED
+        sync.discard()
 
     def check_disjoint_create(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table
@@ -795,17 +779,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
 
-        def _update_syncs():
+        def _update_syncs(new_oid):
             self.state.update_entry(sync, other.side, new_oid, path=other_path)
             sync[other.side].sync_path = sync[other.side].path
             sync[picked.side].sync_path = sync[picked.side].path
 
         try:
             new_oid = self.providers[other.side].rename(other.oid, other_path)
-            _update_syncs()
+            _update_syncs(new_oid)
         except CloudFileExistsError:
             # other side already agrees
-            _update_syncs()
+            _update_syncs(other.oid)
 
     def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
         provider = self.providers[changed]

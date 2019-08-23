@@ -1,6 +1,8 @@
 import os
+import time
 from io import BytesIO
 import pytest
+import threading
 
 from cloudsync import EventManager, SyncState, LOCAL
 
@@ -39,3 +41,40 @@ def test_event_basic(util, manager):
     info = provider.info_oid(oid)
 
     assert info.path == "/dest"
+
+def test_events_shutdown_event_shouldnt_process(util, manager):
+    handle = threading.Thread(target=manager.run, **{'kwargs': {'sleep': .3}})
+    handle.start()
+    try:
+        provider = manager.provider
+        info = provider.create("/dest", BytesIO(b'hello'))
+        manager.stop()
+        time.sleep(.4)
+        try:
+            event = manager.events.__next__()
+        except StopIteration:
+            assert(False)
+        try:
+            event = manager.events.__next__()
+            assert(False)
+        except StopIteration:
+            pass
+    finally:
+        manager.stop()
+
+def test_events_shutdown_force_process_event(util, manager):
+    handle = threading.Thread(target=manager.run, **{'kwargs': {'sleep': .3}})
+    handle.start()
+    try:
+        provider = manager.provider
+        info = provider.create("/dest", BytesIO(b'hello'))
+        manager.stop()
+        time.sleep(.4)
+        manager.do()
+        try:
+            event = manager.events.__next__()
+            assert(False)
+        except StopIteration:
+            pass
+    finally:
+        manager.stop()

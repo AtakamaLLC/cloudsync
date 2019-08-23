@@ -80,6 +80,7 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 
 class MockProvider(Provider):
+    default_sleep = 0.01
     connected = True
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.

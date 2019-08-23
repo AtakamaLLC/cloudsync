@@ -12,7 +12,7 @@ class CloudSync(Runnable):
                  providers: Tuple[Provider, Provider],
                  roots: Tuple[str, str] = None,
                  storage: Optional[Storage] = None,
-                 sleep: Optional[int] = 15,
+                 sleep: Optional[Tuple[int, int]] = None,
                  ):
 
         self.providers = providers
@@ -20,7 +20,7 @@ class CloudSync(Runnable):
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
         state = SyncState(storage, tag=self.storage_label())
-        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
+        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict)
 
         # for tests, make these accessible
         self.state = state
@@ -28,13 +28,17 @@ class CloudSync(Runnable):
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, sleep=sleep),
-            EventManager(smgr.providers[1], state, 1, sleep=sleep)
+            EventManager(smgr.providers[0], state, 0),
+            EventManager(smgr.providers[1], state, 1)
         )
-        self.sthread = threading.Thread(target=smgr.run)
+        self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': 0.1})
+
+        if sleep is None:
+            sleep = (providers[0].default_sleep, providers[1].default_sleep)
+
         self.ethreads = (
-            threading.Thread(target=self.emgrs[0].run),
-            threading.Thread(target=self.emgrs[1].run)
+            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': sleep[0]}),
+            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
         )
 
     def storage_label(self):

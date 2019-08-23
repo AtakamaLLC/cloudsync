@@ -13,6 +13,7 @@ class Muxer:
         self.restart = restart
         self.func = func
         self.queue = queue.Queue()
+        self.shutdown = False
         self.key = key or func
 
         with self.top_lock:
@@ -44,9 +45,7 @@ class Muxer:
                             if other is not self:
                                 other.queue.put(e)
                     except StopIteration:
-                        if self.restart:
-                            if callable(self.restart):
-                                self.restart()
+                        if self.restart and not self.shutdown:
                             self.genref[0] = self.func()
                         raise
         return e

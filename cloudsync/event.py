@@ -25,14 +25,14 @@ class Event:
 
 
 class EventManager(Runnable):
-    def __init__(self, provider: "Provider", state: "SyncState", side, sleep=None):
+    def __init__(self, provider: "Provider", state: "SyncState", side):
         self.provider = provider
         assert self.provider.connection_id
         self.label = f"{self.provider.name}:{self.provider.connection_id}"
-        self.events = Muxer(self.provider.events, restart=self.wait_for_it)
+        self.events = Muxer(provider.events, restart=True)
         self.state = state
         self.side = side
-        self._sleep = sleep
+        self.shutdown = False
         self._cursor_tag = self.label + "_cursor"
         self.cursor = self.state.storage_get_cursor(self._cursor_tag)
         if not self.cursor:
@@ -41,20 +41,15 @@ class EventManager(Runnable):
                 self.state.storage_update_cursor(self._cursor_tag, self.cursor)
         else:
             log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
-
-    def wait_for_it(self):
+# TODO!!!!            provider.current_cursor = self.cursor
+        
+    def do(self):
+        for event in self.events:
+            self.process_event(event)
         current_cursor = self.provider.current_cursor
         if current_cursor != self.cursor:
             self.state.storage_update_cursor(self._cursor_tag, current_cursor)
             self.cursor = current_cursor
-        if self._sleep:
-            import time
-            log.debug("events %s sleeping", self.label)
-            time.sleep(self._sleep)
-
-    def do(self):
-        for event in self.events:
-            self.process_event(event)
 
     def _drain(self):
         # for tests, delete events
@@ -79,3 +74,9 @@ class EventManager(Runnable):
                 return
 
         self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
+
+
+    def stop(self):
+        self.events.shutdown = True
+        self.shutdown = True
+        super().stop()
