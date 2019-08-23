@@ -206,10 +206,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             return True
 
         try:
-            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, sync[changed].temp_file + ".tmp")
-            with open(sync[changed].temp_file + ".tmp", "wb") as f:
+            partial_temp = sync[changed].temp_file + ".tmp"
+            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, partial_temp)
+            with open(partial_temp, "wb") as f:
                 self.providers[changed].download(sync[changed].oid, f)
-            os.rename(sync[changed].temp_file + ".tmp", sync[changed].temp_file)
+            os.rename(partial_temp, sync[changed].temp_file)
             return True
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
@@ -377,11 +378,16 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             log.debug("can't create %s, try punting", translated_path)
 
             if sync.punted > 0:
-#                if self.resolve_conflict(sync[changed], sync[synced]):
-#                    return FINISHED
-                self.rename_to_fix_conflict(sync, changed, translated_path)
+                info = self.providers[synced].info_path(translated_path)
+                sync[synced].oid = info.oid
+                sync[synced].hash = info.hash
+                sync[synced].path = translated_path
+                self.state.update_entry(sync, synced, info.oid, path=translated_path)
+                # maybe it's a hash conflict
                 sync.punt()
+                return REQUEUE
             else:
+                # maybe it's a name conflict
                 sync.punt()
             return REQUEUE
 
@@ -399,6 +405,15 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         return fhs
 
     def __safe_call_resolver(self, fhs):
+        if DIRECTORY in (fhs[0].otype, fhs[1].otype):
+            if fhs[0].otype != fhs[1].otype:
+                if fhs[0].otype == DIRECTORY:
+                    fh = fhs[0]
+                else:
+                    fh = fhs[1]
+            # for simplicity: directory conflicted with file, always favors directory
+            return (fh, True)
+       
         is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
         ret = None
         try:
@@ -414,19 +429,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             log.exception("exception during conflict resolution %s", e)
 
         if ret is None:
-            if fhs[0].side == REMOTE or fhs[0].otype == DIRECTORY:
+            # we defer to the remote... since this can prevent loops
+            if fhs[0].side == REMOTE:
                 ret = (fhs[0], True)
             else:
                 ret = (fhs[1], True)
-
-        if DIRECTORY in (fhs[0].otype, fhs[1].otype):
-            if fhs[0].otype != fhs[1].otype:
-                if fhs[0].otype == DIRECTORY:
-                    fh = fhs[0]
-                else:
-                    fh = fhs[1]
-            # never resolved with uploads
-            ret = (fh, True)
                
         return ret
 
@@ -787,16 +794,18 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             return
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
-        try:
-            new_oid = self.providers[other.side].rename(other.oid, other_path)
+
+        def _update_syncs():
             self.state.update_entry(sync, other.side, new_oid, path=other_path)
             sync[other.side].sync_path = sync[other.side].path
             sync[picked.side].sync_path = sync[picked.side].path
+
+        try:
+            new_oid = self.providers[other.side].rename(other.oid, other_path)
+            _update_syncs()
         except CloudFileExistsError:
             # other side already agrees
-            self.state.update_entry(sync, other.side, other.oid, path=other_path)
-            sync[other.side].sync_path = sync[other.side].path
-            sync[picked.side].sync_path = sync[picked.side].path
+            _update_syncs()
 
     def detect_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
         provider = self.providers[changed]
