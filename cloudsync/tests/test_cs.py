@@ -5,7 +5,8 @@ from typing import List
 
 from .fixtures import MockProvider, MockStorage
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync.event import EventManager
 
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -391,8 +392,11 @@ def test_storage(storage):
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
-    storage1 = storage_class(storage_mechanism)
+    storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
+    old_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    assert old_cursor is not None
+    log.debug("cursor=%s", old_cursor)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
@@ -430,6 +434,11 @@ def test_storage(storage):
     assert not missing1
     assert not missing2
     not_dirty(cs1.state)
+    new_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    log.debug("cursor=%s %s", old_cursor, new_cursor)
+    assert new_cursor is not None
+    assert old_cursor != new_cursor
+
 
 @pytest.mark.parametrize("drain", [None, LOCAL, REMOTE])
 def test_sync_already_there(cs, drain: int):

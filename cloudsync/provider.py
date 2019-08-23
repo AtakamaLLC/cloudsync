@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import os
 import re
 import logging
 from typing import TYPE_CHECKING, Generator, Optional
@@ -29,7 +30,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         #   that is unique to each connection, so that connecting to this provider
         #   under multiple userid's will produce different connection_id's. One
         #   suggestion is to just set the connection_id to the user's login_id
-        self.connection_id = self.name
+        self.connection_id = os.urandom(16).hex()
 
     @property
     @abstractmethod

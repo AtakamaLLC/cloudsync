@@ -33,6 +33,7 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
             if eid not in storage:
                 raise ValueError("id %s doesn't exist" % eid)
             storage[eid] = serialization
+            return 1
 
     def delete(self, tag: str, eid: Any):
         lock, storage = self._get_internal_storage(tag)

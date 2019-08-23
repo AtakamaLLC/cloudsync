@@ -9,17 +9,17 @@ class Muxer:
     already = {}
     top_lock = Lock()
 
-    def __init__(self, func, label=None, restart=False):
+    def __init__(self, func, key=None, restart=False):
         self.restart = restart
         self.func = func
         self.queue = queue.Queue()
-        self.label = label or func
+        self.key = key or func
 
         with self.top_lock:
-            if self.label not in self.already:
-                self.already[self.label] = self.Entry([func()], [], Lock())
+            if self.key not in self.already:
+                self.already[self.key] = self.Entry([func()], [], Lock())
 
-            ent = self.already[self.label]
+            ent = self.already[self.key]
 
         self.genref = ent.genref
         self.lock = ent.lock
@@ -57,5 +57,5 @@ class Muxer:
                 self.listeners.remove(self)
             except ValueError:
                 pass
-            if not self.listeners and self.label in self.already:
-                del self.already[self.label]
+            if not self.listeners and self.key in self.already:
+                del self.already[self.key]

@@ -27,7 +27,7 @@ class CloudSync(Runnable):
         self.smgr = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
-        self.emgrs = (
+        self.emgrs: Tuple[EventManager, EventManager] = (
             EventManager(smgr.providers[0], state, 0, sleep=sleep),
             EventManager(smgr.providers[1], state, 1, sleep=sleep)
         )

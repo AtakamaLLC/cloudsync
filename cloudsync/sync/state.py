@@ -485,13 +485,14 @@ class SyncState:
     def storage_update_cursor(self, cursor_tag, cursor):
         if cursor_tag is None:
             return
-        log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
         updated = 0
         if self._storage is not None:
             if cursor_tag in self.cursor_id and self.cursor_id[cursor_tag]:
                 updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
+                log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
             if not updated:
                 self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)
+                log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
 
     def storage_update(self, ent: SyncEntry):
         log.debug("storage_update eid%s", ent.storage_id)
