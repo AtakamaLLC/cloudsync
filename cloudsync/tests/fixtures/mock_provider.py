@@ -27,6 +27,12 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         self.oid = path if oid_is_path else str(id(self))
         self.exists = True
         self.type = object_type
+        
+        if self.type == self.FILE:
+            # none is not valid for empty file
+            if self.contents is None:
+                self.contents = b''
+
         self.mtime = mtime or time.time()
 
     @property
@@ -211,6 +217,7 @@ class MockProvider(Provider):
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
         object_to_rename = self._fs_by_oid.get(oid, None)
+
         if not (object_to_rename and object_to_rename.exists):
             raise CloudFileNotFoundError(oid)
         possible_conflict = self._get_by_path(new_path)
@@ -241,7 +248,7 @@ class MockProvider(Provider):
             self._rename_single_object(object_to_rename, new_path)
         else:  # object to rename is a directory
             old_path = object_to_rename.path
-            for obj in list(self._fs_by_oid.values()):
+            for obj in set(self._fs_by_oid.values()):
                 if self.is_subpath(old_path, obj.path):
                     new_obj_path = self.replace_path(obj.path, old_path, new_path)
                     self._rename_single_object(obj, new_obj_path)

@@ -35,7 +35,9 @@ class ResolveFile():
         self.provider = provider
         self.path = info.path
         self.side = info.side
-        assert info.temp_file
+        self.otype = info.otype
+        if self.otype == FILE:
+            assert info.temp_file
         self.__fh = None
 
     @property
@@ -57,9 +59,7 @@ class ResolveFile():
         return self.__fh
 
     def read(self, *a):
-        ret = self.fh.read(*a)
-        log.debug("RESOLVE FILE %s", ret)
-        return ret
+        return self.fh.read(*a)
 
     def write(self, buf):
         return self.fh.write(buf)
@@ -104,7 +104,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.exception(
                     "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
                 sync.punt()
-                time.sleep(self._sleep)
+                if self._sleep:
+                    time.sleep(self._sleep)
         else:
             if self._sleep:
                 log.debug("SyncManager sleeping %i", self._sleep)
@@ -384,59 +385,138 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync.punt()
             return REQUEUE
 
-    def resolve_conflict(self, ent1: SideState, ent2: SideState): # pylint: disable=no-self-use
-        assert type(ent1) is SideState
-        assert type(ent2) is SideState
+    def __resolve_file_likes(self, side_states):
+        fhs = []
+        for ss in side_states:
+            assert type(ss) is SideState
 
-        if not ent1.temp_file:
-            ent1.temp_file = self.temp_file()
+            if not ss.temp_file and ss.otype == FILE:
+                ss.temp_file = self.temp_file()
 
-        if not ent2.temp_file:
-            ent2.temp_file = self.temp_file()
+            fhs.append(ResolveFile(ss, self.providers[ss.side]))
 
-        f1 = ResolveFile(ent1, self.providers[ent1.side])
-        f2 = ResolveFile(ent2, self.providers[ent2.side])
+            assert ss.oid
+        return fhs
 
-        assert ent1.oid
-        assert ent2.oid
-
+    def __safe_call_resolver(self, fhs):
+        is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
+        ret = None
         try:
-            ret = self.__resolve_conflict(f1, f2)
+            ret = self.__resolve_conflict(*fhs)
+            if ret:
+                if len(ret) != 2:
+                    log.error("bad return value for resolve conflict %s", ret)
+                    ret = None
+                if not is_file_like(ret[0]):
+                    log.error("bad return value for resolve conflict %s", ret)
+                    ret = None
         except Exception as e:
             log.exception("exception during conflict resolution %s", e)
-            ret = None
 
         if ret is None:
-            return False
+            if fhs[0].side == REMOTE or fhs[0].otype == DIRECTORY:
+                ret = (fhs[0], True)
+            else:
+                ret = (fhs[1], True)
 
-        is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
+        if DIRECTORY in (fhs[0].otype, fhs[1].otype):
+            if fhs[0].otype != fhs[1].otype:
+                if fhs[0].otype == DIRECTORY:
+                    fh = fhs[0]
+                else:
+                    fh = fhs[1]
+            # never resolved with uploads
+            ret = (fh, True)
+               
+        return ret
 
-        if not is_file_like(ret):
-            log.error("bad return value for resolve conflict %s", ret)
-            return False
+    def __resolver_merge_upload(self, side_states, fh, keep):
+        # we modified to both sides, need to merge the entries
+        ent1, ent2 = side_states
 
-        if ret is not f1:
-            ret.seek(0)
-            info1 = self.providers[other_side(ent2.side)].upload(ent1.oid, ret)
-            ent1.hash = info1.hash
+        defer_ent = self.state.lookup_oid(ent1.side, ent1.oid)
+        replace_ent = self.state.lookup_oid(ent2.side, ent2.oid)
+
+        if keep:
+            # both sides are being kept, so we have to upload since there are no entries
+            fh.seek(0)
+            info1 = self.providers[ent1.side].create(ent1.path, fh)
+            fh.seek(0)
+            info2 = self.providers[ent2.side].create(ent2.path, fh)
+
+            ent1.oid = info1.oid
+            ent2.oid = info2.oid
+
+            self.state.update_entry(defer_ent, ent1.side, ent1.oid, path=ent1.path, hash=ent1.hash)
+
+            ent1 = defer_ent[ent1.side]
+            ent2 = defer_ent[ent2.side]
+
+            ent2.sync_hash = info2.hash
+            ent2.sync_path = info2.path
             ent1.sync_hash = info1.hash
             ent1.sync_path = info1.path
 
-        if ret is not f2:
-            ret.seek(0)
-            info2 = self.providers[other_side(ent1.side)].upload(ent2.oid, ret)
-            ent2.hash = info2.hash
-            ent2.sync_hash = info2.hash
-            ent2.sync_path = info2.path
+        # in case oids have changed
+        self.state.update_entry(defer_ent, ent2.side, ent2.oid, path=ent2.path, hash=ent2.hash)
 
-        log.debug("RESOLVED CONFLICT: %s <-> %s", ent1, ent2)
-        return True
+        defer_ent[ent2.side].sync_hash = ent2.sync_hash
+        defer_ent[ent2.side].sync_path = ent2.sync_path
+        replace_ent.discard()
+
+    def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements
+        fhs = self.__resolve_file_likes(side_states)
+
+        fh, keep = self.__safe_call_resolver(fhs)
+
+        log.debug("got ret side %s", getattr(fh, "side", None))
+
+        defer = None
+
+        for i, rfh in enumerate(fhs):
+            this = side_states[i]
+            that = side_states[1-i]
+
+            if fh is not rfh:
+                # user didn't opt to keep my rfh
+                log.debug("replacing %s", this.side)
+                if not keep:
+                    fh.seek(0)
+                    info2 = self.providers[this.side].upload(this.oid, fh)
+                    this.hash = info2.hash
+                    that.sync_hash = that.hash
+                    that.sync_path = that.path
+                    this.sync_hash = this.hash
+                    this.sync_path = this.path
+                else:
+                    self._resolve_rename(this)
+
+                if defer is None:
+                    defer = that.side
+                else:
+                    defer = None
+
+        if defer is not None:
+            # toss the other side that was replaced
+            sorted_states = sorted(side_states, key=lambda e: e.side)
+            replace_side = other_side(defer)
+            replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+            replace_ent.discard()
+        else:
+            # both sides were modified....
+            self.__resolver_merge_upload(side_states, fh, keep)
+
+
+        log.debug("RESOLVED CONFLICT: %s dide: %s", side_states, defer)
+        log.debug("table\r\n%s", self.state.pretty_print())
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
         ents = [ent for ent in ents if ent != sync]
+        ents2 = list(self.state.lookup_path(synced, sync[synced].path))
+        ents += [ent for ent in ents2 if ent != sync]
 
         if not ents:
             if sync[synced].oid:
@@ -451,11 +531,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         else:
             has_log = False
             for ent in ents:
-                if ent.is_creation(changed):
+                if ent.is_creation(changed) or ent.is_creation(synced):
                     log.debug("discard delete, pending create %s", sync)
                     has_log = True
             if not has_log:
-                log.warning("conflict delete %s <-> %s", ents, sync)
+                log.warning("conflict delete %s <-> %s", set(ents), sync)
             log.debug("discard %s", sync)
             sync.discard()
 
@@ -564,6 +644,16 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
+    def _resolve_rename(self, replace):
+        replace_ent = self.state.lookup_oid(replace.side, replace.oid)
+
+        _old_oid, new_oid, new_name = self.conflict_rename(replace.side, replace.path)
+        if new_name is None:
+            return False
+
+        self.state.update_entry(replace_ent, side=replace.side, oid=new_oid)
+        return True
+
     def rename_to_fix_conflict(self, sync, side, path):
         old_oid, new_oid, new_name = self.conflict_rename(side, path)
         if new_name is None:
@@ -614,7 +704,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
-                log.debug(">>>Not a cloud path %s", sync[changed].path)
+                log.debug(">>>Not a cloud path %s, discard", sync[changed].path)
                 sync.discard()
                 self.state.storage_update(sync)
                 return FINISHED
@@ -652,9 +742,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         if not info.path:
             log.warning("impossible sync, no path. "
-                        "Probably a file that was shared, but not placed into a folder. Discarding. %s",
+                        "Probably a file that was shared, but not placed into a folder. discarding. %s",
                         sync[changed])
-            sync.discarded = True
+            sync.discard()
             return
 
         log.debug("UPDATE PATH %s->%s", sync, info.path)
@@ -671,16 +761,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
-        if self.resolve_conflict(defer_ent[defer_side], replace_ent[replace_side]):
-            self.state.update_entry(defer_ent, replace_side, 
-                    replace_ent[replace_side].oid, path=replace_ent[replace_side].path, 
-                    hash=replace_ent[replace_side].hash)
-
-            defer_ent[defer_side].sync_hash = defer_ent[defer_side].hash
-            defer_ent[defer_side].path = defer_ent[defer_side].path
-            replace_ent.discard()
-            return
-
         if defer_ent[defer_side].otype == FILE:
             self.download_changed(defer_side, defer_ent)
             with open(defer_ent[defer_side].temp_file, "rb") as f:
@@ -690,17 +770,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     replace_ent.discard()
                     return
 
-        self.rename_to_fix_conflict(replace_ent, replace_side, replace_ent[replace_side].path)
-
-        log.debug("REPLACE %s", replace_ent)
-
-        # force download of other side
-        self.state.mark_changed(defer_side, defer_ent)
-
-        defer_ent[defer_side].sync_path = None
-        defer_ent[defer_side].sync_hash = None
-
-        log.debug("SPLITTY\n%s", self.state.pretty_print())
+        self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
 
     def handle_path_conflict(self, sync):
         # consistent handling

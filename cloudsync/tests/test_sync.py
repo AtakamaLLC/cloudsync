@@ -390,18 +390,19 @@ def test_sync_conflict_simul(sync):
 
 
 MERGE=2
+@pytest.mark.parametrize("keep", [True, False])
 @pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE])
-def test_sync_conflict_resolve(sync, side):
+def test_sync_conflict_resolve(sync, side, keep):
     data = (b"hello", b"goodbye", b"merge")
 
     def resolver(f1, f2):
         if side == MERGE:
-            return BytesIO(data[MERGE])
+            return (BytesIO(data[MERGE]), keep)
         
         if f1.side == side:
-            return f1
+            return (f1, keep)
         
-        return f2
+        return (f2, keep)
 
     sync.set_resolver(resolver)
 
@@ -437,8 +438,16 @@ def test_sync_conflict_resolve(sync, side):
     assert b1.getvalue() == data[side]
     assert b2.getvalue() == data[side]
 
-    assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
-    assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+    if not keep:
+        assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+        assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+    else:
+        assert sync.providers[LOCAL].exists_path("/local/stuff1.conflicted") or sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+
+    assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted.conflicted")
+    assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted.conflicted")
+    assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted2")
+    assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted2")
     
     sync.state._assert_index_is_correct()
 
