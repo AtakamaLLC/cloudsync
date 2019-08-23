@@ -398,10 +398,10 @@ def test_sync_conflict_resolve(sync, side, keep):
     def resolver(f1, f2):
         if side == MERGE:
             return (BytesIO(data[MERGE]), keep)
-        
+
         if f1.side == side:
             return (f1, keep)
-        
+
         return (f2, keep)
 
     sync.set_resolver(resolver)
@@ -448,7 +448,7 @@ def test_sync_conflict_resolve(sync, side, keep):
     assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted.conflicted")
     assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted2")
     assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted2")
-    
+
     sync.state._assert_index_is_correct()
 
 
@@ -563,9 +563,9 @@ def test_sync_cycle(sync):
 
     assert i1 and i2 and i3
 
-    assert i1.hash == rinfo3.hash 
-    assert i2.hash == rinfo1.hash 
-    assert i3.hash == rinfo2.hash 
+    assert i1.hash == rinfo3.hash
+    assert i2.hash == rinfo1.hash
+    assert i3.hash == rinfo2.hash
 
 
 
@@ -615,7 +615,7 @@ def test_sync_conflict_path_combine(sync):
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
-    assert ok() 
+    assert ok()
 
 
 def test_create_then_move(sync):  # TODO: combine with the reverse test
@@ -711,4 +711,3 @@ def test_rename_folder_with_kids(sync):
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored
-

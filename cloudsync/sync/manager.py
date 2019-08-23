@@ -67,7 +67,7 @@ class ResolveFile():
     def close(self):
         return self.fh.close()
 
-    def seek(self, *a):    
+    def seek(self, *a):
         return self.fh.seek(*a)
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
@@ -296,7 +296,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             if not sync.punted:
                 sync.punt()
                 return REQUEUE
-           
+
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].debug_name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
@@ -413,7 +413,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     fh = fhs[1]
             # for simplicity: directory conflicted with file, always favors directory
             return (fh, True)
-       
+
         is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
         ret = None
         try:
@@ -434,7 +434,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 ret = (fhs[0], True)
             else:
                 ret = (fhs[1], True)
-               
+
         return ret
 
     def __resolver_merge_upload(self, side_states, fh, keep):
@@ -572,7 +572,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         assert len(other_untrashed_ents) == 1
 
         log.debug("split conflict found : %s", other_untrashed_ents)
-        
+
         self.handle_split_conflict(
             other_untrashed_ents[0], synced, sync, changed)
 

@@ -1,31 +1,54 @@
 from abc import ABC, abstractmethod
+import os
 import re
 import logging
-from typing import Generator, Optional
+from typing import TYPE_CHECKING, Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
-from cloudsync.event import Event
+if TYPE_CHECKING:
+    from cloudsync.event import Event
 
 log = logging.getLogger(__name__)
+
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
-    oid_is_path = False
-    case_sensitive = True
-    win_paths = False
+    oid_is_path: bool = False
+    case_sensitive: bool = True
+    win_paths: bool = False
+    connection_id: Optional[str] = None
 
     @abstractmethod
     def _api(self, *args, **kwargs):
         ...
 
     def connect(self, creds):           # pylint: disable=unused-argument
-        # some providers don't need connections, so just don't implement this
-        pass
+        # some providers don't need connections, so just don't implement/overload this method
+        # providers who implement connections need to set the connection_id to a value
+        #   that is unique to each connection, so that connecting to this provider
+        #   under multiple userid's will produce different connection_id's. One
+        #   suggestion is to just set the connection_id to the user's login_id
+        self.connection_id = os.urandom(16).hex()
+
+    @property
+    @abstractmethod
+    def name(self):
+        ...
+
+    @property
+    @abstractmethod
+    def latest_cursor(self):
+        ...
+
+    @property
+    @abstractmethod
+    def current_cursor(self):
+        ...
 
     @abstractmethod
-    def events(self) -> Generator[Event, None, None]:
+    def events(self) -> Generator["Event", None, None]:
         ...
 
     @abstractmethod
@@ -46,7 +69,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def rename(self, oid, path):
+    def rename(self, oid, path) -> str:
         # TODO: test that a renamed file can be renamed again
         # TODO: test that renaming a folder renames the children in the state file
         ...
@@ -75,8 +98,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         info = self.info_oid(oid)
         return info.hash if info else None
 
+    @staticmethod
     @abstractmethod
-    def hash_data(self, file_like) -> bytes:
+    def hash_data(file_like) -> bytes:
         ...
 
     @abstractmethod
@@ -184,7 +208,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return True
         elif patha is None or pathb is None:
             return False
-        
+
         return self.normalize_path(patha) == self.normalize_path(pathb)
 
     def dirname(self, path: str):

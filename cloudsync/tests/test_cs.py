@@ -4,8 +4,9 @@ import pytest
 from typing import List
 
 from .fixtures import MockProvider, MockStorage
-from cloudsync.sync.file_storage import FileStorage
-from cloudsync import CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync.sync.sqlite_storage import SqliteStorage
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync.event import EventManager
 
 from .test_sync import WaitFor, RunUntilHelper
 
@@ -41,8 +42,8 @@ def fixture_multi_cs(mock_provider_generator):
     roots1 = ("/local1", "/remote")
     roots2 = ("/local2", "/remote")
 
-    cs1 = CloudSyncMixin((p1, p2), roots1, storage, "tag1", sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), roots2, storage, "tag2", sleep=None)
+    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
 
     yield cs1, cs2
 
@@ -82,6 +83,7 @@ def test_sync_multi(multi_cs):
 
     cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
     assert len(cs1.state) == 4      # 2 dirs, 2 files, 1 never synced (local2 file)
 
@@ -93,7 +95,8 @@ def test_sync_multi(multi_cs):
             (REMOTE, remote_path2),
             timeout=2)
     except TimeoutError:
-        log.info("TABLE\n%s", cs2.state.pretty_print())
+        log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
         raise
 
     linfo12 = cs1.providers[LOCAL].info_path(local_path12)
@@ -370,23 +373,35 @@ def test_sync_folder_conflicts_file(cs):
 
     assert local_conf and remote_conf
 
-def test_storage():
+@pytest.fixture(params=[(MockStorage, dict()), (SqliteStorage, 'file::memory:?cache=shared')],
+                ids=["mock_storage", "sqlite_storage"],
+                name="storage"
+                )
+def storage_fixture(request):
+    return request.param
+
+
+def test_storage(storage):
     roots = ("/local", "/remote")
+    storage_class = storage[0]
+    storage_mechanism = storage[1]
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    storage_dict = dict()
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
-    storage1 = MockStorage(storage_dict)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, "tag", sleep=None)
+    storage1: Storage = storage_class(storage_mechanism)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
+    old_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    assert old_cursor is not None
+    log.debug("cursor=%s", old_cursor)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
-    storage2 = MockStorage(storage_dict)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, "tag", sleep=None)
+    storage2 = storage_class(storage_mechanism)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
@@ -419,58 +434,11 @@ def test_storage():
     assert not missing1
     assert not missing2
     not_dirty(cs1.state)
+    new_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    log.debug("cursor=%s %s", old_cursor, new_cursor)
+    assert new_cursor is not None
+    assert old_cursor != new_cursor
 
-
-def test_file_storage():
-    roots = ("/local", "/remote")
-
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
-    p1 = MockProvider(oid_is_path=False, case_sensitive=True)
-    p2 = MockProvider(oid_is_path=False, case_sensitive=True)
-
-    storage_fn = CloudSyncMixin((p1, p2), roots).smgr.temp_file()
-    storage1 = FileStorage(storage_fn)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, "tag", sleep=None)
-    cs1.smgr.temp_file()
-
-    test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
-
-    storage2 = FileStorage(storage_fn)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, "tag", sleep=None)
-
-    print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
-    print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
-
-    def not_dirty(s: SyncState):
-        for se in s.get_all():
-            se: SyncEntry
-            assert not se.dirty
-
-    def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
-        ret = []
-        found = False
-        for e1 in s1.get_all():
-            e1: SyncEntry
-            for e2 in s2.get_all():
-                e2: SyncEntry
-                if e1.serialize() == e2.serialize():
-                    found = True
-            if not found:
-                ret.append(e1)
-        return ret
-
-    missing1 = compare_states(cs1.state, cs2.state)
-    missing2 = compare_states(cs2.state, cs1.state)
-    for e in missing1:
-        print(f"entry in 1 not found in 2 {e.pretty()}")
-    for e in missing2:
-        print(f"entry in 2 not found in 1 {e.pretty()}")
-
-    assert not missing1
-    assert not missing2
-    not_dirty(cs1.state)
 
 @pytest.mark.parametrize("drain", [None, LOCAL, REMOTE])
 def test_sync_already_there(cs, drain: int):

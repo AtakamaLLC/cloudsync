@@ -181,16 +181,17 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.refresh_token = refresh_token
                 self.api_key = api_key
 
+                quota = None
                 try:
-                    self.get_quota()
+                    quota = self.get_quota()
                 except SSLError:  # pragma: no cover
                     # Seeing some intermittent SSL failures that resolve on retry
                     log.warning('Retrying intermittent SSLError')
-                    self.get_quota()
+                    quota = self.get_quota()
+                self.connection_id = quota['login']
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
-
         return self.client
 
     def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ
@@ -262,18 +263,26 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.client = None
 
     @property
-    def cursor(self):
+    def latest_cursor(self):
+        res = self._api('changes', 'getStartPageToken')
+        if res:
+            return res.get('startPageToken')
+        else:
+            return None
+
+    @property
+    def current_cursor(self):
         if not self.__cursor:
-            res = self._api('changes', 'getStartPageToken')
-            self.__cursor = res.get('startPageToken')
+            self.__cursor = self.latest_cursor
         return self.__cursor
 
     def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals
-        page_token = self.cursor
+        page_token = self.current_cursor
         while page_token is not None:
             # log.debug("looking for events, timeout: %s", timeout)
             response = self._api('changes', 'list', pageToken=page_token, spaces='drive',
                                  includeRemoved=True, includeItemsFromAllDrives=True, supportsAllDrives=True)
+            new_cursor = response.get('newStartPageToken', None)
             for change in response.get('changes'):
                 log.debug("got event %s", change)
 
@@ -300,15 +309,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 ohash = None
                 path = self._path_oid(oid, use_cache=False)
 
-                event = Event(otype, oid, path, ohash, exists, ts)
+                event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
 
                 log.debug("converted event %s as %s", change, event)
 
                 yield event
 
+            if new_cursor and page_token and new_cursor != page_token:
+                self.__cursor = new_cursor
             page_token = response.get('nextPageToken')
-            if 'newStartPageToken' in response:
-                self.__cursor = response.get('newStartPageToken')
 
     def _walk(self, path, oid):
         for ent in self.listdir(oid):
@@ -657,7 +666,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         log.debug("info oid ret: %s", ret)
         return ret
 
-    def hash_data(self, file_like) -> bytes:
+    @staticmethod
+    def hash_data(file_like) -> bytes:
         # get a hash from a filelike that's the same as the hash i natively use
         md5 = hashlib.md5()
         for c in iter(lambda: file_like.read(32768), b''):
