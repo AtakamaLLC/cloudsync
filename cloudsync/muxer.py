@@ -9,7 +9,7 @@ class Muxer:
     already = {}
     top_lock = Lock()
 
-    def __init__(self, func, restart=False, wait_for_drain=False):
+    def __init__(self, func, restart=False):
         self.restart = restart
         self.func = func
         self.queue = queue.Queue()
@@ -24,7 +24,6 @@ class Muxer:
         self.listeners = ent.listeners
 
         self.listeners.append(self)
-        self.wait_for_drain = wait_for_drain
 
     def __iter__(self):
         return self
@@ -40,7 +39,7 @@ class Muxer:
                     try:
                         e = next(self.genref[0])
                         for other in self.listeners:
-                            if not other is self:
+                            if other is not self:
                                 other.queue.put(e)
                     except StopIteration:
                         if self.restart:

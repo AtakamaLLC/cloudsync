@@ -41,8 +41,8 @@ def fixture_multi_cs(mock_provider_generator):
     roots1 = ("/local1", "/remote")
     roots2 = ("/local2", "/remote")
 
-    cs1 = CloudSyncMixin((p1, p2), roots1, storage, "tag1", sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), roots2, storage, "tag2", sleep=None)
+    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
 
     yield cs1, cs2
 
@@ -82,6 +82,7 @@ def test_sync_multi(multi_cs):
 
     cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
     assert len(cs1.state) == 4      # 2 dirs, 2 files, 1 never synced (local2 file)
 
@@ -93,7 +94,8 @@ def test_sync_multi(multi_cs):
             (REMOTE, remote_path2),
             timeout=2)
     except TimeoutError:
-        log.info("TABLE\n%s", cs2.state.pretty_print())
+        log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
         raise
 
     linfo12 = cs1.providers[LOCAL].info_path(local_path12)
@@ -380,13 +382,13 @@ def test_storage():
 
     # storage1 = MockStorage(storage_dict)
     storage1 = SqliteStorage('file::memory:?cache=shared')
-    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, "tag", sleep=None)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     # storage2 = MockStorage(storage_dict)
     storage2 = SqliteStorage('file::memory:?cache=shared')
-    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, "tag", sleep=None)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
@@ -432,13 +434,13 @@ def test_persistent_storage():
 
     storage_fn = CloudSyncMixin((p1, p2), roots).smgr.temp_file()
     storage1 = SqliteStorage(storage_fn)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, "tag", sleep=None)
+    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
     cs1.smgr.temp_file()
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = SqliteStorage(storage_fn)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, "tag", sleep=None)
+    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")

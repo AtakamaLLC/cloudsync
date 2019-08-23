@@ -12,28 +12,37 @@ class CloudSync(Runnable):
                  providers: Tuple[Provider, Provider],
                  roots: Tuple[str, str] = None,
                  storage: Optional[Storage] = None,
-                 label: Optional[str] = None,
                  sleep: Optional[int] = 15,
                  ):
 
-        state = SyncState(storage, tag=label)
+        self.providers = providers
+        self.roots = roots
+
+        # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
+        state = SyncState(storage, tag=self.storage_label())
         smgr = SyncManager(state, providers, self.translate, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
-        self.providers = providers
-        self.roots = roots
-
         self.smgr = smgr
+
+        # the label for each event manager will isolate the cursor to the provider/login combo for that side
         self.emgrs = (
-            EventManager(smgr.providers[0], state, 0, sleep=sleep),
-            EventManager(smgr.providers[1], state, 1, sleep=sleep)
+            EventManager(smgr.providers[0], state, 0, sleep=sleep, label=self.side_cursor_label(0)),
+            EventManager(smgr.providers[1], state, 1, sleep=sleep, label=self.side_cursor_label(1))
         )
         self.sthread = threading.Thread(target=smgr.run)
         self.ethreads = (
             threading.Thread(target=self.emgrs[0].run),
             threading.Thread(target=self.emgrs[1].run)
         )
+
+    def storage_label(self):
+        return f"{self.providers[0].name}:{self.providers[0].connection_id}:{self.roots[0]}."\
+               f"{self.providers[1].name}:{self.providers[1].connection_id}:{self.roots[1]}"
+
+    def side_cursor_label(self, side):
+        return f"{self.providers[side].name}:{self.providers[side].connection_id}"
 
     def walk(self):
         if not self.roots:

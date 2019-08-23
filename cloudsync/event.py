@@ -24,22 +24,18 @@ class Event:
     new_cursor: Optional[str] = None
 
 
-def cursor_tag(provider_name, connection_uid):
-    return "%s_%s_cursor" % (provider_name, connection_uid)
-
-
 class EventManager(Runnable):
-    def __init__(self, provider: "Provider", state: "SyncState", side, sleep=None):
+    def __init__(self, provider: "Provider", state: "SyncState", side, sleep=None, label=None):
         self.provider = provider
-        self.events = Muxer(self.provider_events, restart=self.waitforit, wait_for_drain=True)
+        self.events = Muxer(self.provider_events, restart=self.wait_for_it)
         self.state = state
         self.side = side
         self._sleep = sleep
         self.new_cursor = None
-        self._cursor_tag = cursor_tag(provider.name, provider.uid)
+        self._cursor_tag = label + "_cursor" if label else None
         self.cursor = self.state.storage_get_cursor(self._cursor_tag)
         if not self.cursor:
-            self.cursor = provider.cursor
+            self.cursor = provider.current_cursor
             if self.cursor:
                 self.state.storage_update_cursor(self._cursor_tag, self.cursor)
 
@@ -49,7 +45,7 @@ class EventManager(Runnable):
             if event.new_cursor:
                 self.new_cursor = event.new_cursor
 
-    def waitforit(self):
+    def wait_for_it(self):
         if self.new_cursor:
             self.state.storage_update_cursor(self._cursor_tag, self.new_cursor)
             self.new_cursor = None

@@ -468,6 +468,8 @@ class SyncState:
         self._changeset.add(ent)
 
     def storage_get_cursor(self, cursor_tag):
+        if cursor_tag is None:
+            return None
         retval = None
         if self._storage is not None:
             if cursor_tag in self.cursor_id:
@@ -479,14 +481,16 @@ class SyncState:
                     retval = cursor
                 if len(cursors) > 1:
                     log.warning("Multiple cursors found for %s", cursor_tag)
-        log.debug("storage_get_cursor id=%s cursor=%s", self.cursor_id[cursor_tag], str(retval))
+        log.debug("storage_get_cursor id=%s cursor=%s", cursor_tag, str(retval))
         return retval
 
     def storage_update_cursor(self, cursor_tag, cursor):
+        if cursor_tag is None:
+            return
         log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
         updated = 0
         if self._storage is not None:
-            if self.cursor_id[cursor_tag]:
+            if cursor_tag in self.cursor_id and self.cursor_id[cursor_tag]:
                 updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
             if not updated:
                 self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)

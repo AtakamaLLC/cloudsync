@@ -188,11 +188,18 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.client = None
 
     @property
-    def cursor(self):
+    def latest_cursor(self):
+        res = self._api('files_list_folder_get_latest_cursor',
+                        self.root_id, recursive=True, include_deleted=True, limit=200)
+        if res:
+            return res.cursor
+        else:
+            return None
+
+    @property
+    def current_cursor(self):
         if not self.__cursor:
-            res = self._api('files_list_folder_get_latest_cursor',
-                            self.root_id, recursive=True, include_deleted=True, limit=200)
-            self.__cursor = res.cursor
+            self.__cursor = self.latest_cursor
         return self.__cursor
 
     def _events(self, cursor, path=None):  # pylint: disable=too-many-branches
@@ -259,7 +266,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.__cursor = res.cursor
 
     def events(self) -> Generator[Event, None, None]:
-        yield from self._events(self.cursor)
+        yield from self._events(self.current_cursor)
 
     def walk(self, path, since=None):
         yield from self._events(None, path=path)

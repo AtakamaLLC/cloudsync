@@ -34,6 +34,7 @@ class ProviderHelper():
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
         self.prov.connect(self.creds)
+        assert prov.connection_id
 
         if not self.test_root:
             # if the provider class doesn't specify a testing root

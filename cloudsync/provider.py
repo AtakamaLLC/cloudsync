@@ -10,29 +10,40 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     sep: str = '/'                      # path delimiter
     alt_sep: str = '\\'                 # alternate path delimiter
-    oid_is_path = False
-    case_sensitive = True
-    win_paths = False
+    oid_is_path: bool = False
+    case_sensitive: bool = True
+    win_paths: bool = False
+    connection_id: Optional[str] = None
 
     @abstractmethod
     def _api(self, *args, **kwargs):
         ...
 
     def connect(self, creds):           # pylint: disable=unused-argument
-        # some providers don't need connections, so just don't implement this
-        pass
+        # some providers don't need connections, so just don't implement/overload this method
+        # providers who implement connections need to set the connection_id to a value
+        #   that is unique to each connection, so that connecting to this provider
+        #   under multiple userid's will produce different connection_id's. One
+        #   suggestion is self.name + ":" + provider_login_id
+        self.connection_id = self.name
 
-    @abstractmethod
     @property
+    @abstractmethod
     def name(self):
         ...
 
-    @abstractmethod
     @property
-    def cursor(self):
+    @abstractmethod
+    def latest_cursor(self):
+        ...
+
+    @property
+    @abstractmethod
+    def current_cursor(self):
         ...
 
     @abstractmethod
@@ -57,7 +68,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def rename(self, oid, path):
+    def rename(self, oid, path) -> str:
         # TODO: test that a renamed file can be renamed again
         # TODO: test that renaming a folder renames the children in the state file
         ...
