@@ -27,11 +27,12 @@ class Event:
 class EventManager(Runnable):
     def __init__(self, provider: "Provider", state: "SyncState", side, sleep=None, label=None):
         self.provider = provider
-        self.events = Muxer(self.provider_events, restart=self.wait_for_it)
+        self.events = Muxer(self.provider.events, label=label, restart=self.wait_for_it)
         self.state = state
         self.side = side
         self._sleep = sleep
         self.new_cursor = None
+        self.label = label
         self._cursor_tag = label + "_cursor" if label else None
         self.cursor = self.state.storage_get_cursor(self._cursor_tag)
         if not self.cursor:
@@ -51,7 +52,7 @@ class EventManager(Runnable):
             self.new_cursor = None
         if self._sleep:
             import time
-            log.debug("events %s sleeping", self.provider.name)
+            log.debug("events %s sleeping", self.label)
             time.sleep(self._sleep)
 
     def do(self):
@@ -59,7 +60,7 @@ class EventManager(Runnable):
             self.process_event(event)
 
     def process_event(self, event: Event):
-        log.debug("got event %s", event)
+        log.debug("%s got event %s", self.label, event)
         path = event.path
         exists = event.exists
         otype = event.otype

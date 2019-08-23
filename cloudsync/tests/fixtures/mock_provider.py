@@ -1,3 +1,4 @@
+import os
 import time
 import copy
 import logging
@@ -94,6 +95,7 @@ class MockProvider(Provider):
         self.event_timeout = 1
         self.event_sleep = 0.001
         self.creds = {}
+        self.connection_id = os.urandom(2).hex()
 
     def _register_event(self, action, target_object, prior_oid=None):
         event = MockEvent(action, target_object, prior_oid)

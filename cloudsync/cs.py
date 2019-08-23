@@ -38,6 +38,8 @@ class CloudSync(Runnable):
         )
 
     def storage_label(self):
+        assert self.providers[0].connection_id is not None
+        assert self.providers[1].connection_id is not None
         return f"{self.providers[0].name}:{self.providers[0].connection_id}:{self.roots[0]}."\
                f"{self.providers[1].name}:{self.providers[1].connection_id}:{self.roots[1]}"
 

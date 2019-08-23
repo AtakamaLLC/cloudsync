@@ -371,8 +371,18 @@ def test_sync_folder_conflicts_file(cs):
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
 
-def test_storage():
+@pytest.fixture(params=[(MockStorage, dict()), (SqliteStorage, 'file::memory:?cache=shared')],
+                ids=["mock_storage", "sqlite_storage"],
+                name="storage"
+                )
+def storage_fixture(request):
+    return request.param
+
+
+def test_storage(storage):
     roots = ("/local", "/remote")
+    storage_class = storage[0]
+    storage_mechanism = storage[1]
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
@@ -380,14 +390,12 @@ def test_storage():
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
 
-    # storage1 = MockStorage(storage_dict)
-    storage1 = SqliteStorage('file::memory:?cache=shared')
+    storage1 = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
 
     test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
 
-    # storage2 = MockStorage(storage_dict)
-    storage2 = SqliteStorage('file::memory:?cache=shared')
+    storage2 = storage_class(storage_mechanism)
     cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
     print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
