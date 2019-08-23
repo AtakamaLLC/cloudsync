@@ -20,11 +20,11 @@ def time_helper(timeout, sleep=None, multiply=1):
 class Runnable(ABC):
     def run(self, *, timeout=None, until=None, sleep=0.01):
         self.stopped = False                      # pylint: disable=attribute-defined-outside-init
-        self.wakeup = False
+        self.wakeup = False                       # pylint: disable=attribute-defined-outside-init
         endtime = sleep + time.monotonic()
         for _ in time_helper(timeout, sleep=.01):
             while time.monotonic() < endtime and not self.stopped and not self.wakeup:
-                time.sleep(min(.1, endtime - time.monotonic()))
+                time.sleep(min(.01, endtime - time.monotonic()))
             self.wakeup = False
             if self.stopped:
                 break
