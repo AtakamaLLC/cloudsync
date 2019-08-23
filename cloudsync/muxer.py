@@ -3,22 +3,24 @@ from threading import Lock
 from collections import namedtuple
 
 
-class Muxer():
+class Muxer:
     Entry = namedtuple('Entry', 'genref listeners, lock')
 
     already = {}
     top_lock = Lock()
 
-    def __init__(self, func, restart=False):
+    def __init__(self, func, key=None, restart=False):
         self.restart = restart
         self.func = func
         self.queue = queue.Queue()
         self.shutdown = False
+        self.key = key or func
 
         with self.top_lock:
-            if func not in self.already:
-                self.already[func] = self.Entry([func()], [], Lock())
-            ent = self.already[func]
+            if self.key not in self.already:
+                self.already[self.key] = self.Entry([func()], [], Lock())
+
+            ent = self.already[self.key]
 
         self.genref = ent.genref
         self.lock = ent.lock
@@ -40,7 +42,7 @@ class Muxer():
                     try:
                         e = next(self.genref[0])
                         for other in self.listeners:
-                            if not other is self:
+                            if other is not self:
                                 other.queue.put(e)
                     except StopIteration:
                         if self.restart and not self.shutdown:
@@ -54,5 +56,5 @@ class Muxer():
                 self.listeners.remove(self)
             except ValueError:
                 pass
-            if not self.listeners and self.func in self.already:
-                del self.already[self.func]
+            if not self.listeners and self.key in self.already:
+                del self.already[self.key]

@@ -53,6 +53,7 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         self.path: Optional[str] = None             # path at provider
         self.oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
+        self.temp_file: Optional[str] = None
 
     @property
     def exists(self):
@@ -91,8 +92,8 @@ class Storage(ABC):
         ...
 
     @abstractmethod
-    def update(self, tag: str, serialization: bytes, eid: Any):
-        """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
+    def update(self, tag: str, serialization: bytes, eid: Any) -> int:
+        """ take a serialization str, update it in sqlite, return the count of rows updated """
         ...
 
     @abstractmethod
@@ -105,13 +106,17 @@ class Storage(ABC):
         """yield all the serialized strings in a generator"""
         ...
 
+    @abstractmethod
+    def read(self, tag: str, eid: Any) -> Optional[bytes]:
+        """return one serialized string or None"""
+        ...
+
 
 # single entry in the syncs state collection
 class SyncEntry(Reprable):
     def __init__(self, otype: OType, storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
         self.__states: List[SideState] = [SideState(0, otype), SideState(1, otype)]
-        self.temp_file: Optional[str] = None
         self.discarded: str = ""
         self.storage_id: Any = None
         self.dirty: bool = True
@@ -137,13 +142,13 @@ class SyncEntry(Reprable):
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
             ret['exists'] = side_state.exists.value
+            ret['temp_file'] = side_state.temp_file
             # storage_id does not get serialized, it always comes WITH a serialization when deserializing
             return ret
 
         ser = dict()
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
-        ser['temp_file'] = self.temp_file
         ser['discarded'] = self.discarded
         return json.dumps(ser).encode('utf-8')
 
@@ -162,13 +167,13 @@ class SyncEntry(Reprable):
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
             side_state.exists = side_dict['exists']
+            side_state.temp_file = side_dict['temp_file']
             return side_state
 
         self.storage_id = storage_init[0]
         ser: dict = json.loads(storage_init[1].decode('utf-8'))
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
-        self.temp_file = ser['temp_file']
         self.discarded = ser['discarded']
 
     def __getitem__(self, i):
@@ -197,9 +202,9 @@ class SyncEntry(Reprable):
 
     @staticmethod
     def prettyheaders():
-        ret = "%3s %4s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             "EID",  # _sig(id(self)),
-            "SID",  # _sig(self.storage_id),  # S
+            "SID",  # _sig(self.storage_id),
             "Typ",  # otype,
             "Change",  # secs(self[LOCAL].changed),
             "Path",  # self[LOCAL].path,
@@ -257,9 +262,9 @@ class SyncEntry(Reprable):
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + lexv + ":" + lhma),
                         self.punted))
 
-        ret = "%3s S%3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             _sig(id(self)),
-            _sig(self.storage_id),  # S
+            _sig(self.storage_id),
             otype[:3],
             secs(self[LOCAL].changed),
             self[LOCAL].path,
@@ -296,6 +301,7 @@ class SyncState:
         self._changeset = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
+        self.cursor_id = dict()
         if self._storage:
             storage_dict = self._storage.read_all(tag)
             for eid, ent_ser in storage_dict.items():
@@ -459,6 +465,35 @@ class SyncState:
         ent[side].changed = time.time()
         self._changeset.add(ent)
 
+    def storage_get_cursor(self, cursor_tag):
+        if cursor_tag is None:
+            return None
+        retval = None
+        if self._storage is not None:
+            if cursor_tag in self.cursor_id:
+                retval = self._storage.read(cursor_tag, self.cursor_id[cursor_tag])
+            if not retval:
+                cursors = self._storage.read_all(cursor_tag)
+                for eid, cursor in cursors.items():
+                    self.cursor_id[cursor_tag] = eid
+                    retval = cursor
+                if len(cursors) > 1:
+                    log.warning("Multiple cursors found for %s", cursor_tag)
+        log.debug("storage_get_cursor id=%s cursor=%s", cursor_tag, str(retval))
+        return retval
+
+    def storage_update_cursor(self, cursor_tag, cursor):
+        if cursor_tag is None:
+            return
+        updated = 0
+        if self._storage is not None:
+            if cursor_tag in self.cursor_id and self.cursor_id[cursor_tag]:
+                updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
+                log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
+            if not updated:
+                self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)
+                log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
+
     def storage_update(self, ent: SyncEntry):
         log.debug("storage_update eid%s", ent.storage_id)
         if self._storage is not None:
@@ -481,7 +516,6 @@ class SyncState:
         return len(self.get_all())
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-
         log.debug("lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
 
