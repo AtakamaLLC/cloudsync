@@ -339,8 +339,9 @@ class MockProvider(Provider):
         else:
             return None
 
-    def hash_data(self, data) -> Any:
-        return md5(data.read()).digest()
+    @staticmethod
+    def hash_data(file_like) -> bytes:
+        return md5(file_like.read()).digest()
 
     def info_path(self, path: str) -> Optional[OInfo]:
         self._api()

@@ -396,7 +396,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 raise
         return oid
 
-    def hash_data(self, file_like) -> bytes:
+    @staticmethod
+    def hash_data(file_like) -> bytes:
         # get a hash from a filelike that's the same as the hash i natively use
         binstr = b''
         while True:
