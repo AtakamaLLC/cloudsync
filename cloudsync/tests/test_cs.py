@@ -469,3 +469,32 @@ def test_sync_already_there(cs, drain: int):
 
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+@pytest.mark.parametrize("drain", [LOCAL, REMOTE])
+def test_sync_already_there_conflict(cs, drain: int):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    rinfo2 = cs.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"), None)
+
+    if drain is not None:
+        # one of the event managers is not reporting events
+        cs.emgrs[drain]._drain()
+
+    # fill up the state table
+    cs.do()
+
+    # all changes processed
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    assert linfo1.hash == rinfo1.hash
+
+    assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted") or cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")

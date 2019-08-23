@@ -85,8 +85,11 @@ def fixture_sync(mock_provider_generator):
 
         raise ValueError("bad path: %s", path)
 
+    def resolve(f1, f2):
+        return None
+
     # two providers and a translation function that converts paths in one to paths in the other
-    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator(oid_is_path=False)), translate)
+    sync = SyncMgrMixin(state, (mock_provider_generator(), mock_provider_generator(oid_is_path=False)), translate, resolve)
 
     yield sync
 
@@ -384,6 +387,70 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
     sync.state._assert_index_is_correct()
+
+
+MERGE=2
+@pytest.mark.parametrize("keep", [True, False])
+@pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE])
+def test_sync_conflict_resolve(sync, side, keep):
+    data = (b"hello", b"goodbye", b"merge")
+
+    def resolver(f1, f2):
+        if side == MERGE:
+            return (BytesIO(data[MERGE]), keep)
+
+        if f1.side == side:
+            return (f1, keep)
+
+        return (f2, keep)
+
+    sync.set_resolver(resolver)
+
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = Provider.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_path1 = Provider.join(remote_parent, "stuff1")  # "/remote/stuff1"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(data[LOCAL]))
+    rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(data[REMOTE]))
+
+    # inserts info about some local path
+    sync.state.update(LOCAL, FILE, path=local_path1,
+                      oid=linfo.oid, hash=linfo.hash)
+    sync.state.update(REMOTE, FILE, path=remote_path1,
+                      oid=rinfo.oid, hash=rinfo.hash)
+
+    # ensure events are flushed a couple times
+    sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
+
+    sync.providers[LOCAL].log_debug_state("LOCAL")
+    sync.providers[REMOTE].log_debug_state("REMOTE")
+
+    b1 = BytesIO()
+    b2 = BytesIO()
+    sync.providers[REMOTE].download_path("/remote/stuff1", b2)
+    sync.providers[LOCAL].download_path("/local/stuff1", b1)
+
+    # both files are intact
+    assert b1.getvalue() == data[side]
+    assert b2.getvalue() == data[side]
+
+    if not keep:
+        assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+        assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+    else:
+        assert sync.providers[LOCAL].exists_path("/local/stuff1.conflicted") or sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+
+    assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted.conflicted")
+    assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted.conflicted")
+    assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted2")
+    assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted2")
+
+    sync.state._assert_index_is_correct()
+
 
 
 def test_sync_conflict_path(sync):

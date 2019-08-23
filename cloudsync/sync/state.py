@@ -53,6 +53,7 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         self.path: Optional[str] = None             # path at provider
         self.oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
+        self.temp_file: Optional[str] = None
 
     @property
     def exists(self):
@@ -116,7 +117,6 @@ class SyncEntry(Reprable):
     def __init__(self, otype: OType, storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
         self.__states: List[SideState] = [SideState(0, otype), SideState(1, otype)]
-        self.temp_file: Optional[str] = None
         self.discarded: str = ""
         self.storage_id: Any = None
         self.dirty: bool = True
@@ -142,13 +142,13 @@ class SyncEntry(Reprable):
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
             ret['exists'] = side_state.exists.value
+            ret['temp_file'] = side_state.temp_file
             # storage_id does not get serialized, it always comes WITH a serialization when deserializing
             return ret
 
         ser = dict()
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
-        ser['temp_file'] = self.temp_file
         ser['discarded'] = self.discarded
         return json.dumps(ser).encode('utf-8')
 
@@ -167,13 +167,13 @@ class SyncEntry(Reprable):
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
             side_state.exists = side_dict['exists']
+            side_state.temp_file = side_dict['temp_file']
             return side_state
 
         self.storage_id = storage_init[0]
         ser: dict = json.loads(storage_init[1].decode('utf-8'))
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
-        self.temp_file = ser['temp_file']
         self.discarded = ser['discarded']
 
     def __getitem__(self, i):
@@ -202,9 +202,9 @@ class SyncEntry(Reprable):
 
     @staticmethod
     def prettyheaders():
-        ret = "%3s %4s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             "EID",  # _sig(id(self)),
-            "SID",  # _sig(self.storage_id),  # S
+            "SID",  # _sig(self.storage_id),
             "Typ",  # otype,
             "Change",  # secs(self[LOCAL].changed),
             "Path",  # self[LOCAL].path,
@@ -262,9 +262,9 @@ class SyncEntry(Reprable):
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + lexv + ":" + lhma),
                         self.punted))
 
-        ret = "%3s S%3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             _sig(id(self)),
-            _sig(self.storage_id),  # S
+            _sig(self.storage_id),
             otype[:3],
             secs(self[LOCAL].changed),
             self[LOCAL].path,
