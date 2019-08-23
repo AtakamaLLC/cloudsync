@@ -19,6 +19,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True
     win_paths: bool = False
     connection_id: Optional[str] = None
+    default_sleep: int = 0.01
 
     @abstractmethod
     def _api(self, *args, **kwargs):

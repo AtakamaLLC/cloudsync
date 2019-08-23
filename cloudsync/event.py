@@ -41,7 +41,8 @@ class EventManager(Runnable):
                 self.state.storage_update_cursor(self._cursor_tag, self.cursor)
         else:
             log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
-
+# TODO!!!!            provider.current_cursor = self.cursor
+        
     def do(self):
         for event in self.events:
             self.process_event(event)

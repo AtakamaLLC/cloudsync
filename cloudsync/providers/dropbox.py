@@ -56,6 +56,7 @@ class _FolderIterator:
 
 class DropboxProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
+    default_sleep = 15
 
     _max_simple_upload_size = 15 * 1024 * 1024
     _upload_block_size = 10 * 1024 * 1024

@@ -12,7 +12,7 @@ class CloudSync(Runnable):
                  providers: Tuple[Provider, Provider],
                  roots: Tuple[str, str] = None,
                  storage: Optional[Storage] = None,
-                 sleep: Optional[int] = 15,
+                 sleep: Optional[Tuple[int, int]] = None,
                  ):
 
         self.providers = providers
@@ -31,10 +31,14 @@ class CloudSync(Runnable):
             EventManager(smgr.providers[0], state, 0),
             EventManager(smgr.providers[1], state, 1)
         )
-        self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': sleep})
+        self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': 0.1})
+
+        if sleep is None:
+            sleep = (providers[0].default_sleep, providers[1].default_sleep)
+
         self.ethreads = (
-            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': sleep}),
-            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep})
+            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': sleep[0]}),
+            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
         )
 
     def storage_label(self):

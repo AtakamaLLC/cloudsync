@@ -35,7 +35,7 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = True
-    require_parent_folder = True
+    default_sleep = 15
 
     provider = 'googledrive'
     name = 'Google Drive'

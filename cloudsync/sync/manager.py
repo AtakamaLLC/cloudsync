@@ -71,7 +71,7 @@ class ResolveFile():
         return self.fh.seek(*a)
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
-    def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=0):
+    def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
         self.providers[LOCAL].debug_name = "local"
@@ -79,11 +79,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         self.translate = translate
         self.__resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-
-        self._sleep = sleep
-
-        if sleep is None:
-            sleep = 0
 
         assert len(self.providers) == 2
 
@@ -104,12 +99,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 log.exception(
                     "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
                 sync.punt()
-                if self._sleep:
-                    time.sleep(self._sleep)
-        else:
-            if self._sleep:
-                log.debug("SyncManager sleeping %i", self._sleep)
-                time.sleep(self._sleep)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
