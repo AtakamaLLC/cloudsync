@@ -194,7 +194,7 @@ class SyncEntry(Reprable):
         return self[changed].path != self[changed].sync_path
 
     def is_creation(self, changed):
-        return not self[changed].sync_path
+        return not self[changed].sync_path and self[changed].path
 
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
