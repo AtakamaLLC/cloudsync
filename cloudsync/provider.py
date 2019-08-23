@@ -28,7 +28,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         # providers who implement connections need to set the connection_id to a value
         #   that is unique to each connection, so that connecting to this provider
         #   under multiple userid's will produce different connection_id's. One
-        #   suggestion is self.name + ":" + provider_login_id
+        #   suggestion is to just set the connection_id to the user's login_id
         self.connection_id = self.name
 
     @property

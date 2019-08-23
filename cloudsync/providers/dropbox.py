@@ -102,7 +102,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
             self.client = Dropbox(self.api_key)
             try:
-                self.get_quota()
+                quota = self.get_quota()
+                self.connection_id = quota['login']
             except exceptions.AuthError:
                 self.disconnect()
                 raise CloudTokenError()

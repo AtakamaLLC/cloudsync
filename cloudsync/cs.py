@@ -28,8 +28,8 @@ class CloudSync(Runnable):
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         self.emgrs = (
-            EventManager(smgr.providers[0], state, 0, sleep=sleep, label=self.side_cursor_label(0)),
-            EventManager(smgr.providers[1], state, 1, sleep=sleep, label=self.side_cursor_label(1))
+            EventManager(smgr.providers[0], state, 0, sleep=sleep),
+            EventManager(smgr.providers[1], state, 1, sleep=sleep)
         )
         self.sthread = threading.Thread(target=smgr.run)
         self.ethreads = (
@@ -42,9 +42,6 @@ class CloudSync(Runnable):
         assert self.providers[1].connection_id is not None
         return f"{self.providers[0].name}:{self.providers[0].connection_id}:{self.roots[0]}."\
                f"{self.providers[1].name}:{self.providers[1].connection_id}:{self.roots[1]}"
-
-    def side_cursor_label(self, side):
-        return f"{self.providers[side].name}:{self.providers[side].connection_id}"
 
     def walk(self):
         if not self.roots:

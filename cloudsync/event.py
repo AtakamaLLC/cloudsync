@@ -25,20 +25,23 @@ class Event:
 
 
 class EventManager(Runnable):
-    def __init__(self, provider: "Provider", state: "SyncState", side, sleep=None, label=None):
+    def __init__(self, provider: "Provider", state: "SyncState", side, sleep=None):
         self.provider = provider
-        self.events = Muxer(self.provider.events, label=label, restart=self.wait_for_it)
+        assert self.provider.connection_id
+        self.label = f"{self.provider.name}:{self.provider.connection_id}"
+        self.events = Muxer(self.provider_events, label=self.label, restart=self.wait_for_it)
         self.state = state
         self.side = side
         self._sleep = sleep
         self.new_cursor = None
-        self.label = label
-        self._cursor_tag = label + "_cursor" if label else None
+        self._cursor_tag = self.label + "_cursor"
         self.cursor = self.state.storage_get_cursor(self._cursor_tag)
         if not self.cursor:
             self.cursor = provider.current_cursor
             if self.cursor:
                 self.state.storage_update_cursor(self._cursor_tag, self.cursor)
+        else:
+            log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
 
     def provider_events(self) -> Generator["Event", None, None]:
         for event in self.provider.events():
