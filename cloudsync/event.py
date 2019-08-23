@@ -59,6 +59,11 @@ class EventManager(Runnable):
         for event in self.events:
             self.process_event(event)
 
+    def _drain(self):
+        # for tests, delete events
+        for _ in self.events:
+            pass
+
     def process_event(self, event: Event):
         log.debug("%s got event %s", self.label, event)
         path = event.path

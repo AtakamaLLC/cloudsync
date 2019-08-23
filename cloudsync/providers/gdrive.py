@@ -2,6 +2,7 @@ import time
 import logging
 import threading
 import webbrowser
+import hashlib
 from ssl import SSLError
 import json
 from typing import Generator, Optional
@@ -664,6 +665,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         ret = OInfo(info.otype, info.oid, info.hash, path)
         log.debug("info oid ret: %s", ret)
         return ret
+
+    def hash_data(self, file_like) -> bytes:
+        # get a hash from a filelike that's the same as the hash i natively use
+        md5 = hashlib.md5()
+        for c in iter(lambda: file_like.read(32768), b''):
+            md5.update(c)
+        return md5.hexdigest()
 
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:

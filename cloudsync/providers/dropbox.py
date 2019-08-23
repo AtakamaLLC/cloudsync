@@ -3,6 +3,7 @@ import os
 import time
 import logging
 import threading
+from hashlib import sha256
 from typing import Generator, Optional
 import requests
 import arrow
@@ -393,6 +394,16 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             else:
                 raise
         return oid
+
+    def hash_data(self, file_like) -> bytes:
+        # get a hash from a filelike that's the same as the hash i natively use
+        binstr = b''
+        while True:
+            data = file_like.read(4 * 1024 * 1024)
+            if not data:
+                break
+            binstr += sha256(data).digest()
+        return sha256(binstr).hexdigest()
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ, unused-argument
         # TODO: check if a regular filesystem lets you mkdir over a non-empty folder...
