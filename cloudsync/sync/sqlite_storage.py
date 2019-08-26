@@ -11,24 +11,24 @@ class SqliteStorage(Storage):
         self._filename = filename
         self._ensure_table_exists()
 
-    def commit(self):
-        self.db.commit()
-
     def _ensure_table_exists(self):
         self.db = sqlite3.connect(self._filename,
                                   uri=self._filename.startswith('file:'),
-                                  check_same_thread=self._filename == ":memory:"
+                                  check_same_thread=self._filename == ":memory:",
+                                  timeout=5,
+                                  isolation_level=None,
                                   )
+        self.db.execute("PRAGMA journal_mode=WAL;")
+        self.db.execute("PRAGMA busy_timeout=5000;")
+
         # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
         self.db.execute('CREATE TABLE IF NOT EXISTS cloud (id INTEGER PRIMARY KEY, '
                                'tag TEXT NOT NULL, serialization BLOB)')
-        self.commit()
 
     def create(self, tag: str, serialization: bytes) -> Any:
         db_cursor = self.db.execute('INSERT INTO cloud (tag, serialization) VALUES (?, ?)',
                                     [tag, serialization])
         eid = db_cursor.lastrowid
-        self.commit()
         return eid
 
     def update(self, tag: str, serialization: bytes, eid: Any) -> int:
@@ -38,7 +38,6 @@ class SqliteStorage(Storage):
         ret = db_cursor.rowcount
         if ret == 0:
             raise ValueError("id %s doesn't exist" % eid)
-        self.commit()
         return ret
 
     def delete(self, tag: str, eid: Any):
@@ -48,7 +47,6 @@ class SqliteStorage(Storage):
         if db_cursor.rowcount == 0:
             log.debug("ignoring delete: id %s doesn't exist", eid)
             return
-        self.commit()
 
     def read_all(self, tag: str) -> Dict[Any, bytes]:
         ret = {}

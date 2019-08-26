@@ -73,7 +73,7 @@ class EventManager(Runnable):
                 log.debug("ignoring delete of something that can't exist")
                 return
 
-        self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
+        self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid, provider=self.provider)
 
 
     def stop(self):
