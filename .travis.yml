@@ -17,7 +17,9 @@ jobs:
         - '3.7'
     - stage: integ
       script:
-        - pytest --durations=0 -n=2 cloudsync/tests/test_provider.py -k "gdrive or dropbox"
+          # only run tests if the interface or any implementations change
+          # todo: move providers to their own individual repos/projects with a plugin model
+        - ./provider_changes.sh && pytest --durations=0 -n=2 cloudsync/tests/test_provider.py -k "gdrive or dropbox"
       python:
         - '3.6'
 
