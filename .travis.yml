@@ -19,7 +19,7 @@ jobs:
       script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
-        - ./provider_changes.sh && pytest --durations=0 -n=2 cloudsync/tests/test_provider.py -k "gdrive or dropbox"
+        - ./test_providers.sh
       python:
         - '3.6'
 
