@@ -349,12 +349,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         sync[changed].sync_path = sync[changed].path
         self.update_entry(sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
         
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):
+    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None): # pylint: disable=redefined-builtin
         # updates entry without marking as changed unless explicit
         # used internally
         self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype, provider=self.providers[side])
 
-    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):
+    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None): # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid, provider=self.providers[side])
