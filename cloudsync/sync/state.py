@@ -313,14 +313,17 @@ class SyncState:
                     self._paths[side][path][oid] = ent
                     self._oids[side][oid] = ent
 
-    def _change_path(self, side, ent, path):
+    def _change_path(self, side, ent, path, provider):
         assert type(ent) is SyncEntry
         assert ent[side].oid
 
         prior_ent = ent
         prior_path = ent[side].path
+
         if prior_path:
             if prior_path in self._paths[side]:
+                if prior_path == path and ent[side].oid in self._paths[side][prior_path]:
+                    return
                 prior_ent = self._paths[side][prior_path].pop(ent[side].oid, None)
 
             if not self._paths[side][prior_path]:
@@ -337,6 +340,20 @@ class SyncState:
             log.debug("alter changeset")
             self._changeset.remove(prior_ent)
             self._changeset.add(ent)
+
+        if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
+            # changing directory also changes child paths
+            for sub in self.get_all():
+                if not sub[side].path:
+                    continue
+                relative = provider.is_subpath(prior_path, sub[side].path)
+                if relative:
+                    new_path = provider.join(path, relative)
+                    self._change_path(side, sub, new_path, provider)
+                    if provider.oid_is_path:
+                        new_info = provider.info_path(new_path)
+                        self._change_oid(side, sub, new_info.oid)
+
 
         assert ent in self.get_all()
 
@@ -427,7 +444,7 @@ class SyncState:
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin, too-many-arguments
+    def update_entry(self, ent, side, oid, provider, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin, too-many-arguments
         if oid is not None:
             self._change_oid(side, ent, oid)
 
@@ -438,7 +455,9 @@ class SyncState:
             assert not exists
 
         if path is not None:
-            self._change_path(side, ent, path)
+            if provider is None:
+                raise ValueError("Need provider info for path changes")
+            self._change_path(side, ent, path, provider)
 
         if oid:
             assert ent in self.get_all()
@@ -515,7 +534,7 @@ class SyncState:
     def __len__(self):
         return len(self.get_all())
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
+    def update(self, side, otype, oid, provider, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
         log.debug("lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
 
@@ -549,7 +568,7 @@ class SyncState:
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(otype)
 
-        self.update_entry(ent, side, oid, path, hash, exists, changed=True, otype=otype)
+        self.update_entry(ent, side, oid, provider, path=path, hash=hash, exists=exists, changed=True, otype=otype)
 
         self.storage_update(ent)
 
@@ -628,7 +647,7 @@ class SyncState:
     def entry_count(self):
         return len(self.get_all())
 
-    def split(self, ent):
+    def split(self, ent, providers):
         log.debug("splitting %s", ent)
         defer = REMOTE
         replace = LOCAL
@@ -641,13 +660,13 @@ class SyncState:
 
         # fix indexes, so the defer ent no longer has replace stuff
         self.update_entry(defer_ent, replace, oid=None,
-                          path=None, exists=UNKNOWN)
+                          path=None, exists=UNKNOWN, provider=providers[defer])
         self.update_entry(defer_ent, defer,
-                          oid=defer_ent[defer].oid, changed=True)
+                          oid=defer_ent[defer].oid, changed=True, provider=providers[replace])
         # add to index
         assert replace_ent[replace].oid
         self.update_entry(
-            replace_ent, replace, oid=replace_ent[replace].oid, path=replace_ent[replace].path, changed=True)
+            replace_ent, replace, oid=replace_ent[replace].oid, path=replace_ent[replace].path, changed=True, provider=providers[replace])
 
         assert replace_ent[replace].oid
         # we aren't synced

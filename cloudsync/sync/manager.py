@@ -129,7 +129,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                     assert ent[i].hash is not None, "Cannot sync if hash is None"
 
             if ent[i].path != info.path:
-                self.state.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
+                self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
 
         log.debug("after update state %s", ent)
 
@@ -276,7 +276,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
 
-            self.state.update_entry(
+            self.update_entry(
                 sync, synced, exists=True, oid=oid, path=translated_path)
 
             return FINISHED
@@ -306,7 +306,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
 
-            self.state.update_entry(
+            self.update_entry(
                 sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
         except CloudFileNotFoundError:
             log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
@@ -317,7 +317,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             log.debug("split bc upload to folder")
 
             defer_ent, defer_side, replace_ent, replace_side \
-                = self.state.split(sync)
+                = self.state.split(sync, self.providers)
 
             self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
@@ -347,8 +347,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             sync[synced].sync_path = translated_path
         sync[changed].sync_hash = sync[changed].hash
         sync[changed].sync_path = sync[changed].path
-        self.state.update_entry(
-            sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
+        self.update_entry(sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
+        
+    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):
+        # updates entry without marking as changed unless explicit
+        # used internally
+        self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype, provider=self.providers[side])
+
+    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):
+        # looks up oid and changes state, marking changed as if it's an event
+        # used only for testing
+        self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid, provider=self.providers[side])
 
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -356,11 +365,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             self._create_synced(changed, sync, translated_path)
             return FINISHED
         except CloudFileNotFoundError:
-            log.debug("can't create %s, try mkdirs", translated_path)
-            parent, _ = self.providers[synced].split(translated_path)
+            # make parent then punt
+            parent = self.providers[synced].dirname(translated_path)
             self.providers[synced].mkdirs(parent)
-            self._create_synced(changed, sync, translated_path)
-            return FINISHED
+            sync.punt()
+            return REQUEUE
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -370,7 +379,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                 sync[synced].oid = info.oid
                 sync[synced].hash = info.hash
                 sync[synced].path = translated_path
-                self.state.update_entry(sync, synced, info.oid, path=translated_path)
+                self.update_entry(sync, synced, info.oid, path=translated_path)
                 # maybe it's a hash conflict
                 sync.punt()
                 return REQUEUE
@@ -442,7 +451,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             ent1.oid = info1.oid
             ent2.oid = info2.oid
 
-            self.state.update_entry(defer_ent, ent1.side, ent1.oid, path=ent1.path, hash=ent1.hash)
+            self.update_entry(defer_ent, ent1.side, ent1.oid, path=ent1.path, hash=ent1.hash)
 
             ent1 = defer_ent[ent1.side]
             ent2 = defer_ent[ent2.side]
@@ -453,7 +462,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             ent1.sync_path = info1.path
 
         # in case oids have changed
-        self.state.update_entry(defer_ent, ent2.side, ent2.oid, path=ent2.path, hash=ent2.hash)
+        self.update_entry(defer_ent, ent2.side, ent2.oid, path=ent2.path, hash=ent2.hash)
 
         defer_ent[ent2.side].sync_hash = ent2.sync_hash
         defer_ent[ent2.side].sync_path = ent2.sync_path
@@ -629,7 +638,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
-            self.state.update_entry(sync, synced, path=translated_path, oid=new_oid)
+            self.update_entry(sync, synced, path=translated_path, oid=new_oid)
             # TODO: update all the kids in a changed folder like so:
             # if sync[changed].otype == DIRECTORY:
             #     for ent in self.providers[changed].listdir(sync[changed].oid):
@@ -642,7 +651,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         if new_name is None:
             return False
 
-        self.state.update_entry(replace_ent, side=replace.side, oid=new_oid)
+        self.update_entry(replace_ent, side=replace.side, oid=new_oid)
         return True
 
     def rename_to_fix_conflict(self, sync, side, path):
@@ -653,11 +662,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
         log.debug("rename to fix conflict %s -> %s", sync[side].path, new_name)
         # file can get renamed back, if there's a cycle
         if old_oid == sync[side].oid:
-            self.state.update_entry(sync, side=side, oid=new_oid)
+            self.update_entry(sync, side=side, oid=new_oid)
         else:
             ent = self.state.lookup_oid(side, old_oid)
             if ent:
-                self.state.update_entry(ent, side=side, oid=new_oid)
+                self.update_entry(ent, side=side, oid=new_oid)
 
         return True
 
@@ -739,7 +748,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
             return
 
         log.debug("UPDATE PATH %s->%s", sync, info.path)
-        self.state.update_entry(
+        self.update_entry(
             sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
@@ -747,7 +756,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
 
         # split the sync in two
         defer_ent, defer_side, replace_ent, replace_side \
-            = self.state.split(sync)
+            = self.state.split(sync, self.providers)
         self.handle_split_conflict(
             defer_ent, defer_side, replace_ent, replace_side)
 
@@ -780,7 +789,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                   other.oid, other_path)
 
         def _update_syncs(new_oid):
-            self.state.update_entry(sync, other.side, new_oid, path=other_path)
+            self.update_entry(sync, other.side, new_oid, path=other_path)
             sync[other.side].sync_path = sync[other.side].path
             sync[picked.side].sync_path = sync[picked.side].path
 
