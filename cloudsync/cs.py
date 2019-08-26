@@ -6,6 +6,9 @@ from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 
+import logging
+
+log = logging.getLogger("cloudsync")
 
 class CloudSync(Runnable):
     def __init__(self,
@@ -18,9 +21,12 @@ class CloudSync(Runnable):
         self.providers = providers
         self.roots = roots
 
+        if sleep is None:
+            sleep = (providers[0].default_sleep, providers[1].default_sleep)
+
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
         state = SyncState(storage, tag=self.storage_label())
-        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict)
+        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
@@ -28,18 +34,22 @@ class CloudSync(Runnable):
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0),
-            EventManager(smgr.providers[1], state, 1)
+            EventManager(smgr.providers[0], state, 0, roots[0]),
+            EventManager(smgr.providers[1], state, 1, roots[1])
         )
         self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': 0.1})
-
-        if sleep is None:
-            sleep = (providers[0].default_sleep, providers[1].default_sleep)
 
         self.ethreads = (
             threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': sleep[0]}),
             threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
         )
+
+        debug_roots = roots or ('?','?')
+
+        log.debug("initialized sync: %s:%s/%s -> %s:%s/%s", 
+                    smgr.providers[0].name, smgr.providers[0].connection_id, debug_roots[0],
+                    smgr.providers[1].name, smgr.providers[1].connection_id, debug_roots[1],
+                    )
 
     def storage_label(self):
         assert self.providers[0].connection_id is not None
@@ -58,6 +68,7 @@ class CloudSync(Runnable):
     def translate(self, index, path):
         relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
         if not relative:
+            log.debug("%s is not subpath of %s", path, self.roots[1-index])
             return None
         return self.providers[index].join(self.roots[index], relative)
 
