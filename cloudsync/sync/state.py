@@ -351,6 +351,12 @@ class SyncState:
                     new_path = provider.join(path, relative)
                     self._change_path(side, sub, new_path, provider)
                     if provider.oid_is_path:
+                        # TODO: state should not do online hits esp from event manager
+                        # either 
+                        # a) have event manager *not* trigger this, maybe by passing none as the provider, etc
+                        #    this may have knock on effects where the sync engine needs to process parent folders first
+                        # b) have a special oid_from_path function that is guaranteed not to be "online"
+                        #    assert not _api() called, etc.
                         new_info = provider.info_path(new_path)
                         self._change_oid(side, sub, new_info.oid)
 

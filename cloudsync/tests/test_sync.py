@@ -730,11 +730,9 @@ def _test_rename_folder_with_kids(sync, source, dest):
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
 
-# TODO: this test FAILS! make it not manual, and fix the problem
 @pytest.mark.parametrize("ordering", [(LOCAL, REMOTE), (REMOTE, LOCAL)])
 def test_rename_folder_with_kids(sync, ordering):
-    #TODO: do this stupid forward and reverse with a fixture
     _test_rename_folder_with_kids(sync, *ordering)
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
-# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored
+# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (not sure what this means EA 8/26)
