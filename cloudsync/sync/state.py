@@ -578,18 +578,23 @@ class SyncState:
 
         self.storage_update(ent)
 
-    def change(self):
+    def change(self, age):
+        earlier_than = time.time() - age
         # for now just get a random one
         for puntlevel in range(3):
             for e in self._changeset:
                 if not e.discarded and e.punted == puntlevel:
-                    return e
+                    if ( e[LOCAL].changed and e[LOCAL].changed <= earlier_than ) \
+                            or ( e[REMOTE].changed and e[REMOTE].changed <= earlier_than ):
+                        return e
 
         for e in list(self._changeset):
             if e.discarded:
                 self._changeset.remove(e)
             else:
-                return e
+                if ( e[LOCAL].changed and e[LOCAL].changed <= earlier_than ) \
+                        or ( e[REMOTE].changed and e[REMOTE].changed <= earlier_than ):
+                    return e
 
         return None
 

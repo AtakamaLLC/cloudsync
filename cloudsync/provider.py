@@ -213,10 +213,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self.normalize_path(patha) == self.normalize_path(pathb)
 
     def dirname(self, path: str):
-        norm_path = self.normalize_path(path).lstrip(self.sep)
-        parts = re.split(r'[%s]+' % self.sep, norm_path)
-        retval = self.join(*parts[0:-1])
-        return retval
+        ret, _ = self.split(path)
+        return ret
+
+    def basename(self, path: str):
+        _, ret = self.split(path)
+        return ret
 
     def _verify_parent_folder_exists(self, path):
         parent_path = self.dirname(path)

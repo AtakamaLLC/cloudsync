@@ -208,6 +208,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
+            except SSLError as e:
+                if "WRONG_VERSION" in str(e):
+                    # httplib2 used by google's api gives this weird error for no discernable reason
+                    raise CloudTemporaryError(str(e))
+                raise
             except HttpError as e:
                 # gets a default something (actually the message, not the reason) using their secret interface
                 reason = e._get_reason()  # pylint: disable=protected-access
@@ -429,24 +434,27 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path)
 
     def download(self, oid, file_like):
-        req = self.client.files().get_media(fileId=oid)
-        dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
+        with self.mutex:
+            req = self.client.files().get_media(fileId=oid)
+            dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
 
-        done = False
-        while not done:
-            try:
-                _, done = dl.next_chunk()
-            except HttpError as e:
-                if str(e.resp.status) == '416':
-                    log.debug("empty file downloaded")
-                    done = True
-                elif str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError("file %s not found" % oid)
-                else:
-                    raise CloudTemporaryError("unknown response from drive")
-            except (TimeoutError, HttpLib2Error):
-                self.disconnect()
-                raise CloudDisconnectedError("disconnected during download")
+            done = False
+            while not done:
+                try:
+                    _, done = dl.next_chunk()
+                except SSLError as e:
+                    raise CloudTemporaryError("ssl error %s" % e)
+                except HttpError as e:
+                    if str(e.resp.status) == '416':
+                        log.debug("empty file downloaded")
+                        done = True
+                    elif str(e.resp.status) == '404':
+                        raise CloudFileNotFoundError("file %s not found" % oid)
+                    else:
+                        raise CloudTemporaryError("unknown response from drive")
+                except (TimeoutError, HttpLib2Error):
+                    self.disconnect()
+                    raise CloudDisconnectedError("disconnected during download")
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches
         pid = self.get_parent_id(path)
@@ -589,12 +597,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, mimeType)',
+                            fields='files(id, md5Checksum, parents, mimeType, trashed)',
                             pageToken=None)
         except CloudFileNotFoundError:
             return None
 
         if not res['files']:
+            return None
+
+        if res.get('trashed'):
             return None
 
         ent = res['files'][0]
@@ -677,13 +688,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                            fields='name, md5Checksum, parents, mimeType',
+                            fields='name, md5Checksum, parents, mimeType, trashed',
                             )
         except CloudFileNotFoundError:
             return None
 
         log.debug("info oid %s", res)
-
+        if res.get('trashed'):
+            return None
+        
         pids = res.get('parents')
         fhash = res.get('md5Checksum')
         name = res.get('name')

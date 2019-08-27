@@ -245,6 +245,20 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     sync.state._assert_index_is_correct()
 
 
+def test_sync_conflict_rename_path(sync):
+    base = "/some@.o dd/cr azy.path"
+    join = sync.providers[LOCAL].join
+
+    sync.providers[LOCAL].mkdirs(base)
+    path = join(base, "to()a.doc.zip")
+    sync.providers[LOCAL].create(path, BytesIO(b"hello"))
+    oid, new, cpath = sync.conflict_rename(LOCAL, path)
+    assert cpath == join(base, "to()a.conflicted.doc.zip")
+    sync.providers[LOCAL].create(path, BytesIO(b"hello"))
+    oid, new, cpath = sync.conflict_rename(LOCAL, path)
+    assert cpath == join(base, "to()a.conflicted2.doc.zip")
+
+
 def test_sync_rename(sync):
     remote_parent = "/remote"
     local_parent = "/local"
