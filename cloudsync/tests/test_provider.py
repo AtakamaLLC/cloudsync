@@ -1,11 +1,11 @@
 import os
 import time
 import logging
-import pytest
 from io import BytesIO
 from unittest.mock import patch
 from typing import Union, NamedTuple, Optional, Generator
 
+import pytest
 import cloudsync
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, FILE
@@ -330,8 +330,8 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("provider_config", marks, ids=ids)
 
 
-@pytest.fixture
-def provider(config_provider):
+@pytest.fixture(name="provider")
+def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
@@ -1173,6 +1173,14 @@ def test_upload_to_a_path(provider: ProviderMixin):
     # This test will need to flag off whether the provider uses paths as OIDs or not
     with pytest.raises(Exception):
         provider.upload(temp_name, BytesIO(b"test2"))
+
+
+def test_upload_zero_bytes(provider: ProviderMixin):
+    temp_name = provider.temp_name()
+    info = provider.create(temp_name, BytesIO(b""))
+    provider.upload(info.oid, BytesIO(b""))
+    dest = BytesIO()
+    provider.download(info.oid, dest)
 
 
 def test_delete_doesnt_cross_oids(provider: ProviderMixin):

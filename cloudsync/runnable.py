@@ -20,7 +20,7 @@ def time_helper(timeout, sleep=None, multiply=1):
 class Runnable(ABC):
     stopped = False
     wakeup = False
-    
+
     def run(self, *, timeout=None, until=None, sleep=0.01):
         self.stopped = False
         self.wakeup = False

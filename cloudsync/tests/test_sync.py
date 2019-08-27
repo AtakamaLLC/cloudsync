@@ -102,7 +102,7 @@ def test_sync_state_basic(mock_provider):
 
     assert state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, oid="123")
-    state._assert_index_is_correct()
+    state.assert_index_is_correct()
 
 
 def test_sync_state_rename(mock_provider):
@@ -111,7 +111,7 @@ def test_sync_state_rename(mock_provider):
     state.update(LOCAL, FILE, path="foo2", oid="123", provider=mock_provider)
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
-    state._assert_index_is_correct()
+    state.assert_index_is_correct()
 
 
 def test_sync_state_rename2(mock_provider):
@@ -122,7 +122,7 @@ def test_sync_state_rename2(mock_provider):
     assert not state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, oid="456")
     assert not state.lookup_oid(LOCAL, oid="123")
-    state._assert_index_is_correct()
+    state.assert_index_is_correct()
 
 
 def test_sync_state_rename3(mock_provider):
@@ -156,7 +156,7 @@ def test_sync_state_rename3(mock_provider):
     assert infoa[LOCAL].hash == bhash
     assert infob[LOCAL].hash == ahash
 
-    state._assert_index_is_correct()
+    state.assert_index_is_correct()
 
 
 def test_sync_state_multi(mock_provider):
@@ -164,7 +164,8 @@ def test_sync_state_multi(mock_provider):
     state.update(LOCAL, FILE, path="foo2", oid="123", provider=mock_provider)
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
-    state._assert_index_is_correct()
+    state.assert_index_is_correct()
+
 
 def test_sync_state_kids(mock_provider):
     # annoyingly, the state manager now interacts with the provider
@@ -178,17 +179,15 @@ def test_sync_state_kids(mock_provider):
     assert state.lookup_path(LOCAL, path="/dir")
     state.update(LOCAL, FILE, path="/dir/foo", oid="124", provider=mock_provider)
     assert state.lookup_path(LOCAL, path="/dir/foo")
-    new_oid=mock_provider.mkdir("/dir2")
+    new_oid = mock_provider.mkdir("/dir2")
     mock_provider.create("/dir2/foo", BytesIO(b'hi'))
     state.update(LOCAL, DIRECTORY, path="/dir2", oid=new_oid, provider=mock_provider, prior_oid="123")
-    
+
     log.debug("TABLE:\n%s", state.pretty_print(use_sigs=False))
 
-    state._assert_index_is_correct()
+    state.assert_index_is_correct()
     assert len(state) == 2
     assert state.lookup_path(LOCAL, "/dir2/foo")
-
-
 
 
 def test_sync_basic(sync: "SyncMgrMixin"):
@@ -242,7 +241,7 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     assert info.oid
     log.debug("all state %s", sync.state.get_all())
 
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_conflict_rename_path(sync):
@@ -285,7 +284,7 @@ def test_sync_rename(sync):
     sync.run_until_found((REMOTE, remote_path2))
 
     assert sync.providers[REMOTE].info_path("/remote/stuff") is None
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_hash(sync):
@@ -316,7 +315,7 @@ def test_sync_hash(sync):
     sync.providers[REMOTE].download(info.oid, check)
 
     assert check.getvalue() == b"hello2"
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_rm(sync):
@@ -342,7 +341,7 @@ def test_sync_rm(sync):
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
 
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_mkdir(sync):
@@ -374,7 +373,7 @@ def test_sync_mkdir(sync):
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_conflict_simul(sync):
@@ -395,13 +394,12 @@ def test_sync_conflict_simul(sync):
     sync.change_state(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
-
     # one of them is a conflict
     sync.run(until=lambda:
-        sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
-        or
-        sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
-    )
+             sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
+             or
+             sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+             )
 
     sync.run_until_found(
         (REMOTE, "/remote/stuff1"),
@@ -424,10 +422,12 @@ def test_sync_conflict_simul(sync):
     assert b1.getvalue() != b2.getvalue()
     assert b1.getvalue() in (b"hello", b"goodbye")
     assert b2.getvalue() in (b"hello", b"goodbye")
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
-MERGE=2
+MERGE = 2
+
+
 @pytest.mark.parametrize("keep", [True, False])
 @pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE])
 def test_sync_conflict_resolve(sync, side, keep):
@@ -487,8 +487,7 @@ def test_sync_conflict_resolve(sync, side, keep):
     assert not sync.providers[LOCAL].exists_path("/local/stuff1.conflicted2")
     assert not sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted2")
 
-    sync.state._assert_index_is_correct()
-
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_conflict_path(sync):
@@ -543,7 +542,7 @@ def test_sync_conflict_path(sync):
 
     assert not sync.providers[LOCAL].exists_path(local_path1)
     assert not sync.providers[LOCAL].exists_path(local_path2)
-    sync.state._assert_index_is_correct()
+    sync.state.assert_index_is_correct()
 
 
 def test_sync_cycle(sync):
@@ -606,7 +605,6 @@ def test_sync_cycle(sync):
     assert i3.hash == rinfo2.hash
 
 
-
 def test_sync_conflict_path_combine(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -645,10 +643,10 @@ def test_sync_conflict_path_combine(sync):
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
     ok = lambda: (
-            sync.providers[REMOTE].exists_path("/remote/stuff.conflicted")
-            or
-            sync.providers[LOCAL].exists_path("/local/stuff.conflicted")
-            )
+        sync.providers[REMOTE].exists_path("/remote/stuff.conflicted")
+        or
+        sync.providers[LOCAL].exists_path("/local/stuff.conflicted")
+    )
     sync.run(until=ok, timeout=3)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
@@ -710,6 +708,7 @@ def test_create_then_move_reverse(sync):  # TODO: see if this can be combined wi
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((LOCAL, local_file2), timeout=2)
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
 
 def _test_rename_folder_with_kids(sync, source, dest):
     parent = ["/local", "/remote"]

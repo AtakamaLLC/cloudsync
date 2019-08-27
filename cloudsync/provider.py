@@ -95,7 +95,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         ...
 
-    def hash_oid(self, oid) -> Optional[bytes]: # TODO add a test to FNFE
+    def hash_oid(self, oid) -> Optional[bytes]:  # TODO add a test to FNFE
         info = self.info_oid(oid)
         return info.hash if info else None
 

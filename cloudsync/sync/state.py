@@ -352,14 +352,13 @@ class SyncState:
                     self._change_path(side, sub, new_path, provider)
                     if provider.oid_is_path:
                         # TODO: state should not do online hits esp from event manager
-                        # either 
+                        # either
                         # a) have event manager *not* trigger this, maybe by passing none as the provider, etc
                         #    this may have knock on effects where the sync engine needs to process parent folders first
                         # b) have a special oid_from_path function that is guaranteed not to be "online"
                         #    assert not _api() called, etc.
                         new_info = provider.info_path(new_path)
                         self._change_oid(side, sub, new_info.oid)
-
 
         assert ent in self.get_all()
 
@@ -584,16 +583,16 @@ class SyncState:
         for puntlevel in range(3):
             for e in self._changeset:
                 if not e.discarded and e.punted == puntlevel:
-                    if ( e[LOCAL].changed and e[LOCAL].changed <= earlier_than ) \
-                            or ( e[REMOTE].changed and e[REMOTE].changed <= earlier_than ):
+                    if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
+                            or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                         return e
 
         for e in list(self._changeset):
             if e.discarded:
                 self._changeset.remove(e)
             else:
-                if ( e[LOCAL].changed and e[LOCAL].changed <= earlier_than ) \
-                        or ( e[REMOTE].changed and e[REMOTE].changed <= earlier_than ):
+                if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
+                        or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                     return e
 
         return None
@@ -618,7 +617,7 @@ class SyncState:
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
         return ret
 
-    def _assert_index_is_correct(self):
+    def assert_index_is_correct(self):
         for ent in self._changeset:
             if not ent.discarded:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)

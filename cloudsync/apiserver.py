@@ -8,7 +8,11 @@ import threading
 import logging
 from enum import Enum
 import unittest
+
+# TODO: this is an inappropriate default server, default should be wsgiref builtin
 import waitress
+
+# TODO: caller should specify the mechanism for channel empty detection
 from waitress.channel import HTTPChannel
 
 log = logging.getLogger(__name__)

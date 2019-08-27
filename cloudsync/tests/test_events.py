@@ -1,8 +1,8 @@
-import os
 import time
 from io import BytesIO
-import pytest
 import threading
+
+import pytest
 
 from cloudsync import EventManager, SyncState, LOCAL
 
@@ -16,7 +16,7 @@ def fixture_manager(mock_provider_generator):
     yield EventManager(provider, state, LOCAL)
 
 
-def test_event_basic(util, manager):
+def test_event_basic(manager):
     provider = manager.provider
     state = manager.state
     info = provider.create("/dest", BytesIO(b'hello'))
@@ -32,6 +32,7 @@ def test_event_basic(util, manager):
         if states:
             oid = list(states)[0][LOCAL].oid
             return state.lookup_oid(LOCAL, oid)
+        return False
 
     # loop the sync until the file is found
     manager.run(timeout=1, until=done)
@@ -42,38 +43,40 @@ def test_event_basic(util, manager):
 
     assert info.path == "/dest"
 
-def test_events_shutdown_event_shouldnt_process(util, manager):
+
+def test_events_shutdown_event_shouldnt_process(manager):
     handle = threading.Thread(target=manager.run, **{'kwargs': {'sleep': .3}})
     handle.start()
     try:
         provider = manager.provider
-        info = provider.create("/dest", BytesIO(b'hello'))
+        provider.create("/dest", BytesIO(b'hello'))
         manager.stop()
         time.sleep(.4)
         try:
-            event = manager.events.__next__()
+            manager.events.__next__()
         except StopIteration:
-            assert(False)
+            assert False
         try:
-            event = manager.events.__next__()
-            assert(False)
+            manager.events.__next__()
+            assert False
         except StopIteration:
             pass
     finally:
         manager.stop()
 
-def test_events_shutdown_force_process_event(util, manager):
+
+def test_events_shutdown_force_process_event(manager):
     handle = threading.Thread(target=manager.run, **{'kwargs': {'sleep': .3}})
     handle.start()
     try:
         provider = manager.provider
-        info = provider.create("/dest", BytesIO(b'hello'))
+        provider.create("/dest", BytesIO(b'hello'))
         manager.stop()
         time.sleep(.4)
         manager.do()
         try:
-            event = manager.events.__next__()
-            assert(False)
+            manager.events.__next__()
+            assert False
         except StopIteration:
             pass
     finally:
