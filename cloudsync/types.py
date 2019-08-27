@@ -26,3 +26,5 @@ class OInfo:
 class DirInfo(OInfo):
     name: Optional[str] = None
     mtime: Optional[float] = None
+    shared: bool = False
+    readonly: bool = False

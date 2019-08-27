@@ -544,7 +544,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, name, mimeType, trashed)',
+                            fields='files(id, md5Checksum, parents, name, mimeType, trashed, shared, capabilities)',
                             pageToken=None)
         except CloudFileNotFoundError:
             if self._info_oid(oid):
@@ -564,13 +564,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             pids = ent['parents']
             fhash = ent.get('md5Checksum')
             name = ent['name']
+            shared = ent['shared']
+            readonly = not ent['capabilities']['canEdit']
             trashed = ent.get('trashed', False)
             if ent.get('mimeType') == self._folder_mime_type:
                 otype = DIRECTORY
             else:
                 otype = FILE
             if not trashed:
-                yield GDriveInfo(otype, fid, fhash, None, pids=pids, name=name)
+                yield GDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
         if self.exists_path(path):
@@ -630,7 +632,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, mimeType, trashed, name)',
+                            fields='files(id, md5Checksum, parents, mimeType, trashed, name, shared, capabilities)',
                             pageToken=None)
         except CloudFileNotFoundError:
             return None
@@ -657,6 +659,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         # ....cache correct basename
         path = self.join(self.dirname(path), name)
 
+        shared = ent['shared']
+        readonly = not ent['capabilities']['canEdit']
         if ent.get('mimeType') == self._folder_mime_type:
             otype = DIRECTORY
         else:
@@ -664,7 +668,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._ids[path] = oid
 
-        return GDriveInfo(otype, oid, fhash, path, pids=pids)
+        return GDriveInfo(otype, oid, fhash, path, shared=shared, readonly=readonly, pids=pids)
 
     def exists_path(self, path) -> bool:
         if path in self._ids:
@@ -734,7 +738,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                            fields='name, md5Checksum, parents, mimeType, trashed',
+                            fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities',
                             )
         except CloudFileNotFoundError:
             return None
@@ -746,9 +750,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         pids = res.get('parents')
         fhash = res.get('md5Checksum')
         name = res.get('name')
+        shared = res['shared']
+        readonly = not res['capabilities']['canEdit']
         if res.get('mimeType') == self._folder_mime_type:
             otype = DIRECTORY
         else:
             otype = FILE
 
-        return GDriveInfo(otype, oid, fhash, None, pids=pids, name=name)
+        return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
