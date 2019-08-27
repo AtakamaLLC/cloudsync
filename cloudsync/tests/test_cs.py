@@ -74,6 +74,8 @@ def test_sync_multi(multi_cs):
     rinfo1 = cs1.providers[REMOTE].create(remote_path2, BytesIO(b"hello3"), None)
     rinfo2 = cs2.providers[REMOTE].create(remote_path2, BytesIO(b"hello4"), None)
 
+    assert linfo1 and linfo2 and rinfo1 and rinfo2
+
     cs1.run_until_found(
         (LOCAL, local_path11),
         (LOCAL, local_path21),
@@ -276,19 +278,19 @@ def test_sync_two_conflicts(cs):
 
 @pytest.mark.repeat(10)
 def test_sync_subdir_rename(cs):
-    local_dir     = "/local/a"
-    local_base    = "/local/a/stuff"
-    local_dir2    = "/local/b"
-    local_base2   = "/local/b/stuff"
-    remote_dir    = "/remote/a"
-    remote_dir2   = "/remote/b"
-    remote_base   = "/remote/a/stuff"
-    remote_base2  = "/remote/b/stuff"
+    local_dir = "/local/a"
+    local_base = "/local/a/stuff"
+    local_dir2 = "/local/b"
+    local_base2 = "/local/b/stuff"
+    remote_dir = "/remote/a"
+    remote_dir2 = "/remote/b"
+    remote_base = "/remote/a/stuff"
+    remote_base2 = "/remote/b/stuff"
 
     kid_count = 4
     cs.providers[LOCAL].mkdir("/local")
 
-    lpoid  = cs.providers[LOCAL].mkdir(local_dir)
+    lpoid = cs.providers[LOCAL].mkdir(local_dir)
 
     lpaths = []
     rpaths = []
@@ -301,8 +303,8 @@ def test_sync_subdir_rename(cs):
         cs.providers[LOCAL].create(lpath, BytesIO(b'hello'))
 
         lpaths.append(lpath)
-        rpaths.append((REMOTE,rpath))
-        rpaths2.append((REMOTE,rpath2))
+        rpaths.append((REMOTE, rpath))
+        rpaths2.append((REMOTE, rpath2))
 
     cs.run_until_found(*rpaths, timeout=2)
 
@@ -371,6 +373,7 @@ def test_sync_folder_conflicts_file(cs):
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
     assert local_conf and remote_conf
+
 
 @pytest.fixture(params=[(MockStorage, dict()), (SqliteStorage, 'file::memory:?cache=shared')],
                 ids=["mock_storage", "sqlite_storage"],
@@ -468,6 +471,7 @@ def test_sync_already_there(cs, drain: int):
 
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
 
 @pytest.mark.parametrize("drain", [LOCAL, REMOTE])
 def test_sync_already_there_conflict(cs, drain: int):

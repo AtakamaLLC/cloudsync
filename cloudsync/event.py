@@ -46,7 +46,7 @@ class EventManager(Runnable):
         else:
             log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
 # TODO!!!!            provider.current_cursor = self.cursor
-        
+
     def do(self):
         if self.walk_root:
             log.debug("walking all %s/%s files as events, because no working cursor on startup", self.provider.name, self.walk_root)
@@ -56,9 +56,9 @@ class EventManager(Runnable):
 
         for event in self.events:
             self.process_event(event)
-            
+
         current_cursor = self.provider.current_cursor
-        
+
         if current_cursor != self.cursor:
             self.state.storage_update_cursor(self._cursor_tag, current_cursor)
             self.cursor = current_cursor
@@ -86,7 +86,6 @@ class EventManager(Runnable):
                 return
 
         self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid, provider=self.provider)
-
 
     def stop(self):
         self.events.shutdown = True

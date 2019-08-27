@@ -7,11 +7,13 @@ from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
+from .log import TRACE
 
 # cloudsync logger and descendants are INFO by default
 # to override, set level after import
 
 log = logging.getLogger(__name__)
+
 
 class CloudSync(Runnable):
     def __init__(self,
@@ -74,7 +76,7 @@ class CloudSync(Runnable):
 
         relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
         if not relative:
-            log.debug("%s is not subpath of %s", path, self.roots[1-index])
+            log.log(TRACE, "%s is not subpath of %s", path, self.roots[1-index])
             return None
         return self.providers[index].join(self.roots[index], relative)
 

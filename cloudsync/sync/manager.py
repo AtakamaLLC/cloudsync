@@ -13,13 +13,12 @@ __all__ = ['SyncManager']
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError
 from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
+from cloudsync.log import TRACE
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE
 from .util import debug_sig
 
 log = logging.getLogger(__name__)
-
-TRACE = logging.getLevelName('TRACE')
 
 # useful for converting oids and pointer nubmers into digestible nonces
 
@@ -29,6 +28,7 @@ REQUEUE = 0
 
 def other_side(index):
     return 1-index
+
 
 class ResolveFile():
     def __init__(self, info, provider):
@@ -71,6 +71,7 @@ class ResolveFile():
 
     def seek(self, *a):
         return self.fh.seek(*a)
+
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-many-instance-attributes
     def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=None):
@@ -166,7 +167,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
     def path_conflict(self, ent):
         if ent[0].path and ent[1].path:
             return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-                   not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
+                not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
     def sync(self, sync):
@@ -202,7 +203,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     @staticmethod
     def clean_temps(sync):
-        #todo: move this to the sync obj
+        # todo: move this to the sync obj
         for side in (LOCAL, REMOTE):
             if sync[side].temp_file:
                 try:
@@ -377,13 +378,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         sync[changed].sync_hash = sync[changed].hash
         sync[changed].sync_path = sync[changed].path
         self.update_entry(sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path, hash=info.hash)
-        
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None): # pylint: disable=redefined-builtin
+
+    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin
         # updates entry without marking as changed unless explicit
         # used internally
         self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype, provider=self.providers[side])
 
-    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None): # pylint: disable=redefined-builtin
+    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid, provider=self.providers[side])
@@ -546,7 +547,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         else:
             # both sides were modified....
             self.__resolver_merge_upload(side_states, fh, keep)
-
 
         log.debug("RESOLVED CONFLICT: %s dide: %s", side_states, defer)
         log.debug("table\r\n%s", self.state.pretty_print())
@@ -749,7 +749,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
-                log.debug(">>>Not a cloud path %s, discard", sync[changed].path)
+                log.log(TRACE, ">>>Not a cloud path %s, discard", sync[changed].path)
                 self.discard_entry(sync)
                 return FINISHED
 

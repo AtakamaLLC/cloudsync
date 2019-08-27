@@ -83,7 +83,7 @@ def test_del():
 
     m1 = Muxer(gen)
 
-    i = next(m1)
+    _ = next(m1)
 
     m2 = Muxer(gen)
     lm2 = list(m2)
@@ -93,7 +93,7 @@ def test_del():
     m2.__del__()
     assert len(m1.listeners) == 1
 
-    j = list(m1)
+    _ = list(m1)
 
     assert gen in Muxer.already
 
