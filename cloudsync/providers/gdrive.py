@@ -14,10 +14,15 @@ from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
-from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload # pylint: disable=import-error
+from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
+
+
+class GDriveFileDoneError(Exception):
+    pass
+
 
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
@@ -194,38 +199,61 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError()
         return self.client
 
-    def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ
+    @staticmethod
+    def _get_reason_from_http_error(e):
+        # gets a default something (actually the message, not the reason) using their secret interface
+        reason = e._get_reason()  # pylint: disable=protected-access
+
+        # parses the JSON of the content to get the reason from where it really lives in the content
+        try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
+            data = json.loads(e.content.decode('utf-8'))
+            if isinstance(data, dict):
+                reason = data['error']['errors'][0]['reason']
+            else:
+                reason = data[0]['error']['errors']['reason']
+        except (UnicodeDecodeError, ValueError, KeyError):
+            log.warning('Invalid JSON content from response: %s', e.content)
+            
+        return reason
+
+    def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
         with self.mutex:
             try:
-                res = getattr(self.client, resource)()
+                if resource == 'media':
+                    res = args[0]
+                    args = args[1:]
+                else:
+                    res = getattr(self.client, resource)()
+
                 meth = getattr(res, method)(*args, **kwargs)
-                ret = meth.execute()
+
+                if resource == 'media' or (resource == 'files' and method == 'get_media'):
+                    ret = meth
+                else:
+                    ret = meth.execute()
                 log.debug("api: %s %s (%s) -> %s", method, args, kwargs, ret)
                 return ret
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
+            except SSLError as e:
+                if "WRONG_VERSION" in str(e):
+                    # httplib2 used by google's api gives this weird error for no discernable reason
+                    raise CloudTemporaryError(str(e))
+                raise
             except HttpError as e:
-                # gets a default something (actually the message, not the reason) using their secret interface
-                reason = e._get_reason()  # pylint: disable=protected-access
-
-                # parses the JSON of the content to get the reason from where it really lives in the content
-                try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
-                    data = json.loads(e.content.decode('utf-8'))
-                    if isinstance(data, dict):
-                        reason = data['error']['errors'][0]['reason']
-                    else:
-                        reason = data[0]['error']['errors']['reason']
-                except (UnicodeDecodeError, ValueError, KeyError):
-                    log.warning('Invalid JSON content from response: %s', e.content)
+                if str(e.resp.status) == '416':
+                    raise GDriveFileDoneError()
 
                 if str(e.resp.status) == '404':
                     raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % (
                         resource, method, kwargs
                     ))
+
+                reason = self._get_reason_from_http_error(e)
 
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
@@ -243,7 +271,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 should_retry = _should_retry_response(e.resp.status, e.content)
                 if should_retry:
                     raise CloudTemporaryError("unknown error %s" % e)
-                raise Exception("unknown error %s" % e)
+                raise
             except (TimeoutError, HttpLib2Error):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
@@ -429,24 +457,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path)
 
     def download(self, oid, file_like):
-        req = self.client.files().get_media(fileId=oid)
+        req = self._api('files', 'get_media', fileId=oid)
         dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
-
         done = False
         while not done:
             try:
-                _, done = dl.next_chunk()
-            except HttpError as e:
-                if str(e.resp.status) == '416':
-                    log.debug("empty file downloaded")
-                    done = True
-                elif str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError("file %s not found" % oid)
-                else:
-                    raise CloudTemporaryError("unknown response from drive")
-            except (TimeoutError, HttpLib2Error):
-                self.disconnect()
-                raise CloudDisconnectedError("disconnected during download")
+                _, done = self._api('media', 'next_chunk', dl)
+            except GDriveFileDoneError:
+                done = True
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches
         pid = self.get_parent_id(path)
@@ -589,12 +607,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, mimeType)',
+                            fields='files(id, md5Checksum, parents, mimeType, trashed)',
                             pageToken=None)
         except CloudFileNotFoundError:
             return None
 
         if not res['files']:
+            return None
+
+        if res.get('trashed'):
             return None
 
         ent = res['files'][0]
@@ -677,12 +698,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                            fields='name, md5Checksum, parents, mimeType',
+                            fields='name, md5Checksum, parents, mimeType, trashed',
                             )
         except CloudFileNotFoundError:
             return None
 
         log.debug("info oid %s", res)
+        if res.get('trashed'):
+            return None
 
         pids = res.get('parents')
         fhash = res.get('md5Checksum')

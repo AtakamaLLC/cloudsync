@@ -1,4 +1,8 @@
-from .fixtures import *  # pylint: disable=unused-import
+import cloudsync
+
+from .fixtures import *  # pylint: disable=unused-import, unused-wildcard-import, wildcard-import
+
+cloudsync.logger.setLevel("TRACE")
 
 
 def pytest_configure(config):

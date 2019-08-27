@@ -1,10 +1,18 @@
 import threading
+import logging
+
 from typing import Optional, Tuple
 
 from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
+from .log import TRACE
+
+# cloudsync logger and descendants are INFO by default
+# to override, set level after import
+
+log = logging.getLogger(__name__)
 
 
 class CloudSync(Runnable):
@@ -15,12 +23,18 @@ class CloudSync(Runnable):
                  sleep: Optional[Tuple[int, int]] = None,
                  ):
 
+        if not roots and self.translate == CloudSync.translate:     # pylint: disable=comparison-with-callable
+            raise ValueError("Either override the translate() function, or pass in a pair of roots")
+
         self.providers = providers
         self.roots = roots
 
+        if sleep is None:
+            sleep = (providers[0].default_sleep, providers[1].default_sleep)
+
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
         state = SyncState(storage, tag=self.storage_label())
-        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict)
+        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
@@ -28,36 +42,54 @@ class CloudSync(Runnable):
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0),
-            EventManager(smgr.providers[1], state, 1)
+            EventManager(smgr.providers[0], state, 0, roots[0]),
+            EventManager(smgr.providers[1], state, 1, roots[1])
         )
         self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': 0.1})
-
-        if sleep is None:
-            sleep = (providers[0].default_sleep, providers[1].default_sleep)
 
         self.ethreads = (
             threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': sleep[0]}),
             threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
         )
 
+        log.info("initialized sync: %s", self.storage_label())
+
+        def lockattr(k, _v):
+            if k not in self.__dict__:
+                raise AttributeError("%s not an attribute" % k)
+        self.__setattr__ = lockattr 
+
+    @property
+    def aging(self):
+        return self.smgr.aging
+
+    @aging.setter
+    def aging(self, val):
+        self.smgr.aging = val
+
     def storage_label(self):
+        # if you're using a pure translate, and not roots, you don't have to override the storage label
+        # just don't resuse storage for the same pair of providers
+
+        roots = self.roots or ('?', '?')
         assert self.providers[0].connection_id is not None
         assert self.providers[1].connection_id is not None
-        return f"{self.providers[0].name}:{self.providers[0].connection_id}:{self.roots[0]}."\
-               f"{self.providers[1].name}:{self.providers[1].connection_id}:{self.roots[1]}"
+        return f"{self.providers[0].name}:{self.providers[0].connection_id}:{roots[0]}."\
+               f"{self.providers[1].name}:{self.providers[1].connection_id}:{roots[1]}"
 
     def walk(self):
-        if not self.roots:
-            raise ValueError("walk requires provider path roots")
-
+        roots = self.roots or ('/', '/')
         for index, provider in enumerate(self.providers):
-            for event in provider.walk(self.roots[index]):
+            for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
     def translate(self, index, path):
+        if not self.roots:
+            raise ValueError("Override translate function or provide root paths")
+
         relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
         if not relative:
+            log.log(TRACE, "%s is not subpath of %s", path, self.roots[1-index])
             return None
         return self.providers[index].join(self.roots[index], relative)
 
@@ -81,6 +113,7 @@ class CloudSync(Runnable):
         self.ethreads[1].start()
 
     def stop(self):
+        log.info("stopping sync: %s", self.storage_label())
         self.smgr.stop()
         self.emgrs[0].stop()
         self.emgrs[1].stop()

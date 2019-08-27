@@ -23,7 +23,7 @@ class SqliteStorage(Storage):
 
         # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
         self.db.execute('CREATE TABLE IF NOT EXISTS cloud (id INTEGER PRIMARY KEY, '
-                               'tag TEXT NOT NULL, serialization BLOB)')
+                        'tag TEXT NOT NULL, serialization BLOB)')
 
     def create(self, tag: str, serialization: bytes) -> Any:
         db_cursor = self.db.execute('INSERT INTO cloud (tag, serialization) VALUES (?, ?)',
