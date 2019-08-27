@@ -8,13 +8,13 @@ import json
 from typing import Generator, Optional
 
 import arrow
-from apiclient.discovery import build   # pylint: disable=import-error
-from apiclient.errors import HttpError  # pylint: disable=import-error
+from googleapiclient.discovery import build   # pylint: disable=import-error
+from googleapiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
-from apiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
