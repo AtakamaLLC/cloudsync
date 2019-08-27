@@ -112,6 +112,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     def do(self):
         sync: SyncEntry = self.state.change(self.aging)
+
         if sync:
             try:
                 self.sync(sync)
