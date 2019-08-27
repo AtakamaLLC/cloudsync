@@ -1,4 +1,6 @@
-# cloudsync
+[![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master)](https://travis-ci.com/VidaID/cloudsync)
+
+## cloudsync
 
 Python Cloud Synchronization Library
 
