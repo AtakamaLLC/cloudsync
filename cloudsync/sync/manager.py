@@ -17,8 +17,9 @@ from cloudsync.runnable import Runnable
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE
 from .util import debug_sig
 
-
 log = logging.getLogger(__name__)
+
+TRACE = logging.getLevelName('TRACE')
 
 # useful for converting oids and pointer nubmers into digestible nonces
 
@@ -179,7 +180,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             self.handle_path_conflict(sync)
             return
 
-        log.debug("table\r\n%s", self.state.pretty_print())
+        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         for i in (LOCAL, REMOTE):
             if sync[i].changed:
@@ -772,7 +773,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             self.upload_synced(changed, sync)
             return FINISHED
 
-        log.info("nothing changed %s, but changed is true", sync)
+        log.debug("nothing changed %s", sync)
         return FINISHED
 
     def update_sync_path(self, sync, changed):

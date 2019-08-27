@@ -11,8 +11,7 @@ from .provider import Provider
 # cloudsync logger and descendants are INFO by default
 # to override, set level after import
 
-log = logging.getLogger(__package__)
-log.setLevel(logging.INFO)
+log = logging.getLogger(__name__)
 
 class CloudSync(Runnable):
     def __init__(self,

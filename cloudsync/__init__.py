@@ -25,17 +25,16 @@ cloudsync -p gdrive --token "236723782347823642786" -f ~/gdrive-folder --daemon
 
 __version__ = "0.1.5"
 
-# import modules into top level for convenience
+# must be imported first
+from .log import logger
 
+# import modules into top level for convenience
 from .provider import *
 from .event import *
 from .sync import *
 from .exceptions import *
 from .types import *
 from .cs import *
-
-# this makes it easy to call cloudsync.logger.setLevel
-from .cs import log as logger
 
 from .command import main
 
