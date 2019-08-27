@@ -1211,6 +1211,7 @@ def test_rename_case_change(provider: ProviderMixin):
     temp_nameu = temp_namel.upper()
     infol = provider.create(temp_namel, BytesIO(b"test"))
     assert infol.path == temp_namel
-    provider.rename(infol.oid, temp_nameu)
-    infou = provider.info_oid(infol.oid)
+    new_oid = provider.rename(infol.oid, temp_nameu)
+    assert new_oid
+    infou = provider.info_oid(new_oid)
     assert infou.path == temp_nameu
