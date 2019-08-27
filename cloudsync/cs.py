@@ -8,7 +8,11 @@ from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 
-log = logging.getLogger("cloudsync")
+# cloudsync logger and descendants are INFO by default
+# to override, set level after import
+
+log = logging.getLogger(__package__)
+log.setLevel(logging.INFO)
 
 class CloudSync(Runnable):
     def __init__(self,
@@ -17,6 +21,9 @@ class CloudSync(Runnable):
                  storage: Optional[Storage] = None,
                  sleep: Optional[Tuple[int, int]] = None,
                  ):
+
+        if not roots and self.translate == CloudSync.translate:     # pylint: disable=comparison-with-callable
+            raise ValueError("Either override the translate() function, or pass in a pair of roots")
 
         self.providers = providers
         self.roots = roots
@@ -44,28 +51,28 @@ class CloudSync(Runnable):
             threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
         )
 
-        debug_roots = roots or ('?', '?')
-
-        log.debug("initialized sync: %s:%s/%s -> %s:%s/%s", 
-                    smgr.providers[0].name, smgr.providers[0].connection_id, debug_roots[0],
-                    smgr.providers[1].name, smgr.providers[1].connection_id, debug_roots[1],
-                    )
+        log.info("initialized sync: %s", self.storage_label())
 
     def storage_label(self):
+        # if you're using a pure translate, and not roots, you don't have to override the storage label
+        # just don't resuse storage for the same pair of providers
+
+        roots = self.roots or ('?', '?')
         assert self.providers[0].connection_id is not None
         assert self.providers[1].connection_id is not None
-        return f"{self.providers[0].name}:{self.providers[0].connection_id}:{self.roots[0]}."\
-               f"{self.providers[1].name}:{self.providers[1].connection_id}:{self.roots[1]}"
+        return f"{self.providers[0].name}:{self.providers[0].connection_id}:{roots[0]}."\
+               f"{self.providers[1].name}:{self.providers[1].connection_id}:{roots[1]}"
 
     def walk(self):
-        if not self.roots:
-            raise ValueError("walk requires provider path roots")
-
+        roots = self.roots or ('/', '/')
         for index, provider in enumerate(self.providers):
-            for event in provider.walk(self.roots[index]):
+            for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
     def translate(self, index, path):
+        if not self.roots:
+            raise ValueError("Override translate function or provide root paths")
+
         relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
         if not relative:
             log.debug("%s is not subpath of %s", path, self.roots[1-index])
@@ -92,6 +99,7 @@ class CloudSync(Runnable):
         self.ethreads[1].start()
 
     def stop(self):
+        log.info("stopping sync: %s", self.storage_label())
         self.smgr.stop()
         self.emgrs[0].stop()
         self.emgrs[1].stop()

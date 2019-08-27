@@ -34,6 +34,9 @@ from .exceptions import *
 from .types import *
 from .cs import *
 
+# this makes it easy to call cloudsync.logger.setLevel
+from .cs import log as logger
+
 from .command import main
 
 if __name__ == "__main__":

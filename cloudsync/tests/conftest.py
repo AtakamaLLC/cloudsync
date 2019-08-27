@@ -1,9 +1,12 @@
-from .fixtures import *  # pylint: disable=unused-import
+import logging
+import cloudsync
 
+cloudsync.logger.setLevel(logging.DEBUG)
+
+from .fixtures import *  # pylint: disable=unused-import
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "manual")
-
 
 def pytest_runtest_setup(item):
     if 'manual' in item.keywords and not item.config.getoption("--manual"):
@@ -13,3 +16,4 @@ def pytest_runtest_setup(item):
 def pytest_addoption(parser):
     parser.addoption("--provider", action="append", default=[], help="provider(s) to run tests for")
     parser.addoption("--manual", action="store_true", default=False, help="run the manual tests")
+

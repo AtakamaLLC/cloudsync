@@ -743,7 +743,6 @@ def _test_rename_folder_with_kids(sync, source, dest):
     )
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
-
 @pytest.mark.parametrize("ordering", [(LOCAL, REMOTE), (REMOTE, LOCAL)])
 def test_rename_folder_with_kids(sync, ordering):
     _test_rename_folder_with_kids(sync, *ordering)
