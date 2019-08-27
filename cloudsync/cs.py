@@ -51,6 +51,14 @@ class CloudSync(Runnable):
                     smgr.providers[1].name, smgr.providers[1].connection_id, debug_roots[1],
                     )
 
+    @property
+    def aging(self):
+        return self.smgr.aging
+
+    @aging.setter
+    def aging(self, val):
+        self.smgr.aging = val
+
     def storage_label(self):
         assert self.providers[0].connection_id is not None
         assert self.providers[1].connection_id is not None
