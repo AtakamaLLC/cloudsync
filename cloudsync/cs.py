@@ -54,7 +54,7 @@ class CloudSync(Runnable):
 
         log.info("initialized sync: %s", self.storage_label())
 
-        def lockattr(k, v):
+        def lockattr(k, _v):
             if k not in self.__dict__:
                 raise AttributeError("%s not an attribute" % k)
         self.__setattr__ = lockattr 
