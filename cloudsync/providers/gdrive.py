@@ -194,7 +194,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError()
         return self.client
 
-    def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ
+    def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 

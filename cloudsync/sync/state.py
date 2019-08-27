@@ -584,16 +584,16 @@ class SyncState:
         for puntlevel in range(3):
             for e in self._changeset:
                 if not e.discarded and e.punted == puntlevel:
-                    if ( e[LOCAL].changed and e[LOCAL].changed <= earlier_than ) \
-                            or ( e[REMOTE].changed and e[REMOTE].changed <= earlier_than ):
+                    if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
+                            or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                         return e
 
         for e in list(self._changeset):
             if e.discarded:
                 self._changeset.remove(e)
             else:
-                if ( e[LOCAL].changed and e[LOCAL].changed <= earlier_than ) \
-                        or ( e[REMOTE].changed and e[REMOTE].changed <= earlier_than ):
+                if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
+                        or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                     return e
 
         return None

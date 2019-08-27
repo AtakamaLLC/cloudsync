@@ -71,7 +71,7 @@ class ResolveFile():
     def seek(self, *a):
         return self.fh.seek(*a)
 
-class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
+class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-many-instance-attributes
     def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=None):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
@@ -530,7 +530,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods
                         self._resolve_rename(this)
                     except CloudFileNotFoundError:
                         log.debug("there is no conflict, because the file doesn't exist? %s", this)
-                        pass
 
                 if defer is None:
                     defer = that.side

@@ -1,12 +1,12 @@
 import threading
+import logging
+
 from typing import Optional, Tuple
 
 from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
-
-import logging
 
 log = logging.getLogger("cloudsync")
 
@@ -44,7 +44,7 @@ class CloudSync(Runnable):
             threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
         )
 
-        debug_roots = roots or ('?','?')
+        debug_roots = roots or ('?', '?')
 
         log.debug("initialized sync: %s:%s/%s -> %s:%s/%s", 
                     smgr.providers[0].name, smgr.providers[0].connection_id, debug_roots[0],
