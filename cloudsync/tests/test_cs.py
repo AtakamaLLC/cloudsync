@@ -405,8 +405,8 @@ def test_storage(storage):
     storage2 = storage_class(storage_mechanism)
     cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
-    print(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
-    print(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
+    log.debug(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
+    log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
 
     def not_dirty(s: SyncState):
         for se in s.get_all():
@@ -426,16 +426,18 @@ def test_storage(storage):
                 ret.append(e1)
         return ret
 
+    not_dirty(cs1.state)
+
     missing1 = compare_states(cs1.state, cs2.state)
     missing2 = compare_states(cs2.state, cs1.state)
+
     for e in missing1:
-        print(f"entry in 1 not found in 2 {e.pretty()}")
+        log.debug(f"entry in 1 not found in 2 {e.pretty()}")
     for e in missing2:
-        print(f"entry in 2 not found in 1 {e.pretty()}")
+        log.debug(f"entry in 2 not found in 1 {e.pretty()}")
 
     assert not missing1
     assert not missing2
-    not_dirty(cs1.state)
     new_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
     log.debug("cursor=%s %s", old_cursor, new_cursor)
     assert new_cursor is not None

@@ -571,6 +571,7 @@ class SyncState:
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
                 elif ent is not path_ents[0]:
                     path_ents[0].discard()
+                    self.storage_update(path_ents[0])
                     log.debug("discarded existing entry %s:%s", debug_sig(oid), path)
 
         if not ent:
