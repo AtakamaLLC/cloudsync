@@ -77,8 +77,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
     def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=None):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
-        self.providers[LOCAL].name = "local"
-        self.providers[REMOTE].name = "remote"
         self.translate = translate
         self.__resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
