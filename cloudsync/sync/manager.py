@@ -746,7 +746,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
             # parent_conflict code
             parent = self.providers[changed].dirname(sync[changed].path)
-            if [e for e in self.state.lookup_path(changed, parent) if e[changed].changed]:
+            if any(e[changed].changed for e in self.state.lookup_path(changed, parent)):
                 log.log(TRACE, "parent modify should happen first %s", sync[changed].path)
                 sync.punt()
                 return REQUEUE
