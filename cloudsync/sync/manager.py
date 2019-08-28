@@ -77,8 +77,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
     def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=None):
         self.state: SyncState = state
         self.providers: Tuple[Provider, Provider] = providers
-        self.providers[LOCAL].debug_name = "local"
-        self.providers[REMOTE].debug_name = "remote"
+        self.providers[LOCAL].name = "local"
+        self.providers[REMOTE].name = "remote"
         self.translate = translate
         self.__resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
@@ -144,9 +144,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
             if not info:
-                if ent[i].exists == EXISTS:
-                    log.warning("File is believed to exist, but info not found, so setting it to trashed. %s", ent, stack_info=True)
-                ent[i].exists = TRASHED
                 continue
 
             ent[i].exists = EXISTS
@@ -237,7 +234,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
-                      self.providers[changed].debug_name)
+                      self.providers[changed].name)
             sync[changed].exists = TRASHED
             return False
 
@@ -296,7 +293,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             # make the dir
             oid = self.providers[synced].mkdirs(translated_path)
             log.debug("mkdir %s as path %s oid %s",
-                      self.providers[synced].debug_name, translated_path, debug_sig(oid))
+                      self.providers[synced].name, translated_path, debug_sig(oid))
 
             # did i already have that oid? if so, chuck it
             already_dir = self.state.lookup_oid(synced, oid)
@@ -317,7 +314,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 return REQUEUE
 
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
-                      self.providers[synced].debug_name, translated_path)
+                      self.providers[synced].name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
 
     def upload_synced(self, changed, sync):
@@ -328,7 +325,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             info = self.providers[synced].upload(
                 sync[synced].oid, open(sync[changed].temp_file, "rb"))
             log.debug("upload to %s as path %s",
-                      self.providers[synced].debug_name, sync[synced].sync_path)
+                      self.providers[synced].name, sync[synced].sync_path)
             sync[synced].sync_hash = info.hash
             if info.path:
                 sync[synced].sync_path = info.path
@@ -341,7 +338,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
         except CloudFileNotFoundError:
             log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
-                      self.providers[synced].debug_name)
+                      self.providers[synced].name)
             raise NotImplementedError("TODO mkdir, and make state etc")
         except CloudFileExistsError:
             # this happens if the remote oid is a folder
@@ -356,7 +353,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
     def _create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         log.debug("create on %s as path %s",
-                  self.providers[synced].debug_name, translated_path)
+                  self.providers[synced].name, translated_path)
         try:
             info = self.providers[synced].create(
                 translated_path, open(sync[changed].temp_file, "rb"))
@@ -390,6 +387,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid, provider=self.providers[side])
 
+    def mkdirs(self, side, path):
+        oid = self.providers[side].mkdirs(path)
+        if not self.state.lookup_path(side, path):
+            self.state.update(side, DIRECTORY, oid, self.providers[side], path=path)
+
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         try:
@@ -398,7 +400,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         except CloudFileNotFoundError:
             # make parent then punt
             parent = self.providers[synced].dirname(translated_path)
-            self.providers[synced].mkdirs(parent)
+            self.mkdirs(synced, parent)
             sync.punt()
             return REQUEUE
         except CloudFileExistsError:

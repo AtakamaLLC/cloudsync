@@ -12,6 +12,7 @@ from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
 from cloudsync.types import OType
 from cloudsync.scramble import scramble
 from .util import debug_sig
+from cloudsync.log import TRACE
 
 log = logging.getLogger(__name__)
 
@@ -369,7 +370,7 @@ class SyncState:
 
         prior_oid = ent[side].oid
         path = ent[side].path
-        log.debug("side(%s) of %s oid -> %s", side, ent, debug_sig(oid))
+        log.log(TRACE, "side(%s) of %s oid -> %s", side, ent, debug_sig(oid))
 
         other = other_side(side)
         if ent[other].path:
@@ -384,7 +385,7 @@ class SyncState:
             ent.dirty = True
             self._oids[side][oid] = ent
         else:
-            log.debug("removed oid from index")
+            log.log(TRACE, "removed oid from index")
 
         other = other_side(side)
         if ent[other].path:
@@ -479,13 +480,13 @@ class SyncState:
 
         if changed:
             assert ent[side].path or ent[side].oid
-            log.debug("add %s to changeset", ent)
+            log.log(TRACE, "add %s to changeset", ent)
             self.mark_changed(side, ent)
 
         if oid:
             assert ent in self.get_all()
 
-        log.debug("updated %s", ent)
+        log.log(TRACE, "updated %s", ent)
 
     def mark_changed(self, side, ent):
         ent[side].changed = time.time()
@@ -515,13 +516,13 @@ class SyncState:
         if self._storage is not None:
             if cursor_tag in self.cursor_id and self.cursor_id[cursor_tag]:
                 updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
-                log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
+                log.log(TRACE, "storage_update_cursor cursor %s %s", cursor_tag, cursor)
             if not updated:
                 self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)
-                log.debug("storage_update_cursor cursor %s %s", cursor_tag, cursor)
+                log.log(TRACE, "storage_update_cursor cursor %s %s", cursor_tag, cursor)
 
     def storage_update(self, ent: SyncEntry):
-        log.debug("storage_update eid%s", ent.storage_id)
+        log.log(TRACE, "storage_update eid%s", ent.storage_id)
         if self._storage is not None:
             if ent.storage_id is not None:
                 if ent.discarded:
@@ -542,7 +543,7 @@ class SyncState:
         return len(self.get_all())
 
     def update(self, side, otype, oid, provider, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-        log.debug("lookup %s", debug_sig(oid))
+        log.log(TRACE, "lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
 
         prior_ent = None
@@ -558,6 +559,7 @@ class SyncState:
             log.debug("rename o:%s path:%s prior:%s", debug_sig(oid), path, debug_sig(prior_oid))
             log.debug("discarding old entry in favor of new %s", prior_ent)
             ent.discard()
+            self.storage_update(ent)
             ent = prior_ent
 
         if prior_oid and prior_oid != oid:
