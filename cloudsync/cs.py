@@ -11,6 +11,7 @@ from .log import TRACE
 
 log = logging.getLogger(__name__)
 
+
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
@@ -53,7 +54,7 @@ class CloudSync(Runnable):
         def lockattr(k, _v):
             if k not in self.__dict__:
                 raise AttributeError("%s not an attribute" % k)
-        self.__setattr__ = lockattr 
+        self.__setattr__ = lockattr
 
     @property
     def aging(self):

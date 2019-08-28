@@ -503,4 +503,3 @@ def test_sync_already_there_conflict(cs, drain: int):
     assert linfo1.hash == rinfo1.hash
 
     assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted") or cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
-

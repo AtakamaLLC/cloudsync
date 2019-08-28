@@ -213,7 +213,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 reason = data[0]['error']['errors']['reason']
         except (UnicodeDecodeError, ValueError, KeyError):
             log.warning('Invalid JSON content from response: %s', e.content)
-            
+
         return reason
 
     def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements

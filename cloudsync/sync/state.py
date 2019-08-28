@@ -11,8 +11,8 @@ from typing import Union
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
 from cloudsync.types import OType
 from cloudsync.scramble import scramble
-from .util import debug_sig
 from cloudsync.log import TRACE
+from .util import debug_sig
 
 log = logging.getLogger(__name__)
 
@@ -589,7 +589,7 @@ class SyncState:
         changes = self._changeset
         if self.shuffle:
             # at most 20 are randomized
-            changes = scramble(changes,20)
+            changes = scramble(changes, 20)
 
         earlier_than = time.time() - age
         for puntlevel in range(3):
