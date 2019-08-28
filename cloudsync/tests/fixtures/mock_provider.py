@@ -256,13 +256,15 @@ class MockProvider(Provider):
             prior_oid = object_to_rename.oid
 
         if object_to_rename.type == MockFSObject.FILE:
-            self._rename_single_object(object_to_rename, path)
+            self._rename_single_object(object_to_rename, path, event=True)
         else:  # object to rename is a directory
             old_path = object_to_rename.path
             for obj in set(self._fs_by_oid.values()):
-                if self.is_subpath(old_path, obj.path):
+                if self.is_subpath(old_path, obj.path, strict=True):
                     new_obj_path = self.replace_path(obj.path, old_path, path)
-                    self._rename_single_object(obj, new_obj_path)
+                    self._rename_single_object(obj, new_obj_path, event=False)
+            # only parent generates event
+            self._rename_single_object(object_to_rename, path, event=True)
             assert NotImplementedError()
 
         if self.oid_is_path:
@@ -274,7 +276,7 @@ class MockProvider(Provider):
 
         return object_to_rename.oid
 
-    def _rename_single_object(self, source_object: MockFSObject, destination_path):
+    def _rename_single_object(self, source_object: MockFSObject, destination_path, *, event):
         destination_path = destination_path.rstrip("/")
         # This will assume all validation has already been done, and just rename the thing
         # without trying to rename contents of folders, just rename the object itself

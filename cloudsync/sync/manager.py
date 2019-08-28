@@ -136,7 +136,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         shutil.rmtree(self.tempdir)
 
     def get_latest_state(self, ent):
-        log.debug("before update state %s", ent)
+        log.log(TRACE, "before update state %s", ent)
         for i in (LOCAL, REMOTE):
             if not ent[i].changed:
                 continue
@@ -163,7 +163,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             if ent[i].path != info.path:
                 self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
 
-        log.debug("after update state %s", ent)
+        log.log(TRACE, "after update state %s", ent)
 
     def path_conflict(self, ent):
         if ent[0].path and ent[1].path:
@@ -649,12 +649,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
                 return FINISHED
 
-#            parent_conflict = self.detect_parent_conflict(sync, changed)
-#            if parent_conflict:
-#                log.info("can't rename %s->%s yet, do parent %s first. %s", sync[changed].sync_path, sync[changed].path, parent_conflict, sync)
-#                sync.punt()
-#                return REQUEUE
-
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
@@ -677,9 +671,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
             self.update_entry(sync, synced, path=translated_path, oid=new_oid)
-            # TODO: update all the kids in a changed folder like so:
-            # if sync[changed].otype == DIRECTORY:
-            #     for ent in self.providers[changed].listdir(sync[changed].oid):
         return FINISHED
 
     def _resolve_rename(self, replace):
@@ -753,6 +744,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 log.log(TRACE, ">>>Not a cloud path %s, discard", sync[changed].path)
                 self.discard_entry(sync)
                 return FINISHED
+
+            # parent_conflict code
+            parent = self.providers[changed].dirname(sync[changed].path)
+            if [e for e in self.state.lookup_path(changed, parent) if e[changed].changed]:
+                log.log(TRACE, "parent modify should happen first %s", sync[changed].path)
+                sync.punt()
+                return REQUEUE
 
         if sync[changed].exists == TRASHED:
             self.delete_synced(sync, changed, synced)

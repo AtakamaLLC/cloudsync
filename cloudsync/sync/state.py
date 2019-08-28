@@ -10,6 +10,7 @@ from typing import Union
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
 from cloudsync.types import OType
+from cloudsync.scramble import scramble
 from .util import debug_sig
 
 log = logging.getLogger(__name__)
@@ -295,13 +296,14 @@ class SyncEntry(Reprable):
 
 
 class SyncState:
-    def __init__(self, storage: Optional[Storage] = None, tag: Optional[str] = None):
+    def __init__(self, storage: Optional[Storage] = None, tag: Optional[str] = None, shuffle=True):
         self._oids = ({}, {})
         self._paths = ({}, {})
         self._changeset = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.cursor_id = dict()
+        self.shuffle = shuffle
         if self._storage:
             storage_dict = self._storage.read_all(tag)
             for eid, ent_ser in storage_dict.items():
@@ -578,24 +580,36 @@ class SyncState:
         self.storage_update(ent)
 
     def change(self, age):
+        if not self._changeset:
+            return None
+
+        changes = self._changeset
+        if self.shuffle:
+            # at most 20 are randomized
+            changes = scramble(changes,20)
+
         earlier_than = time.time() - age
-        # for now just get a random one
         for puntlevel in range(3):
-            for e in self._changeset:
+            for e in changes:
                 if not e.discarded and e.punted == puntlevel:
                     if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
                             or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                         return e
 
-        for e in list(self._changeset):
+        ret = None
+        remove = []
+        for e in self._changeset:
             if e.discarded:
-                self._changeset.remove(e)
+                remove.append(e)
             else:
                 if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
                         or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                    return e
+                    ret = e
 
-        return None
+        for e in remove:
+            self._changeset.discard(e)
+
+        return ret
 
     def has_changes(self):
         return bool(self._changeset)
