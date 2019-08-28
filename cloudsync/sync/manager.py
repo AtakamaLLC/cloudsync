@@ -385,20 +385,19 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid, provider=self.providers[side])
 
-    def mkdirs(self, side, path):
-        oid = self.providers[side].mkdirs(path)
-        if not self.state.lookup_path(side, path):
-            self.state.update(side, DIRECTORY, oid, self.providers[side], path=path)
-
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         try:
             self._create_synced(changed, sync, translated_path)
             return FINISHED
         except CloudFileNotFoundError:
-            # make parent then punt
-            parent = self.providers[synced].dirname(translated_path)
-            self.mkdirs(synced, parent)
+            # parent presumably exists
+            parent = self.providers[changed].dirname(sync[changed].path)
+            log.debug("make %s first before %s", parent, sync[changed].path)
+            if not self.state.lookup_path(changed, parent):
+                info = self.providers[changed].info_path(parent)
+                if info:
+                    self.state.update(changed, DIRECTORY, info.oid, self.providers[changed], path=parent)
             sync.punt()
             return REQUEUE
         except CloudFileExistsError:
