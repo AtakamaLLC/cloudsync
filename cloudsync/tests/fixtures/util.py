@@ -10,7 +10,6 @@ log = logging.getLogger(__name__)
 
 log.setLevel(logging.INFO)
 
-
 class Util:
     def __init__(self):
         self.base = tempfile.mkdtemp(suffix=".cloudsync")

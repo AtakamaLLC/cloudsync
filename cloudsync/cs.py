@@ -9,11 +9,7 @@ from .event import EventManager
 from .provider import Provider
 from .log import TRACE
 
-# cloudsync logger and descendants are INFO by default
-# to override, set level after import
-
 log = logging.getLogger(__name__)
-
 
 class CloudSync(Runnable):
     def __init__(self,
