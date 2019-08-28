@@ -9,9 +9,6 @@ from .event import EventManager
 from .provider import Provider
 from .log import TRACE
 
-# cloudsync logger and descendants are INFO by default
-# to override, set level after import
-
 log = logging.getLogger(__name__)
 
 
@@ -57,7 +54,7 @@ class CloudSync(Runnable):
         def lockattr(k, _v):
             if k not in self.__dict__:
                 raise AttributeError("%s not an attribute" % k)
-        self.__setattr__ = lockattr 
+        self.__setattr__ = lockattr
 
     @property
     def aging(self):

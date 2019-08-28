@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 import logging
 import sqlite3
 from cloudsync import Storage
+from cloudsync.log import TRACE
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class SqliteStorage(Storage):
         return eid
 
     def update(self, tag: str, serialization: bytes, eid: Any) -> int:
-        log.debug("updating eid%s", eid)
+        log.log(TRACE, "updating eid%s", eid)
         db_cursor = self.db.execute('UPDATE cloud SET serialization = ? WHERE id = ? AND tag = ?',
                                     [serialization, eid, tag])
         ret = db_cursor.rowcount
@@ -41,7 +42,7 @@ class SqliteStorage(Storage):
         return ret
 
     def delete(self, tag: str, eid: Any):
-        log.debug("deleting eid%s", eid)
+        log.log(TRACE, "deleting eid%s", eid)
         db_cursor = self.db.execute('DELETE FROM cloud WHERE id = ? AND tag = ?',
                                     [eid, tag])
         if db_cursor.rowcount == 0:

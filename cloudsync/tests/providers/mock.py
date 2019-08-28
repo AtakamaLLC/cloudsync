@@ -2,6 +2,7 @@ import pytest
 
 from ..fixtures.mock_provider import MockProvider
 
+
 @pytest.fixture
 def cloudsync_provider():
     cls = MockProvider

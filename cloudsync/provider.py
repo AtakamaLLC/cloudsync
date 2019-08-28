@@ -249,7 +249,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             if ppath == path:
                 raise
             log.debug("mkdirs parent, %s", ppath)
-            oid = self.mkdirs(ppath)
+            unused_oid = self.mkdirs(ppath)
             try:
                 oid = self.mkdir(path)
                 # todo update state
