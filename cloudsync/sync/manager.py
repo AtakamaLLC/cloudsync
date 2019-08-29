@@ -826,7 +826,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 return False
 
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
-        return False
+        return True
 
     def handle_path_conflict(self, sync):
         # consistent handling
