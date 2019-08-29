@@ -85,7 +85,12 @@ class MockProvider(Provider):
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path, case_sensitive):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool):
+        """Constructor for MockProvider
+
+        :param oid_is_path: Act as a filesystem or other oid-is-path provider
+        :param case_sensitive: Paths are case sensistive
+        """
         super().__init__()
         log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
         self.oid_is_path = oid_is_path
@@ -111,11 +116,17 @@ class MockProvider(Provider):
         self._latest_cursor = len(self._events) - 1
 
     def _get_by_oid(self, oid):
-        # TODO: normalize the path, support case insensitive lookups, etc
         self._api()
         return self._fs_by_oid.get(oid, None)
 
+    def normalize(self, path):
+        if self.case_sensitive:
+            return path
+        else:
+            return path.lower()
+
     def _get_by_path(self, path):
+        path = self.normalize(path)
         # TODO: normalize the path, support case insensitive lookups, etc
         self._api()
         return self._fs_by_path.get(path, None)
@@ -123,13 +134,13 @@ class MockProvider(Provider):
     def _store_object(self, fo: MockFSObject):
         # TODO: support case insensitive storage
         assert fo.path == fo.path.rstrip("/")
-        self._fs_by_path[fo.path] = fo
+        self._fs_by_path[self.normalize(fo.path)] = fo
         self._fs_by_oid[fo.oid] = fo
 
     def _unstore_object(self, fo: MockFSObject):
         # TODO: do I need to check if the path and ID exist before del to avoid a key error,
         #  or perhaps just catch and swallow that exception?
-        del self._fs_by_path[fo.path]
+        del self._fs_by_path[self.normalize(fo.path)]
         del self._fs_by_oid[fo.oid]
 
     def _translate_event(self, pe: MockEvent, cursor) -> Event:
@@ -231,7 +242,12 @@ class MockProvider(Provider):
 
         if not (object_to_rename and object_to_rename.exists):
             raise CloudFileNotFoundError(oid)
+
         possible_conflict = self._get_by_path(path)
+
+        if possible_conflict and possible_conflict.oid == oid:
+            possible_conflict = None
+
         self._verify_parent_folder_exists(path)
         if possible_conflict and possible_conflict.exists:
             if possible_conflict.type != object_to_rename.type:
@@ -245,7 +261,7 @@ class MockProvider(Provider):
                     pass  # Folder is empty, rename over it no problem
             else:
                 raise CloudFileExistsError(path)
-            log.debug("secretly deleting folder%s", path)
+            log.debug("secretly deleting empty folder %s", path)
             self.delete(possible_conflict.oid)
 
         if object_to_rename.path == path:
@@ -265,14 +281,11 @@ class MockProvider(Provider):
                     self._rename_single_object(obj, new_obj_path, event=False)
             # only parent generates event
             self._rename_single_object(object_to_rename, path, event=True)
-            assert NotImplementedError()
 
         if self.oid_is_path:
             assert object_to_rename.oid != prior_oid, "rename %s to %s" % (prior_oid, path)
         else:
             assert object_to_rename.oid == oid, "rename %s to %s" % (object_to_rename.oid, oid)
-
-        self._register_event(MockEvent.ACTION_RENAME, object_to_rename, prior_oid)
 
         return object_to_rename.oid
 
@@ -396,6 +409,9 @@ def mock_provider_generator(request):
             request.param[0] if oid_is_path is None else oid_is_path,
             request.param[1] if case_sensitive is None else case_sensitive)
 
+@pytest.fixture
+def mock_provider_creator():
+    return mock_provider_instance
 
 def test_mock_basic():
     """

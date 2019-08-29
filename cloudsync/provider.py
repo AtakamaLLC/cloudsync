@@ -165,6 +165,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         else:
             parts = re.split(r'[%s]+' % self.sep, norm_path)
         norm_path = self.join(*parts)
+        if not self.case_sensitive:
+            norm_path = norm_path.lower()
         return norm_path
 
     def is_subpath(self, folder, target, sep=None, alt_sep=None, strict=False):

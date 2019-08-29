@@ -26,6 +26,11 @@ def fixture_cs(mock_provider_generator):
 
     cs.done()
 
+def make_cs(mock_provider_creator, left, right):
+    roots = ("/local", "/remote")
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+    return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, sleep=None)
 
 @pytest.fixture(name="multi_cs")
 def fixture_multi_cs(mock_provider_generator):
@@ -484,8 +489,8 @@ def test_sync_already_there_conflict(cs, drain: int):
 
     cs.providers[LOCAL].mkdir(local_parent)
     cs.providers[REMOTE].mkdir(remote_parent)
-    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
-    rinfo2 = cs.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"), None)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    cs.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"), None)
 
     if drain is not None:
         # one of the event managers is not reporting events
@@ -503,3 +508,36 @@ def test_sync_already_there_conflict(cs, drain: int):
     assert linfo1.hash == rinfo1.hash
 
     assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted") or cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+@pytest.mark.parametrize('right', (True, False), ids=["right_cs", "right_in"])
+@pytest.mark.parametrize('left', (True, False), ids=["left_cs", "left_in"])
+def test_sync_rename_folder_case(mock_provider_creator, left, right):
+    cs = make_cs(mock_provider_creator, (True, left), (False, right))
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/a"
+    local_path2 = "/local/a/b"
+    local_path3 = "/local/A"
+    remote_path1 = "/remote/A"
+    remote_path2 = "/remote/A/b"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    ldir = cs.providers[LOCAL].mkdir(local_path1)
+    linfo = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello"), None)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    log.debug("--- cs: %s ---", [e.case_sensitive for e in cs.providers])
+    cs.providers[LOCAL].log_debug_state()
+    cs.providers[REMOTE].log_debug_state()
+
+    cs.providers[LOCAL].rename(ldir, local_path3)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+    rinfo2 = cs.providers[REMOTE].info_path(remote_path2)
+
+    assert rinfo1 and rinfo2

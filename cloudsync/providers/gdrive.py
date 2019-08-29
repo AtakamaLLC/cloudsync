@@ -39,7 +39,7 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
 
 
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
-    case_sensitive = True
+    case_sensitive = False
     default_sleep = 15
 
     provider = 'googledrive'
@@ -339,6 +339,21 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
                 event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
 
+                remove = []
+                for cpath, coid in self._ids.items():
+                    if coid == oid:
+                        if cpath != path:
+                            remove.append(cpath)
+
+                    if path and otype == DIRECTORY and self.is_subpath(path, cpath):
+                        remove.append(cpath)
+
+                for r in remove:
+                    self._ids.pop(r, None)
+
+                if path:
+                    self._ids[path] = oid
+
                 log.debug("converted event %s as %s", change, event)
 
                 yield event
@@ -495,23 +510,24 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     # Folder is empty, rename over it no problem
                     self.delete(possible_conflict.oid)
 
+#            if possible_conflict:
+#                self._ids.pop(path, None)
+
         if not old_path:
             for cpath, coid in list(self._ids.items()):
                 if coid == oid:
                     old_path = cpath
 
-        if not old_path:
-            old_path = self._path_oid(oid)
-
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
         for cpath, coid in list(self._ids.items()):
-            if self.is_subpath(old_path, cpath):
-                new_cpath = self.replace_path(cpath, old_path, path)
+            relative = self.is_subpath(old_path, cpath)
+            if relative:
+                new_cpath = self.join(path, relative)
                 self._ids.pop(cpath)
-                self._ids[new_cpath] = oid
+                self._ids[new_cpath] = coid
 
-        log.debug("renamed %s", body)
+        log.debug("renamed %s -> %s", oid, body)
 
         return oid
 
@@ -607,7 +623,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, mimeType, trashed)',
+                            fields='files(id, md5Checksum, parents, mimeType, trashed, name)',
                             pageToken=None)
         except CloudFileNotFoundError:
             return None
@@ -625,6 +641,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         oid = ent['id']
         pids = ent['parents']
         fhash = ent.get('md5Checksum')
+        name = ent.get('name')
+
+        # query is insensitive to certain features of the name
+        # ....cache correct basename
+        path = self.join(self.dirname(path), name)
+
         if ent.get('mimeType') == self._folder_mime_type:
             otype = DIRECTORY
         else:
