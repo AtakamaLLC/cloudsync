@@ -738,10 +738,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         sync.discard()
         self.state.storage_update(sync)
 
-    def embrace_change(self, sync, changed, synced):
+    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements
         if sync.discarded:
             log.warning("discarded!")
-            return
+            return FINISHED
         log.debug("embrace %s", sync)
 
         if sync[changed].path:
