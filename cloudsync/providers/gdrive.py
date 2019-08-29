@@ -304,7 +304,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self.__cursor = self.latest_cursor
         return self.__cursor
 
-    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals
+    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
         page_token = self.current_cursor
         while page_token is not None:
             # log.debug("looking for events, timeout: %s", timeout)
@@ -509,9 +509,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 except StopIteration:
                     # Folder is empty, rename over it no problem
                     self.delete(possible_conflict.oid)
-
-#            if possible_conflict:
-#                self._ids.pop(path, None)
 
         if not old_path:
             for cpath, coid in list(self._ids.items()):
