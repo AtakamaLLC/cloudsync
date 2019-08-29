@@ -667,10 +667,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if parent == path:
             return self._ids.get(parent)
 
-        if not self.exists_path(parent):
+        info = self.info_path(parent)
+        if not info:
             raise CloudFileNotFoundError("parent %s must exist" % parent)
 
-        return self._ids[parent]
+        return self._ids[info.path]
 
     def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]:
         """convert oid to path"""

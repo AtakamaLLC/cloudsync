@@ -541,3 +541,6 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
     rinfo2 = cs.providers[REMOTE].info_path(remote_path2)
 
     assert rinfo1 and rinfo2
+
+    assert rinfo1.path == remote_path1
+    assert rinfo2.path == remote_path2

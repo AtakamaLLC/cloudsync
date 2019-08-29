@@ -645,7 +645,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             else:
                 return self.create_synced(changed, sync, translated_path)
         else:  # handle rename
-            if self.providers[synced].paths_match(sync[synced].sync_path, translated_path):
+            if sync[synced].sync_path == translated_path:
                 return FINISHED
 
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
