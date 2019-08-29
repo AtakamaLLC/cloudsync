@@ -510,9 +510,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     # Folder is empty, rename over it no problem
                     self.delete(possible_conflict.oid)
 
-#            if possible_conflict:
-#                self._ids.pop(path, None)
-
         if not old_path:
             for cpath, coid in list(self._ids.items()):
                 if coid == oid:
