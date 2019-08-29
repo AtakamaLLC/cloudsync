@@ -1203,9 +1203,6 @@ def test_delete_doesnt_cross_oids(provider: ProviderMixin):
     with pytest.raises(Exception):
         provider.upload(temp_name, BytesIO(b"test2"))
 
-
-# TODO: this test FAILS on gdrive. remove the "manual" mark, and fix the problem
-@pytest.mark.manual
 def test_rename_case_change(provider: ProviderMixin):
     temp_namel = provider.temp_name().lower()
     temp_nameu = temp_namel.upper()
