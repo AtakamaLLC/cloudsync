@@ -385,7 +385,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
             if self.paths_match(old_info.path.lower(), path.lower()):
                 new_info = self.info_path(path)
-                if oid == new_info.oid and self.normalize_path(old_info.path) != self.normalize_path(path):
+                if oid == new_info.oid and old_info.path != path:
                     temp_path = path + "." + os.urandom(16).hex()
                     self._api('files_move_v2', oid, temp_path)
                     self.rename(oid, path)
