@@ -1212,3 +1212,16 @@ def test_rename_case_change(provider: ProviderMixin):
     assert new_oid
     infou = provider.info_oid(new_oid)
     assert infou.path == temp_nameu
+    infopu = provider.info_path(temp_nameu)
+    infopl = provider.info_path(temp_namel)
+
+    assert infopu
+    assert infopu.path == temp_nameu
+
+    if provider.case_sensitive:
+        assert not infopl
+    else:
+        assert infopl
+        assert infopl.path == temp_nameu
+
+

@@ -460,6 +460,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 otype = FILE
                 fhash = res.content_hash
 
+            path = res.path_display or path
             return OInfo(otype, oid, fhash, path)
         except CloudFileNotFoundError:
             return None
