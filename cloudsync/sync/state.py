@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import traceback
+from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set
@@ -303,6 +304,7 @@ class SyncState:
         self._changeset = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
+        self.lock = RLock()
         self.cursor_id = dict()
         self.shuffle = shuffle
         if self._storage:

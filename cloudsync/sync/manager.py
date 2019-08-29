@@ -109,25 +109,26 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         self.__resolve_conflict = resolver
 
     def do(self):
-        sync: SyncEntry = self.state.change(self.aging)
+        with self.state.lock:
+            sync: SyncEntry = self.state.change(self.aging)
 
-        if sync:
-            try:
-                self.sync(sync)
-                self.state.storage_update(sync)
-                self.backoff = self.min_backoff
-            except CloudTemporaryError as e:
-                log.error(
-                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
-                sync.punt()
-                time.sleep(self.backoff)
-                self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
-            except Exception as e:
-                log.exception(
-                    "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
-                sync.punt()
-                time.sleep(self.backoff)
-                self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
+            if sync:
+                try:
+                    self.sync(sync)
+                    self.state.storage_update(sync)
+                    self.backoff = self.min_backoff
+                except CloudTemporaryError as e:
+                    log.error(
+                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                    sync.punt()
+                    time.sleep(self.backoff)
+                    self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
+                except Exception as e:
+                    log.exception(
+                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
+                    sync.punt()
+                    time.sleep(self.backoff)
+                    self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -324,6 +325,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 sync[synced].oid, open(sync[changed].temp_file, "rb"))
             log.debug("upload to %s as path %s",
                       self.providers[synced].name, sync[synced].sync_path)
+            sync[synced].hash = info.hash
             sync[synced].sync_hash = info.hash
             if info.path:
                 sync[synced].sync_path = info.path
@@ -334,6 +336,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
             self.update_entry(
                 sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
+            return True
+        except FileNotFoundError:
+            return False
         except CloudFileNotFoundError:
             log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].name)
@@ -345,7 +350,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             defer_ent, defer_side, replace_ent, replace_side \
                 = self.state.split(sync, self.providers)
 
-            self.handle_split_conflict(
+            return self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
 
     def _create_synced(self, changed, sync, translated_path):
@@ -603,10 +608,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
         log.debug("split conflict found : %s", other_untrashed_ents)
 
-        self.handle_split_conflict(
+        return self.handle_split_conflict(
             other_untrashed_ents[0], synced, sync, changed)
-
-        return True
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
         if not sync[changed].path:
@@ -641,7 +644,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 return REQUEUE
 
             if sync[synced].oid:
-                self.upload_synced(changed, sync)
+                if not self.upload_synced(changed, sync):
+                    return REQUEUE
             else:
                 return self.create_synced(changed, sync, translated_path)
         else:  # handle rename
@@ -735,6 +739,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         self.state.storage_update(sync)
 
     def embrace_change(self, sync, changed, synced):
+        if sync.discarded:
+            log.warning("discarded!")
+            return
         log.debug("embrace %s", sync)
 
         if sync[changed].path:
@@ -763,12 +770,14 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         if sync[changed].hash != sync[changed].sync_hash:
             # not a new file, which means we must have last sync info
 
-            log.debug("needs upload: %s index: %s", sync, synced)
+            log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
             assert sync[synced].oid
 
-            self.download_changed(changed, sync)
-            self.upload_synced(changed, sync)
+            if not self.download_changed(changed, sync):
+                return REQUEUE
+            if not self.upload_synced(changed, sync):
+                return REQUEUE
             return FINISHED
 
         log.debug("nothing changed %s", sync)
@@ -799,20 +808,25 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         # split the sync in two
         defer_ent, defer_side, replace_ent, replace_side \
             = self.state.split(sync, self.providers)
-        self.handle_split_conflict(
+        return self.handle_split_conflict(
             defer_ent, defer_side, replace_ent, replace_side)
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
         if defer_ent[defer_side].otype == FILE:
-            self.download_changed(defer_side, defer_ent)
-            with open(defer_ent[defer_side].temp_file, "rb") as f:
-                dhash = self.providers[replace_side].hash_data(f)
-                if dhash == replace_ent[replace_side].hash:
-                    log.debug("same hash as remote, discard entry")
-                    self.discard_entry(replace_ent)
-                    return
+            if not self.download_changed(defer_side, defer_ent):
+                return False
+            try:
+                with open(defer_ent[defer_side].temp_file, "rb") as f:
+                    dhash = self.providers[replace_side].hash_data(f)
+                    if dhash == replace_ent[replace_side].hash:
+                        log.debug("same hash as remote, discard entry")
+                        self.discard_entry(replace_ent)
+                        return True
+            except FileNotFoundError:
+                return False
 
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
+        return False
 
     def handle_path_conflict(self, sync):
         # consistent handling

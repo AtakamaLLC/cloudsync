@@ -5,7 +5,7 @@ from typing import List
 
 from .fixtures import MockProvider, MockStorage
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.event import EventManager
 
 from .test_sync import WaitFor, RunUntilHelper
@@ -230,6 +230,52 @@ def test_sync_create_delete_same_name(cs):
     bio = BytesIO()
     cs.providers[REMOTE].download(rinfo.oid, bio)
     assert bio.getvalue() == b'goodbye'
+
+@pytest.mark.repeat(10)
+def test_sync_create_delete_same_name_heavy(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+
+    import time, threading
+
+    def creator():
+        i = 0
+        while i < 10:
+            try:
+                linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file" + bytes(str(i),"utf8")))
+                i += 1
+            except CloudFileExistsError:
+                linfo1 = cs.providers[LOCAL].info_path(local_path1)
+                if linfo1:
+                    cs.providers[LOCAL].delete(linfo1.oid)
+            time.sleep(0.01)
+    
+    def done():
+        bio = BytesIO()
+        rinfo = cs.providers[REMOTE].info_path(remote_path1)
+        if rinfo:
+            cs.providers[REMOTE].download(rinfo.oid, bio)
+            return bio.getvalue() == b'file' + bytes(str(9),"utf8")
+        return False
+
+    thread = threading.Thread(target=creator, daemon=True)
+    thread.start()
+
+    cs.run(until=done, timeout=3)
+
+    thread.join()
+
+    assert done()
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
 
 def test_sync_two_conflicts(cs):
