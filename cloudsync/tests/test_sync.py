@@ -747,5 +747,40 @@ def _test_rename_folder_with_kids(sync, source, dest):
 def test_rename_folder_with_kids(sync, ordering):
     _test_rename_folder_with_kids(sync, *ordering)
 
+def test_aging(sync):
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+    local_file2 = "/local/file2"
+    remote_file2 = "/remote/file2"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+
+    # aging slows things down
+    sync.aging = 0.2
+    sync.change_state(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.do()
+    sync.do()
+    sync.do()
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+    assert not sync.providers[REMOTE].info_path(local_file1)
+
+    sync.run_until_found((REMOTE, remote_file1), timeout=2)
+
+    assert sync.providers[REMOTE].info_path(remote_file1)
+
+    sync.aging = 0
+    linfo2 = sync.providers[LOCAL].create(local_file2, BytesIO(b"hello"))
+    sync.change_state(LOCAL, FILE, path=local_file2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.do()
+    sync.do()
+    sync.do()
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+    assert sync.providers[REMOTE].info_path(remote_file2)
+    # but withotu it, things are fast
+
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (not sure what this means EA 8/26)
