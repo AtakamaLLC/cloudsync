@@ -231,10 +231,7 @@ class SyncEntry(Reprable):
         new_oid = val._oid
 
         # old value is no longer in charge of anything
-        log.debug(val.parent)
-        log.debug(self.parent._paths[side])
         val.path = None
-        log.debug(self.parent._paths[side])
         val.oid = None
 
         # new value rulez
@@ -246,19 +243,12 @@ class SyncEntry(Reprable):
         assert type(val) is SideState
         assert val.side == side
 
-        log.debug(self._parent._paths[side])
-
-        log.debug("SETTING PATH TO %s from %s", val._path, self[side]._path)
-        log.debug("SETTING OID TO %s from %s", val._oid, self[side]._oid)
-
         if val._oid is None:
             self.updated(side, "path", val._path)
             self.updated(side, "oid", val._oid)
         else:
             self.updated(side, "oid", val._oid)
             self.updated(side, "path", val._path)
-
-        log.debug(self._parent._paths[side])
 
         self.updated(side, "changed", val._changed)
 
@@ -434,9 +424,7 @@ class SyncState:
             return
 
         if prior_path:
-            log.debug(self._paths[side])
             prior_ent = self._paths[side][prior_path].pop(ent[side].oid)
-            log.debug("prior_ent %s, current ent %s", prior_ent, ent)
             assert prior_ent is ent
             if not self._paths[side][prior_path]:
                 del self._paths[side][prior_path]
@@ -473,7 +461,9 @@ class SyncState:
                         # b) have a special oid_from_path function that is guaranteed not to be "online"
                         #    assert not _api() called, etc.
                         new_info = provider.info_path(new_path)
-                        sub[side].oid = new_info.oid
+                        if new_info:
+                            sub[side].oid = new_info.oid
+
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
@@ -563,9 +553,11 @@ class SyncState:
         if oid is not None:
             if ent.discarded:
                 if self.providers[side].oid_is_path:
-                    if "conflicted" not in path: 
-                        log.log(TRACE, "undiscarding old entry %s", ent)
-                        ent.discarded = False
+                    if "conflicted" not in path:
+                        if otype:
+                            log.log(TRACE, "dropping old entry %s, and making new", ent)
+                            ent = SyncEntry(self, otype)
+
             ent[side].oid = oid
             if oid and not ent.discarded:
                 assert ent in self.get_all()
@@ -658,30 +650,21 @@ class SyncState:
         log.log(TRACE, "lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
 
-        if not ent:
-            for e in self.get_all():
-                if e[side].oid == oid:
-                    log.error("index is f*cked")
-                    ent = e
-                    ent.discarded = False
-
         prior_ent = None
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
-            if not ent:
+            if not ent and prior_ent and not prior_ent.discarded:
                 ent = prior_ent
-                if ent:
-                    ent.discarded = False
-                    prior_ent = None
+                prior_ent = None
 
-        if ent and prior_ent:
-            # oid_is_path conflict
-            # the new entry has the same name as an old entry
-            log.debug("rename o:%s path:%s prior:%s", debug_sig(oid), path, debug_sig(prior_oid))
-            log.debug("discarding old entry in favor of new %s", prior_ent)
-            ent.discard()
-            self.storage_update(ent)
-            ent = prior_ent
+#        if ent and prior_ent:
+#            # oid_is_path conflict
+#            # the new entry has the same name as an old entry
+#            log.debug("rename o:%s path:%s prior:%s", debug_sig(oid), path, debug_sig(prior_oid))
+#            log.debug("discarding new entry in favor of old %s", prior_ent)
+#            ent.discard()
+#            self.storage_update(ent)
+#            ent = prior_ent
 
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
@@ -700,9 +683,7 @@ class SyncState:
         new = False
         if not ent:
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
-            log.debug(self.pretty_print())
             ent = SyncEntry(self, otype)
-            log.debug("new entry %s", ent)
             new=True
 
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
@@ -813,16 +794,12 @@ class SyncState:
         replace_ent[replace] = ent[replace]
         assert replace_ent[replace].oid
 
-        log.debug(self._paths[replace])
-
         if ent[replace].oid:
             assert replace_ent in self.get_all()
 
         if defer_ent[replace].path:
             assert self.lookup_path(replace, defer_ent[replace].path)
 
-        log.debug(self._paths[replace])
-        
         defer_ent[replace] = SideState(defer_ent, replace, ent[replace].otype)              # clear out
 
         # fix indexes, so the defer ent no longer has replace stuff

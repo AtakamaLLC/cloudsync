@@ -381,10 +381,11 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         log.debug("create on %s as path %s",
                   self.providers[synced].name, translated_path)
         try:
-            info = self.providers[synced].create(
-                translated_path, open(sync[changed].temp_file, "rb"))
+            with open(sync[changed].temp_file, "rb") as f:
+                info = self.providers[synced].create(translated_path, f)
             log.debug("created %s", info)
         except CloudFileExistsError:
+            log.debug("exists error %s", translated_path)
             info = self.providers[synced].info_path(translated_path)
             if not info:
                 raise
@@ -393,6 +394,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             if existing_hash != info.hash:
                 raise
             log.debug("use existing %s", info)
+        except Exception as e:
+            log.debug("failed to create %s, %s", translated_path, e)
+            raise
 
         assert info.hash
         assert sync[changed].hash
@@ -694,8 +698,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             log.debug("rename %s %s", sync[synced].sync_path, translated_path)
             try:
                 new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
-            except CloudFileNotFoundError:
-                log.debug("ERROR: can't rename for now %s", sync)
+            except CloudFileNotFoundError as e:
+                log.debug("ERROR: can't rename for now %s: %s", sync, e)
                 if sync.punted > 5:
                     log.exception("punted too many times, giving up")
                     return FINISHED

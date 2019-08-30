@@ -490,6 +490,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         info = self._info_oid(oid)
         if info is None:
+            log.debug("can't rename, oid doesn't exist %s", oid)
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
         old_path = info.path
@@ -515,7 +516,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if coid == oid:
                     old_path = cpath
 
-        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
+        try:
+            self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
+        except CloudFileNotFoundError:
+            log.debug("can't rename, try without removal")
+            # no idea why... sometimes a file can get "disc
+            self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=[], fields='id')
+
 
         for cpath, coid in list(self._ids.items()):
             relative = self.is_subpath(old_path, cpath)
@@ -628,10 +635,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not res['files']:
             return None
 
-        if res.get('trashed'):
-            return None
-
         ent = res['files'][0]
+
+        if ent.get('trashed'):
+            # TODO WRITE TEST fOR THIS, CUSES BUGZ
+            return None
 
         log.debug("res is %s", res)
 
