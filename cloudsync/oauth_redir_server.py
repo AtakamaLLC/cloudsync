@@ -3,6 +3,7 @@ import sys
 import socket
 import threading
 import errno
+from typing import Callable
 # from src import config
 from .apiserver import ApiServer
 # from src.osutil import is_windows
@@ -27,10 +28,14 @@ class OAuthRedirServer:
     PORT_MAX = 52450
     GUI_TIMEOUT = 15
 
-    def __init__(self, on_success, display_name, use_predefined_ports=False, on_failure=None):
+    def __init__(self, on_success, display_name, use_predefined_ports=False, on_failure=None,
+                 success_html_generator: Callable[[str], str] = None,
+                 error_html_generator: Callable[[str, str], str] = None):
         self.on_success = on_success
         self.on_failure = on_failure
         self.display_name = display_name
+        self.success_html_generator = success_html_generator
+        self.error_html_generator = error_html_generator
         # self.template = os.path.join(config.get().assetdir, 'oauth_result_template.html')
 
         log.debug('Creating oauth redir server')
@@ -88,12 +93,21 @@ class OAuthRedirServer:
             log.exception('Failed to authenticate')
             err = 'Unknown error: %s' % e
 
-        return self.auth_failure(err) if err else self.auth_success()
+        resp = self.auth_failure(err) if err else self.auth_success()
+        log.info("About to respond with this")
+        log.info(resp)
+        return resp
 
     def auth_success(self):
+        if self.success_html_generator:
+            log.info('Responding with custom success response generator')
+            return self.success_html_generator(self.display_name)
         return self.display_name + ": OAuth Success"
 
     def auth_failure(self, msg):
+        if self.error_html_generator:
+            log.info('Responding with custom error response generator')
+            return self.error_html_generator(self.display_name, msg)
         return self.display_name + ": OAuth Failure:" + msg
 
     def shutdown(self):

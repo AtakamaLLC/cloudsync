@@ -5,7 +5,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional
+from typing import Generator, Optional, Callable
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -76,14 +76,26 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_display_name(self):
         return self.name
 
-    def initialize(self, localhost_redir=True):
+    def initialize(self, localhost_redir=True,
+                   success_html_generator: Callable[[str], str] = None,
+                   error_html_generator: Callable[[str, str], str] = None):
+        """
+        :param localhost_redir: If True, a local web server is initialized to perform the oauth automatically
+        :param success_html_generator: A function which returns the HTML to render as the response for successful
+            oauth where the one and only parameter is the display name of the provider.
+        :param error_html_generator:  A function which returns the HTML to render as the response for a failed
+            oauth where the first parameter is the display name of the provider and the second is the error message.
+        :return: A two-tuple of a bool if localhost redirection is being used and the auth url for GDrive
+        """
         if localhost_redir:
             try:
                 if not self._redir_server:
                     self._redir_server = OAuthRedirServer(self._on_oauth_success,
                                                           self.get_display_name(),
                                                           use_predefined_ports=False,
-                                                          on_failure=self._on_oauth_failure)
+                                                          on_failure=self._on_oauth_failure,
+                                                          success_html_generator=success_html_generator,
+                                                          error_html_generator=error_html_generator)
                 self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                                  client_secret=self._client_secret,
                                                  scope=self._scope,
@@ -102,6 +114,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return localhost_redir, url
 
+    def interrupt_oauth(self):
+        if self._redir_server:
+            self._redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
+            self._redir_server = None
+        self._flow = None
+        self._oauth_done.clear()
+
     def _on_oauth_success(self, auth_dict):
         auth_string = auth_dict['code'][0]
         try:
@@ -117,9 +136,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         log.error("oauth failure: %s", err)
         self._oauth_done.set()
 
-    def authenticate(self):
+    def authenticate(self,
+                     localhost_redir=True,
+                     success_html_generator: Callable[[str], str] = None,
+                     error_html_generator: Callable[[str, str], str] = None):
         try:
-            self.initialize()
+            self.initialize(
+                localhost_redir=localhost_redir,
+                success_html_generator=success_html_generator,
+                error_html_generator=error_html_generator
+            )
             self._oauth_done.wait()
             return {"refresh_token": self.refresh_token,
                     "api_key": self.api_key,

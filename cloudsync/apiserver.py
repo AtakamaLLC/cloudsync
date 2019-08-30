@@ -85,6 +85,8 @@ class ApiServer:
 
         self.__started = False
         self.__routes = {}
+        self.__shutting_down = False
+        self.__shutdown_lock = threading.Lock()
 
         # routed methods map into handler
         for meth in type(self).__dict__.values():
@@ -125,6 +127,8 @@ class ApiServer:
     def shutdown(self):
         try:
             if self.__started:
+                with self.__shutdown_lock:
+                    self.__shutting_down = True
                 timeout = time.time() + 2
                 for channel in self.__server.active_channels.values():
                     channel: HTTPChannel
@@ -179,16 +183,19 @@ class ApiServer:
             if handler_tmp:
                 handler, content_type = handler_tmp
                 try:
-                    response = handler(env, info)
-                    if response is None:
-                        response = ""
-                    if isinstance(response, dict):
-                        response = json.dumps(response)
-                    response = bytes(str(response), "utf-8")
-                    headers = self.__headers + [('Content-Type', content_type),
-                                                ("Content-Length", str(len(response)))]
-                    start_response('200 OK', headers)
-                    yield response
+                    with self.__shutdown_lock:
+                        if self.__shutting_down:
+                            raise ConnectionAbortedError('Cannot handle request while shutting down')
+                        response = handler(env, info)
+                        if response is None:
+                            response = ""
+                        if isinstance(response, dict):
+                            response = json.dumps(response)
+                        response = bytes(str(response), "utf-8")
+                        headers = self.__headers + [('Content-Type', content_type),
+                                                    ("Content-Length", str(len(response)))]
+                        start_response('200 OK', headers)
+                        yield response
                 except ApiError:
                     raise
                 except ConnectionAbortedError as e:
