@@ -15,7 +15,7 @@ from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
 
-from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE
+from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 from .util import debug_sig
 
 log = logging.getLogger(__name__)
@@ -154,7 +154,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                     ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
 
                 if ent[i].exists == EXISTS:
-                    assert ent[i].hash is not None, "Cannot sync if hash is None"
+                    if ent[i].hash is None:
+                        log.warning("Cannot sync %s, since hash is None", ent[i])
 
             if ent[i].path != info.path:
                 self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
@@ -162,7 +163,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         log.log(TRACE, "after update state %s", ent)
 
     def path_conflict(self, ent):
-        if ent[0].path and ent[1].path:
+        # both are synced
+        if ent[0].path and ent[1].path and ent[0].sync_hash and ent[1].sync_hash:
             return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
                 not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
@@ -171,10 +173,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         self.get_latest_state(sync)
 
         if sync.hash_conflict():
+            log.debug("handle hash conflict")
             self.handle_hash_conflict(sync)
             return
 
         if self.path_conflict(sync):
+            log.debug("handle path conflict")
             self.handle_path_conflict(sync)
             return
 
@@ -182,13 +186,24 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
         for i in (LOCAL, REMOTE):
             if sync[i].changed:
+                if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
+                    log.debug("ignore %s", sync)
+                    # no hash for file, ignore it
+                    self.finished(i, sync)
+                    break
+                    
                 response = self.embrace_change(sync, i, other_side(i))
                 if response == FINISHED:
                     self.finished(i, sync)
                 break
+#        self.state.repair_index()
+#        self.state.assert_index_is_correct()
 
     def temp_file(self):
-        # prefer big random name over NamedTemp which can infinite loop in odd situations!
+        if not os.path.exists(self.tempdir):
+            # in case user deletes it... recreate
+            self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
+        # prefer big random name over NamedTemp which can infinite loop
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         return ret
@@ -256,6 +271,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
         if ents:
             if not sync.punted:
+                log.debug("punt mkdir")
                 sync.punt()
                 return REQUEUE
 
@@ -325,6 +341,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 sync[synced].oid, open(sync[changed].temp_file, "rb"))
             log.debug("upload to %s as path %s",
                       self.providers[synced].name, sync[synced].sync_path)
+
             sync[synced].hash = info.hash
             sync[synced].sync_hash = info.hash
             if info.path:
@@ -340,15 +357,21 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         except FileNotFoundError:
             return False
         except CloudFileNotFoundError:
-            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff",
-                      self.providers[synced].name)
-            raise NotImplementedError("TODO mkdir, and make state etc")
+            info = self.providers[synced].info_oid(sync[synced].oid)
+
+            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff, info: %s",
+                      self.providers[synced].name, info)
+
+            if not info:
+                log.debug("convert to unsynced")
+                sync[synced].exists = TRASHED
+            return False
         except CloudFileExistsError:
             # this happens if the remote oid is a folder
             log.debug("split bc upload to folder")
 
             defer_ent, defer_side, replace_ent, replace_side \
-                = self.state.split(sync, self.providers)
+                = self.state.split(sync)
 
             return self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
@@ -371,6 +394,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 raise
             log.debug("use existing %s", info)
 
+        assert info.hash
+        assert sync[changed].hash
         sync[synced].sync_hash = info.hash
         if info.path:
             sync[synced].sync_path = info.path
@@ -383,12 +408,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
     def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin
         # updates entry without marking as changed unless explicit
         # used internally
-        self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype, provider=self.providers[side])
+        self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype)
 
     def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event
         # used only for testing
-        self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid, provider=self.providers[side])
+        self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
     def create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
@@ -399,10 +424,19 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             # parent presumably exists
             parent = self.providers[changed].dirname(sync[changed].path)
             log.debug("make %s first before %s", parent, sync[changed].path)
-            if not self.state.lookup_path(changed, parent):
+            ents = self.state.lookup_path(changed, parent)
+            if not ents: 
                 info = self.providers[changed].info_path(parent)
                 if info:
-                    self.state.update(changed, DIRECTORY, info.oid, self.providers[changed], path=parent)
+                    self.state.update(changed, DIRECTORY, info.oid, path=parent)
+                else:
+                    log.info("no info and no dir, ignoring?")
+
+            else:
+                if not ents[0][changed].changed:
+                    self.update_entry(ents[0], changed, ents[0][changed].oid, changed=True)
+                    log.debug("updated entry %s", parent)
+                
             sync.punt()
             return REQUEUE
         except CloudFileExistsError:
@@ -496,6 +530,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             ent1 = defer_ent[ent1.side]
             ent2 = defer_ent[ent2.side]
 
+            assert info2.hash
+            assert info1.hash
             ent2.sync_hash = info2.hash
             ent2.sync_path = info2.path
             ent1.sync_hash = info1.hash
@@ -528,6 +564,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                     fh.seek(0)
                     info2 = self.providers[this.side].upload(this.oid, fh)
                     this.hash = info2.hash
+                    assert info2.hash
                     that.sync_hash = that.hash
                     that.sync_path = that.path
                     this.sync_hash = this.hash
@@ -548,7 +585,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             sorted_states = sorted(side_states, key=lambda e: e.side)
             replace_side = other_side(defer)
             replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
-            self.discard_entry(replace_ent)
+            if replace_ent:
+                self.discard_entry(replace_ent)
         else:
             # both sides were modified....
             self.__resolver_merge_upload(side_states, fh, keep)
@@ -631,6 +669,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             # never synced this before, maybe there's another local path with
             # the same name already?
             if self.check_disjoint_create(sync, changed, synced, translated_path):
+                log.debug("disjoint, requeue")
                 return REQUEUE
 
         if sync.is_creation(changed):
@@ -643,7 +682,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             if not self.download_changed(changed, sync):
                 return REQUEUE
 
-            if sync[synced].oid:
+            if sync[synced].oid and sync[synced].exists != TRASHED:
                 if not self.upload_synced(changed, sync):
                     return REQUEUE
             else:
@@ -661,6 +700,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                     log.exception("punted too many times, giving up")
                     return FINISHED
                 else:
+                    log.debug("fnf, punt")
                     sync.punt()
                 return REQUEUE
             except CloudFileExistsError:
@@ -671,6 +711,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 sync.punt()
                 return REQUEUE
 
+            assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
+            assert sync[changed].sync_hash or sync[changed].otype == DIRECTORY
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
             self.update_entry(sync, synced, path=translated_path, oid=new_oid)
@@ -678,6 +720,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     def _resolve_rename(self, replace):
         replace_ent = self.state.lookup_oid(replace.side, replace.oid)
+        if not replace_ent:
+            return False
 
         _old_oid, new_oid, new_name = self.conflict_rename(replace.side, replace.path)
         if new_name is None:
@@ -735,14 +779,15 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         return oinfo.oid, new_oid, conflict_path
 
     def discard_entry(self, sync):
-        sync.discard()
-        self.state.storage_update(sync)
+        if sync:
+            sync.discard()
+            self.state.storage_update(sync)
 
     def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements
         if sync.discarded:
             log.warning("discarded!")
             return FINISHED
-        log.debug("embrace %s", sync)
+        log.debug("embrace %s, side:%s", sync, changed)
 
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
@@ -754,22 +799,46 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             # parent_conflict code
             parent = self.providers[changed].dirname(sync[changed].path)
             if any(e[changed].changed for e in self.state.lookup_path(changed, parent)):
-                log.log(TRACE, "parent modify should happen first %s", sync[changed].path)
+                changes = [e for e in self.state.lookup_path(changed, parent) if e[changed].changed]
+                # set mtime to forever ago
+                changes[0][changed].changed = 1
+                log.debug("parent modify %s should happen first %s", sync[changed].path, changes)
                 sync.punt()
                 return REQUEUE
 
         if sync[changed].exists == TRASHED:
+            log.debug("delete")
             self.delete_synced(sync, changed, synced)
             return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
             if ret == REQUEUE:
+                log.debug("requeue, not handled")
                 return ret
 
         if sync[changed].hash != sync[changed].sync_hash:
+            if sync[changed].sync_hash is None:
+                sync[changed].sync_path = None
+                # creation must have failed
+                log.warning("needs create: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
+                return REQUEUE
             # not a new file, which means we must have last sync info
 
+            if sync[synced].exists == TRASHED:
+                log.debug("dont upload to trashed, zero out trashed side")
+                # not an upload
+                sync[synced].exists = UNKNOWN
+                sync[synced].hash = None
+                sync[synced].changed = 0
+                sync[synced].path = None
+                sync[synced].oid = None
+                sync[synced].sync_path = None
+                sync[synced].sync_hash = None
+                sync[changed].sync_path = None
+                sync[changed].sync_hash = None
+                return REQUEUE
+                
             log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
             assert sync[synced].oid
@@ -781,6 +850,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             return FINISHED
 
         log.debug("nothing changed %s", sync)
+#        self.state.repair_index()
         return FINISHED
 
     def update_sync_path(self, sync, changed):
@@ -807,7 +877,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
         # split the sync in two
         defer_ent, defer_side, replace_ent, replace_side \
-            = self.state.split(sync, self.providers)
+            = self.state.split(sync)
         return self.handle_split_conflict(
             defer_ent, defer_side, replace_ent, replace_side)
 
@@ -830,6 +900,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     def handle_path_conflict(self, sync):
         # consistent handling
+        log.debug("handle path conflict %s", sync)
+
         path1 = sync[0].path
         path2 = sync[1].path
         if path1 > path2:
@@ -841,15 +913,31 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         other_path = self.translate(other.side, picked.path)
         if other_path is None:
             return
+
+        other_info = self.providers[other.side].info_oid(other.oid)
+
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
 
         def _update_syncs(new_oid):
             self.update_entry(sync, other.side, new_oid, path=other_path)
-            sync[other.side].sync_path = sync[other.side].path
-            sync[picked.side].sync_path = sync[picked.side].path
+            if sync[other.side].sync_path:
+                sync[other.side].sync_path = sync[other.side].path
+
+            if sync[picked.side].sync_path:
+                sync[picked.side].sync_path = sync[picked.side].path
 
         try:
+            if other_info.path == other_path:
+                # don't sync this entry
+                log.warning("supposed rename conflict, but the names are the same")
+                if not sync[other.side].sync_hash and sync[other.side].otype == FILE:
+                    log.warning("sync_hashes missing even though the sync_path is set...")
+                    sync[other.side].sync_path = None
+                if not sync[picked.side].sync_hash and sync[picked.side].otype == FILE:
+                    log.warning("sync_hashes missing even though the sync_path is set...")
+                    sync[picked.side].sync_path = None
+                raise CloudFileExistsError()
             new_oid = self.providers[other.side].rename(other.oid, other_path)
             _update_syncs(new_oid)
         except CloudFileExistsError:

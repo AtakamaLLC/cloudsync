@@ -309,7 +309,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         while page_token is not None:
             # log.debug("looking for events, timeout: %s", timeout)
             response = self._api('changes', 'list', pageToken=page_token, spaces='drive',
-                                 includeRemoved=True, includeItemsFromAllDrives=True, supportsAllDrives=True)
+                                 includeRemoved=False, includeItemsFromAllDrives=True, supportsAllDrives=True)
             new_cursor = response.get('newStartPageToken', None)
             for change in response.get('changes'):
                 log.debug("got event %s", change)

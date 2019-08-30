@@ -10,8 +10,8 @@ from cloudsync import EventManager, SyncState, LOCAL
 @pytest.fixture(name="manager")
 def fixture_manager(mock_provider_generator):
     # TODO extend this to take any provider
-    state = SyncState()
     provider = mock_provider_generator()
+    state = SyncState((provider, provider))
 
     yield EventManager(provider, state, LOCAL)
 

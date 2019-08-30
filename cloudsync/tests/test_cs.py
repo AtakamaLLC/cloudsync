@@ -238,7 +238,6 @@ def test_sync_create_delete_same_name(cs):
 # need to more extensively test he state manager itself, and find this bug without needing multiple threads
 # sticking a lock in there to prevent events from happening at the saem time didn't help (but is clearly needed)
 
-@pytest.mark.manual
 @pytest.mark.repeat(10)
 def test_sync_create_delete_same_name_heavy(cs):
     remote_parent = "/remote"
@@ -319,10 +318,9 @@ def test_sync_two_conflicts(cs):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 4)
+    assert(len(cs.state) == 3)
 
-    assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
-    assert cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+    assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted") or cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -426,12 +424,19 @@ def test_sync_folder_conflicts_file(cs):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 6 or len(cs.state) == 5)
+    assert(len(cs.state) == 5 or len(cs.state) == 4)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
-    assert local_conf and remote_conf
+    assert local_conf and not remote_conf
+
+    # file was moved out of the way for the folder
+    assert local_conf.otype == FILE
+
+    # folder won
+    local_conf = cs.providers[LOCAL].info_path(local_path1)
+    assert local_conf.otype == DIRECTORY
 
 
 @pytest.fixture(params=[(MockStorage, dict()), (SqliteStorage, 'file::memory:?cache=shared')],

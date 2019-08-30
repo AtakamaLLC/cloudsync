@@ -76,17 +76,19 @@ class EventManager(Runnable):
             otype = event.otype
 
             if not event.path and not self.state.lookup_oid(self.side, event.oid):
-                info = self.provider.info_oid(event.oid)
+                try:
+                    info = self.provider.info_oid(event.oid)
+                except CloudTemporaryError:
+                    pass
+
                 if info and info.otype != event.otype:
                     log.warning("provider %s gave a bad event: %s != %s, using %s", self.provider.name, info.path, event.otype, info.otype)
+
                 if info:
                     path = info.path
                     otype = info.otype
-                else:
-                    log.debug("ignoring delete of something that can't exist")
-                    return
 
-            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid, provider=self.provider)
+            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid)
 
     def stop(self):
         self.events.shutdown = True

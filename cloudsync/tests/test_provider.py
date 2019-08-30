@@ -358,6 +358,9 @@ def test_create_upload_download(provider):
 
     info2 = provider.upload(info1.oid, data())
 
+    assert info1.hash
+    assert info2.hash
+
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
 
@@ -1168,19 +1171,23 @@ def test_listdir(provider: ProviderMixin):
 
 def test_upload_to_a_path(provider: ProviderMixin):
     temp_name = provider.temp_name()
-    provider.create(temp_name, BytesIO(b"test"))
+    info = provider.create(temp_name, BytesIO(b"test"))
+    assert info.hash
     # test uploading to a path instead of an OID. should raise something
     # This test will need to flag off whether the provider uses paths as OIDs or not
     with pytest.raises(Exception):
-        provider.upload(temp_name, BytesIO(b"test2"))
+        info = provider.upload(temp_name, BytesIO(b"test2"))
 
 
 def test_upload_zero_bytes(provider: ProviderMixin):
     temp_name = provider.temp_name()
     info = provider.create(temp_name, BytesIO(b""))
-    provider.upload(info.oid, BytesIO(b""))
+    info2 = provider.upload(info.oid, BytesIO(b""))
     dest = BytesIO()
     provider.download(info.oid, dest)
+    assert info
+    assert info2
+    assert info.hash == info2.hash
 
 
 def test_delete_doesnt_cross_oids(provider: ProviderMixin):
