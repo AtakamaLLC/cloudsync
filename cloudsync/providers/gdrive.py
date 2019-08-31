@@ -516,13 +516,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if coid == oid:
                     old_path = cpath
 
-        try:
-            self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
-        except CloudFileNotFoundError:
-            log.debug("can't rename, try without removal")
-            # no idea why... sometimes a file can get "disc
-            self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=[], fields='id')
 
+        if add_pids == remove_pids:
+            add_pids = ""
+            remove_pids = ""
+        else:
+            add_pids = ",".join(add_pids)
+            remove_pids = ",".join(remove_pids)
+
+        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
         for cpath, coid in list(self._ids.items()):
             relative = self.is_subpath(old_path, cpath)

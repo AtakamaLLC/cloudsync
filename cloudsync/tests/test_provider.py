@@ -411,12 +411,13 @@ def test_rename(provider: ProviderMixin):
     assert provider.exists_oid(file_info.oid)
     assert provider.exists_oid(sub_file_info.oid)
 
-    provider.rename(folder_oid, folder_name2)
+    new_oid = provider.rename(folder_oid, folder_name2)
 
     assert provider.exists_path(file_path2)
     assert not provider.exists_path(file_path1)
     assert provider.exists_path(sub_file_path2)
     assert not provider.exists_path(sub_file_path1)
+    assert provider.exists_oid(new_oid)
 
     if not provider.oid_is_path:
         assert provider.exists_oid(file_info.oid)
@@ -427,6 +428,13 @@ def test_rename(provider: ProviderMixin):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
+   
+    # move to sub
+    dest = provider.temp_name("movy")
+    sub_file_name = os.urandom(16).hex()
+    sub_file_path3 = provider.join(sub_folder_path2, sub_file_name)
+    info1 = provider.create(dest, data())
+    provider.rename(info1.oid, sub_file_path3)
 
 def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)

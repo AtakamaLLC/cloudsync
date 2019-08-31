@@ -4,3 +4,4 @@ pytest-profiling
 pytest-repeat
 pytest-cov
 pylint
+flaky>=3.6
