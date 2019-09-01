@@ -604,3 +604,10 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
 
     assert rinfo1.path == remote_path1
     assert rinfo2.path == remote_path2
+
+
+# TODO: important tests: 
+#    1. events coming in for path updates for conflicted files.... we should note conflict oids, and not insert them
+#    2. for oid_as_path... events coming in for old creations, long since deleted or otherwise overwritten (renamed away, etc)
+
+
