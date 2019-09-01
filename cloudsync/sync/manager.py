@@ -275,8 +275,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 sync.punt()
                 return REQUEUE
 
-            raise NotImplementedError(
-                "What to do if we create a folder when there's already a FILE")
+            self.rename_to_fix_conflict(sync, synced, translated_path)
 
         try:
             log.debug("translated %s as path %s",
@@ -288,21 +287,26 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             syents = list(self.state.lookup_path(synced, translated_path))
             notme_chents = [ent for ent in chents if ent != sync]
 
-            conflicts = []
             for ent in notme_chents:
                 # dup dirs on remote side can be ignored
                 if ent[synced].otype == DIRECTORY:
-                    log.debug("discard duplicate dir entry, caused by a mkdirs %s", ent)
+                    log.debug("discard duplicate dir entry", ent)
                     self.discard_entry(ent)
+
+            # if a non-dir file exists with the same name on the sync side
+            conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
+
+            nc = []
+            for ent in conflicts:
+                info = self.providers[synced].info_oid(ent[synced].oid)
+                if not info:
+                    ent.exists = TRASHED
                 else:
-                    conflicts.append(ent)
+                    nc.append(ent)
 
-            # if a file exists with the same name on the sync side
-            conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync]
-
-            # TODO: check for a cycle here. If there is a cycle this will never sync up. see below comment for more info
-            if conflicts:
-                log.info("mkdir conflict %s letting other side handle it", sync)
+            if nc:
+                log.debug("resolve %s conflict with %s", translated_path, nc)
+                self.resolve_conflict((sync[changed], nc[0][synced]))
                 return FINISHED
 
             # make the dir
@@ -646,9 +650,23 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
             ent[synced].exists, ent[changed].exists)]
 
-        assert len(other_untrashed_ents) == 1
+        if sync.punted == 0:
+            # delaying sometimes helps
+            log.debug("punting, maybe it will fix itself")
+            sync.punt()
+            return True
 
         log.debug("split conflict found : %s", other_untrashed_ents)
+
+        found = None
+        info = self.providers[synced].info_path(translated_path)
+        if info:
+            for e in other_untrashed_ents:
+                if e[synced].oid == info.oid:
+                    found = e
+
+        if not found:
+            return True
 
         return self.handle_split_conflict(
             other_untrashed_ents[0], synced, sync, changed)
@@ -676,6 +694,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 log.debug("disjoint, requeue")
                 return REQUEUE
 
+        # 
         if sync.is_creation(changed):
             assert not sync[changed].sync_hash
             # looks like a new file

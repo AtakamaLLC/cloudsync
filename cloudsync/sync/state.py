@@ -423,9 +423,9 @@ class SyncState:
         if prior_path == path:
             return
 
-        if prior_path:
-            prior_ent = self._paths[side][prior_path].pop(ent[side].oid)
-            assert prior_ent is ent
+        if prior_path and prior_path in self._paths[side]:
+            prior_ent = self._paths[side][prior_path].pop(ent[side].oid, None)
+#            assert prior_ent is ent
             if not self._paths[side][prior_path]:
                 del self._paths[side][prior_path]
             prior_ent = None
@@ -469,39 +469,33 @@ class SyncState:
         assert type(ent) is SyncEntry
 
         prior_oid = ent[side].oid
-        if prior_oid == oid:
-            return
 
         path = ent[side].path
 
         other = other_side(side)
-        if ent[other].path:
-            assert ent in self.lookup_path(other, ent[other].path), ("%s %s path not indexed" % (other, ent))
 
         prior_ent = None
         if prior_oid:
-            prior_ent = self._oids[side].pop(prior_oid)
+            prior_ent = self._oids[side].pop(prior_oid, None)
 
-            if prior_ent[side].path:
-                prior_path = prior_ent[side].path
-                self._paths[side][prior_path].pop(prior_oid)
-                if not self._paths[side][prior_path]:
-                    del self._paths[side][prior_path]
-           
-            if prior_ent is not ent:
-                # no longer indexed by oid, also clear change bit
-                prior_ent._oid = None
-                prior_ent[side].changed = False
+            if prior_ent:
+                if prior_ent[side].path:
+                    prior_path = prior_ent[side].path
+                    if prior_path in self._paths[side]:
+                        self._paths[side][prior_path].pop(prior_oid, None)
+                        if not self._paths[side][prior_path]:
+                            del self._paths[side][prior_path]
+               
+                if prior_ent is not ent:
+                    # no longer indexed by oid, also clear change bit
+                    prior_ent._oid = None
+                    prior_ent[side].changed = False
 
         if oid:
             ent[side]._oid = oid
             self._oids[side][oid] = ent
          
             assert self.lookup_oid(side, oid) is ent
-
-        other = other_side(side)
-        if ent[other].path:
-            assert ent in self.lookup_path(other, ent[other].path), ("%s %s path not indexed" % (other, ent))
 
         if oid and ent[side].path:
             if ent[side].path not in self._paths[side]:
