@@ -526,12 +526,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
-        for cpath, coid in list(self._ids.items()):
-            relative = self.is_subpath(old_path, cpath)
-            if relative:
-                new_cpath = self.join(path, relative)
-                self._ids.pop(cpath)
-                self._ids[new_cpath] = coid
+        if old_path:
+            for cpath, coid in list(self._ids.items()):
+                relative = self.is_subpath(old_path, cpath)
+                if relative:
+                    new_cpath = self.join(path, relative)
+                    self._ids.pop(cpath)
+                    self._ids[new_cpath] = coid
 
         log.debug("renamed %s -> %s", oid, body)
 
