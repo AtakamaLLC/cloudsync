@@ -547,7 +547,7 @@ class SyncState:
         if oid is not None:
             if ent.discarded:
                 if self.providers[side].oid_is_path:
-                    if "conflicted" not in path:
+                    if path and "conflicted" not in path:
                         if otype:
                             log.log(TRACE, "dropping old entry %s, and making new", ent)
                             ent = SyncEntry(self, otype)

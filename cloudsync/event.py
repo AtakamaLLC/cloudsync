@@ -55,6 +55,9 @@ class EventManager(Runnable):
             self.walk_root = None
 
         for event in self.events:
+            if not event:
+                log.error("%s got BAD event %s", self.label, event)
+                continue
             self.process_event(event)
 
         current_cursor = self.provider.current_cursor

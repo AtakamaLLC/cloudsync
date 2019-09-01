@@ -191,7 +191,13 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                     # no hash for file, ignore it
                     self.finished(i, sync)
                     break
-                    
+
+                # if the other side changed hash, handle it first
+                if sync[i].hash == sync[i].sync_hash:
+                    other = other_side(i)  
+                    if sync[other].changed and sync[other].hash != sync[other].sync_hash:
+                        continue
+
                 response = self.embrace_change(sync, i, other_side(i))
                 if response == FINISHED:
                     self.finished(i, sync)
@@ -708,37 +714,37 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             if sync[synced].oid and sync[synced].exists != TRASHED:
                 if not self.upload_synced(changed, sync):
                     return REQUEUE
-            else:
-                return self.create_synced(changed, sync, translated_path)
-        else:  # handle rename
-            if sync[synced].sync_path == translated_path:
+            return self.create_synced(changed, sync, translated_path)
+
+        # handle rename
+        if sync[synced].sync_path == translated_path:
+            return FINISHED
+
+        assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
+
+        log.debug("rename %s %s", sync[synced].sync_path, translated_path)
+        try:
+            new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
+        except CloudFileNotFoundError as e:
+            log.debug("ERROR: can't rename for now %s: %s", sync, e)
+            if sync.punted > 5:
+                log.exception("punted too many times, giving up")
                 return FINISHED
-
-            log.debug("rename %s %s", sync[synced].sync_path, translated_path)
-            try:
-                new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
-            except CloudFileNotFoundError as e:
-                log.debug("ERROR: can't rename for now %s: %s", sync, e)
-                if sync.punted > 5:
-                    log.exception("punted too many times, giving up")
-                    return FINISHED
-                else:
-                    log.debug("fnf, punt")
-                    sync.punt()
-                return REQUEUE
-            except CloudFileExistsError:
-                log.debug("can't rename, file exists")
-                if sync.punted:
-                    log.debug("rename for conflict")
-                    self.rename_to_fix_conflict(sync, synced, translated_path)
+            else:
+                log.debug("fnf, punt")
                 sync.punt()
-                return REQUEUE
+            return REQUEUE
+        except CloudFileExistsError:
+            log.debug("can't rename, file exists")
+            if sync.punted:
+                log.debug("rename for conflict")
+                self.rename_to_fix_conflict(sync, synced, translated_path)
+            sync.punt()
+            return REQUEUE
 
-            assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
-            assert sync[changed].sync_hash or sync[changed].otype == DIRECTORY
-            sync[synced].sync_path = translated_path
-            sync[changed].sync_path = sync[changed].path
-            self.update_entry(sync, synced, path=translated_path, oid=new_oid)
+        sync[synced].sync_path = translated_path
+        sync[changed].sync_path = sync[changed].path
+        self.update_entry(sync, synced, path=translated_path, oid=new_oid)
         return FINISHED
 
     def _resolve_rename(self, replace):
@@ -841,39 +847,41 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 return ret
 
         if sync[changed].hash != sync[changed].sync_hash:
-            if sync[changed].sync_hash is None:
-                sync[changed].sync_path = None
-                # creation must have failed
-                log.warning("needs create: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
-                return REQUEUE
-            # not a new file, which means we must have last sync info
-
-            if sync[synced].exists == TRASHED:
-                log.debug("dont upload to trashed, zero out trashed side")
-                # not an upload
-                sync[synced].exists = UNKNOWN
-                sync[synced].hash = None
-                sync[synced].changed = 0
-                sync[synced].path = None
-                sync[synced].oid = None
-                sync[synced].sync_path = None
-                sync[synced].sync_hash = None
-                sync[changed].sync_path = None
-                sync[changed].sync_hash = None
-                return REQUEUE
-                
-            log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
-
-            assert sync[synced].oid
-
-            if not self.download_changed(changed, sync):
-                return REQUEUE
-            if not self.upload_synced(changed, sync):
-                return REQUEUE
-            return FINISHED
+            return self.handle_hash_diff(sync, changed, synced)
 
         log.debug("nothing changed %s", sync)
-#        self.state.repair_index()
+        return FINISHED
+
+    def handle_hash_diff(self, sync, changed, synced):
+        if sync[changed].sync_hash is None:
+            sync[changed].sync_path = None
+            # creation must have failed
+            log.warning("needs create: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
+            return REQUEUE
+        # not a new file, which means we must have last sync info
+
+        if sync[synced].exists == TRASHED:
+            log.debug("dont upload to trashed, zero out trashed side")
+            # not an upload
+            sync[synced].exists = UNKNOWN
+            sync[synced].hash = None
+            sync[synced].changed = 0
+            sync[synced].path = None
+            sync[synced].oid = None
+            sync[synced].sync_path = None
+            sync[synced].sync_hash = None
+            sync[changed].sync_path = None
+            sync[changed].sync_hash = None
+            return REQUEUE
+            
+        log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
+
+        assert sync[synced].oid
+
+        if not self.download_changed(changed, sync):
+            return REQUEUE
+        if not self.upload_synced(changed, sync):
+            return REQUEUE
         return FINISHED
 
     def update_sync_path(self, sync, changed):
