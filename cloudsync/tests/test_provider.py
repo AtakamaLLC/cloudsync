@@ -564,9 +564,7 @@ def test_event_basic(provider: ProviderMixin):
     provider.delete(oid=deleted_oid)  # Tests that deleting a non-existing file does not raise a FNFE
 
     received_event = None
-    event_count = 0
-    done = False
-    for e in provider.events_poll(until=lambda: done):
+    for e in provider.events_poll(until=lambda: received_event is not None):
         log.debug("event %s", e)
         if e.exists and e.path is None:
             info2 = provider.info_oid(e.oid)
@@ -578,12 +576,8 @@ def test_event_basic(provider: ProviderMixin):
 
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
-            # assert not e.exists or e.path is not None, "non-trashed event without a path? %s" % e # this can happen on google, it's not a problem
             received_event = e
-            event_count += 1
-            done = True
 
-    assert event_count == 1
     assert received_event is not None
     assert received_event.oid
     assert not received_event.exists
