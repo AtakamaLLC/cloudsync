@@ -169,6 +169,7 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
     def __setattr__(self, k, v):
         if k[0] == "_":
             object.__setattr__(self, k, v)
+            return
 
         if self._frozen:
             if "_" + k  not in self.__dict__:
