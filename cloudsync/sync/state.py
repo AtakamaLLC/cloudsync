@@ -56,6 +56,7 @@ TRASHED = Exists.TRASHED
 class SideState(Reprable):                          # pylint: disable=too-few-public-methods, too-many-instance-attributes
     def __init__(self, parent: 'SyncEntry', side: int, otype: OType):
         self._frozen = False
+        self._parent = parent
         self._side: int = side                            # just for assertions
         self._otype: OType = otype
         self._hash: Optional[bytes] = None           # hash at provider
@@ -67,7 +68,6 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-        self._parent = parent
         self._frozen = True
 
     def __getattr__(self, k):
@@ -78,6 +78,7 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
     def __setattr__(self, k, v):
         if k[0] == "_":
             object.__setattr__(self, k, v)
+            return
 
         if self._frozen:
             if "_" + k  not in self.__dict__:
@@ -213,17 +214,17 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
         def dict_to_side_state(side, side_dict: dict) -> SideState:
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
-            side_state._side = side_dict['side']
-            side_state._hash = bytes.fromhex(
+            side_state.side = side_dict['side']
+            side_state.hash = bytes.fromhex(
                 side_dict['hash']) if side_dict['hash'] else None
-            side_state._changed = side_dict['changed']
-            side_state._sync_hash = bytes.fromhex(
+            side_state.changed = side_dict['changed']
+            side_state.sync_hash = bytes.fromhex(
                 side_dict['sync_hash']) if side_dict['sync_hash'] else None
-            side_state._sync_path = side_dict['sync_path']
-            side_state._path = side_dict['path']
-            side_state._oid = side_dict['oid']
-            side_state._exists = side_dict['exists']
-            side_state._temp_file = side_dict['temp_file']
+            side_state.sync_path = side_dict['sync_path']
+            side_state.path = side_dict['path']
+            side_state.oid = side_dict['oid']
+            side_state.exists = side_dict['exists']
+            side_state.temp_file = side_dict['temp_file']
             return side_state
 
         self.storage_id = storage_init[0]
