@@ -1,3 +1,12 @@
+# pylint: disable=attribute-defined-outside-init, protected-access
+"""
+SyncEntry[SideState, SideState] is a pair of entries, indexed by oid.  The SideState class makes
+extensive use of __getattr__ logic to keep indexes up to date.
+
+There may be no need to keep them in "pairs".   This is artificial. States should probably be
+altered to independent, and not paired at all.
+"""
+
 import copy
 import json
 import logging
@@ -68,7 +77,7 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
 
     def __setattr__(self, k, v):
         if k[0] == "_":
-            return object.__setattr__(self, k, v)
+            object.__setattr__(self, k, v)
 
         if self._frozen:
             if "_" + k  not in self.__dict__:
@@ -134,7 +143,7 @@ class Storage(ABC):
 
 
 # single entry in the syncs state collection
-class SyncEntry(Reprable):
+class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
     def __init__(self, parent: 'SyncState', otype: OType, storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
         self._frozen = False
@@ -159,7 +168,7 @@ class SyncEntry(Reprable):
 
     def __setattr__(self, k, v):
         if k[0] == "_":
-            return object.__setattr__(self, k, v)
+            object.__setattr__(self, k, v)
 
         if self._frozen:
             if "_" + k  not in self.__dict__:
@@ -203,17 +212,17 @@ class SyncEntry(Reprable):
         def dict_to_side_state(side, side_dict: dict) -> SideState:
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
-            side_state.side = side_dict['side']
-            side_state.hash = bytes.fromhex(
+            side_state._side = side_dict['side']
+            side_state._hash = bytes.fromhex(
                 side_dict['hash']) if side_dict['hash'] else None
-            side_state.changed = side_dict['changed']
-            side_state.sync_hash = bytes.fromhex(
+            side_state._changed = side_dict['changed']
+            side_state._sync_hash = bytes.fromhex(
                 side_dict['sync_hash']) if side_dict['sync_hash'] else None
-            side_state.sync_path = side_dict['sync_path']
-            side_state.path = side_dict['path']
-            side_state.oid = side_dict['oid']
-            side_state.exists = side_dict['exists']
-            side_state.temp_file = side_dict['temp_file']
+            side_state._sync_path = side_dict['sync_path']
+            side_state._path = side_dict['path']
+            side_state._oid = side_dict['oid']
+            side_state._exists = side_dict['exists']
+            side_state._temp_file = side_dict['temp_file']
             return side_state
 
         self.storage_id = storage_init[0]
@@ -328,7 +337,7 @@ class SyncEntry(Reprable):
                             self[LOCAL].oid), str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma),
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
-                        self.punted))
+                        self._punted))
 
         ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
             _sig(id(self)),
@@ -342,7 +351,7 @@ class SyncEntry(Reprable):
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            self.punted or ""
+            self._punted or ""
         )
 
         return ret
@@ -359,8 +368,8 @@ class SyncEntry(Reprable):
     def punt(self):
         # do this one later
         # TODO provide help for making sure that we don't punt too many times
-        self.punted += 1
-        if self.punted > 2:
+        self.punted += 1                    # pylint: disable=no-member
+        if self.punted > 2:                 # pylint: disable=no-member
             # slow down
             if self[LOCAL].changed:
                 self[LOCAL].changed = time.time()
@@ -368,7 +377,7 @@ class SyncEntry(Reprable):
                 self[REMOTE].changed = time.time()
 
 
-class SyncState:
+class SyncState:  # pylint: disable=too-many-instance-attributes
     def __init__(self, providers, storage: Optional[Storage] = None, tag: Optional[str] = None, shuffle=True):
         self._oids = ({}, {})
         self._paths = ({}, {})
@@ -444,6 +453,9 @@ class SyncState:
             self._paths[side][path][ent[side].oid] = ent
             ent[side]._path = path
 
+            self._update_kids(ent, side, prior_path, path, provider)
+
+    def _update_kids(self, ent, side, prior_path, path, provider):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
             # changing directory also changes child paths
             for sub in self.get_all():
@@ -470,10 +482,6 @@ class SyncState:
 
         prior_oid = ent[side].oid
 
-        path = ent[side].path
-
-        other = other_side(side)
-
         prior_ent = None
         if prior_oid:
             prior_ent = self._oids[side].pop(prior_oid, None)
@@ -485,7 +493,7 @@ class SyncState:
                         self._paths[side][prior_path].pop(prior_oid, None)
                         if not self._paths[side][prior_path]:
                             del self._paths[side][prior_path]
-               
+
                 if prior_ent is not ent:
                     # no longer indexed by oid, also clear change bit
                     prior_ent._oid = None
@@ -494,7 +502,7 @@ class SyncState:
         if oid:
             ent[side]._oid = oid
             self._oids[side][oid] = ent
-         
+
             assert self.lookup_oid(side, oid) is ent
 
         if oid and ent[side].path:
@@ -559,8 +567,7 @@ class SyncState:
         if otype is not None:
             ent[side].otype = otype
 
-        if otype is NOTKNOWN:
-            assert not exists
+        assert otype is not NOTKNOWN or not exists
 
         if path is not None:
             ent[side].path = path
@@ -579,9 +586,6 @@ class SyncState:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
             self.mark_changed(side, ent)
-
-        if oid and not ent.discarded:
-            assert ent in self.get_all()
 
         log.log(TRACE, "updated %s", ent)
 
@@ -623,15 +627,8 @@ class SyncState:
         log.log(TRACE, "storage_update eid%s", ent.storage_id)
         if self._storage is not None:
             if ent.storage_id is not None:
-#                if ent.discarded:
-#                    log.debug("storage_update deleting eid%s", ent.storage_id)
-#                    self._storage.delete(self._tag, ent.storage_id)
-#                else:
-                    self._storage.update(self._tag, ent.serialize(), ent.storage_id)
+                self._storage.update(self._tag, ent.serialize(), ent.storage_id)
             else:
-#                if ent.discarded:
-#                    log.error("Entry should not be discarded. Discard happened at: %s", ent.discarded)
-#                    assert not ent.discarded  # always raises, due to being in this if condition
                 new_id = self._storage.create(self._tag, ent.serialize())
                 ent.storage_id = new_id
                 log.debug("storage_update creating eid%s", ent.storage_id)
@@ -673,12 +670,9 @@ class SyncState:
                     self.storage_update(path_ents[0])
                     log.debug("discarded existing entry %s:%s", debug_sig(oid), path)
 
-
-        new = False
         if not ent:
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
-            new=True
 
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
 

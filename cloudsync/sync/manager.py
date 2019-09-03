@@ -258,6 +258,22 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             sync[changed].exists = TRASHED
             return False
 
+    def get_folder_file_conflict(self, sync, translated_path, synced):
+        # if a non-dir file exists with the same name on the sync side
+        syents = list(self.state.lookup_path(synced, translated_path))
+        conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
+
+        nc = []
+        for ent in conflicts:
+            info = self.providers[synced].info_oid(ent[synced].oid)
+            if not info:
+                ent.exists = TRASHED
+            else:
+                nc.append(ent)
+
+        return nc[0] if nc else None
+
+ 
     def mkdir_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         # see if there are other entries for the same path, but other ids
@@ -290,29 +306,17 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             # could have made a dir that already existed on my side or other side
 
             chents = list(self.state.lookup_path(changed, sync[changed].path))
-            syents = list(self.state.lookup_path(synced, translated_path))
             notme_chents = [ent for ent in chents if ent != sync]
-
             for ent in notme_chents:
                 # dup dirs on remote side can be ignored
                 if ent[synced].otype == DIRECTORY:
-                    log.debug("discard duplicate dir entry", ent)
+                    log.debug("discard duplicate dir entry %s", ent)
                     self.discard_entry(ent)
 
-            # if a non-dir file exists with the same name on the sync side
-            conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
-
-            nc = []
-            for ent in conflicts:
-                info = self.providers[synced].info_oid(ent[synced].oid)
-                if not info:
-                    ent.exists = TRASHED
-                else:
-                    nc.append(ent)
-
-            if nc:
-                log.debug("resolve %s conflict with %s", translated_path, nc)
-                self.resolve_conflict((sync[changed], nc[0][synced]))
+            cent = self.get_folder_file_conflict(sync, translated_path, synced)
+            if cent:
+                log.debug("resolve %s conflict with %s", translated_path, cent)
+                self.resolve_conflict((sync[changed], cent[synced]))
                 return FINISHED
 
             # make the dir

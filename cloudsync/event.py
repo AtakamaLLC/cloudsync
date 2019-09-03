@@ -1,6 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Optional
 from dataclasses import dataclass
+from .exceptions import CloudTemporaryError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType
