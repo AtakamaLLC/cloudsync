@@ -232,12 +232,9 @@ def test_sync_create_delete_same_name(cs):
     assert bio.getvalue() == b'goodbye'
 
 
-# TODO: this test fails about 2 out of 10 times because of embracing a change that *isn't properly indexed*
-# somehow our state is getting messed up and there are changes in the changeset that aren't in the index
-# this results in *false conflicts* and is really bad
-# need to more extensively test he state manager itself, and find this bug without needing multiple threads
-# sticking a lock in there to prevent events from happening at the saem time didn't help (but is clearly needed)
-
+# this test used to fail about 2 out of 10 times because of embracing a change that *wasn't properly indexed*
+# it covers cases where events arrive in unexpected orders... could be possible to get the same coverage
+# with a more deterministic version
 @pytest.mark.repeat(10)
 def test_sync_create_delete_same_name_heavy(cs):
     remote_parent = "/remote"

@@ -641,7 +641,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         ent = res['files'][0]
 
         if ent.get('trashed'):
-            # TODO WRITE TEST fOR THIS, CUSES BUGZ
+            # TODO:
+            # need to write a tests that moves files to the trash, as if a user moved the file to the trash
+            # then assert it shows up "file not found" in all queries
             return None
 
         log.debug("res is %s", res)
@@ -678,10 +680,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if parent == path:
             return self._ids.get(parent)
 
+        # get the latest version of the parent path
+        # it may have changed, or case may be different, etc.
         info = self.info_path(parent)
         if not info:
             raise CloudFileNotFoundError("parent %s must exist" % parent)
 
+        # cache the latest version
         return self._ids[info.path]
 
     def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]:
