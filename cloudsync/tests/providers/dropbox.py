@@ -6,6 +6,7 @@ import pytest
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudTokenError
 from cloudsync.providers.dropbox import DropboxProvider
+from cloudsync.oauth_config import OAuthConfig
 
 
 def dropbox_creds():
@@ -38,7 +39,7 @@ def dropbox_provider():
     cls.event_timeout = 20
     cls.event_sleep = 2
     cls.creds = dropbox_creds()
-    return cls()
+    return cls(OAuthConfig())
 
 
 @pytest.fixture
@@ -54,7 +55,7 @@ def connect_test(want_oauth: bool, creds=None):
     if want_oauth:
         creds.pop("key", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = DropboxProvider()
+    gd = DropboxProvider(OAuthConfig())
     gd.connect(creds)
     assert gd.client
     quota = gd.get_quota()
