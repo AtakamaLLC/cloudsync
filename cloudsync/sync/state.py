@@ -105,6 +105,10 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         self._exists = val
         self._parent.updated(self._side, "exists", val)
 
+    def set_aged(self):
+        # setting to an old mtime marks this as fully aged
+        self.changed = 1
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -420,7 +424,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         elif key == "oid":
             self._change_oid(side, ent, val)
         elif key == "changed":
-            if ent[LOCAL].changed or ent[REMOTE].changed:
+            if val or ent[other_side(side)].changed:
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
@@ -594,7 +598,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def mark_changed(self, side, ent):
         if not ent.discarded:
             ent[side].changed = time.time()
-            self._changeset.add(ent)
+            assert ent in self._changeset
+#            self._changeset.add(ent)
 
     def storage_get_cursor(self, cursor_tag):
         if cursor_tag is None:
@@ -711,7 +716,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             log.info("not marking finished: %s", ent)
             return
 
-        self._changeset.remove(ent)
+        self._changeset.discard(ent)
 
         for e in self._changeset:
             e.punted = 0

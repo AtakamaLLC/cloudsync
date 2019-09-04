@@ -165,9 +165,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     def path_conflict(self, ent):
         # both are synced
-        if ent[0].path and ent[1].path and ent[0].sync_hash and ent[1].sync_hash:
+        if ent[0].path and ent[1].path and ((ent[0].sync_hash and ent[1].sync_hash)
+                                            or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)):
             return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-                not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
+                    not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
     def sync(self, sync):
@@ -215,7 +216,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     def finished(self, side, sync):
         sync[side].changed = 0
+        # todo: changing the state above should signal this call below
         self.state.finished(sync)
+
+        # todo: likewise... clearing the changebit is enough to know to clear temps
         self.clean_temps(sync)
 
     @staticmethod
@@ -834,12 +838,12 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 return FINISHED
 
             # parent_conflict code
+            # todo: make this walk up parents to the translate == None "root"
             parent = self.providers[changed].dirname(sync[changed].path)
             if any(e[changed].changed for e in self.state.lookup_path(changed, parent)):
                 changes = [e for e in self.state.lookup_path(changed, parent) if e[changed].changed]
-                # set mtime to forever ago
-                changes[0][changed].changed = 1
                 log.debug("parent modify %s should happen first %s", sync[changed].path, changes)
+                changes[0][changed].set_aged()
                 sync.punt()
                 return REQUEUE
 
