@@ -8,6 +8,7 @@ jobs:
       stage: lint/unit
       script:
         - pylint cloudsync --ignore tests
+        - ./check_version.sh
     - name: unit
       script:
         # tempoarily skip the path tests
