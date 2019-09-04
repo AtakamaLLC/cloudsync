@@ -174,13 +174,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def connect(self, creds):
         log.debug('Connecting to dropbox')
         if not self.client:
-            api_key = creds.get('key', self.api_key)
-            if not api_key:
-                self.disconnect()
-                raise CloudTokenError()
-
             self.__creds = creds
-            self.client = Dropbox(self.api_key)
             api_key = creds.get('key', self.api_key)
             if not api_key:
                 self.disconnect()
@@ -188,6 +182,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
             with self.mutex:
                 self.client = Dropbox(api_key)
+
             try:
                 quota = self.get_quota()
                 self.connection_id = quota['login']
