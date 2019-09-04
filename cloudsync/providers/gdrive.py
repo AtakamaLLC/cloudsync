@@ -509,7 +509,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
                 except StopIteration:
                     # Folder is empty, rename over it no problem
-                    self.delete(possible_conflict.oid)
+                    if possible_conflict.oid != oid:  # delete the target if we're not just changing case
+                        self.delete(possible_conflict.oid)
 
         if not old_path:
             for cpath, coid in list(self._ids.items()):
