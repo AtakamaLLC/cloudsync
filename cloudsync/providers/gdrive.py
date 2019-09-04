@@ -18,7 +18,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylin
 from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
-
+from cloudsync.oauth_config import OAuthConfig
 
 class GDriveFileDoneError(Exception):
     pass
@@ -54,7 +54,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
-    def __init__(self):
+    def __init__(self, oauth_config: OAuthConfig):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -66,7 +66,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids = {"/": "root"}
         self._trashed_ids = {}
         self._flow = None
-        self._redir_server: Optional[OAuthRedirServer] = None
+        self._oauth_config = oauth_config
         self._oauth_done = threading.Event()
 
     @property
@@ -76,9 +76,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_display_name(self):
         return self.name
 
-    def initialize(self, localhost_redir=True,
-                   success_html_generator: Callable[[str], str] = None,
-                   error_html_generator: Callable[[str, str], str] = None):
+    def initialize(self):
         """
         :param localhost_redir: If True, a local web server is initialized to perform the oauth automatically
         :param success_html_generator: A function which returns the HTML to render as the response for successful
@@ -87,37 +85,32 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             oauth where the first parameter is the display name of the provider and the second is the error message.
         :return: A two-tuple of a bool if localhost redirection is being used and the auth url for GDrive
         """
-        if localhost_redir:
+        if not self._oauth_config.manual_mode:
             try:
-                if not self._redir_server:
-                    self._redir_server = OAuthRedirServer(self._on_oauth_success,
-                                                          self.get_display_name(),
-                                                          use_predefined_ports=False,
-                                                          on_failure=self._on_oauth_failure,
-                                                          success_html_generator=success_html_generator,
-                                                          error_html_generator=error_html_generator)
+                self._oauth_config.oauth_redir_server.run()
                 self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                                  client_secret=self._client_secret,
                                                  scope=self._scope,
-                                                 redirect_uri=self._redir_server.uri('/auth/'))
+                                                 redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'))
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
-                localhost_redir = False
-        if not localhost_redir:
+                self._oauth_config.manual_mode = False
+
+        if self._oauth_config.manual_mode:
             self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                              client_secret=self._client_secret,
                                              scope=self._scope,
                                              redirect_uri=self._redir)
+
         url = self._flow.step1_get_authorize_url()
         self._oauth_done.clear()
         webbrowser.open(url)
 
-        return localhost_redir, url
+        return url
 
     def interrupt_oauth(self):
-        if self._redir_server:
-            self._redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
-            self._redir_server = None
+        if not self._oauth_config.manual_mode:
+            self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
         self._flow = None
         self._oauth_done.clear()
 
@@ -136,16 +129,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         log.error("oauth failure: %s", err)
         self._oauth_done.set()
 
-    def authenticate(self,
-                     localhost_redir=True,
-                     success_html_generator: Callable[[str], str] = None,
-                     error_html_generator: Callable[[str, str], str] = None):
+    def authenticate(self):
         try:
-            self.initialize(
-                localhost_redir=localhost_redir,
-                success_html_generator=success_html_generator,
-                error_html_generator=error_html_generator
-            )
+            self.initialize()
             self._oauth_done.wait()
             return {"refresh_token": self.refresh_token,
                     "api_key": self.api_key,
