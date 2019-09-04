@@ -599,7 +599,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if not ent.discarded:
             ent[side].changed = time.time()
             assert ent in self._changeset
-#            self._changeset.add(ent)
 
     def storage_get_cursor(self, cursor_tag):
         if cursor_tag is None:

@@ -830,5 +830,37 @@ def test_aging(sync):
     assert sync.providers[REMOTE].info_path(remote_file2)
     # but withotu it, things are fast
 
+def test_remove_folder_with_kids(sync):
+    parent = ["/local", "/remote"]
+    folder1 = ["/local/folder1", "/remote/folder1"]
+    file1 = ["/local/folder1/file", "/remote/folder1/file"]
+
+    for loc in (LOCAL, REMOTE):
+        sync.providers[loc].mkdir(parent[loc])
+    folder_oid = sync.providers[LOCAL].mkdir(folder1[LOCAL])
+    sync.change_state(LOCAL, DIRECTORY, path=folder1[LOCAL], oid=folder_oid, hash=None)
+
+    file_info: OInfo = sync.providers[LOCAL].create(file1[LOCAL], BytesIO(b"hello"))
+    sync.change_state(LOCAL, FILE, path=file1[LOCAL], oid=file_info.oid, hash=None)
+
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+    sync.run_until_found((REMOTE, folder1[REMOTE]))
+
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+
+    sync.providers[LOCAL].delete(file_info.oid)
+    sync.providers[LOCAL].delete(folder_oid)
+
+    sync.change_state(LOCAL, DIRECTORY, oid=file_info.oid, exists=False)
+    sync.change_state(LOCAL, DIRECTORY, oid=folder_oid, exists=False)
+
+    log.debug("TABLE 2:\n%s", sync.state.pretty_print())
+
+    sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False))
+    sync.run_until_found(WaitFor(REMOTE, folder1[REMOTE], exists=False))
+
+    log.debug("TABLE 3:\n%s", sync.state.pretty_print())
+
+
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
