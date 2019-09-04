@@ -15,7 +15,7 @@ import dropbox
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
 from cloudsync.oauth_redir_server import OAuthRedirServer
-
+from cloudsync.oauth_config import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, \
@@ -68,7 +68,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
-    def __init__(self):
+    def __init__(self, oauth_config: OAuthConfig):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -79,7 +79,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._session = {}
-        self._redir_server: Optional[OAuthRedirServer] = None
+        self._oauth_config = oauth_config
         self._oauth_done = threading.Event()
 
     @property
@@ -89,28 +89,28 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def get_display_name(self):
         return self.name
 
-    def initialize(self, localhost_redir=True):
+    def initialize(self):
         self._csrf = u_b64enc(urandom(32))
         key = 'objo7li90yqmnfi'
         secret = '9usaijv8g3fsqsl'
-        log.debug('Initializing Dropbox with localhost_redir=%s', localhost_redir)
-        if localhost_redir:
+        log.debug('Initializing Dropbox with manual mode=%s', self._oauth_config.manual_mode)
+        if not self._oauth_config.manual_mode:
             try:
-                if not self._redir_server:
-                    self._redir_server = OAuthRedirServer(self._on_oauth_success,
-                                                          self.get_display_name(),
-                                                          use_predefined_ports=True,
-                                                          on_failure=self._on_oauth_failure)
+                self._oauth_config.oauth_redir_server.run(
+                    on_success=self._on_oauth_success,
+                    on_failure=self._on_oauth_failure,
+                    use_predefined_ports=True,
+                )
                 self._flow = DropboxOAuth2Flow(consumer_key=key,
-                                              consumer_secret=secret,
-                                              redirect_uri=self._redir_server.uri('/auth/'),
-                                              session=self._session,
-                                              csrf_token_session_key=self._csrf,
-                                              locale=None)
+                                               consumer_secret=secret,
+                                               redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'),
+                                               session=self._session,
+                                               csrf_token_session_key=self._csrf,
+                                               locale=None)
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
-                localhost_redir = False
-        if not localhost_redir:
+                self._oauth_config.manual_mode = False
+        if self._oauth_config.manual_mode:
             self._flow = DropboxOAuth2Flow(consumer_key=key,
                                           consumer_secret=secret,
                                           redirect_uri=self._redir,
@@ -121,7 +121,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._oauth_done.clear()
         webbrowser.open(url)
 
-        return localhost_redir, url
+        return url
 
     def _on_oauth_success(self, auth_dict):
         if auth_dict and 'state' in auth_dict and isinstance(auth_dict['state'], list):
@@ -144,9 +144,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             self._oauth_done.wait()
             return {"api_key": self.api_key,}
         finally:
-            if self._redir_server:
-                self._redir_server.shutdown()
-                self._redir_server = None
+            if not self._oauth_config.manual_mode:
+                self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
         space_usage = self._api('users_get_space_usage')

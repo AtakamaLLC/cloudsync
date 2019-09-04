@@ -3,6 +3,7 @@ import random
 import pytest
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
+from cloudsync.oauth_config import OAuthConfig
 
 
 # move this to provider ci_creds() function?
@@ -23,12 +24,16 @@ def gdrive_creds():
     return creds
 
 
+def on_success(auth_dict=None):
+    assert auth_dict is not None and isinstance(auth_dict, dict)
+
+
 def gdrive_provider():
     cls = GDriveProvider
     cls.event_timeout = 60
     cls.event_sleep = 2
     cls.creds = gdrive_creds()
-    return cls()
+    return cls(OAuthConfig())
 
 
 @pytest.fixture
@@ -43,7 +48,7 @@ def connect_test(want_oauth: bool):
     if want_oauth:
         creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = GDriveProvider()
+    gd = GDriveProvider(OAuthConfig())
     gd.connect(creds)
     assert gd.client
     gd.get_quota()

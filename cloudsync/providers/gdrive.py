@@ -15,10 +15,10 @@ from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
-from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 from cloudsync.oauth_config import OAuthConfig
+
 
 class GDriveFileDoneError(Exception):
     pass
@@ -77,17 +77,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return self.name
 
     def initialize(self):
-        """
-        :param localhost_redir: If True, a local web server is initialized to perform the oauth automatically
-        :param success_html_generator: A function which returns the HTML to render as the response for successful
-            oauth where the one and only parameter is the display name of the provider.
-        :param error_html_generator:  A function which returns the HTML to render as the response for a failed
-            oauth where the first parameter is the display name of the provider and the second is the error message.
-        :return: A two-tuple of a bool if localhost redirection is being used and the auth url for GDrive
-        """
         if not self._oauth_config.manual_mode:
             try:
-                self._oauth_config.oauth_redir_server.run()
+                self._oauth_config.oauth_redir_server.run(
+                    on_success=self._on_oauth_success,
+                    on_failure=self._on_oauth_failure,
+                )
                 self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                                  client_secret=self._client_secret,
                                                  scope=self._scope,
@@ -139,9 +134,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     "client_id": self._client_id,
                     }
         finally:
-            if self._redir_server:
-                self._redir_server.shutdown()
-                self._redir_server = None
+            if not self._oauth_config.manual_mode:
+                self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about

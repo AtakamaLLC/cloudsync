@@ -3,7 +3,7 @@ import sys
 import socket
 import threading
 import errno
-from typing import Callable
+from typing import Callable, Optional, Any
 # from src import config
 from .apiserver import ApiServer
 # from src.osutil import is_windows
@@ -28,12 +28,10 @@ class OAuthRedirServer:
     PORT_MAX = 52450
     GUI_TIMEOUT = 15
 
-    def __init__(self, on_success, use_predefined_ports=False, on_failure=None,
-                 html_response_generator: Callable[[bool, str], str] = None):
-        self.on_success = on_success
-        self.on_failure = on_failure
-        self.html_response_generator = html_response_generator
-        self.use_predefined_ports = use_predefined_ports
+    def __init__(self, html_response_generator: Callable[[bool, str], str] = None):
+        self.__html_response_generator = html_response_generator
+        self.__on_success = None
+        self.__on_failure = None
         self.__api_server = None
         self.__thread = None
         self.__running = False
@@ -42,10 +40,19 @@ class OAuthRedirServer:
     def running(self):
         return self.__running
 
-    def run(self):
+    def run(self, on_success: Callable[[Any], None], on_failure: Callable[[], None], use_predefined_ports=False):
+        if self.__running:
+            raise RuntimeError('OAuth server was run() twice')
+        if not on_success:
+            raise ValueError('A valid on_success(...) callback is required')
+        if not on_failure:
+            raise ValueError('A valid on_failure(...) callback is required')
+        self.__on_success = on_success
+        self.__on_failure = on_failure
+
         log.debug('Creating oauth redir server')
         self.__running = True
-        if self.use_predefined_ports:
+        if use_predefined_ports:
             # Some providers (Dropbox) don't allow us to just use localhost
             #  redirect. For these providers, we define a range of
             #  127.0.0.1:(PORT_MIN..PORT_MAX) as valid redir URLs
@@ -87,11 +94,10 @@ class OAuthRedirServer:
                 info['error_description'][0]
             if isinstance(err, list):
                 err = err[0]
-            if self.on_failure:
-                self.on_failure(err)
+            self.__on_failure(err)
             return self.auth_failure(err)
         try:
-            self.on_success(auth_dict=info)
+            self.__on_success(info)
         except OAuthFlowException:
             log.warning('Got a page request when not in flow', exc_info=True)
             err = "No pending OAuth. This can happen if you refreshed this tab. "
@@ -102,21 +108,21 @@ class OAuthRedirServer:
         return self.auth_failure(err) if err else self.auth_success()
 
     def auth_success(self):
-        if self.html_response_generator:
-            log.info('Responding with custom success response generator')
-            return self.html_response_generator(True, '')
+        if self.__html_response_generator:
+            return self.__html_response_generator(True, '')
         return "OAuth Success"
 
     def auth_failure(self, msg):
-        if self.html_response_generator:
-            log.info('Responding with custom error response generator')
-            return self.html_response_generator(False, msg)
+        if self.__html_response_generator:
+            return self.__html_response_generator(False, msg)
         return "OAuth Failure:" + msg
 
     def shutdown(self):
         if self.__api_server and self.__running:
             self.__api_server.shutdown()
             self.__running = False
+            self.__on_success = None
+            self.__on_failure = None
         self.__thread = None
 
     def uri(self, *args, **kwargs):
