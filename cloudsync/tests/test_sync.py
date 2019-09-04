@@ -831,4 +831,4 @@ def test_aging(sync):
     # but withotu it, things are fast
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
-# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (not sure what this means EA 8/26)
+# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)

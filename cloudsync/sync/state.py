@@ -254,6 +254,7 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
         assert type(val) is SideState
         assert val.side == side
 
+        # we need to ensure a valid oid is present when changing the path
         if val._oid is None:
             self.updated(side, "path", val._path)
             self.updated(side, "oid", val._oid)
@@ -436,7 +437,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
         if prior_path and prior_path in self._paths[side]:
             prior_ent = self._paths[side][prior_path].pop(ent[side].oid, None)
-#            assert prior_ent is ent
             if not self._paths[side][prior_path]:
                 del self._paths[side][prior_path]
             prior_ent = None
@@ -650,15 +650,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 ent = prior_ent
                 prior_ent = None
 
-#        if ent and prior_ent:
-#            # oid_is_path conflict
-#            # the new entry has the same name as an old entry
-#            log.debug("rename o:%s path:%s prior:%s", debug_sig(oid), path, debug_sig(prior_oid))
-#            log.debug("discarding new entry in favor of old %s", prior_ent)
-#            ent.discard()
-#            self.storage_update(ent)
-#            ent = prior_ent
-
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             path_ents = self.lookup_path(side, path, stale=True)
@@ -792,16 +783,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
         defer_ent[replace] = SideState(defer_ent, replace, ent[replace].otype)              # clear out
 
-        # fix indexes, so the defer ent no longer has replace stuff
-        self.update_entry(defer_ent, replace, oid=None,
-                          path=None, exists=UNKNOWN)
-        self.update_entry(defer_ent, defer,
-                          oid=defer_ent[defer].oid, changed=True)
-        # add to index
         assert replace_ent[replace].oid
         assert replace_ent in self.get_all()
-        self.update_entry(
-            replace_ent, replace, oid=replace_ent[replace].oid, path=replace_ent[replace].path, changed=True)
+
+        self.mark_changed(replace, replace_ent)
+        self.mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
         # we aren't synced

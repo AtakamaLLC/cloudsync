@@ -158,6 +158,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                         log.warning("Cannot sync %s, since hash is None", ent[i])
 
             if ent[i].path != info.path:
+                ent[i].path = info.path
                 self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
 
         log.log(TRACE, "after update state %s", ent)
@@ -202,8 +203,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 if response == FINISHED:
                     self.finished(i, sync)
                 break
-#        self.state.repair_index()
-#        self.state.assert_index_is_correct()
 
     def temp_file(self):
         if not os.path.exists(self.tempdir):
@@ -369,16 +368,19 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
             return True
         except FileNotFoundError:
+            log.info("FNF during upload %s:%s", sync[synced].sync_path, sync[changed].temp_file)
             return False
         except CloudFileNotFoundError:
             info = self.providers[synced].info_oid(sync[synced].oid)
 
-            log.debug("upload to %s failed fnf, TODO fix mkdir code and stuff, info: %s",
-                      self.providers[synced].name, info)
-
             if not info:
                 log.debug("convert to unsynced")
                 sync[synced].exists = TRASHED
+            else:
+                # you got an FNF during upload, but when you queried... it existed
+                # basically this is just a "retry" or something
+                log.warning("Upload to %s failed fnf, info: %s",
+                            self.providers[synced].name, info)
             return False
         except CloudFileExistsError:
             # this happens if the remote oid is a folder
@@ -661,7 +663,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             ent[synced].exists, ent[changed].exists)]
 
         if sync.punted == 0:
-            # delaying sometimes helps
+            # delaying sometimes helps, because future events can resolve conflicts
+            # it's generally better to wait before conflicting something
             log.debug("punting, maybe it will fix itself")
             sync.punt()
             return True
@@ -704,7 +707,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 log.debug("disjoint, requeue")
                 return REQUEUE
 
-        # 
         if sync.is_creation(changed):
             assert not sync[changed].sync_hash
             # looks like a new file
@@ -716,8 +718,10 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                 return REQUEUE
 
             if sync[synced].oid and sync[synced].exists != TRASHED:
-                if not self.upload_synced(changed, sync):
-                    return REQUEUE
+                if self.upload_synced(changed, sync):
+                    return FINISHED
+                return REQUEUE
+
             return self.create_synced(changed, sync, translated_path)
 
         # handle rename
