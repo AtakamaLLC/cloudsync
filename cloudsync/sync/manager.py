@@ -731,6 +731,8 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             return self.create_synced(changed, sync, translated_path)
 
         # handle rename
+        # use == to allow rename for case reasons
+        # todo: need a paths_match flag instead, so slashes don't break this line
         if sync[synced].sync_path == translated_path:
             return FINISHED
 
