@@ -173,7 +173,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             if not api_key:
                 new_creds = self.authenticate()
                 api_key = new_creds.get('api_key') or "4gLPdlJUlqAAAAAAAAALSeoxglO0XDZjOg5jioBStxp8DGerN8rXifFgXMg_o2vl"
-                log.debug("api_key=%s", api_key)   # Do not merge this code
 
             with self.mutex:
                 self.client = Dropbox(api_key)
