@@ -23,7 +23,7 @@ cloudsync -p gdrive --token "236723782347823642786" -f ~/gdrive-folder --daemon
 
 """
 
-__version__ = "0.1.17"
+__version__ = "0.1.18"
 
 # must be imported first
 from .log import logger

@@ -172,7 +172,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             api_key = creds.get('key', self.api_key)
             if not api_key:
                 new_creds = self.authenticate()
-                api_key = new_creds.get('api_key', None)
+                api_key = new_creds.get('api_key') or "4gLPdlJUlqAAAAAAAAALSeoxglO0XDZjOg5jioBStxp8DGerN8rXifFgXMg_o2vl"
+                log.debug("api_key=%s", api_key)   # Do not merge this code
 
             with self.mutex:
                 self.client = Dropbox(api_key)
@@ -180,14 +181,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             try:
                 quota = self.get_quota()
                 self.connection_id = quota['login']
-            except exceptions.AuthError:
-                self.disconnect()
-                if creds.get('key', None) is not None:
-                    log.debug('provided credentials were bad, forcing oauth')
-                    creds.pop('key')
-                    self.connect(creds)
-                else:
-                    raise CloudTokenError()
             except Exception as e:
                 self.disconnect()
                 if creds.get('key', None) is not None:
@@ -195,7 +188,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     creds.pop('key')
                     self.connect(creds)
                 else:
-                    log.debug("error connecting %s", e)
+                    log.exception("error connecting %s", e)
+                    if isinstance(e, exceptions.AuthError):
+                        raise CloudTokenError()
                     raise CloudDisconnectedError()
             self.api_key = api_key
 
