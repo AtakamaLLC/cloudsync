@@ -58,6 +58,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         super().__init__()
         self.__root_id = None
         self.__cursor = None
+        self.__creds = None
         self.client = None
         self.api_key = None
         self.refresh_token = None

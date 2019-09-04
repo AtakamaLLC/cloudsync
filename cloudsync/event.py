@@ -26,7 +26,7 @@ class Event:
     new_cursor: Optional[str] = None
 
 
-class EventManager(Runnable):
+class EventManager(Runnable): # pylint: disable=too-many-instance-attributes
     def __init__(self, provider: "Provider", state: "SyncState", side, walk_root=None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider

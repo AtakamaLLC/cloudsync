@@ -111,7 +111,6 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         self.__resolve_conflict = resolver
 
     def do(self):
-        need_reconnect = False
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
 

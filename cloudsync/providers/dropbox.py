@@ -66,6 +66,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         super().__init__()
         self.__root_id = None
         self.__cursor = None
+        self.__creds = None
         self.client = None
         self.api_key = None
         self.user_agent = 'cloudsync/1.0'
