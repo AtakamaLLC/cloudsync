@@ -6,13 +6,13 @@ import threading
 from hashlib import sha256
 import webbrowser
 from typing import Generator, Optional
+from os import urandom
+from base64 import urlsafe_b64encode as u_b64enc
 import requests
 import arrow
 
 import dropbox
-from os import urandom
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
-from base64 import urlsafe_b64encode as u_b64enc
 from dropbox.oauth import OAuth2FlowResult
 from cloudsync.oauth_redir_server import OAuthRedirServer
 
