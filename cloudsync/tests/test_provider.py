@@ -358,6 +358,9 @@ def test_create_upload_download(provider):
 
     info2 = provider.upload(info1.oid, data())
 
+    assert info1.hash
+    assert info2.hash
+
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
 
@@ -408,12 +411,13 @@ def test_rename(provider: ProviderMixin):
     assert provider.exists_oid(file_info.oid)
     assert provider.exists_oid(sub_file_info.oid)
 
-    provider.rename(folder_oid, folder_name2)
+    new_oid = provider.rename(folder_oid, folder_name2)
 
     assert provider.exists_path(file_path2)
     assert not provider.exists_path(file_path1)
     assert provider.exists_path(sub_file_path2)
     assert not provider.exists_path(sub_file_path1)
+    assert provider.exists_oid(new_oid)
 
     if not provider.oid_is_path:
         assert provider.exists_oid(file_info.oid)
@@ -424,6 +428,13 @@ def test_rename(provider: ProviderMixin):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
+   
+    # move to sub
+    dest = provider.temp_name("movy")
+    sub_file_name = os.urandom(16).hex()
+    sub_file_path3 = provider.join(sub_folder_path2, sub_file_name)
+    info1 = provider.create(dest, data())
+    provider.rename(info1.oid, sub_file_path3)
 
 def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)
@@ -505,6 +516,7 @@ def test_event_basic(provider: ProviderMixin):
 
     wait_sleep_cycles = 30
 
+    log.debug("create event")
     info1 = provider.create(dest, temp, None)
     assert info1 is not None  # TODO: check info1 for more things
 
@@ -545,12 +557,14 @@ def test_event_basic(provider: ProviderMixin):
     assert received_event.mtime
     assert received_event.exists
     deleted_oid = received_event.oid
+
+    log.debug("delete event")
+
     provider.delete(oid=deleted_oid)
     provider.delete(oid=deleted_oid)  # Tests that deleting a non-existing file does not raise a FNFE
 
     received_event = None
-    event_count = 0
-    for e in provider.events_poll():
+    for e in provider.events_poll(until=lambda: received_event is not None):
         log.debug("event %s", e)
         if e.exists and e.path is None:
             info2 = provider.info_oid(e.oid)
@@ -562,11 +576,8 @@ def test_event_basic(provider: ProviderMixin):
 
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
-            # assert not e.exists or e.path is not None, "non-trashed event without a path? %s" % e # this can happen on google, it's not a problem
             received_event = e
-            event_count += 1
 
-    assert event_count == 1
     assert received_event is not None
     assert received_event.oid
     assert not received_event.exists
@@ -1168,19 +1179,23 @@ def test_listdir(provider: ProviderMixin):
 
 def test_upload_to_a_path(provider: ProviderMixin):
     temp_name = provider.temp_name()
-    provider.create(temp_name, BytesIO(b"test"))
+    info = provider.create(temp_name, BytesIO(b"test"))
+    assert info.hash
     # test uploading to a path instead of an OID. should raise something
     # This test will need to flag off whether the provider uses paths as OIDs or not
     with pytest.raises(Exception):
-        provider.upload(temp_name, BytesIO(b"test2"))
+        info = provider.upload(temp_name, BytesIO(b"test2"))
 
 
 def test_upload_zero_bytes(provider: ProviderMixin):
     temp_name = provider.temp_name()
     info = provider.create(temp_name, BytesIO(b""))
-    provider.upload(info.oid, BytesIO(b""))
+    info2 = provider.upload(info.oid, BytesIO(b""))
     dest = BytesIO()
     provider.download(info.oid, dest)
+    assert info
+    assert info2
+    assert info.hash == info2.hash
 
 
 def test_delete_doesnt_cross_oids(provider: ProviderMixin):
@@ -1212,3 +1227,16 @@ def test_rename_case_change(provider: ProviderMixin):
     assert new_oid
     infou = provider.info_oid(new_oid)
     assert infou.path == temp_nameu
+    infopu = provider.info_path(temp_nameu)
+    infopl = provider.info_path(temp_namel)
+
+    assert infopu
+    assert infopu.path == temp_nameu
+
+    if provider.case_sensitive:
+        assert not infopl
+    else:
+        assert infopl
+        assert infopl.path == temp_nameu
+
+

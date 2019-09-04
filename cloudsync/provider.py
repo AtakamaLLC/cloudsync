@@ -150,8 +150,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def split(self, path):
         # todo cache regex
         index = path.rfind(self.sep)
-        if index == -1 and self.alt_sep:
-            index = path.rfind(self.alt_sep)
+        if self.alt_sep:
+            index = max(index, path.rfind(self.alt_sep))
+
         if index == -1:
             return path, ""
         if index == 0:

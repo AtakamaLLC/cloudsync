@@ -5,7 +5,7 @@ from typing import List
 
 from .fixtures import MockProvider, MockStorage
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.event import EventManager
 
 from .test_sync import WaitFor, RunUntilHelper
@@ -92,7 +92,7 @@ def test_sync_multi(multi_cs):
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
-    assert len(cs1.state) == 4      # 2 dirs, 2 files, 1 never synced (local2 file)
+    assert len(cs1.state) == 3      # 1 dirs, 2 files, 1 never synced (local2 file)
 
     try:
         cs2.run_until_found(
@@ -122,8 +122,8 @@ def test_sync_multi(multi_cs):
     cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs2.state.pretty_print())
 
-    assert len(cs1.state) == 4
-    assert len(cs2.state) == 4
+    assert len(cs1.state) == 3
+    assert len(cs2.state) == 3
 
 
 def test_sync_basic(cs):
@@ -161,7 +161,7 @@ def test_sync_basic(cs):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
 
-    assert len(cs.state) == 4
+    assert len(cs.state) == 3
     assert not cs.state.has_changes()
 
 
@@ -232,6 +232,114 @@ def test_sync_create_delete_same_name(cs):
     assert bio.getvalue() == b'goodbye'
 
 
+# this test used to fail about 2 out of 10 times because of embracing a change that *wasn't properly indexed*
+# it covers cases where events arrive in unexpected orders... could be possible to get the same coverage
+# with a more deterministic version
+@pytest.mark.repeat(10)
+def test_sync_create_delete_same_name_heavy(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+
+    import time, threading
+
+    def creator():
+        i = 0
+        while i < 10:
+            try:
+                linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file" + bytes(str(i),"utf8")))
+                i += 1
+            except CloudFileExistsError:
+                linfo1 = cs.providers[LOCAL].info_path(local_path1)
+                if linfo1:
+                    cs.providers[LOCAL].delete(linfo1.oid)
+            time.sleep(0.01)
+    
+    def done():
+        bio = BytesIO()
+        rinfo = cs.providers[REMOTE].info_path(remote_path1)
+        if rinfo:
+            cs.providers[REMOTE].download(rinfo.oid, bio)
+            return bio.getvalue() == b'file' + bytes(str(9),"utf8")
+        return False
+
+    thread = threading.Thread(target=creator, daemon=True)
+    thread.start()
+
+    cs.run(until=done, timeout=3)
+
+    thread.join()
+
+    assert done()
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+def test_sync_rename_heavy(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_sub = "/remote/sub"
+    local_sub = "/local/sub"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+    remote_path2 = "/remote/sub/stuff1"
+    local_path2 = "/local/sub/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].mkdir(local_sub)
+    cs.providers[REMOTE].mkdir(remote_sub)
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+
+    import time, threading
+
+    oid = linfo1.oid
+    done = False
+    ok = True
+    def mover():
+        nonlocal done
+        nonlocal oid
+        nonlocal ok
+        for _ in range(10):
+            try:
+                oid = cs.providers[LOCAL].rename(oid, local_path2)
+                oid = cs.providers[LOCAL].rename(oid, local_path1)
+                time.sleep(0.001)
+            except Exception as e:
+                log.exception(e)
+                ok = False
+        done = True
+
+    thread = threading.Thread(target=mover, daemon=True)
+    thread.start()
+
+    cs.run(until=lambda: done, timeout=3)
+
+    thread.join()
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.do()
+
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1
+            )
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+    assert ok
+    assert cs.providers[REMOTE].info_path(remote_path1)
+
 def test_sync_two_conflicts(cs):
     remote_path1 = "/remote/stuff1"
     local_path1 = "/local/stuff1"
@@ -256,19 +364,19 @@ def test_sync_two_conflicts(cs):
     log.info("TABLE 1\n%s", cs.state.pretty_print())
     if cs.providers[LOCAL].oid_is_path:
         # the local delete/create doesn't add entries
-        assert(len(cs.state) == 3)
+        assert(len(cs.state) == 2)
     else:
-        assert(len(cs.state) == 5)
+        assert(len(cs.state) == 4)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
+    # conflicted files are discarded, not in table
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 4)
+    assert(len(cs.state) == 2)
 
-    assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
-    assert cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+    assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted") or cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -357,7 +465,7 @@ def test_sync_folder_conflicts_file(cs):
     log.info("TABLE 1\n%s", cs.state.pretty_print())
     if cs.providers[LOCAL].oid_is_path:
         # there won't be 2 rows for /local/stuff1 is oid_is_path
-        assert(len(cs.state) == 4)
+        assert(len(cs.state) == 3)
         locs = cs.state.lookup_path(LOCAL, local_path1)
         assert locs and len(locs) == 1
         loc = locs[0]
@@ -365,19 +473,26 @@ def test_sync_folder_conflicts_file(cs):
         assert loc[REMOTE].otype == DIRECTORY
     else:
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
-        assert(len(cs.state) == 6)
+        assert(len(cs.state) == 5)
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 6 or len(cs.state) == 5)
+    assert(len(cs.state) == 4 or len(cs.state) == 3)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     remote_conf = cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
-    assert local_conf and remote_conf
+    assert local_conf and not remote_conf
+
+    # file was moved out of the way for the folder
+    assert local_conf.otype == FILE
+
+    # folder won
+    local_conf = cs.providers[LOCAL].info_path(local_path1)
+    assert local_conf.otype == DIRECTORY
 
 
 @pytest.fixture(params=[(MockStorage, dict()), (SqliteStorage, 'file::memory:?cache=shared')],
@@ -541,3 +656,13 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
     rinfo2 = cs.providers[REMOTE].info_path(remote_path2)
 
     assert rinfo1 and rinfo2
+
+    assert rinfo1.path == remote_path1
+    assert rinfo2.path == remote_path2
+
+
+# TODO: important tests: 
+#    1. events coming in for path updates for conflicted files.... we should note conflict oids, and not insert them
+#    2. for oid_as_path... events coming in for old creations, long since deleted or otherwise overwritten (renamed away, etc)
+
+

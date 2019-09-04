@@ -1,6 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Optional
 from dataclasses import dataclass
+from .exceptions import CloudTemporaryError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType
@@ -55,6 +56,9 @@ class EventManager(Runnable):
             self.walk_root = None
 
         for event in self.events:
+            if not event:
+                log.error("%s got BAD event %s", self.label, event)
+                continue
             self.process_event(event)
 
         current_cursor = self.provider.current_cursor
@@ -69,23 +73,26 @@ class EventManager(Runnable):
             pass
 
     def process_event(self, event: Event):
-        log.debug("%s got event %s", self.label, event)
-        path = event.path
-        exists = event.exists
-        otype = event.otype
+        with self.state.lock:
+            log.debug("%s got event %s", self.label, event)
+            path = event.path
+            exists = event.exists
+            otype = event.otype
 
-        if not event.path and not self.state.lookup_oid(self.side, event.oid):
-            info = self.provider.info_oid(event.oid)
-            if info and info.otype != event.otype:
-                log.warning("provider %s gave a bad event: %s != %s, using %s", self.provider.name, info.path, event.otype, info.otype)
-            if info:
-                path = info.path
-                otype = info.otype
-            else:
-                log.debug("ignoring delete of something that can't exist")
-                return
+            if not event.path and not self.state.lookup_oid(self.side, event.oid):
+                try:
+                    info = self.provider.info_oid(event.oid)
+                    if info:
+                        if info.otype != event.otype:
+                            log.warning("provider %s gave a bad event: %s != %s, using %s",
+                                        self.provider.name, info.path, event.otype, info.otype)
+                        path = info.path
+                        otype = info.otype
+                except CloudTemporaryError:
+                    pass
 
-        self.state.update(self.side, otype, event.oid, path=path, hash=event.hash, exists=exists, prior_oid=event.prior_oid, provider=self.provider)
+            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash,
+                              exists=exists, prior_oid=event.prior_oid)
 
     def stop(self):
         self.events.shutdown = True

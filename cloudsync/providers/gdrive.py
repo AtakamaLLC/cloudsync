@@ -490,6 +490,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         info = self._info_oid(oid)
         if info is None:
+            log.debug("can't rename, oid doesn't exist %s", oid)
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
         old_path = info.path
@@ -515,14 +516,23 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if coid == oid:
                     old_path = cpath
 
+
+        if add_pids == remove_pids:
+            add_pids = ""
+            remove_pids = ""
+        else:
+            add_pids = ",".join(add_pids)
+            remove_pids = ",".join(remove_pids)
+
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
 
-        for cpath, coid in list(self._ids.items()):
-            relative = self.is_subpath(old_path, cpath)
-            if relative:
-                new_cpath = self.join(path, relative)
-                self._ids.pop(cpath)
-                self._ids[new_cpath] = coid
+        if old_path:
+            for cpath, coid in list(self._ids.items()):
+                relative = self.is_subpath(old_path, cpath)
+                if relative:
+                    new_cpath = self.join(path, relative)
+                    self._ids.pop(cpath)
+                    self._ids[new_cpath] = coid
 
         log.debug("renamed %s -> %s", oid, body)
 
@@ -628,10 +638,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not res['files']:
             return None
 
-        if res.get('trashed'):
-            return None
-
         ent = res['files'][0]
+
+        if ent.get('trashed'):
+            # TODO:
+            # need to write a tests that moves files to the trash, as if a user moved the file to the trash
+            # then assert it shows up "file not found" in all queries
+            return None
 
         log.debug("res is %s", res)
 
@@ -667,10 +680,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if parent == path:
             return self._ids.get(parent)
 
-        if not self.exists_path(parent):
+        # get the latest version of the parent path
+        # it may have changed, or case may be different, etc.
+        info = self.info_path(parent)
+        if not info:
             raise CloudFileNotFoundError("parent %s must exist" % parent)
 
-        return self._ids[parent]
+        # cache the latest version
+        return self._ids[info.path]
 
     def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]:
         """convert oid to path"""
