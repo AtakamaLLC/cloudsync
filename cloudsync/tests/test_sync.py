@@ -844,7 +844,7 @@ def test_remove_folder_with_kids(sync):
     sync.change_state(LOCAL, FILE, path=file1[LOCAL], oid=file_info.oid, hash=None)
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
-    sync.run_until_found((REMOTE, folder1[REMOTE]))
+    sync.run_until_found((REMOTE, file1[REMOTE]))
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
@@ -856,10 +856,8 @@ def test_remove_folder_with_kids(sync):
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
-    sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False))
-    sync.run_until_found(WaitFor(REMOTE, folder1[REMOTE], exists=False))
+    sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False), WaitFor(REMOTE, folder1[REMOTE], exists=False))
 
-    log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
