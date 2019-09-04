@@ -320,9 +320,9 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
 
         lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
         rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
-        lhma = abbrev_bool(self[LOCAL].sync_hash !=
+        lhma = abbrev_bool(self[LOCAL].hash and self[LOCAL].sync_hash !=
                            self[LOCAL].hash, ("H", "=", "?"))
-        rhma = abbrev_bool(self[REMOTE].sync_hash !=
+        rhma = abbrev_bool(self[REMOTE].hash and self[REMOTE].sync_hash !=
                            self[REMOTE].hash, ("H", "=", "?"))
 
         if use_sigs:

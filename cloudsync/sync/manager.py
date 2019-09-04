@@ -632,18 +632,23 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             if ent.is_creation(synced):
                 log.debug("discard delete, pending create %s:%s", synced, ent)
                 self.discard_entry(sync)
-                return
+                return FINISHED
 
         if sync[synced].oid:
             try:
                 self.providers[synced].delete(sync[synced].oid)
             except CloudFileNotFoundError:
                 pass
+            except CloudFileExistsError:
+                log.debug("kids exist, punt %s", sync[changed].path)
+                sync.punt()
+                return REQUEUE
         else:
             log.debug("was never synced, ignoring deletion")
 
         sync[synced].exists = TRASHED
         self.discard_entry(sync)
+        return FINISHED
 
     def check_disjoint_create(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table
@@ -844,7 +849,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
             # parent_conflict code
             # todo: make this walk up parents to the translate == None "root"
             parent = self.providers[changed].dirname(sync[changed].path)
-            if any(e[changed].changed for e in self.state.lookup_path(changed, parent)):
+            if any(e[changed].changed and e[changed].exists == EXISTS for e in self.state.lookup_path(changed, parent)):
                 changes = [e for e in self.state.lookup_path(changed, parent) if e[changed].changed]
                 log.debug("parent modify %s should happen first %s", sync[changed].path, changes)
                 changes[0][changed].set_aged()
@@ -853,8 +858,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
         if sync[changed].exists == TRASHED:
             log.debug("delete")
-            self.delete_synced(sync, changed, synced)
-            return FINISHED
+            return self.delete_synced(sync, changed, synced)
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
