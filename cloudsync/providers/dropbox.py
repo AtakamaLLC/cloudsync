@@ -4,12 +4,17 @@ import time
 import logging
 import threading
 from hashlib import sha256
+import webbrowser
 from typing import Generator, Optional
+from os import urandom
+from base64 import urlsafe_b64encode as u_b64enc
 import requests
 import arrow
 
 import dropbox
-from dropbox import Dropbox, exceptions, files
+from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
+from dropbox.oauth import OAuth2FlowResult
+from cloudsync.oauth_redir_server import OAuthRedirServer
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
@@ -61,6 +66,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     _max_simple_upload_size = 15 * 1024 * 1024
     _upload_block_size = 10 * 1024 * 1024
     name = "Dropbox"
+    _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
     def __init__(self):
         super().__init__()
@@ -68,12 +74,79 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.__cursor = None
         self.client = None
         self.api_key = None
+        self._csrf = None
+        self._flow = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
+        self._session = {}
+        self._redir_server: Optional[OAuthRedirServer] = None
+        self._oauth_done = threading.Event()
 
     @property
     def connected(self):
         return self.client is not None
+
+    def get_display_name(self):
+        return self.name
+
+    def initialize(self, localhost_redir=True):
+        self._csrf = u_b64enc(urandom(32))
+        key = 'objo7li90yqmnfi'
+        secret = '9usaijv8g3fsqsl'
+        log.debug('Initializing Dropbox with localhost_redir=%s', localhost_redir)
+        if localhost_redir:
+            try:
+                if not self._redir_server:
+                    self._redir_server = OAuthRedirServer(self._on_oauth_success,
+                                                          self.get_display_name(),
+                                                          use_predefined_ports=True,
+                                                          on_failure=self._on_oauth_failure)
+                self._flow = DropboxOAuth2Flow(consumer_key=key,
+                                              consumer_secret=secret,
+                                              redirect_uri=self._redir_server.uri('/auth/'),
+                                              session=self._session,
+                                              csrf_token_session_key=self._csrf,
+                                              locale=None)
+            except OSError:
+                log.exception('Unable to use redir server. Falling back to manual mode')
+                localhost_redir = False
+        if not localhost_redir:
+            self._flow = DropboxOAuth2Flow(consumer_key=key,
+                                          consumer_secret=secret,
+                                          redirect_uri=self._redir,
+                                          session=self._session,
+                                          csrf_token_session_key=self._csrf,
+                                          locale=None)
+        url = self._flow.start()
+        self._oauth_done.clear()
+        webbrowser.open(url)
+
+        return localhost_redir, url
+
+    def _on_oauth_success(self, auth_dict):
+        if auth_dict and 'state' in auth_dict and isinstance(auth_dict['state'], list):
+            auth_dict['state'] = auth_dict['state'][0]
+        try:
+            res: OAuth2FlowResult = self._flow.finish(auth_dict)
+            self.api_key = res.access_token
+            self._oauth_done.set()
+        except Exception:
+            log.exception('Authentication failed')
+            raise
+
+    def _on_oauth_failure(self, err):
+        log.error("oauth failure: %s", err)
+        self._oauth_done.set()
+
+    def authenticate(self):
+        try:
+            self.initialize()
+            self._oauth_done.wait()
+            return {"api_key": self.api_key,}
+        finally:
+            if self._redir_server:
+                self._redir_server.shutdown()
+                self._redir_server = None
 
     def get_quota(self):
         space_usage = self._api('users_get_space_usage')
@@ -97,21 +170,30 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def connect(self, creds):
         log.debug('Connecting to dropbox')
         if not self.client:
-            self.api_key = creds.get('key', self.api_key)
-            if not self.api_key:
-                raise CloudTokenError()
+            api_key = creds.get('key', self.api_key)
+            if not api_key:
+                new_creds = self.authenticate()
+                api_key = new_creds.get('api_key') or "4gLPdlJUlqAAAAAAAAALSeoxglO0XDZjOg5jioBStxp8DGerN8rXifFgXMg_o2vl"
+                log.debug("api_key=%s", api_key)   # Do not merge this code
 
-            self.client = Dropbox(self.api_key)
+            with self.mutex:
+                self.client = Dropbox(api_key)
+
             try:
                 quota = self.get_quota()
                 self.connection_id = quota['login']
-            except exceptions.AuthError:
-                self.disconnect()
-                raise CloudTokenError()
             except Exception as e:
-                log.debug("error connecting %s", e)
                 self.disconnect()
-                raise CloudDisconnectedError()
+                if creds.get('key', None) is not None:
+                    log.debug('provided credentials were bad, forcing oauth')
+                    creds.pop('key')
+                    self.connect(creds)
+                else:
+                    log.exception("error connecting %s", e)
+                    if isinstance(e, exceptions.AuthError):
+                        raise CloudTokenError()
+                    raise CloudDisconnectedError()
+            self.api_key = api_key
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
