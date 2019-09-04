@@ -1,3 +1,5 @@
+#pylint: disable=too-many-lines
+
 import os
 import logging
 import tempfile
@@ -165,7 +167,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
 
     def path_conflict(self, ent):
         # both are synced
-        if ent[0].path and ent[1].path and ((ent[0].sync_hash and ent[1].sync_hash)
+        if ent[0].path and ent[1].path and ((ent[0].sync_hash and ent[1].sync_hash)         # pylint: disable=too-many-boolean-expressions
                                             or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)):
             return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
                     not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
