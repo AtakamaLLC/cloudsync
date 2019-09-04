@@ -93,10 +93,7 @@ class OAuthRedirServer:
             log.exception('Failed to authenticate')
             err = 'Unknown error: %s' % e
 
-        resp = self.auth_failure(err) if err else self.auth_success()
-        log.info("About to respond with this")
-        log.info(resp)
-        return resp
+        return self.auth_failure(err) if err else self.auth_success()
 
     def auth_success(self):
         if self.success_html_generator:
