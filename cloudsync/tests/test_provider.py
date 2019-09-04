@@ -344,7 +344,11 @@ def test_join(mock_provider):
 
 def test_connect(provider):
     assert provider.connected
-
+    provider.disconnect()
+    assert not provider.connected
+    # todo: maybe assert provider.creds here... because creds should probably be a fcs of provider
+    provider.reconnect()
+    assert provider.connected
 
 def test_create_upload_download(provider):
     dat = os.urandom(32)
@@ -1218,10 +1222,16 @@ def test_delete_doesnt_cross_oids(provider: ProviderMixin):
     with pytest.raises(Exception):
         provider.upload(temp_name, BytesIO(b"test2"))
 
-def test_rename_case_change(provider: ProviderMixin):
+
+@pytest.mark.parametrize("otype", ["file", "folder"])
+def test_rename_case_change(provider: ProviderMixin, otype):
     temp_namel = provider.temp_name().lower()
     temp_nameu = temp_namel.upper()
-    infol = provider.create(temp_namel, BytesIO(b"test"))
+    if otype == "file":
+        infol = provider.create(temp_namel, BytesIO(b"test"))
+    else:
+        l_oid = provider.mkdir(temp_namel)
+        infol = provider.info_oid(l_oid)
     assert infol.path == temp_namel
     new_oid = provider.rename(infol.oid, temp_nameu)
     assert new_oid

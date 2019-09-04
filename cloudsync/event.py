@@ -1,7 +1,8 @@
 import logging
+import time
 from typing import TYPE_CHECKING, Optional
 from dataclasses import dataclass
-from .exceptions import CloudTemporaryError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType
@@ -39,6 +40,11 @@ class EventManager(Runnable):
         self.cursor = self.state.storage_get_cursor(self._cursor_tag)
         self.walk_root = None
 
+        self.min_backoff = provider.default_sleep / 10
+        self.max_backoff = provider.default_sleep * 4
+        self.mult_backoff = 2
+        self.backoff = self.min_backoff
+
         if not self.cursor:
             self.walk_root = walk_root
             self.cursor = provider.current_cursor
@@ -49,23 +55,34 @@ class EventManager(Runnable):
 # TODO!!!!            provider.current_cursor = self.cursor
 
     def do(self):
-        if self.walk_root:
-            log.debug("walking all %s/%s files as events, because no working cursor on startup", self.provider.name, self.walk_root)
-            for event in self.provider.walk(self.walk_root):
+        try:
+            if self.walk_root:
+                log.debug("walking all %s/%s files as events, because no working cursor on startup",
+                          self.provider.name, self.walk_root)
+                for event in self.provider.walk(self.walk_root):
+                    self.process_event(event)
+                self.walk_root = None
+                self.backoff = self.min_backoff
+
+            for event in self.events:
+                if not event:
+                    log.error("%s got BAD event %s", self.label, event)
+                    continue
                 self.process_event(event)
-            self.walk_root = None
 
-        for event in self.events:
-            if not event:
-                log.error("%s got BAD event %s", self.label, event)
-                continue
-            self.process_event(event)
+            current_cursor = self.provider.current_cursor
 
-        current_cursor = self.provider.current_cursor
-
-        if current_cursor != self.cursor:
-            self.state.storage_update_cursor(self._cursor_tag, current_cursor)
-            self.cursor = current_cursor
+            if current_cursor != self.cursor:
+                self.state.storage_update_cursor(self._cursor_tag, current_cursor)
+                self.cursor = current_cursor
+        except CloudDisconnectedError:
+            try:
+                time.sleep(self.backoff)
+                self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
+                log.info("reconnect to %s", self.provider.name)
+                self.provider.reconnect()
+            except Exception as e:
+                log.error("can't reconnect to %s: %s", self.provider.name, e)
 
     def _drain(self):
         # for tests, delete events

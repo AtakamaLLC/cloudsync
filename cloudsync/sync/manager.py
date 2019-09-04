@@ -12,7 +12,7 @@ from cloudsync.provider import Provider
 
 __all__ = ['SyncManager']
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError
 from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -111,6 +111,7 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
         self.__resolve_conflict = resolver
 
     def do(self):
+        need_reconnect = False
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
 
@@ -119,10 +120,9 @@ class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-man
                     self.sync(sync)
                     self.state.storage_update(sync)
                     self.backoff = self.min_backoff
-                except CloudTemporaryError as e:
+                except (CloudTemporaryError, CloudDisconnectedError) as e:
                     log.error(
                         "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
-                    sync.punt()
                     time.sleep(self.backoff)
                     self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
                 except Exception as e:
