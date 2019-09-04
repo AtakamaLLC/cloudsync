@@ -40,7 +40,7 @@ class OAuthRedirServer:
     def running(self):
         return self.__running
 
-    def run(self, on_success: Callable[[Any], None], on_failure: Callable[[], None], use_predefined_ports=False):
+    def run(self, on_success: Callable[[Any], None], on_failure: Callable[[str], None], use_predefined_ports=False):
         if self.__running:
             raise RuntimeError('OAuth server was run() twice')
         if not on_success:
