@@ -438,6 +438,49 @@ def test_sync_subdir_rename(cs):
 # so run it a few times
 
 
+def test_sync_rename_over(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    fn1 = "hello1"
+    fn2 = "hello2"
+    local_path1 = cs.providers[LOCAL].join(local_parent, fn1)  # "/local/hello1"
+    local_path2 = cs.providers[LOCAL].join(local_parent, fn2)  # "/local/hello2"
+    remote_path1 = cs.providers[REMOTE].join(remote_parent, fn1)  # "/remote/hello1"
+    remote_path2 = cs.providers[REMOTE].join(remote_parent, fn2)  # "/remote/hello2"
+
+    lpoid = cs.providers[LOCAL].mkdir(local_parent)
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(local_path1.encode('utf-8')))
+    linfo2 = cs.providers[LOCAL].create(local_path2, BytesIO(local_path1.encode('utf-8')))
+
+    cs.run_until_found((REMOTE, remote_path1), (REMOTE, remote_path2),  timeout=2)
+
+    log.info("TABLE 1\n" + cs.state.pretty_print(use_sigs=False))
+    # rename a file over another file by deleting the target and doing the rename in quick succession
+    cs.providers[LOCAL].delete(linfo2.oid)
+    cs.providers[LOCAL].rename(linfo1.oid, local_path2)
+
+    log.info("TABLE 2\n" + cs.state.pretty_print(use_sigs=False))
+    cs.run_until_found(WaitFor(side=REMOTE, path=remote_path1, exists=False),  timeout=2)
+    log.info("TABLE 3\n%s", cs.state.pretty_print(use_sigs=False))
+
+    # check the contents to make sure that path2 has path1's content
+    new_oid = cs.providers[REMOTE].info_path(remote_path2).oid
+    contents = BytesIO()
+    cs.providers[REMOTE].download(new_oid, contents)
+    assert contents.getvalue() == local_path1.encode('utf-8')
+
+    # check that the folders each have only one file, and that it's path2
+    rpoid = cs.providers[REMOTE].info_path(remote_parent).oid
+    ldir = list(cs.providers[LOCAL].listdir(lpoid))
+    rdir = list(cs.providers[REMOTE].listdir(rpoid))
+    log.debug("ldir = %s", ldir)
+    log.debug("rdir = %s", rdir)
+    assert len(ldir) == 1
+    assert ldir[0].path == local_path2
+    assert len(rdir) == 1
+    assert rdir[0].path == remote_path2
+
+
 @pytest.mark.repeat(10)
 def test_sync_folder_conflicts_file(cs):
     remote_path1 = "/remote/stuff1"
