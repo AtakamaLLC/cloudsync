@@ -58,6 +58,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         super().__init__()
         self.__root_id = None
         self.__cursor = None
+        self.__creds = None
         self.client = None
         self.api_key = None
         self.refresh_token = None
@@ -160,13 +161,18 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return res
 
+    def reconnect(self):
+        self.connect(self.__creds)
+
     def connect(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
             api_key = creds.get('api_key', self.api_key)
             refresh_token = creds.get('refresh_token', self.refresh_token)
+            self.__creds = creds
             if not refresh_token:
                 new_creds = self.authenticate()
+                self.__creds = new_creds
                 api_key = new_creds.get('api_key', None)
                 refresh_token = new_creds.get('refresh_token', None)
             kwargs = {}

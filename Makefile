@@ -9,6 +9,8 @@ requirements: env
 
 lint:
 	pylint cloudsync --ignore tests
+	git fetch origin master
+	./check_version.sh
 
 test:
 	pytest --durations=0 -n=4 cloudsync/tests

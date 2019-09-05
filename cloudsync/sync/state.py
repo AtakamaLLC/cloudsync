@@ -650,21 +650,23 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         prior_ent = None
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
-            if not ent and prior_ent and not prior_ent.discarded:
+            if prior_ent and not prior_ent.discarded:
+                if ent and ent[side].exists == TRASHED and ent[side].changed and not ent.discarded:
+                    ent[side].oid = None  # avoid having duplicate oids, and avoid discarding a changed entry
                 ent = prior_ent
                 prior_ent = None
 
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             path_ents = self.lookup_path(side, path, stale=True)
-            if path_ents:
+            for path_ent in path_ents:
                 if not ent:
-                    ent = path_ents[0]
+                    ent = path_ent
                     ent.discarded = False
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
-                elif ent is not path_ents[0]:
-                    path_ents[0].discard()
-                    self.storage_update(path_ents[0])
+                elif ent is not path_ent and not path_ent[side].changed:
+                    path_ent.discard()
+                    self.storage_update(path_ent)
                     log.debug("discarded existing entry %s:%s", debug_sig(oid), path)
 
         if not ent:

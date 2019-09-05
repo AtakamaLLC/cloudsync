@@ -10,7 +10,7 @@ import pytest
 from cloudsync.event import Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudDisconnectedError
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +53,9 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
     def copy(self):
         return copy.copy(self)
+
+    def __repr__(self):
+        return "MockFSObject: %s(%s) %s %s %s" % (self.path, len(self.contents), self.oid, self.exists, self.type)
 
 
 class MockEvent:  # pylint: disable=too-few-public-methods
@@ -106,8 +109,16 @@ class MockProvider(Provider):
         }
         self.event_timeout = 1
         self.event_sleep = 0.001
-        self.creds = {}
+        self.creds = {"key": "val"}
         self.connection_id = os.urandom(2).hex()
+
+    def disconnect(self):
+        self.connected = False
+
+    def reconnect(self):
+        if not self.creds:
+            raise CloudTokenError()
+        self.connected = True
 
     def _register_event(self, action, target_object, prior_oid=None):
         event = MockEvent(action, target_object, prior_oid)
@@ -159,6 +170,8 @@ class MockProvider(Provider):
         return retval
 
     def _api(self, *args, **kwargs):
+        if not self.connected:
+            raise CloudDisconnectedError()
         pass
 
     @property
@@ -393,7 +406,6 @@ def mock_provider_instance(oid_is_path, case_sensitive):
     prov = MockProvider(oid_is_path, case_sensitive)
     prov.event_timeout = 1
     prov.event_sleep = 0.001
-    prov.creds = {}
     return prov
 
 
