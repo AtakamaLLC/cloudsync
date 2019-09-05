@@ -33,7 +33,7 @@ def gdrive_provider():
     cls.event_timeout = 60
     cls.event_sleep = 2
     cls.creds = gdrive_creds()
-    return cls(OAuthConfig())
+    return cls()
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def connect_test(want_oauth: bool):
     if want_oauth:
         creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = GDriveProvider(OAuthConfig())
+    gd = GDriveProvider()
     gd.connect(creds)
     assert gd.client
     gd.get_quota()

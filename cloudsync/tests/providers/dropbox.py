@@ -39,7 +39,7 @@ def dropbox_provider():
     cls.event_timeout = 20
     cls.event_sleep = 2
     cls.creds = dropbox_creds()
-    return cls(OAuthConfig())
+    return cls()
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def connect_test(want_oauth: bool, creds=None):
     if want_oauth:
         creds.pop("key", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = DropboxProvider(OAuthConfig())
+    gd = DropboxProvider()
     gd.connect(creds)
     assert gd.client
     quota = gd.get_quota()

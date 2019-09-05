@@ -14,7 +14,6 @@ import arrow
 import dropbox
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
-from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync.oauth_config import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
@@ -68,7 +67,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
-    def __init__(self, oauth_config: OAuthConfig):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -79,7 +78,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._session = {}
-        self._oauth_config = oauth_config
+        self._oauth_config = oauth_config if oauth_config else OAuthConfig()
         self._oauth_done = threading.Event()
 
     @property

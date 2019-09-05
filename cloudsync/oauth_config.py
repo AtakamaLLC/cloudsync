@@ -1,4 +1,4 @@
-from typing import Optional, Callable, Any
+from typing import Optional
 from .oauth_redir_server import OAuthRedirServer
 
 

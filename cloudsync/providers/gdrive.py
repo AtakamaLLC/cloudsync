@@ -5,7 +5,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional, Callable
+from typing import Generator, Optional
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -54,7 +54,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
-    def __init__(self, oauth_config: OAuthConfig):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -66,7 +66,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids = {"/": "root"}
         self._trashed_ids = {}
         self._flow = None
-        self._oauth_config = oauth_config
+        self._oauth_config = oauth_config if oauth_config else OAuthConfig()
         self._oauth_done = threading.Event()
 
     @property
