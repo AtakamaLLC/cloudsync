@@ -33,6 +33,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         #   suggestion is to just set the connection_id to the user's login_id
         self.connection_id = os.urandom(16).hex()
 
+    def reconnect(self):                # pylint: disable=no-self-use
+        # reuse existing credentials and reconnect
+        # raises: CloudDisconnectedError on failure
+        pass
+
     @property
     @abstractmethod
     def name(self):

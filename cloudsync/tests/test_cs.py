@@ -703,9 +703,28 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
     assert rinfo1.path == remote_path1
     assert rinfo2.path == remote_path2
 
-
 # TODO: important tests: 
 #    1. events coming in for path updates for conflicted files.... we should note conflict oids, and not insert them
 #    2. for oid_as_path... events coming in for old creations, long since deleted or otherwise overwritten (renamed away, etc)
 
 
+def test_sync_disconnect(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    cs.providers[REMOTE].disconnect()
+
+    assert not cs.providers[REMOTE].connected
+
+    cs.run(until=lambda: cs.providers[REMOTE].connected, timeout=1)
+
+    assert not cs.providers[REMOTE].info_path(remote_path1)
+
+    cs.run_until_found((REMOTE, remote_path1))

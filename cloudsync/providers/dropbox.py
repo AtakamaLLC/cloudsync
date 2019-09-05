@@ -72,6 +72,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         super().__init__()
         self.__root_id = None
         self.__cursor = None
+        self.__creds = None
         self.client = None
         self.api_key = None
         self._csrf = None
@@ -167,13 +168,17 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
         return res
 
+    def reconnect(self):
+        self.connect(self.__creds)
+
     def connect(self, creds):
         log.debug('Connecting to dropbox')
         if not self.client:
+            self.__creds = creds
             api_key = creds.get('key', self.api_key)
             if not api_key:
-                new_creds = self.authenticate()
-                api_key = new_creds.get('api_key') or "4gLPdlJUlqAAAAAAAAALSeoxglO0XDZjOg5jioBStxp8DGerN8rXifFgXMg_o2vl"
+                self.disconnect()
+                raise CloudTokenError()
 
             with self.mutex:
                 self.client = Dropbox(api_key)

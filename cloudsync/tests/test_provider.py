@@ -344,7 +344,11 @@ def test_join(mock_provider):
 
 def test_connect(provider):
     assert provider.connected
-
+    provider.disconnect()
+    assert not provider.connected
+    # todo: maybe assert provider.creds here... because creds should probably be a fcs of provider
+    provider.reconnect()
+    assert provider.connected
 
 def test_create_upload_download(provider):
     dat = os.urandom(32)
