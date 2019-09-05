@@ -1,4 +1,5 @@
 import logging
+import time
 import threading
 import requests
 from unittest.mock import Mock, patch
@@ -8,6 +9,7 @@ log = logging.getLogger(__name__)
 
 
 def resp_gen(success: bool, error_msg: str) -> str:
+    time.sleep(2)  # We are making a biiiiiig response that takes way too long
     if success:
         return f'Success'
     else:
@@ -45,24 +47,14 @@ def test_oauth_redir_server():
         })
         assert res.status_code == 200
 
-    t = threading.Thread(target=send_req)
+    t = threading.Thread(target=send_req, daemon=True)
     t.start()
 
-    def patient_shutdown():
-        shutdown_signal.wait()
-        srv.shutdown()
-
-    shutdown_threads = [threading.Thread(target=patient_shutdown) for i in range(1, 30)]
-
-    # 11 threads all trying to shut down the save server at roughly the same time
-    for st in shutdown_threads:
-        st.start()
     shutdown_signal.wait()
     srv.shutdown()
 
-    t.join(2)
-    for st in shutdown_threads:
-        st.join(2)
+    t.join(4)
+    assert not t.is_alive()
 
     on_success.assert_not_called()
     on_failure.assert_called_once()
