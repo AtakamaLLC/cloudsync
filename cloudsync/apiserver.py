@@ -128,64 +128,65 @@ class ApiServer:
         try:
             if self.__started:
                 with self.__shutdown_lock:
-                    self.__shutting_down = True
-                timeout = time.time() + 2
-                for channel in self.__server.active_channels.values():
-                    channel: HTTPChannel
-                    while channel.total_outbufs_len > 0 and time.time() < timeout:
-                        time.sleep(.01)  # give any connections with a non-empty output buffer a chance to drain
-                self.__server.socket.close()
-                self.__server.asyncore.close_all()
+                    if not self.__shutting_down:
+                        self.__shutting_down = True
+                        timeout = time.time() + 2
+                        for channel in list(self.__server.active_channels.values()):  # Convert to a list to make a copy
+                            channel: HTTPChannel
+                            while channel.total_outbufs_len > 0 and time.time() < timeout:
+                                time.sleep(.01)  # give any connections with a non-empty output buffer a chance to drain
+                        self.__server.socket.close()
+                        self.__server.asyncore.close_all()
         except Exception:
             log.exception("exception during shutdown")
 
     def __call__(self, env, start_response):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
-        content = b"{}"
-        length = env.get("CONTENT_LENGTH", 0)
-        if length:
-            content = env['wsgi.input'].read(int(length))
-        if content:
-            try:
-                info = json.loads(content)
-            except Exception:
-                raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
-        else:
-            info = {}
-
-        url = '<unknown>'
-        try:
-            url = env.get('PATH_INFO', '/')
-
-            if self.__log_level == ApiServerLogLevel.CALLS or self.__log_level == ApiServerLogLevel.ARGS:
-                log.debug('Processing URL %s', url)
-
-            handler_tmp = self.__routes.get(url)
-            if not handler_tmp:
-                if url[-1] == "/":
-                    tmp = url[0:-1]
-                    handler_tmp = self.__routes.get(tmp)
-                if not handler_tmp:
-                    m = re.match(r"(.*?/)[^/]+$", url)
-                    if m:
-                        # adding a route "/" handles /foo
-                        # adding a route "/foo/bar/" handles /foo/bar/baz
-                        handler_tmp = self.__routes.get(m[1])
-
-            query = env.get('QUERY_STRING')
-
-            if query:
-                params = urlparse.parse_qs(query)
-            else:
-                params = {}
-
-            info.update(params)
-
-            if handler_tmp:
-                handler, content_type = handler_tmp
+        with self.__shutdown_lock:
+            if self.__shutting_down:
+                raise ConnectionAbortedError('Cannot handle request while shutting down')
+            content = b"{}"
+            length = env.get("CONTENT_LENGTH", 0)
+            if length:
+                content = env['wsgi.input'].read(int(length))
+            if content:
                 try:
-                    with self.__shutdown_lock:
-                        if self.__shutting_down:
-                            raise ConnectionAbortedError('Cannot handle request while shutting down')
+                    info = json.loads(content)
+                except Exception:
+                    raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
+            else:
+                info = {}
+
+            url = '<unknown>'
+            try:
+                url = env.get('PATH_INFO', '/')
+
+                if self.__log_level == ApiServerLogLevel.CALLS or self.__log_level == ApiServerLogLevel.ARGS:
+                    log.debug('Processing URL %s', url)
+
+                handler_tmp = self.__routes.get(url)
+                if not handler_tmp:
+                    if url[-1] == "/":
+                        tmp = url[0:-1]
+                        handler_tmp = self.__routes.get(tmp)
+                    if not handler_tmp:
+                        m = re.match(r"(.*?/)[^/]+$", url)
+                        if m:
+                            # adding a route "/" handles /foo
+                            # adding a route "/foo/bar/" handles /foo/bar/baz
+                            handler_tmp = self.__routes.get(m[1])
+
+                query = env.get('QUERY_STRING')
+
+                if query:
+                    params = urlparse.parse_qs(query)
+                else:
+                    params = {}
+
+                info.update(params)
+
+                if handler_tmp:
+                    handler, content_type = handler_tmp
+                    try:
                         response = handler(env, info)
                         if response is None:
                             response = ""
@@ -196,24 +197,24 @@ class ApiServer:
                                                     ("Content-Length", str(len(response)))]
                         start_response('200 OK', headers)
                         yield response
-                except ApiError:
-                    raise
+                    except ApiError:
+                        raise
+                    except ConnectionAbortedError as e:
+                        log.error("GET %s : ERROR : %s", url, e)
+                    except Exception as e:
+                        raise ApiError(500, type(e).__name__ + " : " + str(e), traceback.format_exc())
+                else:
+                    raise ApiError(404, f"No handler for {url}")
+            except ApiError as e:
+                try:
+                    log.error("GET %s : ERROR : %s", url, e)
+
+                    response = json.dumps({"code": e.code, "msg": e.msg, "desc": e.desc})
+                    start_response(str(e.code) + ' ' + sanitize_for_status(e.msg),
+                                   [('Content-Type', 'application/json'), ("Content-Length", str(len(response)))])
+                    yield bytes(response, "utf-8")
                 except ConnectionAbortedError as e:
                     log.error("GET %s : ERROR : %s", url, e)
-                except Exception as e:
-                    raise ApiError(500, type(e).__name__ + " : " + str(e), traceback.format_exc())
-            else:
-                raise ApiError(404, f"No handler for {url}")
-        except ApiError as e:
-            try:
-                log.error("GET %s : ERROR : %s", url, e)
-
-                response = json.dumps({"code": e.code, "msg": e.msg, "desc": e.desc})
-                start_response(str(e.code) + ' ' + sanitize_for_status(e.msg),
-                               [('Content-Type', 'application/json'), ("Content-Length", str(len(response)))])
-                yield bytes(response, "utf-8")
-            except ConnectionAbortedError as e:
-                log.error("GET %s : ERROR : %s", url, e)
 
 
 class TestApiServer(unittest.TestCase):

@@ -3,7 +3,7 @@ import sys
 import socket
 import threading
 import errno
-from typing import Callable, Optional, Any
+from typing import Callable, Any
 # from src import config
 from .apiserver import ApiServer
 # from src.osutil import is_windows
