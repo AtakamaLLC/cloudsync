@@ -639,7 +639,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         return len(self.get_all())
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-        log.log(TRACE, "lookup %s", debug_sig(oid))
         ent = self.lookup_oid(side, oid)
 
         prior_ent = None
@@ -651,6 +650,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 ent = prior_ent
                 prior_ent = None
 
+        log.debug("update state, oid: %s, prior oid: %s, path: %s, exists: %s, ent: %s, prior_ent: %s",
+                  debug_sig(oid), debug_sig(prior_oid), path, exists,
+                  debug_sig(ent.id) if ent else False,
+                  debug_sig(prior_ent.id) if prior_ent else False
+                  )
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             path_ents = self.lookup_path(side, path, stale=True)
