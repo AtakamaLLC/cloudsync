@@ -374,7 +374,7 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
             if self[REMOTE].changed:
                 self[REMOTE].changed = time.time()
 
-
+@strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
     def __init__(self, providers, storage: Optional[Storage] = None, tag: Optional[str] = None, shuffle=True):
         self._oids = ({}, {})
