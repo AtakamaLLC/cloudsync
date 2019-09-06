@@ -123,6 +123,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
         return url
 
+    def interrupt_oauth(self):
+        if not self._oauth_config.manual_mode:
+            self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
+        self._flow = None
+        self._oauth_done.clear()
+
     def _on_oauth_success(self, auth_dict):
         if auth_dict and 'state' in auth_dict and isinstance(auth_dict['state'], list):
             auth_dict['state'] = auth_dict['state'][0]
@@ -173,13 +179,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         log.debug('Connecting to dropbox')
         if not self.client:
             self.__creds = creds
-            api_key = creds.get('key', self.api_key)
+            api_key = creds.get('api_key', self.api_key)
             if not api_key:
-                new_creds = self.authenticate()
-                api_key = new_creds.get('api_key')
-                if not api_key:
-                    self.disconnect()
-                    raise CloudTokenError()
+                self.__creds = self.authenticate()
+                api_key = self.__creds.get('api_key')
 
             with self.mutex:
                 self.client = Dropbox(api_key)
@@ -189,10 +192,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.connection_id = quota['login']
             except Exception as e:
                 self.disconnect()
-                if creds.get('key', None) is not None:
+                if self.__creds.get('api_key', None) is not None:
                     log.debug('provided credentials were bad, forcing oauth')
-                    creds.pop('key')
-                    self.connect(creds)
+                    self.__creds.pop('api_key')
+                    self.connect(self.__creds)
                 else:
                     log.exception("error connecting %s", e)
                     if isinstance(e, exceptions.AuthError):
