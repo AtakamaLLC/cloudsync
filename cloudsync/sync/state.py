@@ -54,8 +54,8 @@ TRASHED = Exists.TRASHED
 
 
 # state of a single object
-@strict
-class SideState(Reprable):                          # pylint: disable=too-few-public-methods, too-many-instance-attributes
+@strict         # pylint: disable=too-many-instance-attributes
+class SideState(Reprable):
     def __init__(self, parent: 'SyncEntry', side: int, otype: OType):
         self._parent = parent
         self._side: int = side                            # just for assertions
@@ -144,8 +144,8 @@ class Storage(ABC):
 
 
 # single entry in the syncs state collection
-@strict
-class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
+@strict         # pylint: disable=too-many-instance-attributes
+class SyncEntry(Reprable):
     def __init__(self, parent: 'SyncState', otype: OType, storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
@@ -376,7 +376,11 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
 
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
-    def __init__(self, providers, storage: Optional[Storage] = None, tag: Optional[str] = None, shuffle=True):
+    def __init__(self,
+                 providers: Tuple['Provider', 'Provider'],
+                 storage: Optional[Storage] = None,
+                 tag: Optional[str] = None,
+                 shuffle: bool = True):
         self._oids = ({}, {})
         self._paths = ({}, {})
         self._changeset = set()

@@ -6,19 +6,21 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional
-
-from cloudsync.provider import Provider
+from typing import Tuple, Optional, TYPE_CHECKING
 
 __all__ = ['SyncManager']
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError
-from cloudsync.types import DIRECTORY, FILE
+from cloudsync.types import OInfo, DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
+from cloudsync.strict import strict
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 from .util import debug_sig
+
+if TYPE_CHECKING:
+    from cloudsync.provider import Provider
 
 log = logging.getLogger(__name__)
 
@@ -31,9 +33,9 @@ REQUEUE = 0
 def other_side(index):
     return 1-index
 
-
+@strict
 class ResolveFile():
-    def __init__(self, info, provider):
+    def __init__(self, info: OInfo, provider: 'Provider'):
         self.info = info
         self.provider = provider
         self.path = info.path
@@ -76,9 +78,9 @@ class ResolveFile():
 
 
 class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-many-instance-attributes
-    def __init__(self, state, providers: Tuple[Provider, Provider], translate, resolve_conflict, sleep=None):
+    def __init__(self, state, providers: Tuple['Provider', 'Provider'], translate, resolve_conflict, sleep=None):
         self.state: SyncState = state
-        self.providers: Tuple[Provider, Provider] = providers
+        self.providers: Tuple['Provider', 'Provider'] = providers
         self.translate = translate
         self.__resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
