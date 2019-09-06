@@ -47,7 +47,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         try:
             self.connect(creds)
         except CloudTokenError:
-            creds = self.authenticate()
+            creds = self.authenticate()  # pylint: disable=assignment-from-no-return
             self.connect(creds)
         return creds
 
