@@ -298,7 +298,7 @@ class SyncManager(Runnable):
                     log.debug("discard %s", ent)
                     self.discard_entry(ent)
 
-        ents = [ent for ent in ents if not ent.discarded]
+        ents = [ent for ent in ents if not ent.discarded and not ent.conflicted]
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
 
@@ -618,7 +618,7 @@ class SyncManager(Runnable):
             replace_side = other_side(defer)
             replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
             if replace_ent:
-                self.discard_entry(replace_ent)
+                self.conflict_entry(replace_ent)
         else:
             # both sides were modified....
             self.__resolver_merge_upload(side_states, fh, keep)
@@ -850,10 +850,23 @@ class SyncManager(Runnable):
             sync.discard()
             self.state.storage_update(sync)
 
+    def conflict_entry(self, sync):
+        if sync:
+            sync.conflict()
+            self.state.storage_update(sync)
+
     def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements
         if sync.discarded:
             log.warning("discarded!")
             return FINISHED
+
+        if sync.conflicted:
+            log.debug("Conflicted file %s is changing", sync[changed].path)
+            if "conflicted" in sync[changed].path:
+                return FINISHED
+            else:
+                sync.unconflict()
+
         log.debug("embrace %s, side:%s", sync, changed)
 
         if sync[changed].path:

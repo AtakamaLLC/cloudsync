@@ -150,6 +150,7 @@ class SyncEntry(Reprable):
         super().__init__()
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
+        self._conflicted: bool = False
         self._storage_id: Any = None
         self._dirty: bool = True
         self._punted: int = 0
@@ -202,6 +203,7 @@ class SyncEntry(Reprable):
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['discarded'] = self.discarded
+        ser['conflicted'] = self.conflicted
         return json.dumps(ser).encode('utf-8')
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
@@ -227,6 +229,7 @@ class SyncEntry(Reprable):
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         self.discarded = ser['discarded']
+        self.conflicted = ser['conflicted']
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -275,9 +278,15 @@ class SyncEntry(Reprable):
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
 
+    def conflict(self):
+        self.conflicted = True
+
+    def unconflict(self):
+        self.conflicted = False
+
     @staticmethod
     def prettyheaders():
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             "EID",  # _sig(id(self)),
             "SID",  # _sig(self.storage_id),
             "Typ",  # otype,
@@ -290,6 +299,7 @@ class SyncEntry(Reprable):
             "OID",  # _sig(self[REMOTE].oid),
             "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
             "Punt",  # self.punted or ""
+            "Conflict",  # self.conflicted or ""
         )
         return ret
 
@@ -335,9 +345,10 @@ class SyncEntry(Reprable):
                             self[LOCAL].oid), str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma),
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
-                        self._punted))
+                        self._punted,
+                        self._conflicted))
 
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
@@ -349,7 +360,8 @@ class SyncEntry(Reprable):
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            self._punted or ""
+            self._punted or "",
+            self._conflicted or "",
         )
 
         return ret
@@ -525,7 +537,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         try:
             ret = self._paths[side][path].values()
             if ret:
-                return [e for e in ret if stale or not e.discarded]
+                return [e for e in ret if stale or (not e.discarded and not e.conflicted)]
             return []
         except KeyError:
             return []
@@ -556,13 +568,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if oid is not None:
             if ent.discarded:
                 if self.providers[side].oid_is_path:
-                    if path and "conflicted" not in path:
+                    if path:
                         if otype:
                             log.log(TRACE, "dropping old entry %s, and making new", ent)
                             ent = SyncEntry(self, otype)
 
             ent[side].oid = oid
-            if oid and not ent.discarded:
+            if oid and not ent.discarded and not ent.conflicted:
                 assert ent in self.get_all()
 
         if otype is not None:
@@ -728,7 +740,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.discarded:
+            if not ent.discarded and not ent.conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -751,13 +763,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if ent.discarded and not discarded:
+            if (ent.discarded or ent.conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if ent.discarded and not discarded:
+            if (ent.discarded or ent.conflicted) and not discarded:
                 continue
             ents.add(ent)
 
