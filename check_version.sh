@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if git diff origin/master --name-only | grep -qE 'cloudsync/.*\.py'; then
-    if git diff origin/master | grep -q __version__; then
+    if git diff -U0 origin/master | grep -q __version__; then
         echo "OK, version changed"
     else
         echo "FAIL: please increment version"
