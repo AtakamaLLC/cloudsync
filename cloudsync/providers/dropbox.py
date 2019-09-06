@@ -173,16 +173,19 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return res
 
     def reconnect(self):
-        self.connect(self.__creds)
+        self.connect_or_authenticate(self.__creds)
 
     def connect(self, creds):
         log.debug('Connecting to dropbox')
         if not self.client:
             self.__creds = creds
             api_key = creds.get('api_key', self.api_key)
+            # if not api_key:
+            #     self.__creds = self.authenticate()
+            #     api_key = self.__creds.get('api_key', '')
+
             if not api_key:
-                self.__creds = self.authenticate()
-                api_key = self.__creds.get('api_key')
+                raise CloudTokenError()
 
             with self.mutex:
                 self.client = Dropbox(api_key)
@@ -192,15 +195,15 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.connection_id = quota['login']
             except Exception as e:
                 self.disconnect()
-                if self.__creds.get('api_key', None) is not None:
-                    log.debug('provided credentials were bad, forcing oauth')
-                    self.__creds.pop('api_key')
-                    self.connect(self.__creds)
-                else:
-                    log.exception("error connecting %s", e)
-                    if isinstance(e, exceptions.AuthError):
-                        raise CloudTokenError()
-                    raise CloudDisconnectedError()
+                # if self.__creds.get('api_key', None) is not None:
+                #     log.debug('provided credentials were bad, forcing oauth')
+                #     self.__creds.pop('api_key')
+                #     self.connect(self.__creds)
+                # else:
+                log.exception("error connecting %s", e)
+                if isinstance(e, exceptions.AuthError):
+                    raise CloudTokenError()
+                raise CloudDisconnectedError()
             self.api_key = api_key
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
