@@ -79,7 +79,11 @@ class ResolveFile():
 
 @strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
 class SyncManager(Runnable):
-    def __init__(self, state: SyncState, providers: Tuple['Provider', 'Provider'], translate: Callable, resolve_conflict: Callable, sleep: Tuple[int, int] = None):
+    def __init__(self, state: SyncState,
+                 providers: Tuple['Provider', 'Provider'],
+                 translate: Callable,
+                 resolve_conflict: Callable,
+                 sleep: Tuple[int, int] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.translate = translate
