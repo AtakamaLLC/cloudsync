@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, TYPE_CHECKING
+from typing import Tuple, Optional, Callable, TYPE_CHECKING
 
 __all__ = ['SyncManager']
 
@@ -79,7 +79,7 @@ class ResolveFile():
 
 @strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
 class SyncManager(Runnable):
-    def __init__(self, state, providers: Tuple['Provider', 'Provider'], translate, resolve_conflict, sleep=None):
+    def __init__(self, state: SyncState, providers: Tuple['Provider', 'Provider'], translate: Callable, resolve_conflict: Callable, sleep: Tuple[int, int] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.translate = translate
@@ -464,7 +464,7 @@ class SyncManager(Runnable):
                 if not ents[0][changed].changed:
                     self.update_entry(ents[0], changed, ents[0][changed].oid, changed=True)
                     log.debug("updated entry %s", parent)
-                
+
             sync.punt()
             return REQUEUE
         except CloudFileExistsError:
