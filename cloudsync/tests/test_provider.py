@@ -1250,3 +1250,38 @@ def test_rename_case_change(provider: ProviderMixin, otype):
         assert infopl.path == temp_nameu
 
 
+def test_special_characters(provider: ProviderMixin):
+    fname = ""
+    for i in range(32, 127):
+        char = str(chr(i))
+        if char in (provider.sep, provider.alt_sep):
+            continue
+        if char in """<>:"/\\|?*""":
+            continue
+        fname = fname + str(chr(i))
+    fname = "/fn-" + fname
+    log.error("fname = %s", fname)
+    contents = b"hello world"
+    info = provider.create(fname, BytesIO(contents))
+    log.debug("info = %s", info)
+    info2 = provider.info_path(fname)
+    assert info2.oid == info.oid
+    catch = BytesIO()
+    provider.download(info.oid, catch)
+    assert catch.getvalue() == contents
+    # also test rename, mkdir, info_path, exists_path
+    fname2 = fname + ".2"
+    log.debug("fname2 = %s", fname2)
+    new_oid = provider.rename(info.oid, fname2)
+    info3 = provider.info_oid(new_oid)
+    assert provider.exists_path(fname2)
+    assert provider.info_path(fname2).oid == new_oid
+    dirname = fname + ".dir"
+    diroid = provider.mkdir(dirname)
+    dirinfo = provider.info_path(dirname)
+    assert dirinfo.otype == cloudsync.DIRECTORY
+    assert dirinfo.oid == diroid
+    newfname2 = provider.join(dirname, fname2)
+    new_oid2 = provider.rename(new_oid, newfname2)
+    newfname2info = provider.info_path(newfname2)
+    assert newfname2info.oid == new_oid2

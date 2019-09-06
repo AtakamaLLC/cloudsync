@@ -55,7 +55,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         return copy.copy(self)
 
     def __repr__(self):
-        return "MockFSObject: %s(%s) %s %s %s" % (self.path, len(self.contents), self.oid, self.exists, self.type)
+        return "MockFSObject: %s(%s) %s %s %s" % (self.path, len(self.contents or ""), self.oid, self.exists, self.type)
 
 
 class MockEvent:  # pylint: disable=too-few-public-methods

@@ -228,6 +228,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return reason
 
+    @staticmethod
+    def __escape(filename: str):
+        ret = filename
+        ret = ret.replace("\\", "\\\\")
+        ret = ret.replace("'", "\\'")
+        return ret
+
     def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
@@ -632,7 +639,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def exists_oid(self, oid):
         return self._info_oid(oid) is not None
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str) -> Optional[OInfo]:  # pylint: disable=too-many-locals
         if path == "/":
             return self.info_oid(self.root_id)
 
@@ -640,7 +647,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             parent_id = self.get_parent_id(path)
             _, name = self.split(path)
 
-            query = f"'{parent_id}' in parents and name='{name}'"
+            escaped_name = self.__escape(name)
+            query = f"'{parent_id}' in parents and name='{escaped_name}'"
 
             res = self._api('files', 'list',
                             q=query,
