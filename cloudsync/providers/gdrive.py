@@ -15,9 +15,9 @@ from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
-from cloudsync.oauth_redir_server import OAuthRedirServer
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
+from cloudsync.oauth_config import OAuthConfig
 
 
 class GDriveFileDoneError(Exception):
@@ -54,7 +54,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
-    def __init__(self):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -67,7 +67,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids = {"/": "root"}
         self._trashed_ids = {}
         self._flow = None
-        self._redir_server: Optional[OAuthRedirServer] = None
+        self._oauth_config = oauth_config if oauth_config else OAuthConfig()
         self._oauth_done = threading.Event()
 
     @property
@@ -77,31 +77,38 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_display_name(self):
         return self.name
 
-    def initialize(self, localhost_redir=True):
-        if localhost_redir:
+    def initialize(self):
+        if not self._oauth_config.manual_mode:
             try:
-                if not self._redir_server:
-                    self._redir_server = OAuthRedirServer(self._on_oauth_success,
-                                                          self.get_display_name(),
-                                                          use_predefined_ports=False,
-                                                          on_failure=self._on_oauth_failure)
+                self._oauth_config.oauth_redir_server.run(
+                    on_success=self._on_oauth_success,
+                    on_failure=self._on_oauth_failure,
+                )
                 self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                                  client_secret=self._client_secret,
                                                  scope=self._scope,
-                                                 redirect_uri=self._redir_server.uri('/auth/'))
+                                                 redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'))
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
-                localhost_redir = False
-        if not localhost_redir:
+                self._oauth_config.manual_mode = False
+
+        if self._oauth_config.manual_mode:
             self._flow = OAuth2WebServerFlow(client_id=self._client_id,
                                              client_secret=self._client_secret,
                                              scope=self._scope,
                                              redirect_uri=self._redir)
+
         url = self._flow.step1_get_authorize_url()
         self._oauth_done.clear()
         webbrowser.open(url)
 
-        return localhost_redir, url
+        return url
+
+    def interrupt_oauth(self):
+        if not self._oauth_config.manual_mode:
+            self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
+        self._flow = None
+        self._oauth_done.clear()
 
     def _on_oauth_success(self, auth_dict):
         auth_string = auth_dict['code'][0]
@@ -128,9 +135,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     "client_id": self._client_id,
                     }
         finally:
-            if self._redir_server:
-                self._redir_server.shutdown()
-                self._redir_server = None
+            if not self._oauth_config.manual_mode:
+                self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
@@ -551,7 +557,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, name, mimeType, trashed)',
+                            fields='files(id, md5Checksum, parents, name, mimeType, trashed, shared, capabilities)',
                             pageToken=None)
         except CloudFileNotFoundError:
             if self._info_oid(oid):
@@ -571,13 +577,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             pids = ent['parents']
             fhash = ent.get('md5Checksum')
             name = ent['name']
+            shared = ent['shared']
+            readonly = not ent['capabilities']['canEdit']
             trashed = ent.get('trashed', False)
             if ent.get('mimeType') == self._folder_mime_type:
                 otype = DIRECTORY
             else:
                 otype = FILE
             if not trashed:
-                yield GDriveInfo(otype, fid, fhash, None, pids=pids, name=name)
+                yield GDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
         if self.exists_path(path):
@@ -637,7 +645,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('files', 'list',
                             q=query,
                             spaces='drive',
-                            fields='files(id, md5Checksum, parents, mimeType, trashed, name)',
+                            fields='files(id, md5Checksum, parents, mimeType, trashed, name, shared, capabilities)',
                             pageToken=None)
         except CloudFileNotFoundError:
             return None
@@ -664,6 +672,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         # ....cache correct basename
         path = self.join(self.dirname(path), name)
 
+        shared = ent['shared']
+        readonly = not ent['capabilities']['canEdit']
         if ent.get('mimeType') == self._folder_mime_type:
             otype = DIRECTORY
         else:
@@ -671,7 +681,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._ids[path] = oid
 
-        return GDriveInfo(otype, oid, fhash, path, pids=pids)
+        return GDriveInfo(otype, oid, fhash, path, shared=shared, readonly=readonly, pids=pids)
 
     def exists_path(self, path) -> bool:
         if path in self._ids:
@@ -741,7 +751,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                            fields='name, md5Checksum, parents, mimeType, trashed',
+                            fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities',
                             )
         except CloudFileNotFoundError:
             return None
@@ -753,9 +763,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         pids = res.get('parents')
         fhash = res.get('md5Checksum')
         name = res.get('name')
+        shared = res['shared']
+        readonly = not res['capabilities']['canEdit']
         if res.get('mimeType') == self._folder_mime_type:
             otype = DIRECTORY
         else:
             otype = FILE
 
-        return GDriveInfo(otype, oid, fhash, None, pids=pids, name=name)
+        return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)

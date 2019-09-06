@@ -80,6 +80,8 @@ class EventManager(Runnable): # pylint: disable=too-many-instance-attributes
                 time.sleep(self.backoff)
                 self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
                 log.info("reconnect to %s", self.provider.name)
+                # TODO: this will pop an oauth if there is a CloudTokenError on reconnect. create a mechanism
+                #   to pass authentication problems to the consumer and allow them to decide what to do
                 self.provider.reconnect()
             except Exception as e:
                 log.error("can't reconnect to %s: %s", self.provider.name, e)
