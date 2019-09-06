@@ -639,7 +639,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def exists_oid(self, oid):
         return self._info_oid(oid) is not None
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str) -> Optional[OInfo]:  # pylint: disable=too-many-locals
         if path == "/":
             return self.info_oid(self.root_id)
 
