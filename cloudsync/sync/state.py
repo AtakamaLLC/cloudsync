@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set
 from typing import Union
 
+from cloudsync import strict
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
 from cloudsync.types import OType
 from cloudsync.scramble import scramble
@@ -53,9 +54,9 @@ TRASHED = Exists.TRASHED
 
 
 # state of a single object
-class SideState(Reprable):                          # pylint: disable=too-few-public-methods, too-many-instance-attributes
+@strict         # pylint: disable=too-many-instance-attributes
+class SideState(Reprable):
     def __init__(self, parent: 'SyncEntry', side: int, otype: OType):
-        self._frozen = False
         self._parent = parent
         self._side: int = side                            # just for assertions
         self._otype: OType = otype
@@ -68,7 +69,6 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-        self._frozen = True
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -79,10 +79,6 @@ class SideState(Reprable):                          # pylint: disable=too-few-pu
         if k[0] == "_":
             object.__setattr__(self, k, v)
             return
-
-        if self._frozen:
-            if "_" + k  not in self.__dict__:
-                raise AttributeError("%s not in SideState" % k)
 
         self._parent.updated(self._side, k, v)
 
@@ -148,10 +144,10 @@ class Storage(ABC):
 
 
 # single entry in the syncs state collection
-class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
+@strict         # pylint: disable=too-many-instance-attributes
+class SyncEntry(Reprable):
     def __init__(self, parent: 'SyncState', otype: OType, storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
-        self._frozen = False
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
         self._storage_id: Any = None
@@ -163,7 +159,6 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
             self._storage_id = storage_init[0]
             self.deserialize(storage_init)
             self._dirty = False
-        self._frozen = True
         log.debug("new syncent %s", debug_sig(id(self)))
 
     def __getattr__(self, k):
@@ -175,10 +170,6 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
         if k[0] == "_":
             object.__setattr__(self, k, v)
             return
-
-        if self._frozen:
-            if "_" + k  not in self.__dict__:
-                raise AttributeError("%s not in SyncEntry" % k)
 
         self.updated(None, k, v)
 
@@ -383,9 +374,13 @@ class SyncEntry(Reprable):  # pylint: disable=too-many-instance-attributes
             if self[REMOTE].changed:
                 self[REMOTE].changed = time.time()
 
-
+@strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
-    def __init__(self, providers, storage: Optional[Storage] = None, tag: Optional[str] = None, shuffle=True):
+    def __init__(self,
+                 providers: Tuple['Provider', 'Provider'],
+                 storage: Optional[Storage] = None,
+                 tag: Optional[str] = None,
+                 shuffle: bool = True):
         self._oids = ({}, {})
         self._paths = ({}, {})
         self._changeset = set()
@@ -454,7 +449,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 prior_ent = path_ents[ent[side].oid]
                 assert prior_ent is not ent
                 # ousted this ent
-                prior_ent._path = None
+                prior_ent[side]._path = None
 
             self._paths[side][path][ent[side].oid] = ent
             ent[side]._path = path

@@ -8,10 +8,11 @@ from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 from .log import TRACE
+from . import strict
 
 log = logging.getLogger(__name__)
 
-
+@strict
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],

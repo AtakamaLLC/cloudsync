@@ -6,6 +6,7 @@ from .exceptions import CloudTemporaryError, CloudDisconnectedError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType
+from . import strict
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
@@ -25,9 +26,9 @@ class Event:
     prior_oid: Optional[str] = None        # path basesd systems use this on renames
     new_cursor: Optional[str] = None
 
-
-class EventManager(Runnable): # pylint: disable=too-many-instance-attributes
-    def __init__(self, provider: "Provider", state: "SyncState", side, walk_root=None):
+@strict             # pylint: disable=too-many-instance-attributes
+class EventManager(Runnable): 
+    def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: str = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
         assert self.provider.connection_id
