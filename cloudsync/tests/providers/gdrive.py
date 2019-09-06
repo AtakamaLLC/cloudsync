@@ -3,6 +3,7 @@ import random
 import pytest
 from cloudsync.exceptions import CloudFileNotFoundError
 from cloudsync.providers.gdrive import GDriveProvider
+from cloudsync.oauth_config import OAuthConfig
 
 
 # move this to provider ci_creds() function?
@@ -21,6 +22,10 @@ def gdrive_creds():
     }
 
     return creds
+
+
+def on_success(auth_dict=None):
+    assert auth_dict is not None and isinstance(auth_dict, dict)
 
 
 def gdrive_provider():

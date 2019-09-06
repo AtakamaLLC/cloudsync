@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Generator, Optional
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
 if TYPE_CHECKING:
     from cloudsync.event import Event
 
@@ -37,6 +37,19 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         # reuse existing credentials and reconnect
         # raises: CloudDisconnectedError on failure
         pass
+
+    def authenticate(self):
+        # implement this method for providers that need authentication
+        pass
+
+    def connect_or_authenticate(self, creds):
+        # This won't attempt oauth unless the specific failure to connect is an authentication error
+        try:
+            self.connect(creds)
+        except CloudTokenError:
+            creds = self.authenticate()  # pylint: disable=assignment-from-no-return
+            self.connect(creds)
+        return creds
 
     @property
     @abstractmethod
