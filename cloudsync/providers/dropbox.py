@@ -148,7 +148,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         try:
             self.initialize()
             self._oauth_done.wait()
-            return {"api_key": self.api_key,}
+            return {"key": self.api_key,}
         finally:
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()
@@ -179,10 +179,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         log.debug('Connecting to dropbox')
         if not self.client:
             self.__creds = creds
-            api_key = creds.get('api_key', self.api_key)
-            # if not api_key:
-            #     self.__creds = self.authenticate()
-            #     api_key = self.__creds.get('api_key', '')
+            api_key = creds.get('key', self.api_key)
 
             if not api_key:
                 raise CloudTokenError()
@@ -195,11 +192,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.connection_id = quota['login']
             except Exception as e:
                 self.disconnect()
-                # if self.__creds.get('api_key', None) is not None:
-                #     log.debug('provided credentials were bad, forcing oauth')
-                #     self.__creds.pop('api_key')
-                #     self.connect(self.__creds)
-                # else:
                 log.exception("error connecting %s", e)
                 if isinstance(e, exceptions.AuthError):
                     raise CloudTokenError()
