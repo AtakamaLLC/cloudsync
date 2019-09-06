@@ -77,7 +77,8 @@ class ResolveFile():
         return self.fh.seek(*a)
 
 
-class SyncManager(Runnable):  # pylint: disable=too-many-public-methods, too-many-instance-attributes
+@strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
+class SyncManager(Runnable):
     def __init__(self, state, providers: Tuple['Provider', 'Provider'], translate, resolve_conflict, sleep=None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
