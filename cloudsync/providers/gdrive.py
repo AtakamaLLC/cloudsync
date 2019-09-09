@@ -1,3 +1,4 @@
+import io
 import time
 import logging
 import threading
@@ -436,7 +437,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             metadata = {}
         gdrive_info = self.__prep_upload(None, metadata)
 
-        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024, resumable=True)
+        file_like.seek(0, io.SEEK_END)
+        file_size = file_like.tell()
+        file_like.seek(0, io.SEEK_SET)
+
+        chunksize = 4 * 1024 * 1024
+        resumable = file_size > chunksize
+        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable)
 
         fields = 'id, md5Checksum'
 
