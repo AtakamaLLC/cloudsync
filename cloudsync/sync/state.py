@@ -374,6 +374,7 @@ class SyncEntry(Reprable):
             if self[REMOTE].changed:
                 self[REMOTE].changed = time.time()
 
+
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
     def __init__(self,
@@ -390,7 +391,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert len(providers) == 2
 
         self.lock = RLock()
-        self.cursor_id = dict()
+        self.data_id = dict()
         self.shuffle = shuffle
         self._loading = False
         if self._storage:
@@ -476,7 +477,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                         new_info = provider.info_path(new_path)
                         if new_info:
                             sub[side].oid = new_info.oid
-
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
@@ -595,34 +595,36 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             ent[side].changed = time.time()
             assert ent in self._changeset
 
-    def storage_get_cursor(self, cursor_tag):
-        if cursor_tag is None:
+    def storage_get_data(self, data_tag):
+        if data_tag is None:
             return None
         retval = None
         if self._storage is not None:
-            if cursor_tag in self.cursor_id:
-                retval = self._storage.read(cursor_tag, self.cursor_id[cursor_tag])
+            if data_tag in self.data_id:
+                retval = self._storage.read(data_tag, self.data_id[data_tag])
             if not retval:
-                cursors = self._storage.read_all(cursor_tag)
-                for eid, cursor in cursors.items():
-                    self.cursor_id[cursor_tag] = eid
-                    retval = cursor
-                if len(cursors) > 1:
-                    log.warning("Multiple cursors found for %s", cursor_tag)
-        log.debug("storage_get_cursor id=%s cursor=%s", cursor_tag, str(retval))
+                datas = self._storage.read_all(data_tag)
+                for eid, data in datas.items():
+                    self.data_id[data_tag] = eid
+                    retval = data
+                if len(datas) > 1:
+                    log.warning("Multiple datas found for %s", data_tag)
+        log.debug("storage_get_data id=%s data=%s", data_tag, str(retval))
         return retval
 
-    def storage_update_cursor(self, cursor_tag, cursor):
-        if cursor_tag is None:
+    def storage_update_data(self, data_tag, data):
+        if data_tag is None:
             return
         updated = 0
         if self._storage is not None:
-            if cursor_tag in self.cursor_id and self.cursor_id[cursor_tag]:
-                updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
-                log.log(TRACE, "storage_update_cursor cursor %s %s", cursor_tag, cursor)
+            # stuff cache
+            self.storage_get_data(data_tag)
+            if data_tag in self.data_id and self.data_id[data_tag]:
+                updated = self._storage.update(data_tag, data, self.data_id[data_tag])
+                log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
             if not updated:
-                self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)
-                log.log(TRACE, "storage_update_cursor cursor %s %s", cursor_tag, cursor)
+                self.data_id[data_tag] = self._storage.create(data_tag, data)
+                log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
 
     def storage_update(self, ent: SyncEntry):
         log.log(TRACE, "storage_update eid%s", ent.storage_id)

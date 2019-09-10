@@ -656,7 +656,7 @@ class SyncManager(Runnable):
         self.discard_entry(sync)
         return FINISHED
 
-    def check_disjoint_create(self, sync, changed, synced, translated_path):
+    def check_disjoint_create(self, sync, changed, synced, translated_path): # pylint: disable=too-many-branches
         # check for creation of a new file with another in the table
 
         if sync[changed].otype != FILE:
