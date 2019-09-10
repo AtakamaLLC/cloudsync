@@ -560,7 +560,7 @@ def test_storage(storage):
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
-    old_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    old_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     assert old_cursor is not None
     log.debug("cursor=%s", old_cursor)
 
@@ -602,7 +602,7 @@ def test_storage(storage):
 
     assert not missing1
     assert not missing2
-    new_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    new_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     log.debug("cursor=%s %s", old_cursor, new_cursor)
     assert new_cursor is not None
     assert old_cursor != new_cursor
