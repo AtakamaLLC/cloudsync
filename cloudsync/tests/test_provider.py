@@ -618,24 +618,27 @@ def test_event_del_create(provider: ProviderMixin):
             if info:
                 path = info.path
 
-        if path == dest or e.exists is False:
-            last_event = e
+        # always possible to get events for other things
+        if not (path == dest or e.oid == info1.oid):
+            continue
 
-            if e.oid == info1.oid:
-                if e.exists:
-                    saw_first_create = True
-                    if saw_first_delete and not provider.oid_is_path:
-                        log.debug("disordered!")
-                        disordered = True
-                else:
-                    saw_first_delete = True
+        last_event = e
 
-            if e.exists and e.oid == info2.oid:
-                if provider.oid_is_path:
-                    if saw_first_delete and saw_first_create:
-                        done = True
-                else:
+        if e.oid == info1.oid:
+            if e.exists:
+                saw_first_create = True
+                if saw_first_delete and not provider.oid_is_path:
+                    log.debug("disordered!")
+                    disordered = True
+            else:
+                saw_first_delete = True
+
+        if e.exists and e.oid == info2.oid:
+            if provider.oid_is_path:
+                if saw_first_delete and saw_first_create:
                     done = True
+            else:
+                done = True
 
     # the important thing is that we always get a create after the delete event
     assert last_event, "Event loop timed out before getting any events"
