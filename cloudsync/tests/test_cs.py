@@ -728,3 +728,65 @@ def test_sync_disconnect(cs):
     assert not cs.providers[REMOTE].info_path(remote_path1)
 
     cs.run_until_found((REMOTE, remote_path1))
+
+
+def test_sync_rename_tmp(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_sub = "/remote/sub"
+    local_sub = "/local/sub"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+    remote_path2 = "/remote/sub/stuff1"
+    local_path2 = "/local/sub/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].mkdir(local_sub)
+    cs.providers[REMOTE].mkdir(remote_sub)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+
+    import time, threading
+
+    done = False
+    ok = True
+    def mover():
+        nonlocal done
+        nonlocal ok
+        for _ in range(10):
+            try:
+                linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
+                linfo2 = cs.providers[LOCAL].info_path(local_path2)
+                if linfo2:
+                    cs.providers[LOCAL].delete(linfo2.oid)
+                cs.providers[LOCAL].rename(linfo1.oid, local_path2)
+                time.sleep(0.001)
+            except Exception as e:
+                log.exception(e)
+                ok = False
+        done = True
+
+    thread = threading.Thread(target=mover, daemon=True)
+    thread.start()
+
+    cs.run(until=lambda: done, timeout=3)
+
+    thread.join()
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.do()
+
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1
+            )
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+    assert ok
+    assert cs.providers[REMOTE].info_path(remote_path2)
+    assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
+

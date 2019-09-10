@@ -192,7 +192,7 @@ class MockProvider(Provider):
     def walk(self, path, since=None):
         # TODO: implement "since" parameter
         self._api()
-        for obj in self._fs_by_oid.values():
+        for obj in list(self._fs_by_oid.values()):
             if self.is_subpath(path, obj.path, strict=False):
                 yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
 
