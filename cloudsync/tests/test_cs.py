@@ -183,6 +183,7 @@ def setup_remote_local(cs, *names):
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
 
 
+@pytest.mark.repeat(4)
 def test_sync_create_delete_same_name(cs):
     remote_parent = "/remote"
     local_parent = "/local"

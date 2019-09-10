@@ -674,9 +674,10 @@ class SyncManager(Runnable):
 
         # ignoring trashed entries with different oids on the same path
         if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
-            # old trashed entries can be safely ignored
             for ent in other_ents:
-                ent.discarded = True
+                if ent[synced].exists == TRASHED:
+                    # old trashed entries can be safely ignored
+                    ent.discarded = True
             return False
 
         other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
