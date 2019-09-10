@@ -702,7 +702,8 @@ class SyncManager(Runnable):
                         if not e[synced].changed:
                             log.debug("merge split entries")
                             sync[synced] = e[synced]
-                            return True
+                        else:
+                            found = e
 
         if not found:
             return True
