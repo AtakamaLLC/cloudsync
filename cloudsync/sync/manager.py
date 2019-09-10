@@ -674,6 +674,10 @@ class SyncManager(Runnable):
 
         # ignoring trashed entries with different oids on the same path
         if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
+            for ent in other_ents:
+                if ent[synced].exists == TRASHED:
+                    # old trashed entries can be safely ignored
+                    ent.discarded = True
             return False
 
         other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
@@ -693,7 +697,14 @@ class SyncManager(Runnable):
         if info:
             for e in other_untrashed_ents:
                 if e[synced].oid == info.oid:
-                    found = e
+                    if e[synced].sync_hash != e[synced].hash:
+                        found = e
+                    else:
+                        if not e[synced].changed:
+                            log.debug("merge split entries")
+                            sync[synced] = e[synced]
+                        else:
+                            found = e
 
         if not found:
             return True
@@ -878,6 +889,9 @@ class SyncManager(Runnable):
         return FINISHED
 
     def handle_hash_diff(self, sync, changed, synced):
+        if sync[changed].path is None:
+            return FINISHED
+
         if sync[changed].sync_hash is None:
             sync[changed].sync_path = None
             # creation must have failed
