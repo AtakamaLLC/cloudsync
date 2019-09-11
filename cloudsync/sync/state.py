@@ -659,10 +659,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                     ent = path_ent
                     ent.discarded = False
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
-                elif ent is not path_ent and not path_ent[side].changed:
-                    path_ent.discard()
-                    self.storage_update(path_ent)
-                    log.debug("discarded existing entry %s:%s", debug_sig(oid), path)
 
         if not ent:
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)

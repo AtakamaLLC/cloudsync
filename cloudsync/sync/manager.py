@@ -278,7 +278,7 @@ class SyncManager(Runnable):
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent.exists = TRASHED
+                ent[synced].exists = TRASHED
             else:
                 nc.append(ent)
 
