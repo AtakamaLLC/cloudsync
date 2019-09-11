@@ -922,16 +922,11 @@ def test_sync_rename_tmp(cs):
                 linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
                 linfo2 = cs.providers[LOCAL].info_path(local_path2)
                 if linfo2:
-<<<<<<< HEAD
                     without_event = isinstance(cs.providers[LOCAL], MockProvider)
                     if without_event:
                         cs.providers[LOCAL]._delete(linfo2.oid, without_event=True)
                     else:
                         cs.providers[LOCAL].delete(linfo2.oid)
-
-=======
-                    cs.providers[LOCAL].delete(linfo2.oid)
->>>>>>> cda4a1f03549a598307388c3a145fba6cf5d60c6
                 cs.providers[LOCAL].rename(linfo1.oid, local_path2)
                 time.sleep(0.001)
             except Exception as e:
@@ -957,9 +952,5 @@ def test_sync_rename_tmp(cs):
     assert ok
     assert cs.providers[REMOTE].info_path(remote_path2)
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
-<<<<<<< HEAD
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
-=======
-
->>>>>>> cda4a1f03549a598307388c3a145fba6cf5d60c6
