@@ -298,7 +298,6 @@ class SyncManager(Runnable):
                     log.debug("discard %s", ent)
                     self.discard_entry(ent)
 
-        ents = [ent for ent in ents if not ent.discarded and not ent.conflicted]
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
 
@@ -694,6 +693,9 @@ class SyncManager(Runnable):
 
         found = None
         info = self.providers[synced].info_path(translated_path)
+        if not info:
+            return False
+
         if info:
             for e in other_untrashed_ents:
                 if e[synced].oid == info.oid:
