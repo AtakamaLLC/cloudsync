@@ -90,6 +90,7 @@ def test_sync_rename_away(multi_cs):
     # This is the meat of the test. renaming out of one cloud bed into another
     #   Which will potentially forget to sync up the delete to remote1, leaving
     #   the file there and also in remote2
+    log.debug("here")
     linfo2 = cs1.providers[LOCAL].rename(linfo1.oid, local_path21)
     log.debug("here")
     cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
@@ -110,27 +111,15 @@ def test_sync_rename_away(multi_cs):
             timeout=2)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
-        try:
-            cs2.run_until_found(
-                (REMOTE, remote_path),
-                timeout=2)
-        except TimeoutError as e:
-            if cs2.providers[LOCAL].oid_is_path:
-                raise
-            else:
-                return True  # TODO: while this is broken, we expect this failure
+        cs2.run_until_found(
+            (REMOTE, remote_path),
+            timeout=2)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         # If renaming out of local1 didn't properly sync, the next line will time out
-        try:
-            cs1.run_until_found(
-                WaitFor(REMOTE, remote_path, exists=False),
-                timeout=2)
-        except TimeoutError as e:
-            if cs2.providers[LOCAL].oid_is_path:
-                return True  # TODO: while this is broken, we expect this failure
-            else:
-                raise
+        cs1.run_until_found(
+            WaitFor(REMOTE, remote_path, exists=False),
+            timeout=2)
     except TimeoutError:
         log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
         log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())

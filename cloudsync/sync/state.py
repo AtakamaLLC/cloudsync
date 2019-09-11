@@ -151,7 +151,6 @@ class SyncEntry(Reprable):
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
         self._conflicted: bool = False
-        self._irrelevant: bool = False
         self._storage_id: Any = None
         self._dirty: bool = True
         self._punted: int = 0
@@ -205,7 +204,6 @@ class SyncEntry(Reprable):
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['discarded'] = self.discarded
         ser['conflicted'] = self.conflicted
-        ser['irrelevant'] = self.irrelevant
         return json.dumps(ser).encode('utf-8')
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
@@ -232,7 +230,6 @@ class SyncEntry(Reprable):
                          dict_to_side_state(1, ser['side1'])]
         self.discarded = ser.get('discarded', "")
         self.conflicted = ser.get('conflicted', False)
-        self.irrelevant = ser.get('irrelevant', False)
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -281,12 +278,6 @@ class SyncEntry(Reprable):
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
 
-    def set_irrelevant(self):
-        self.irrelevant = True
-
-    def set_relevant(self):
-        self.irrelevant = False
-
     def conflict(self):
         self.conflicted = True
 
@@ -313,11 +304,9 @@ class SyncEntry(Reprable):
         return ret
 
     def pretty(self, fixed=True, use_sigs=True):
+        ret = ""
         if self.discarded:
-            return "DISCARDED"
-
-        if self.irrelevant:
-            return "IRRELEVANT"
+            ret = "DISCARDED"
 
         def secs(t):
             if t:
@@ -358,9 +347,9 @@ class SyncEntry(Reprable):
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
                         self._punted,
-                        self._conflicted))
+                        self._conflicted or bool(self._discarded)))
 
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
+        ret += "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
@@ -549,7 +538,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         try:
             ret = self._paths[side][path].values()
             if ret:
-                return [e for e in ret if stale or (not e.discarded and not e.conflicted)]  # irrelevant is OK
+                return [e for e in ret if stale or (not e.discarded and not e.conflicted)]
             return []
         except KeyError:
             return []
@@ -586,7 +575,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                             ent = SyncEntry(self, otype)
 
             ent[side].oid = oid
-            if oid and not ent.discarded and not ent.conflicted and not ent.irrelevant:
+            if oid and not ent.discarded and not ent.conflicted:
                 assert ent in self.get_all()
 
         if otype is not None:
@@ -607,17 +596,17 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             ent.dirty = True
             assert type(ent[side].exists) is Exists
 
-        if changed and not ent.discarded:
+        if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
+            log.debug("add %s to changeset", ent)
             self.mark_changed(side, ent)
 
         log.log(TRACE, "updated %s", ent)
 
     def mark_changed(self, side, ent):
-        if not ent.discarded:
-            ent[side].changed = time.time()
-            assert ent in self._changeset
+        ent[side].changed = time.time()
+        assert ent in self._changeset
 
     def storage_get_data(self, data_tag):
         if data_tag is None:
@@ -651,7 +640,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
 
     def storage_update(self, ent: SyncEntry):
-        log.log(TRACE, "storage_update eid%s", ent.storage_id)
+        log.log(TRACE, "storage_update eid%s", ent.storage_id, stack_info=True)
         if self._storage is not None:
             if ent.storage_id is not None:
                 self._storage.update(self._tag, ent.serialize(), ent.storage_id)
@@ -718,17 +707,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                         return e
 
         ret = None
-        remove = []
         for e in self._changeset:
-            if e.discarded:
-                remove.append(e)
-            else:
-                if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
-                        or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                    ret = e
-
-        for e in remove:
-            self._changeset.discard(e)
+            if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
+                    or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
+                ret = e
 
         return ret
 
@@ -754,7 +736,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.discarded and not ent.conflicted and not ent.irrelevant:
+            if not ent.discarded and not ent.conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -777,13 +759,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if (ent.discarded or ent.conflicted or ent.irrelevant) and not discarded:
+            if (ent.discarded or ent.conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if (ent.discarded or ent.conflicted or ent.irrelevant) and not discarded:
+            if (ent.discarded or ent.conflicted) and not discarded:
                 continue
             ents.add(ent)
 
