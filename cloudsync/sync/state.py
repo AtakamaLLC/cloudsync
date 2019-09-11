@@ -150,6 +150,7 @@ class SyncEntry(Reprable):
         super().__init__()
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
+        self._conflicted: bool = False
         self._storage_id: Any = None
         self._dirty: bool = True
         self._punted: int = 0
@@ -202,6 +203,7 @@ class SyncEntry(Reprable):
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['discarded'] = self.discarded
+        ser['conflicted'] = self.conflicted
         return json.dumps(ser).encode('utf-8')
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
@@ -227,6 +229,7 @@ class SyncEntry(Reprable):
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         self.discarded = ser['discarded']
+        self.conflicted = ser['conflicted']
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -275,9 +278,15 @@ class SyncEntry(Reprable):
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
 
+    def conflict(self):
+        self.conflicted = True
+
+    def unconflict(self):
+        self.conflicted = False
+
     @staticmethod
     def prettyheaders():
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             "EID",  # _sig(id(self)),
             "SID",  # _sig(self.storage_id),
             "Typ",  # otype,
@@ -290,6 +299,7 @@ class SyncEntry(Reprable):
             "OID",  # _sig(self[REMOTE].oid),
             "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
             "Punt",  # self.punted or ""
+            "Conflict",  # self.conflicted or ""
         )
         return ret
 
@@ -335,9 +345,10 @@ class SyncEntry(Reprable):
                             self[LOCAL].oid), str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma),
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
-                        self._punted))
+                        self._punted,
+                        self._conflicted))
 
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s" % (
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
@@ -349,7 +360,8 @@ class SyncEntry(Reprable):
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            self._punted or ""
+            self._punted or "",
+            self._conflicted or "",
         )
 
         return ret
@@ -374,6 +386,7 @@ class SyncEntry(Reprable):
             if self[REMOTE].changed:
                 self[REMOTE].changed = time.time()
 
+
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
     def __init__(self,
@@ -390,7 +403,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert len(providers) == 2
 
         self.lock = RLock()
-        self.cursor_id = dict()
+        self.data_id = dict()
         self.shuffle = shuffle
         self._loading = False
         if self._storage:
@@ -477,7 +490,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                         if new_info:
                             sub[side].oid = new_info.oid
 
-
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
 
@@ -525,7 +537,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         try:
             ret = self._paths[side][path].values()
             if ret:
-                return [e for e in ret if stale or not e.discarded]
+                return [e for e in ret if stale or (not e.discarded and not e.conflicted)]
             return []
         except KeyError:
             return []
@@ -556,13 +568,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if oid is not None:
             if ent.discarded:
                 if self.providers[side].oid_is_path:
-                    if path and "conflicted" not in path:
+                    if path:
                         if otype:
                             log.log(TRACE, "dropping old entry %s, and making new", ent)
                             ent = SyncEntry(self, otype)
 
             ent[side].oid = oid
-            if oid and not ent.discarded:
+            if oid and not ent.discarded and not ent.conflicted:
                 assert ent in self.get_all()
 
         if otype is not None:
@@ -595,34 +607,36 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             ent[side].changed = time.time()
             assert ent in self._changeset
 
-    def storage_get_cursor(self, cursor_tag):
-        if cursor_tag is None:
+    def storage_get_data(self, data_tag):
+        if data_tag is None:
             return None
         retval = None
         if self._storage is not None:
-            if cursor_tag in self.cursor_id:
-                retval = self._storage.read(cursor_tag, self.cursor_id[cursor_tag])
+            if data_tag in self.data_id:
+                retval = self._storage.read(data_tag, self.data_id[data_tag])
             if not retval:
-                cursors = self._storage.read_all(cursor_tag)
-                for eid, cursor in cursors.items():
-                    self.cursor_id[cursor_tag] = eid
-                    retval = cursor
-                if len(cursors) > 1:
-                    log.warning("Multiple cursors found for %s", cursor_tag)
-        log.debug("storage_get_cursor id=%s cursor=%s", cursor_tag, str(retval))
+                datas = self._storage.read_all(data_tag)
+                for eid, data in datas.items():
+                    self.data_id[data_tag] = eid
+                    retval = data
+                if len(datas) > 1:
+                    log.warning("Multiple datas found for %s", data_tag)
+        log.debug("storage_get_data id=%s data=%s", data_tag, str(retval))
         return retval
 
-    def storage_update_cursor(self, cursor_tag, cursor):
-        if cursor_tag is None:
+    def storage_update_data(self, data_tag, data):
+        if data_tag is None:
             return
         updated = 0
         if self._storage is not None:
-            if cursor_tag in self.cursor_id and self.cursor_id[cursor_tag]:
-                updated = self._storage.update(cursor_tag, cursor, self.cursor_id[cursor_tag])
-                log.log(TRACE, "storage_update_cursor cursor %s %s", cursor_tag, cursor)
+            # stuff cache
+            self.storage_get_data(data_tag)
+            if data_tag in self.data_id and self.data_id[data_tag]:
+                updated = self._storage.update(data_tag, data, self.data_id[data_tag])
+                log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
             if not updated:
-                self.cursor_id[cursor_tag] = self._storage.create(cursor_tag, cursor)
-                log.log(TRACE, "storage_update_cursor cursor %s %s", cursor_tag, cursor)
+                self.data_id[data_tag] = self._storage.create(data_tag, data)
+                log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
 
     def storage_update(self, ent: SyncEntry):
         log.log(TRACE, "storage_update eid%s", ent.storage_id)
@@ -722,7 +736,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.discarded:
+            if not ent.discarded and not ent.conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -745,13 +759,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if ent.discarded and not discarded:
+            if (ent.discarded or ent.conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if ent.discarded and not discarded:
+            if (ent.discarded or ent.conflicted) and not discarded:
                 continue
             ents.add(ent)
 

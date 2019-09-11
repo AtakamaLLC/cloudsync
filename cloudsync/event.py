@@ -38,8 +38,15 @@ class EventManager(Runnable):
         self.side = side
         self.shutdown = False
         self._cursor_tag = self.label + "_cursor"
-        self.cursor = self.state.storage_get_cursor(self._cursor_tag)
+
         self.walk_root = None
+        self._walk_tag = None
+        self.cursor = self.state.storage_get_data(self._cursor_tag)
+
+        if walk_root:
+            self._walk_tag = self.label + "_walked_" + walk_root
+            if not self.cursor or not self.state.storage_get_data(self._walk_tag):
+                self.walk_root = walk_root
 
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 4
@@ -47,10 +54,9 @@ class EventManager(Runnable):
         self.backoff = self.min_backoff
 
         if not self.cursor:
-            self.walk_root = walk_root
             self.cursor = provider.current_cursor
             if self.cursor:
-                self.state.storage_update_cursor(self._cursor_tag, self.cursor)
+                self.state.storage_update_data(self._cursor_tag, self.cursor)
         else:
             log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
 # TODO!!!!            provider.current_cursor = self.cursor
@@ -62,6 +68,7 @@ class EventManager(Runnable):
                           self.provider.name, self.walk_root)
                 for event in self.provider.walk(self.walk_root):
                     self.process_event(event)
+                self.state.storage_update_data(self._walk_tag, time.time())
                 self.walk_root = None
                 self.backoff = self.min_backoff
 
@@ -74,7 +81,7 @@ class EventManager(Runnable):
             current_cursor = self.provider.current_cursor
 
             if current_cursor != self.cursor:
-                self.state.storage_update_cursor(self._cursor_tag, current_cursor)
+                self.state.storage_update_data(self._cursor_tag, current_cursor)
                 self.cursor = current_cursor
         except CloudDisconnectedError:
             try:

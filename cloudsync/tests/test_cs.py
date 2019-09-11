@@ -560,7 +560,7 @@ def test_storage(storage):
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
-    old_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    old_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     assert old_cursor is not None
     log.debug("cursor=%s", old_cursor)
 
@@ -602,7 +602,7 @@ def test_storage(storage):
 
     assert not missing1
     assert not missing2
-    new_cursor = cs1.emgrs[0].state.storage_get_cursor(cs1.emgrs[0]._cursor_tag)
+    new_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     log.debug("cursor=%s %s", old_cursor, new_cursor)
     assert new_cursor is not None
     assert old_cursor != new_cursor
@@ -667,6 +667,164 @@ def test_sync_already_there_conflict(cs, drain: int):
     assert linfo1.hash == rinfo1.hash
 
     assert cs.providers[LOCAL].info_path(local_path1 + ".conflicted") or cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+
+def test_conflict_recover(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    remote_path2 = "/remote/new_path"
+    local_path2 = "/local/new_path"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    cs.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"), None)
+
+    # fill up the state table
+    cs.do()
+
+    # all changes processed
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    assert linfo1.hash == rinfo1.hash
+
+    local_conflicted_path = local_path1 + ".conflicted"
+    remote_conflicted_path = remote_path1 + ".conflicted"
+    local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
+    remote_conflicted = cs.providers[REMOTE].info_path(remote_conflicted_path)
+
+    log.info("CONFLICTED TABLE\n%s", cs.state.pretty_print())
+
+    # Check that exactly one of the files is present
+    assert bool(local_conflicted) or bool(remote_conflicted)
+    assert bool(local_conflicted) != bool(remote_conflicted)
+
+    log.info("BEFORE RENAME AWAY\n%s", cs.state.pretty_print())
+
+    # Rename the conflicted file to something new
+    if local_conflicted:
+        cs.providers[LOCAL].rename(local_conflicted.oid, local_path2)
+    else:
+        cs.providers[REMOTE].rename(remote_conflicted.oid, remote_path2)
+
+    # fill up the state table
+    cs.do()
+
+    # all changes processed
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    log.info("AFTER RENAME AWAY\n%s", cs.state.pretty_print())
+
+    local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
+    remote_conflicted = cs.providers[REMOTE].info_path(remote_conflicted_path)
+
+    assert not bool(local_conflicted) and not bool(remote_conflicted)
+
+    local_new = cs.providers[LOCAL].info_path(local_path2)
+    remote_new = cs.providers[REMOTE].info_path(remote_path2)
+
+    assert bool(local_new) and bool(remote_new)
+
+
+def test_conflict_recover_modify(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    remote_path2 = "/remote/new_path"
+    local_path2 = "/local/new_path"
+
+    # Create a clear-cut conflict
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    cs.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"), None)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+    assert linfo1.hash == rinfo1.hash
+
+    local_conflicted_path = local_path1 + ".conflicted"
+    remote_conflicted_path = remote_path1 + ".conflicted"
+    local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
+    remote_conflicted = cs.providers[REMOTE].info_path(remote_conflicted_path)
+
+    log.info("CONFLICTED TABLE\n%s", cs.state.pretty_print())
+
+    # Check that exactly one of the files is present
+    assert bool(local_conflicted) or bool(remote_conflicted)
+    assert bool(local_conflicted) != bool(remote_conflicted)
+
+    if local_conflicted:
+        assert local_conflicted.hash != linfo1.hash
+        old_hash = local_conflicted.hash
+    else:
+        assert remote_conflicted.hash != rinfo1.hash
+        old_hash = remote_conflicted.hash
+
+    # Write some new content
+    log.info("BEFORE MODIFY\n%s", cs.state.pretty_print())
+    new_content = BytesIO(b"new content pls ignore")
+    if local_conflicted:
+        new_hash = cs.providers[LOCAL].upload(local_conflicted.oid, new_content).hash
+    else:
+        new_hash = cs.providers[REMOTE].upload(remote_conflicted.oid, new_content).hash
+
+    assert new_hash != old_hash
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    log.info("AFTER MODIFY\n%s", cs.state.pretty_print())
+    local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
+    remote_conflicted = cs.providers[REMOTE].info_path(remote_conflicted_path)
+    assert bool(local_conflicted) or bool(remote_conflicted)
+    assert bool(local_conflicted) != bool(remote_conflicted)
+
+    # Rename the conflicted file to something new
+    log.info("BEFORE RENAME AWAY\n%s", cs.state.pretty_print())
+
+    if local_conflicted:
+        cs.providers[LOCAL].rename(local_conflicted.oid, local_path2)
+    else:
+        cs.providers[REMOTE].rename(remote_conflicted.oid, remote_path2)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    log.info("AFTER RENAME AWAY\n%s", cs.state.pretty_print())
+    local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
+    remote_conflicted = cs.providers[REMOTE].info_path(remote_conflicted_path)
+    assert not bool(local_conflicted) and not bool(remote_conflicted)
+
+    # Check that the new path was uploaded
+    local_new = cs.providers[LOCAL].info_path(local_path2)
+    remote_new = cs.providers[REMOTE].info_path(remote_path2)
+    assert bool(local_new) and bool(remote_new)
+    assert local_new.hash == remote_new.hash
+
+    # And now make sure that we're correctly processing new changes on the file
+    newer_content = BytesIO(b"ok this is the last time fr")
+    cs.providers[LOCAL].upload(local_new.oid, newer_content)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    local_newer = cs.providers[LOCAL].info_path(local_path2)
+    remote_newer = cs.providers[REMOTE].info_path(remote_path2)
+    assert bool(local_newer) and bool(remote_newer)
+    assert local_newer.hash == remote_newer.hash
+
 
 @pytest.mark.parametrize('right', (True, False), ids=["right_cs", "right_in"])
 @pytest.mark.parametrize('left', (True, False), ids=["left_cs", "left_in"])
@@ -764,12 +922,16 @@ def test_sync_rename_tmp(cs):
                 linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
                 linfo2 = cs.providers[LOCAL].info_path(local_path2)
                 if linfo2:
+<<<<<<< HEAD
                     without_event = isinstance(cs.providers[LOCAL], MockProvider)
                     if without_event:
                         cs.providers[LOCAL]._delete(linfo2.oid, without_event=True)
                     else:
                         cs.providers[LOCAL].delete(linfo2.oid)
 
+=======
+                    cs.providers[LOCAL].delete(linfo2.oid)
+>>>>>>> cda4a1f03549a598307388c3a145fba6cf5d60c6
                 cs.providers[LOCAL].rename(linfo1.oid, local_path2)
                 time.sleep(0.001)
             except Exception as e:
@@ -795,5 +957,9 @@ def test_sync_rename_tmp(cs):
     assert ok
     assert cs.providers[REMOTE].info_path(remote_path2)
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
+<<<<<<< HEAD
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+=======
+
+>>>>>>> cda4a1f03549a598307388c3a145fba6cf5d60c6
