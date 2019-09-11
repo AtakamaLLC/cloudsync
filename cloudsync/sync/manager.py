@@ -298,7 +298,7 @@ class SyncManager(Runnable):
                     log.debug("discard %s", ent)
                     self.discard_entry(ent)
 
-        ents = [ent for ent in ents if not ent.discarded and not ent.conflicted]
+        ents = [ent for ent in ents if not ent.discarded and not ent.conflicted]  # irrelevant is OK
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
 
@@ -845,17 +845,27 @@ class SyncManager(Runnable):
         log.debug("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def discard_entry(self, sync):
+    def discard_entry(self, sync: SyncEntry):
         if sync:
             sync.discard()
             self.state.storage_update(sync)
 
-    def conflict_entry(self, sync):
+    def conflict_entry(self, sync: SyncEntry):
         if sync:
             sync.conflict()
             self.state.storage_update(sync)
 
-    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements
+    def relevant_entry(self, sync: SyncEntry):
+        if sync:
+            sync.set_relevant()
+            self.state.storage_update(sync)
+
+    def irrelevant_entry(self, sync: SyncEntry):
+        if sync:
+            sync.set_irrelevant()
+            self.state.storage_update(sync)
+
+    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements, too-many-branches
         if sync.discarded:
             log.warning("discarded!")
             return FINISHED
@@ -871,10 +881,22 @@ class SyncManager(Runnable):
 
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
+            old_translated_path = None
+            if sync[changed].sync_path:
+                old_translated_path = self.translate(synced, sync[changed].sync_path)
+            old_translated_path = sync[changed].sync_path
+            if sync.irrelevant and translated_path and not old_translated_path:  # was irrelevant, but now is relevant
+                log.debug(">>>Suddenly a cloud path %s, creating", sync[changed].path)
+                self.relevant_entry(sync)
+                sync[changed].sync_path = None  # change this to a create
             if not translated_path:
-                log.log(TRACE, ">>>Not a cloud path %s, discard", sync[changed].path)
-                self.discard_entry(sync)
-                return FINISHED
+                log.debug(">>>Not a cloud path %s, ignoring", sync[changed].path)
+                self.irrelevant_entry(sync)
+                if old_translated_path:  # This entry was relevent, but now it is irrelevant
+                    log.debug(">>>Removing remnants of file moved out of cloud root")
+                    sync[changed].exists = TRASHED
+                else:
+                    return FINISHED  # we don't have a new or old translated path... just irrelevant so ignore
 
             # parent_conflict code
             # todo: make this walk up parents to the translate == None "root"
