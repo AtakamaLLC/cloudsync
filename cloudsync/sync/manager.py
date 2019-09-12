@@ -655,18 +655,17 @@ class SyncManager(Runnable):
         self.discard_entry(sync)
         return FINISHED
 
-    def check_disjoint_create(self, sync, changed, synced, translated_path): # pylint: disable=too-many-branches
+    def _get_unstrashed_peers(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table
-
         if sync[changed].otype != FILE:
-            return False
+            return None
 
         ents = list(self.state.lookup_path(synced, translated_path))
 
         # filter for exists
         other_ents = [ent for ent in ents if ent != sync]
         if not other_ents:
-            return False
+            return None
 
         log.debug("found matching %s, other ents: %s",
                   translated_path, other_ents)
@@ -677,10 +676,18 @@ class SyncManager(Runnable):
                 if ent[synced].exists == TRASHED:
                     # old trashed entries can be safely ignored
                     ent.discarded = True
-            return False
+            return None
 
         other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
             ent[synced].exists, ent[changed].exists)]
+
+        return other_untrashed_ents
+
+    def check_disjoint_create(self, sync, changed, synced, translated_path):
+        other_untrashed_ents = self._get_unstrashed_peers(sync, changed, synced, translated_path)
+
+        if not other_untrashed_ents:
+            return False
 
         if sync.punted == 0:
             # delaying sometimes helps, because future events can resolve conflicts
