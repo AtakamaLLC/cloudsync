@@ -9,6 +9,7 @@ requirements: env
 
 lint:
 	pylint cloudsync --ignore tests
+	mypy cloudsync
 	git fetch origin master
 	./check_version.sh
 
