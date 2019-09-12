@@ -3,12 +3,13 @@ import logging
 
 from typing import Optional, Tuple
 
+from pystrict import strict
+
 from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 from .log import TRACE
-from . import strict
 
 log = logging.getLogger(__name__)
 

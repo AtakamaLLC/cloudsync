@@ -333,6 +333,9 @@ class MockProvider(Provider):
         return new_fs_object.oid
 
     def delete(self, oid):
+        return self._delete(oid)
+
+    def _delete(self, oid, without_event=False):
         log.debug("delete %s", oid)
         self._api()
         file = self._fs_by_oid.get(oid, None)
@@ -349,7 +352,11 @@ class MockProvider(Provider):
             log.debug("Deleting non-existent oid %s:%s ignored", oid, path)
             return
         file.exists = False
-        self._register_event(MockEvent.ACTION_DELETE, file)
+        # todo: rename on top of another file needs to be allowed... and not require deletes
+        # until mock provider supports this... we need a "special delete"
+        # for tests that test this behavior
+        if not without_event:
+            self._register_event(MockEvent.ACTION_DELETE, file)
 
     def exists_oid(self, oid):
         self._api()
