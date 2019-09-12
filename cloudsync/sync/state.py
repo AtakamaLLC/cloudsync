@@ -682,8 +682,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if not ent:
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
-        # elif ent.discarded:
-
 
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
 
