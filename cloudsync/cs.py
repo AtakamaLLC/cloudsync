@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 from pystrict import strict
 
@@ -13,13 +13,14 @@ from .log import TRACE
 
 log = logging.getLogger(__name__)
 
+
 @strict
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
-                 roots: Tuple[str, str] = None,
+                 roots: Optional[Tuple[str, str]] = None,
                  storage: Optional[Storage] = None,
-                 sleep: Optional[Tuple[int, int]] = None,
+                 sleep: Optional[Tuple[float, float]] = None,
                  ):
 
         if not roots and self.translate == CloudSync.translate:     # pylint: disable=comparison-with-callable
@@ -40,9 +41,14 @@ class CloudSync(Runnable):
         self.smgr = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
+        _roots: Tuple[Optional[str], Optional[str]]
+        if not roots:
+            _roots = (None, None)
+        _roots = cast(Tuple[Optional[str], Optional[str]], roots)
+
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, roots[0]),
-            EventManager(smgr.providers[1], state, 1, roots[1])
+            EventManager(smgr.providers[0], state, 0, _roots[0]),
+            EventManager(smgr.providers[1], state, 1, _roots[1])
         )
         self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': 0.1})
 
@@ -52,11 +58,6 @@ class CloudSync(Runnable):
         )
 
         log.info("initialized sync: %s", self.storage_label())
-
-        def lockattr(k, _v):
-            if k not in self.__dict__:
-                raise AttributeError("%s not an attribute" % k)
-        self.__setattr__ = lockattr
 
     @property
     def aging(self):

@@ -13,7 +13,7 @@ __all__ = ['SyncManager']
 from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError
-from cloudsync.types import OInfo, DIRECTORY, FILE
+from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
 
@@ -36,7 +36,7 @@ def other_side(index):
 
 @strict
 class ResolveFile():
-    def __init__(self, info: OInfo, provider: 'Provider'):
+    def __init__(self, info: SideState, provider: 'Provider'):
         self.info = info
         self.provider = provider
         self.path = info.path
@@ -84,7 +84,7 @@ class SyncManager(Runnable):
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
                  resolve_conflict: Callable,
-                 sleep: Tuple[int, int] = None):
+                 sleep: Optional[Tuple[float, float]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.translate = translate
@@ -100,9 +100,9 @@ class SyncManager(Runnable):
         # TODO: we need sync_aging, backoff_min, backoff_max, backoff_mult documented with an interface and tests!
 
         ####
-        self.min_backoff = 0
-        self.max_backoff = 0
-        self.backoff = 0
+        self.min_backoff = 0.0
+        self.max_backoff = 0.0
+        self.backoff = 0.0
 
         max_sleep = max(sleep)                    # on sync fail, use the worst time for backoff
 
@@ -1081,7 +1081,6 @@ class SyncManager(Runnable):
         while path != parent:
             ents = list(self.state.lookup_path(changed, parent))
             for ent in ents:
-                ent: SyncEntry
                 if ent[changed].changed and ent[changed].exists == EXISTS:
                     ret = ent
             path = parent

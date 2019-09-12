@@ -5,7 +5,7 @@ import logging
 import threading
 from hashlib import sha256
 import webbrowser
-from typing import Generator, Optional
+from typing import Generator, Optional, Dict, Any
 from os import urandom
 from base64 import urlsafe_b64encode as u_b64enc
 import requests
@@ -21,7 +21,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, \
     CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
 
 log = logging.getLogger(__name__)
-
+logging.getLogger('dropbox').setLevel(logging.INFO)
 
 class _FolderIterator:
     def __init__(self, api, path, *, recursive, cursor=None):
@@ -78,7 +78,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._flow = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
-        self._session = {}
+        self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config if oauth_config else OAuthConfig()
         self._oauth_done = threading.Event()
 
@@ -483,7 +483,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return oid
 
     @staticmethod
-    def hash_data(file_like) -> bytes:
+    def hash_data(file_like) -> str:
         # get a hash from a filelike that's the same as the hash i natively use
         binstr = b''
         while True:

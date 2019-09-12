@@ -15,7 +15,8 @@ import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set
+from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING
+
 from typing import Union
 from pystrict import strict
 
@@ -24,6 +25,9 @@ from cloudsync.types import OType
 from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
 from .util import debug_sig
+if TYPE_CHECKING:
+    from cloudsync import Provider
+
 
 log = logging.getLogger(__name__)
 
@@ -56,10 +60,10 @@ TRASHED = Exists.TRASHED
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
 class SideState(Reprable):
-    def __init__(self, parent: 'SyncEntry', side: int, otype: OType):
+    def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
         self._side: int = side                            # just for assertions
-        self._otype: OType = otype
+        self._otype: Optional[OType] = otype
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
         self._changed: Optional[float] = None
@@ -89,17 +93,19 @@ class SideState(Reprable):
 
     def _set_exists(self, val: Union[bool, Exists]):
         if val is False:
-            val = TRASHED
-        if val is True:
-            val = EXISTS
-        if val is None:
-            val = UNKNOWN
+            xval = TRASHED
+        elif val is True:
+            xval = EXISTS
+        elif val is None:
+            xval = UNKNOWN
+        else:
+            xval = cast(Exists, val)
 
-        if type(val) != Exists:
+        if type(xval) != Exists:
             raise ValueError("use enum for exists")
 
-        self._exists = val
-        self._parent.updated(self._side, "exists", val)
+        self._exists = xval
+        self._parent.updated(self._side, "exists", xval)
 
     def set_aged(self):
         # setting to an old mtime marks this as fully aged
@@ -146,8 +152,9 @@ class Storage(ABC):
 # single entry in the syncs state collection
 @strict         # pylint: disable=too-many-instance-attributes
 class SyncEntry(Reprable):
-    def __init__(self, parent: 'SyncState', otype: OType, storage_init: Optional[Tuple[Any, bytes]] = None):
+    def __init__(self, parent: 'SyncState', otype: Optional[OType], storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
+        assert otype or storage_init
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
         self._conflicted: bool = False
@@ -396,21 +403,21 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
                  shuffle: bool = True):
-        self._oids = ({}, {})
-        self._paths = ({}, {})
-        self._changeset = set()
+        self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
+        self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
+        self._changeset: Set[SyncEntry] = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
         assert len(providers) == 2
 
         self.lock = RLock()
-        self.data_id = dict()
+        self.data_id: Dict[str, Any] = dict()
         self.shuffle = shuffle
         self._loading = False
-        if self._storage:
+        if self._storage and self._tag:
             self._loading = True
-            storage_dict = self._storage.read_all(tag)
+            storage_dict = self._storage.read_all(cast(str, tag))
             for eid, ent_ser in storage_dict.items():
                 ent = SyncEntry(self, None, (eid, ent_ser))
                 for side in [LOCAL, REMOTE]:
@@ -645,12 +652,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
 
     def storage_update(self, ent: SyncEntry):
+        if self._tag is None:
+            return
+
         log.log(TRACE, "storage_update eid%s", ent.storage_id)
         if self._storage is not None:
             if ent.storage_id is not None:
-                self._storage.update(self._tag, ent.serialize(), ent.storage_id)
+                self._storage.update(cast(str, self._tag), ent.serialize(), ent.storage_id)
             else:
-                new_id = self._storage.create(self._tag, ent.serialize())
+                new_id = self._storage.create(cast(str, self._tag), ent.serialize())
                 ent.storage_id = new_id
                 log.debug("storage_update creating eid%s", ent.storage_id)
             ent.dirty = False
@@ -754,7 +764,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 if ent not in self._changeset:
                     assert False, ("changeset missing %s" % ent)
 
-    def get_all(self, discarded=False) -> Set['SyncState']:
+    def get_all(self, discarded=False) -> Set['SyncEntry']:
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent

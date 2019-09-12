@@ -3,7 +3,7 @@ import sys
 import socket
 import threading
 import errno
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 # from src import config
 from .apiserver import ApiServer
 # from src.osutil import is_windows
@@ -30,10 +30,10 @@ class OAuthRedirServer:
 
     def __init__(self, html_response_generator: Callable[[bool, str], str] = None):
         self.__html_response_generator = html_response_generator
-        self.__on_success = None
-        self.__on_failure = None
-        self.__api_server = None
-        self.__thread = None
+        self.__on_success: Optional[Callable[[Any], None]] = None
+        self.__on_failure: Optional[Callable[[str], None]] = None
+        self.__api_server: Optional[ApiServer] = None
+        self.__thread: Optional[threading.Thread] = None
         self.__running = False
 
     @property
