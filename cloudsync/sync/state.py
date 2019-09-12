@@ -415,7 +415,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self.data_id: Dict[str, Any] = dict()
         self.shuffle = shuffle
         self._loading = False
-        if self._storage and self._tag:
+        if self._storage:
+            assert self._tag
             self._loading = True
             storage_dict = self._storage.read_all(cast(str, tag))
             for eid, ent_ser in storage_dict.items():

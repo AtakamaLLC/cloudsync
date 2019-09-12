@@ -545,8 +545,8 @@ class SyncManager(Runnable):
                     fh = fhs[0]
                 else:
                     fh = fhs[1]
-            # for simplicity: directory conflicted with file, always favors directory
-            return (fh, True)
+                # for simplicity: directory conflicted with file, always favors directory
+                return (fh, True)
 
         is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
         ret = None
@@ -1073,7 +1073,7 @@ class SyncManager(Runnable):
             # other side already agrees
             _update_syncs(other.oid)
 
-    def _get_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
+    def _get_parent_conflict(self, sync: SyncEntry, changed) -> Optional[SyncEntry]:
         provider = self.providers[changed]
         path = sync[changed].path
         parent = provider.dirname(path)

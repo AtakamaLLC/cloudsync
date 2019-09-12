@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Any
+from typing import TYPE_CHECKING, Generator, Optional, Any, Union
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -119,7 +119,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @staticmethod
     @abstractmethod
-    def hash_data(file_like) -> Any:
+    def hash_data(file_like) -> Union[str, bytes]:
         ...
 
     @abstractmethod

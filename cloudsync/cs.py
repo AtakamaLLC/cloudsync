@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple, cast
+from typing import Optional, Tuple
 
 from pystrict import strict
 
@@ -44,7 +44,8 @@ class CloudSync(Runnable):
         _roots: Tuple[Optional[str], Optional[str]]
         if not roots:
             _roots = (None, None)
-        _roots = cast(Tuple[Optional[str], Optional[str]], roots)
+        else:
+            _roots = roots
 
         self.emgrs: Tuple[EventManager, EventManager] = (
             EventManager(smgr.providers[0], state, 0, _roots[0]),
