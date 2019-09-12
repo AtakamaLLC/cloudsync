@@ -172,6 +172,7 @@ class SyncEntry(Reprable):
             object.__setattr__(self, k, v)
             return
 
+        log.debug("setting %s to %s in SyncEntry", k, v)
         self.updated(None, k, v)
 
         object.__setattr__(self, "_" + k, v)
@@ -432,6 +433,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             self._change_path(side, ent, val, self.providers[side])
         elif key == "oid":
             self._change_oid(side, ent, val)
+        elif key == "discarded" and val:
+            ent[LOCAL]._changed = False
+            ent[REMOTE]._changed = False
+            self._changeset.discard(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
                 self._changeset.add(ent)
@@ -640,7 +645,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
 
     def storage_update(self, ent: SyncEntry):
-        log.log(TRACE, "storage_update eid%s", ent.storage_id, stack_info=True)
+        log.log(TRACE, "storage_update eid%s", ent.storage_id)
         if self._storage is not None:
             if ent.storage_id is not None:
                 self._storage.update(self._tag, ent.serialize(), ent.storage_id)

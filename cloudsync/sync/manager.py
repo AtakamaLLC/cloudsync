@@ -179,12 +179,13 @@ class SyncManager(Runnable):
                     not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
-    def sync(self, sync):  # pylint: disable=too-many-branches
+    def check_revivify(self, sync):
         if sync.discarded:
             for i in (LOCAL, REMOTE):
                 changed = i
                 synced = other_side(i)
-                if not sync[changed].changed or sync[changed].sync_path or not sync[changed].oid:
+                se = sync[changed]
+                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -197,13 +198,18 @@ class SyncManager(Runnable):
                     continue
                 translated_path = self.translate(synced, provider_path)
                 if sync.discarded and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                    log.debug(">>>about to embrace %s", sync)
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.discarded = False
                     sync[changed].sync_path = None
-            if sync.discarded:
-                self.finished(LOCAL, sync)
-                self.finished(REMOTE, sync)
-                return
+
+    def sync(self, sync):
+        self.check_revivify(sync)
+
+        if sync.discarded:
+            self.finished(LOCAL, sync)
+            self.finished(REMOTE, sync)
+            return
 
         self.get_latest_state(sync)
 
@@ -715,7 +721,7 @@ class SyncManager(Runnable):
             sync.punt()
             return True
 
-        log.debug("split conflict found : %s", other_untrashed_ents)
+        log.debug("split conflict found : %s:%s", len(other_untrashed_ents), other_untrashed_ents)
 
         found = None
         info = self.providers[synced].info_path(translated_path)
@@ -864,6 +870,7 @@ class SyncManager(Runnable):
                 conflict_path = self.providers[side].join(folder, conflict_name)
                 new_oid = self.providers[side].rename(oinfo.oid, conflict_path)
             except CloudFileExistsError:
+                log.debug("already exists %s", conflict_name)
                 i = i + 1
                 conflict_name = base + ".conflicted" + str(i) + ext
 
@@ -889,7 +896,7 @@ class SyncManager(Runnable):
                     sync[changed].exists = TRASHED  # This will discard the ent later
                 else:  # we don't have a new or old translated path... just irrelevant so discard
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
-                    sync.discard()
+                    self.discard_entry(sync)
 
         if sync.discarded:
             return FINISHED
