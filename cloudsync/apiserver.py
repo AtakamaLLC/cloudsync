@@ -17,6 +17,7 @@ from waitress.channel import HTTPChannel
 
 log = logging.getLogger(__name__)
 
+from typing import Callable, Dict
 
 class ApiServerLogLevel(Enum):
     NONE = 0  # do not log calls
@@ -84,7 +85,7 @@ class ApiServer:
         self.__server = waitress.server.create_server(self, host=self.__addr, port=self.__port, clear_untrusted_proxy_headers=False)
 
         self.__started = False
-        self.__routes = {}
+        self.__routes : Dict[str, Callable] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
 
@@ -131,8 +132,8 @@ class ApiServer:
                     if not self.__shutting_down:
                         self.__shutting_down = True
                         timeout = time.time() + 2
+                        channel: HTTPChannel
                         for channel in list(self.__server.active_channels.values()):  # Convert to a list to make a copy
-                            channel: HTTPChannel
                             while channel.total_outbufs_len > 0 and time.time() < timeout:
                                 time.sleep(.01)  # give any connections with a non-empty output buffer a chance to drain
                         self.__server.socket.close()
