@@ -2,11 +2,11 @@ import logging
 import time
 from typing import TYPE_CHECKING, Optional
 from dataclasses import dataclass
+from pystrict import strict
 from .exceptions import CloudTemporaryError, CloudDisconnectedError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType
-from . import strict
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState

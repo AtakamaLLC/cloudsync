@@ -17,8 +17,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set
 from typing import Union
+from pystrict import strict
 
-from cloudsync import strict
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
 from cloudsync.types import OType
 from cloudsync.scramble import scramble

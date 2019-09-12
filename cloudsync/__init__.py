@@ -27,7 +27,7 @@ __version__ = "0.1.27"
 
 # must be imported first
 from .log import logger
-from .strict import strict, StrictError
+from pystrict import strict, StrictError
 
 # import modules into top level for convenience
 from .provider import *

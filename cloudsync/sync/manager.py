@@ -10,11 +10,12 @@ from typing import Tuple, Optional, Callable, TYPE_CHECKING
 
 __all__ = ['SyncManager']
 
+from pystrict import strict
+
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError
 from cloudsync.types import OInfo, DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
-from cloudsync.strict import strict
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 from .util import debug_sig
