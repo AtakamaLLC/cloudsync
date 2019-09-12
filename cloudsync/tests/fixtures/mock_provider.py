@@ -404,7 +404,8 @@ class MockProvider(Provider):
     #         x.write(contents)
 
     def log_debug_state(self, msg=""):
-        log.debug("%s: mock provider state %s", msg, list(self.walk("/")))
+        files = list(self.walk("/"))
+        log.debug("%s: mock provider state %s:%s", msg, len(files), files)
 
 ###################
 

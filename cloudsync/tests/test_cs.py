@@ -56,6 +56,86 @@ def fixture_multi_cs(mock_provider_generator):
     cs2.done()
 
 
+def test_sync_rename_away(multi_cs):
+    cs1, cs2 = multi_cs
+
+    remote_parent = "/remote"
+    remote_path = "/remote/stuff1"
+
+    local_parent1 = "/local1"
+    local_parent2 = "/local2"
+    local_path11 = "/local1/stuff1"
+    local_path21 = "/local2/stuff1"
+
+    cs1.providers[LOCAL].mkdir(local_parent1)
+    cs1.providers[REMOTE].mkdir(remote_parent)
+    cs2.providers[LOCAL].mkdir(local_parent2)
+    cs2.providers[REMOTE].mkdir(remote_parent)
+    linfo1 = cs1.providers[LOCAL].create(local_path11, BytesIO(b"hello1"), None)
+
+    assert linfo1
+
+    cs1.run_until_found(
+        (LOCAL, local_path11),
+        (REMOTE, remote_path),
+        timeout=2)
+
+    cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
+    log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
+    log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
+
+    assert len(cs1.state) == 2      # 1 dirs, 1 files
+
+    # This is the meat of the test. renaming out of one cloud bed into another
+    #   Which will potentially forget to sync up the delete to remote1, leaving
+    #   the file there and also in remote2
+    log.debug("here")
+    linfo2 = cs1.providers[LOCAL].rename(linfo1.oid, local_path21)
+    log.debug("here")
+    cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
+    log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
+    log.debug("here")
+    cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
+    log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
+    log.debug("here")
+
+    try:
+        cs1.run_until_found(
+            WaitFor(LOCAL, local_path11, exists=False),
+            timeout=2)
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs2.run_until_found(
+            (LOCAL, local_path21),
+            timeout=2)
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs2.run_until_found(
+            (REMOTE, remote_path),
+            timeout=2)
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        # If renaming out of local1 didn't properly sync, the next line will time out
+        cs1.run_until_found(
+            WaitFor(REMOTE, remote_path, exists=False),
+            timeout=2)
+    except TimeoutError:
+        log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
+        raise
+
+    # let cleanups/discards/dedups happen if needed
+    cs1.run(until=lambda: not cs1.state.has_changes(), timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes(), timeout=1)
+
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
+
+    assert len(cs1.state) == 1  #  1 dir
+    assert len(cs2.state) == 2  #  1 file and 1 dir
+
+
 def test_sync_multi(multi_cs):
     cs1, cs2 = multi_cs
 

@@ -172,6 +172,7 @@ class SyncEntry(Reprable):
             object.__setattr__(self, k, v)
             return
 
+        log.debug("setting %s to %s in SyncEntry", k, v)
         self.updated(None, k, v)
 
         object.__setattr__(self, "_" + k, v)
@@ -228,8 +229,8 @@ class SyncEntry(Reprable):
         ser: dict = json.loads(storage_init[1].decode('utf-8'))
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
-        self.discarded = ser['discarded']
-        self.conflicted = ser['conflicted']
+        self.discarded = ser.get('discarded', "")
+        self.conflicted = ser.get('conflicted', False)
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -304,8 +305,9 @@ class SyncEntry(Reprable):
         return ret
 
     def pretty(self, fixed=True, use_sigs=True):
+        ret = ""
         if self.discarded:
-            return "DISCARDED"
+            ret = "DISCARDED"
 
         def secs(t):
             if t:
@@ -346,9 +348,9 @@ class SyncEntry(Reprable):
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
                         self._punted,
-                        self._conflicted))
+                        self._conflicted or bool(self._discarded)))
 
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
+        ret += "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
@@ -431,6 +433,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             self._change_path(side, ent, val, self.providers[side])
         elif key == "oid":
             self._change_oid(side, ent, val)
+        elif key == "discarded" and val:
+            ent[LOCAL]._changed = False
+            ent[REMOTE]._changed = False
+            self._changeset.discard(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
                 self._changeset.add(ent)
@@ -595,17 +601,17 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             ent.dirty = True
             assert type(ent[side].exists) is Exists
 
-        if changed and not ent.discarded:
+        if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
+            log.debug("add %s to changeset", ent)
             self.mark_changed(side, ent)
 
         log.log(TRACE, "updated %s", ent)
 
     def mark_changed(self, side, ent):
-        if not ent.discarded:
-            ent[side].changed = time.time()
-            assert ent in self._changeset
+        ent[side].changed = time.time()
+        assert ent in self._changeset
 
     def storage_get_data(self, data_tag):
         if data_tag is None:
@@ -654,7 +660,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
         log.log(TRACE, "lookup %s", debug_sig(oid))
-        ent = self.lookup_oid(side, oid)
+        ent: SyncEntry = self.lookup_oid(side, oid)
 
         prior_ent = None
         if prior_oid and prior_oid != oid:
@@ -700,17 +706,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                         return e
 
         ret = None
-        remove = []
         for e in self._changeset:
-            if e.discarded:
-                remove.append(e)
-            else:
-                if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
-                        or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                    ret = e
-
-        for e in remove:
-            self._changeset.discard(e)
+            if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
+                    or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
+                ret = e
 
         return ret
 

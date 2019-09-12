@@ -180,7 +180,38 @@ class SyncManager(Runnable):
                     not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
+    def check_revivify(self, sync):
+        if sync.discarded:
+            for i in (LOCAL, REMOTE):
+                changed = i
+                synced = other_side(i)
+                se = sync[changed]
+                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.conflicted:
+                    continue
+                looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
+                if looked_up_sync and looked_up_sync != sync:
+                    continue
+                provider_info = self.providers[changed].info_oid(sync[changed].oid)
+                if not provider_info:
+                    continue
+                provider_path = provider_info.path
+                if not provider_path:
+                    continue
+                translated_path = self.translate(synced, provider_path)
+                if sync.discarded and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                    log.debug(">>>about to embrace %s", sync)
+                    log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
+                    sync.discarded = False
+                    sync[changed].sync_path = None
+
     def sync(self, sync):
+        self.check_revivify(sync)
+
+        if sync.discarded:
+            self.finished(LOCAL, sync)
+            self.finished(REMOTE, sync)
+            return
+
         self.get_latest_state(sync)
 
         if sync.hash_conflict():
@@ -697,7 +728,7 @@ class SyncManager(Runnable):
             sync.punt()
             return True
 
-        log.debug("split conflict found : %s", other_untrashed_ents)
+        log.debug("split conflict found : %s:%s", len(other_untrashed_ents), other_untrashed_ents)
 
         found = None
         info = self.providers[synced].info_path(translated_path)
@@ -849,26 +880,38 @@ class SyncManager(Runnable):
                 conflict_path = self.providers[side].join(folder, conflict_name)
                 new_oid = self.providers[side].rename(oinfo.oid, conflict_path)
             except CloudFileExistsError:
+                log.debug("already exists %s", conflict_name)
                 i = i + 1
                 conflict_name = base + ".conflicted" + str(i) + ext
 
         log.debug("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def discard_entry(self, sync):
+    def discard_entry(self, sync: SyncEntry):
         if sync:
             sync.discard()
             self.state.storage_update(sync)
 
-    def conflict_entry(self, sync):
+    def conflict_entry(self, sync: SyncEntry):
         if sync:
             sync.conflict()
             self.state.storage_update(sync)
 
-    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements
+    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements, too-many-branches
+        if sync[changed].path:
+            translated_path = self.translate(synced, sync[changed].path)
+            if not translated_path:
+                if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
+                    log.debug(">>>Removing remnants of file moved out of cloud root")
+                    sync[changed].exists = TRASHED  # This will discard the ent later
+                else:  # we don't have a new or old translated path... just irrelevant so discard
+                    log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
+                    self.discard_entry(sync)
+
         if sync.discarded:
-            log.warning("discarded!")
             return FINISHED
+
+        log.debug("embrace %s, side:%s", sync, changed)
 
         if sync.conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
@@ -877,15 +920,7 @@ class SyncManager(Runnable):
             else:
                 sync.unconflict()
 
-        log.debug("embrace %s, side:%s", sync, changed)
-
         if sync[changed].path:
-            translated_path = self.translate(synced, sync[changed].path)
-            if not translated_path:
-                log.log(TRACE, ">>>Not a cloud path %s, discard", sync[changed].path)
-                self.discard_entry(sync)
-                return FINISHED
-
             # parent_conflict code
             # todo: make this walk up parents to the translate == None "root"
             conflict = self._get_parent_conflict(sync, changed)
@@ -894,6 +929,7 @@ class SyncManager(Runnable):
                 conflict[changed].set_aged()
                 sync.punt()
                 return REQUEUE
+
 
         if sync[changed].exists == TRASHED:
             log.debug("delete")
