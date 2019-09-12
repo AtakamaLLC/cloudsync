@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional
+from typing import TYPE_CHECKING, Generator, Optional, Union
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -19,7 +19,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True
     win_paths: bool = False
     connection_id: Optional[str] = None
-    default_sleep: int = 0.01
+    default_sleep: float = 0.01
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -119,7 +119,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @staticmethod
     @abstractmethod
-    def hash_data(file_like) -> bytes:
+    def hash_data(file_like) -> Union[str, bytes]:
         ...
 
     @abstractmethod

@@ -1,12 +1,13 @@
 import queue
 from threading import Lock
 from collections import namedtuple
+from typing import Dict, Any
 
 
 class Muxer:
     Entry = namedtuple('Entry', 'genref listeners, lock')
 
-    already = {}
+    already: Dict[Any, Entry] = {}
     top_lock = Lock()
 
     def __init__(self, func, key=None, restart=False):
