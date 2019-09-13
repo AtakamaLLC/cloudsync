@@ -4,4 +4,5 @@ pytest-profiling
 pytest-repeat
 pytest-cov
 pylint
+mypy
 flaky>=3.6

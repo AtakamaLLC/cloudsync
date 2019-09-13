@@ -21,7 +21,7 @@ class OAuthConfig:
             self._oauth_redir_server = OAuthRedirServer(html_response_generator=self._gen_html_response)
 
     @property
-    def oauth_redir_server(self) -> OAuthRedirServer:
+    def oauth_redir_server(self) -> Optional[OAuthRedirServer]:
         return self._oauth_redir_server
 
     def _gen_html_response(self, success: bool, err_msg: str):

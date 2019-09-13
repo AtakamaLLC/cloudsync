@@ -6,7 +6,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional
+from typing import Generator, Optional, List, Dict
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -26,11 +26,12 @@ class GDriveFileDoneError(Exception):
 
 
 log = logging.getLogger(__name__)
+logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
-    pids = []
+    pids: List[str] = []
 
     def __init__(self, *a, pids=None, **kws):
         super().__init__(*a, **kws)
@@ -66,7 +67,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
-        self._trashed_ids = {}
+        self._trashed_ids: Dict[str, str] = {}
         self._flow = None
         self._oauth_config = oauth_config if oauth_config else OAuthConfig()
         self._oauth_done = threading.Event()
@@ -755,7 +756,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return ret
 
     @staticmethod
-    def hash_data(file_like) -> bytes:
+    def hash_data(file_like) -> str:
         # get a hash from a filelike that's the same as the hash i natively use
         md5 = hashlib.md5()
         for c in iter(lambda: file_like.read(32768), b''):

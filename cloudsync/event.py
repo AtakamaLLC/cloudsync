@@ -29,7 +29,7 @@ class Event:
 
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
-    def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: str = None):
+    def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: Optional[str] = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
         assert self.provider.connection_id
