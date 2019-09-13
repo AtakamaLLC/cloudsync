@@ -73,11 +73,12 @@ class SyncMgrMixin(SyncManager, RunUntilHelper):
     pass
 
 
-@pytest.fixture(name="sync")
-def fixture_sync(mock_provider_generator):
+def make_sync(request, mock_provider_generator, shuffle):
+    shuffle = shuffle
+
     providers = (mock_provider_generator(), mock_provider_generator(oid_is_path=False))
 
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=shuffle)
 
     def translate(to, path):
         if to == LOCAL:
@@ -101,9 +102,18 @@ def fixture_sync(mock_provider_generator):
     sync.done()
 
 
+@pytest.fixture(name="sync")
+def fixture_sync(request, mock_provider_generator):
+    yield from make_sync(request, mock_provider_generator, True)
+
+@pytest.fixture(name="sync_sh", params=[0, 1], ids=["sh0", "sh1"])
+def fixture_sync_sh(request, mock_provider_generator):
+    yield from make_sync(request, mock_provider_generator, request.param)
+
+
 def test_sync_state_basic(mock_provider):
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
 
     assert state.lookup_path(LOCAL, path="foo")
@@ -113,7 +123,7 @@ def test_sync_state_basic(mock_provider):
 
 def test_sync_state_rename(mock_provider):
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
@@ -123,7 +133,7 @@ def test_sync_state_rename(mock_provider):
 
 def test_sync_state_rename2(mock_provider):
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
     assert state.lookup_path(LOCAL, path="foo")
     assert state.lookup_oid(LOCAL, "123")
@@ -138,7 +148,7 @@ def test_sync_state_rename2(mock_provider):
 
 def test_sync_state_rename3(mock_provider):
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
     ahash = "ah"
     bhash = "bh"
     state.update(LOCAL, FILE, path="a", oid="a", hash=ahash)
@@ -173,7 +183,7 @@ def test_sync_state_rename3(mock_provider):
 
 def test_sync_state_multi(mock_provider):
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo2", oid="123")
     assert state.lookup_path(LOCAL, path="foo2")
     assert not state.lookup_path(LOCAL, path="foo")
@@ -188,7 +198,7 @@ def test_sync_state_kids(mock_provider):
     # that way we can go back to have a pure state/storage manager
 
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
     state.update(LOCAL, DIRECTORY, path="/dir", oid="123")
     assert state.lookup_path(LOCAL, path="/dir")
     state.update(LOCAL, FILE, path="/dir/foo", oid="124")
@@ -211,7 +221,7 @@ def test_sync_state_split(mock_provider):
     # that way we can go back to have a pure state/storage manager
 
     providers = (mock_provider, mock_provider)
-    state = SyncState(providers)
+    state = SyncState(providers, shuffle=True)
 
     state.update(LOCAL, DIRECTORY, path="/dir", oid="123")
 
@@ -792,8 +802,8 @@ def _test_rename_folder_with_kids(sync, source, dest):
 
 
 @pytest.mark.parametrize("ordering", [(LOCAL, REMOTE), (REMOTE, LOCAL)])
-def test_rename_folder_with_kids(sync, ordering):
-    _test_rename_folder_with_kids(sync, *ordering)
+def test_rename_folder_with_kids(sync_sh, ordering):
+    _test_rename_folder_with_kids(sync_sh, *ordering)
 
 def test_aging(sync):
     local_parent = "/local"
@@ -830,7 +840,8 @@ def test_aging(sync):
     assert sync.providers[REMOTE].info_path(remote_file2)
     # but withotu it, things are fast
 
-def test_remove_folder_with_kids(sync):
+def test_remove_folder_with_kids(sync_sh):
+    sync = sync_sh
     parent = ["/local", "/remote"]
     folder1 = ["/local/folder1", "/remote/folder1"]
     file1 = ["/local/folder1/file", "/remote/folder1/file"]
