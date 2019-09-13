@@ -235,6 +235,13 @@ class MockProvider(Provider):
         file.exists = True
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockEvent.ACTION_CREATE, file)
+
+        parent_path = self.dirname(path)
+        if parent_path != self.sep:
+            parent_obj = self._fs_by_path.get(parent_path, None)
+            if parent_obj:
+                self._register_event(MockEvent.ACTION_UPDATE, parent_obj)
+
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):

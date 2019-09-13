@@ -1288,3 +1288,46 @@ def test_special_characters(provider: ProviderMixin):
     new_oid2 = provider.rename(new_oid, newfname2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
+
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.event import EventManager
+
+from .test_sync import WaitFor, RunUntilHelper
+
+@pytest.fixture(name="cs2")
+def fixture_cs2(mock_provider_generator, provider):
+    roots = ("/local", "/remote")
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    cs = CloudSyncMixin((mock_provider_generator(), provider), roots, sleep=None)
+
+    yield cs
+
+    cs.done()
+
+
+def test_many_small_files(cs2):
+    cs = cs2
+    local_base = "/local"
+    local_file_base = f"{local_base}/file"
+    remote_base = "/remote"
+    remote_file_base = f"{remote_base}/file"
+
+    cs.providers[LOCAL].mkdir(local_base)
+    cs.providers[REMOTE].mkdir(remote_base)
+    cs.run(until=lambda: not cs.state.change_count, timeout=100)
+
+    content = BytesIO(b"\0" * (3 * 1024))
+    for i in range(100):
+        linfo = cs.providers[LOCAL].create(local_file_base + str(i), content, None)
+        assert linfo
+
+    cs.run(until=lambda: not cs.state.change_count, timeout=9999999)
+
+    assert False
+
+    for i in range(100):
+        rinfo = cs.providers[REMOTE].info_path(remote_file_base + str(i))
+        assert rinfo

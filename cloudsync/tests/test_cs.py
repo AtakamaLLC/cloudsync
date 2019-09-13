@@ -1077,3 +1077,23 @@ def test_sync_rename_up(cs):
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+
+
+def test_many_small_files(cs):
+    local_base = "/local"
+    local_file_base = f"{local_base}/file"
+    remote_base = "/remote"
+    remote_file_base = f"{remote_base}/file"
+
+    cs.providers[LOCAL].mkdir(local_base)
+    cs.providers[REMOTE].mkdir(remote_base)
+    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+
+    content = BytesIO(b"\0" * (3 * 1024))
+    for i in range(100):
+        linfo = cs.providers[LOCAL].create(local_file_base + str(i), content, None)
+        assert linfo
+
+    cs.run(until=lambda: not cs.state.change_count, timeout=99999999)
+
+    assert False
