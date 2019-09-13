@@ -13,6 +13,7 @@ from .log import TRACE
 
 log = logging.getLogger(__name__)
 
+
 @strict
 class CloudSync(Runnable):
     def __init__(self,

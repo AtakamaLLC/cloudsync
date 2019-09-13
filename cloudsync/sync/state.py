@@ -15,7 +15,7 @@ import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set
+from typing import Optional, Tuple, Any, List, Dict, Set, TYPE_CHECKING
 from typing import Union
 from pystrict import strict
 
@@ -24,6 +24,9 @@ from cloudsync.types import OType
 from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
 from .util import debug_sig
+
+if TYPE_CHECKING:
+    from cloudsync import Provider
 
 log = logging.getLogger(__name__)
 

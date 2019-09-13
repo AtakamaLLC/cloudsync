@@ -34,6 +34,7 @@ REQUEUE = 0
 def other_side(index):
     return 1-index
 
+
 @strict
 class ResolveFile():
     def __init__(self, info: OInfo, provider: 'Provider'):
@@ -177,7 +178,7 @@ class SyncManager(Runnable):
         if ent[0].path and ent[1].path and ((ent[0].sync_hash and ent[1].sync_hash)         # pylint: disable=too-many-boolean-expressions
                                             or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)):
             return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-                    not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
+                not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
         return False
 
     def check_revivify(self, sync):
@@ -236,7 +237,7 @@ class SyncManager(Runnable):
 
                 # if the other side changed hash, handle it first
                 if sync[i].hash == sync[i].sync_hash:
-                    other = other_side(i)  
+                    other = other_side(i)
                     if sync[other].changed and sync[other].hash != sync[other].sync_hash:
                         continue
 
@@ -304,7 +305,9 @@ class SyncManager(Runnable):
     def get_folder_file_conflict(self, sync, translated_path, synced):
         # if a non-dir file exists with the same name on the sync side
         syents = list(self.state.lookup_path(synced, translated_path))
-        conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
+        conflicts = [ent for ent in syents if (ent[synced].exists != TRASHED
+                                               and ent != sync
+                                               and ent[synced].otype != DIRECTORY)]
 
         nc = []
         for ent in conflicts:
@@ -316,7 +319,6 @@ class SyncManager(Runnable):
 
         return nc[0] if nc else None
 
- 
     def mkdir_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
         # see if there are other entries for the same path, but other ids
@@ -488,7 +490,7 @@ class SyncManager(Runnable):
             parent = self.providers[changed].dirname(sync[changed].path)
             log.debug("make %s first before %s", parent, sync[changed].path)
             ents = self.state.lookup_path(changed, parent)
-            if not ents: 
+            if not ents:
                 info = self.providers[changed].info_path(parent)
                 if info:
                     self.state.update(changed, DIRECTORY, info.oid, path=parent)
@@ -539,14 +541,13 @@ class SyncManager(Runnable):
         return fhs
 
     def __safe_call_resolver(self, fhs):
-        if DIRECTORY in (fhs[0].otype, fhs[1].otype):
-            if fhs[0].otype != fhs[1].otype:
-                if fhs[0].otype == DIRECTORY:
-                    fh = fhs[0]
-                else:
-                    fh = fhs[1]
+        if DIRECTORY in (fhs[0].otype, fhs[1].otype) and fhs[0].otype != fhs[1].otype:
+            if fhs[0].otype == DIRECTORY:
+                fh = fhs[0]
+            else:
+                fh = fhs[1]
             # for simplicity: directory conflicted with file, always favors directory
-            return (fh, True)
+            return fh, True
 
         is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
         ret = None
@@ -875,6 +876,7 @@ class SyncManager(Runnable):
         i = 1
         new_oid = None
         conflict_name = base + ".conflicted" + ext
+        conflict_path = None
         while new_oid is None:
             try:
                 conflict_path = self.providers[side].join(folder, conflict_name)
@@ -897,7 +899,7 @@ class SyncManager(Runnable):
             sync.conflict()
             self.state.storage_update(sync)
 
-    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements, too-many-branches
+    def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
@@ -929,7 +931,6 @@ class SyncManager(Runnable):
                 conflict[changed].set_aged()
                 sync.punt()
                 return REQUEUE
-
 
         if sync[changed].exists == TRASHED:
             log.debug("delete")
@@ -971,7 +972,7 @@ class SyncManager(Runnable):
             sync[changed].sync_path = None
             sync[changed].sync_hash = None
             return REQUEUE
-            
+
         log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
         assert sync[synced].oid
@@ -1048,8 +1049,8 @@ class SyncManager(Runnable):
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
 
-        def _update_syncs(new_oid):
-            self.update_entry(sync, other.side, new_oid, path=other_path)
+        def _update_syncs(newer_oid):
+            self.update_entry(sync, other.side, newer_oid, path=other_path)
             if sync[other.side].sync_path:
                 sync[other.side].sync_path = sync[other.side].path
 
@@ -1073,7 +1074,7 @@ class SyncManager(Runnable):
             # other side already agrees
             _update_syncs(other.oid)
 
-    def _get_parent_conflict(self, sync: SyncEntry, changed) -> Optional[str]:
+    def _get_parent_conflict(self, sync: SyncEntry, changed) -> Optional[SyncEntry]:
         provider = self.providers[changed]
         path = sync[changed].path
         parent = provider.dirname(path)

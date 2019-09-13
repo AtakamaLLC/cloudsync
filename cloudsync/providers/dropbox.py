@@ -112,11 +112,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self._oauth_config.manual_mode = False
         if self._oauth_config.manual_mode:
             self._flow = DropboxOAuth2Flow(consumer_key=key,
-                                          consumer_secret=secret,
-                                          redirect_uri=self._redir,
-                                          session=self._session,
-                                          csrf_token_session_key=self._csrf,
-                                          locale=None)
+                                           consumer_secret=secret,
+                                           redirect_uri=self._redir,
+                                           session=self._session,
+                                           csrf_token_session_key=self._csrf,
+                                           locale=None)
         url = self._flow.start()
         self._oauth_done.clear()
         webbrowser.open(url)
@@ -148,7 +148,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         try:
             self.initialize()
             self._oauth_done.wait()
-            return {"key": self.api_key,}
+            return {"key": self.api_key, }
         finally:
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()

@@ -543,7 +543,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if coid == oid:
                     old_path = cpath
 
-
         if add_pids == remove_pids:
             add_pids = ""
             remove_pids = ""

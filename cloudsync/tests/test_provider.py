@@ -350,6 +350,7 @@ def test_connect(provider):
     provider.reconnect()
     assert provider.connected
 
+
 def test_create_upload_download(provider):
     dat = os.urandom(32)
 
@@ -432,13 +433,13 @@ def test_rename(provider: ProviderMixin):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
-   
     # move to sub
     dest = provider.temp_name("movy")
     sub_file_name = os.urandom(16).hex()
     sub_file_path3 = provider.join(sub_folder_path2, sub_file_name)
     info1 = provider.create(dest, data())
     provider.rename(info1.oid, sub_file_path3)
+
 
 def test_mkdir(provider: ProviderMixin):
     dat = os.urandom(32)

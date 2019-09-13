@@ -429,9 +429,11 @@ def mock_provider_generator(request):
             request.param[0] if oid_is_path is None else oid_is_path,
             request.param[1] if case_sensitive is None else case_sensitive)
 
+
 @pytest.fixture
 def mock_provider_creator():
     return mock_provider_instance
+
 
 def test_mock_basic():
     """

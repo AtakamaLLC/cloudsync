@@ -1,5 +1,6 @@
 import random
 
+
 def scramble(gen, buffer_size):
     buf = []
     i = iter(gen)

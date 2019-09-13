@@ -203,6 +203,7 @@ def test_sync_state_kids(mock_provider):
     assert len(state) == 2
     assert state.lookup_path(LOCAL, "/dir2/foo")
 
+
 def test_sync_state_split(mock_provider):
     # annoyingly, the state manager now interacts with the provider
     # this means that the state manager needs to know how to get an oid
@@ -215,11 +216,11 @@ def test_sync_state_split(mock_provider):
 
     state.update(LOCAL, DIRECTORY, path="/dir", oid="123")
 
-    ent  = state.lookup_oid(LOCAL, "123")
+    ent = state.lookup_oid(LOCAL, "123")
 
     # oid/path updated
-    ent[REMOTE].oid="999"
-    ent[REMOTE].path="/rem"
+    ent[REMOTE].oid = "999"
+    ent[REMOTE].path = "/rem"
 
     assert state.lookup_oid(LOCAL, "123")
     assert state.lookup_path(LOCAL, "/dir")
@@ -232,7 +233,7 @@ def test_sync_state_split(mock_provider):
     assert state.lookup_oid(LOCAL, "123") is repl
     assert state.lookup_path(LOCAL, "/dir")
 
-    assert state.lookup_path(REMOTE, "/rem") 
+    assert state.lookup_path(REMOTE, "/rem")
     assert state.lookup_oid(REMOTE, "999") is defer
 
     state.assert_index_is_correct()
@@ -795,6 +796,7 @@ def _test_rename_folder_with_kids(sync, source, dest):
 def test_rename_folder_with_kids(sync, ordering):
     _test_rename_folder_with_kids(sync, *ordering)
 
+
 def test_aging(sync):
     local_parent = "/local"
     local_file1 = "/local/file"
@@ -830,6 +832,7 @@ def test_aging(sync):
     assert sync.providers[REMOTE].info_path(remote_file2)
     # but withotu it, things are fast
 
+
 def test_remove_folder_with_kids(sync):
     parent = ["/local", "/remote"]
     folder1 = ["/local/folder1", "/remote/folder1"]
@@ -857,7 +860,6 @@ def test_remove_folder_with_kids(sync):
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
     sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False), WaitFor(REMOTE, folder1[REMOTE], exists=False))
-
 
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated

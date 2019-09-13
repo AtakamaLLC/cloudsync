@@ -2,6 +2,8 @@ from typing import Optional
 from .oauth_redir_server import OAuthRedirServer
 
 # this class delibarately not strict, since it can contain provider-specific configutation
+
+
 class OAuthConfig:
     def __init__(self, manual_mode: bool = False, oauth_redir_server: Optional[OAuthRedirServer] = None):
         """

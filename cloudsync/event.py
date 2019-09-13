@@ -26,8 +26,9 @@ class Event:
     prior_oid: Optional[str] = None        # path basesd systems use this on renames
     new_cursor: Optional[str] = None
 
+
 @strict             # pylint: disable=too-many-instance-attributes
-class EventManager(Runnable): 
+class EventManager(Runnable):
     def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: str = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
