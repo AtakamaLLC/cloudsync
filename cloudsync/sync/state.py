@@ -726,7 +726,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if not self._changeset:
             return None
 
-        if self.shuffle and False:
+        if self.shuffle:
             changes = scramble(self._changeset, 10)
         else:
             changes = sorted(self._changeset, key=lambda a: max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
