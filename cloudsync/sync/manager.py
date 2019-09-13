@@ -145,7 +145,7 @@ class SyncManager(Runnable):
 
     @property
     def change_count(self):
-          return self.state.change_count
+        return self.state.change_count
 
     def get_latest_state(self, ent):
         log.log(TRACE, "before update state %s", ent)

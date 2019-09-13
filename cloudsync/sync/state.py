@@ -468,7 +468,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     @property
     def change_count(self):
-          return len(self._changeset)
+        return len(self._changeset)
 
     def _change_path(self, side, ent, path, provider):
         assert type(ent) is SyncEntry
