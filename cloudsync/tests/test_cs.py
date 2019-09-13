@@ -1077,3 +1077,34 @@ def test_sync_rename_up(cs):
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+
+
+def test_many_small_files(cs):
+    local_base = "/local"
+    local_file_base = f"{local_base}/file"
+    remote_base = "/remote"
+    remote_file_base = f"{remote_base}/file"
+
+    # Simulate gdrive's behavior in this scenario
+    cs.providers[REMOTE].set_update_parent_on_child_create()
+
+    cs.providers[LOCAL].mkdir(local_base)
+    cs.providers[REMOTE].mkdir(remote_base)
+    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+
+    content = BytesIO(b"\0" * (3 * 1024))
+    for i in range(100):
+        local_file_name = local_file_base + str(i)
+        linfo = cs.providers[LOCAL].create(local_file_name, content, None)
+        assert linfo is not None
+
+    # Note: the timeout here is very important. There was a bug where
+    # performance in this scenario would degenerate rapidly, and this test
+    # provides a check against regressions here. If this test is failing,
+    # either bump the timeout or investigate whether there is a real
+    # performance problem.
+    cs.run(until=lambda: not cs.state.change_count, timeout=10)
+
+    for i in range(100):
+        rinfo = cs.providers[REMOTE].info_path(remote_file_base + str(i))
+        assert rinfo is not None

@@ -112,6 +112,11 @@ class MockProvider(Provider):
         self.creds = {"key": "val"}
         self.connection_id = os.urandom(2).hex()
 
+        self._update_parent_on_child_create = False
+
+    def set_update_parent_on_child_create(self):
+        self._update_parent_on_child_create = True
+
     def disconnect(self):
         self.connected = False
 
@@ -235,7 +240,25 @@ class MockProvider(Provider):
         file.exists = True
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockEvent.ACTION_CREATE, file)
+
+        # This is the (undesired) behavior of gdrive
+        if self._update_parent_on_child_create:
+            self._update_parent_of(path)
+
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
+
+    def _update_parent_of(self, path: str) -> bool:
+        parent_path = self.dirname(path)
+        if parent_path == self.sep:
+            return False
+
+        parent_obj = self._fs_by_path.get(parent_path, None)
+        if not parent_obj:
+            return False
+
+        self._register_event(MockEvent.ACTION_UPDATE, parent_obj)
+        return True
+
 
     def download(self, oid, file_like):
         self._api()
