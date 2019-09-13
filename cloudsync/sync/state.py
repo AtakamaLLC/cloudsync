@@ -179,7 +179,6 @@ class SyncEntry(Reprable):
             object.__setattr__(self, k, v)
             return
 
-        log.debug("setting %s to %s in SyncEntry", k, v)
         self.updated(None, k, v)
 
         object.__setattr__(self, "_" + k, v)
@@ -282,6 +281,10 @@ class SyncEntry(Reprable):
 
     def is_creation(self, changed):
         return not self[changed].sync_path and self[changed].path
+
+    def is_rename(self, changed):
+        return self[changed].sync_path and self[changed].path \
+                and self[changed].sync_path != self[changed].path
 
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())

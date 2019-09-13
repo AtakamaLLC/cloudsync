@@ -229,10 +229,15 @@ class SyncManager(Runnable):
         for i in (LOCAL, REMOTE):
             if sync[i].changed:
                 if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
-                    log.debug("ignore %s", sync)
+                    log.debug("ignore:%s, side:%s", sync, i)
                     # no hash for file, ignore it
                     self.finished(i, sync)
                     break
+
+                if sync[i].oid is None:
+                    log.debug("ignore:%s, side:%s", sync, i)
+                    self.finished(i, sync)
+                    continue
 
                 # if the other side changed hash, handle it first
                 if sync[i].hash == sync[i].sync_hash:
@@ -339,6 +344,7 @@ class SyncManager(Runnable):
                 sync.punt()
                 return REQUEUE
 
+            log.debug("rename to fix conflict %s", translated_path)
             self.rename_to_fix_conflict(sync, synced, translated_path)
 
         try:
@@ -662,14 +668,25 @@ class SyncManager(Runnable):
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
         ents = [ent for ent in ents if ent != sync]
-#        ents2 = list(self.state.lookup_path(synced, sync[synced].path))
-#        ents += [ent for ent in ents2 if ent != sync]
 
         for ent in ents:
             if ent.is_creation(synced):
                 log.debug("discard delete, pending create %s:%s", synced, ent)
                 self.discard_entry(sync)
                 return FINISHED
+
+        # deltions don't always have paths
+        if sync[changed].path:
+            translated_path = self.translate(synced, sync[changed].path) 
+            if translated_path:
+                # find conflicting entries that will be  renamed away
+                ents = list(self.state.lookup_path(synced, translated_path))
+                ents = [ent for ent in ents if ent != sync]
+                for ent in ents:
+                    if ent.is_rename(synced):
+                        log.debug("discard delete, pending rename %s:%s", synced, ent)
+                        self.discard_entry(sync)
+                        return FINISHED
 
         if sync[synced].oid:
             try:
@@ -748,10 +765,12 @@ class SyncManager(Runnable):
                             found = e
 
         if not found:
+            log.debug("disjoint conflict with something I don't understand")
+            sync.punt()
             return True
 
         return self.handle_split_conflict(
-            other_untrashed_ents[0], synced, sync, changed)
+            found, synced, sync, changed)
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
         if not sync[changed].path:
@@ -793,6 +812,9 @@ class SyncManager(Runnable):
 
             return self.create_synced(changed, sync, translated_path)
 
+        return self.handle_rename(sync, changed, synced, translated_path)
+
+    def handle_rename(self, sync, changed, synced, translated_path):
         # handle rename
         # use == to allow rename for case reasons
         # todo: need a paths_match flag instead, so slashes don't break this line
@@ -816,7 +838,16 @@ class SyncManager(Runnable):
         except CloudFileExistsError:
             log.debug("can't rename, file exists")
             if sync.punted:
-                log.debug("rename for conflict")
+                ents = self.state.lookup_path(synced, translated_path)
+                if ents:
+                    conflict = ents[0]
+                    if not conflict[changed].changed and not conflict[synced].changed:
+                        # file is up to date, we're replacing a known synced copy
+                        self.providers[synced].delete(conflict[synced].oid)
+                        log.debug("deleting %s out of the way", translated_path)
+                        sync.punt()
+                        return REQUEUE
+                log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
                 self.rename_to_fix_conflict(sync, synced, translated_path)
             sync.punt()
             return REQUEUE
@@ -843,7 +874,6 @@ class SyncManager(Runnable):
         if new_name is None:
             return False
 
-        log.debug("rename to fix conflict %s -> %s", sync[side].path, new_name)
         # file can get renamed back, if there's a cycle
         if old_oid == sync[side].oid:
             self.update_entry(sync, side=side, oid=new_oid)
