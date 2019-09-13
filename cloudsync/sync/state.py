@@ -421,7 +421,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
-        self.__change_count = 0
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
@@ -445,8 +444,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                     self._oids[side][oid] = ent
                     if ent[side].changed:
                         self._changeset.add(ent)
-                        if ent.needs_sync():
-                            self.__change_count += 1
             self._loading = False
 
     def updated(self, ent, side, key, val):
