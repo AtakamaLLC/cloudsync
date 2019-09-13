@@ -546,13 +546,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
 
         if add_pids == remove_pids:
-            add_pids = ""
-            remove_pids = ""
+            add_pids_str = ""
+            remove_pids_str = ""
         else:
-            add_pids = ",".join(add_pids)
-            remove_pids = ",".join(remove_pids)
+            add_pids_str = ",".join(add_pids)
+            remove_pids_str = ",".join(remove_pids)
 
-        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids, removeParents=remove_pids, fields='id')
+        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids_str, removeParents=remove_pids_str, fields='id')
 
         if old_path:
             for cpath, coid in list(self._ids.items()):

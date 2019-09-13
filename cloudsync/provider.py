@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Union
+from typing import TYPE_CHECKING, Generator, Optional, Union, List
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -141,7 +141,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     @classmethod
     def join(cls, *paths):
         res = ""
-        rl = []
+        rl: List[str] = []
         for path in paths:
             if not path or path == cls.sep:
                 continue

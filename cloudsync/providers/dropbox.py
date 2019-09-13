@@ -5,7 +5,7 @@ import logging
 import threading
 from hashlib import sha256
 import webbrowser
-from typing import Generator, Optional, Dict, Any
+from typing import Generator, Optional, Dict, Any, Union
 from os import urandom
 from base64 import urlsafe_b64encode as u_b64enc
 import requests
@@ -208,9 +208,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             try:
                 return getattr(self.client, method)(*args, **kwargs)
             except exceptions.ApiError as e:
+                inside_error: Union[files.LookupError, files.WriteError]
+
                 if isinstance(e.error, (files.ListFolderError, files.GetMetadataError, files.ListRevisionsError)):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
-                        inside_error: files.LookupError = e.error.get_path()
+                        inside_error = e.error.get_path()
                         if inside_error.is_malformed_path():
                             log.debug('Malformed path when executing %s(%s %s) : %s',
                                       method, args, kwargs, e)
@@ -224,7 +226,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 if isinstance(e.error, files.DeleteError):
                     if e.error.is_path_lookup():
-                        inside_error: files.LookupError = e.error.get_path_lookup()
+                        inside_error = e.error.get_path_lookup()
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
                                       method, args, kwargs, e)
@@ -233,14 +235,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 if isinstance(e.error, files.RelocationError):
                     if e.error.is_from_lookup():
-                        inside_error: files.LookupError = e.error.get_from_lookup()
+                        inside_error = e.error.get_from_lookup()
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
                                       method, args, kwargs, e)
                             raise CloudFileNotFoundError(
                                 'File not found when executing %s(%s,%s)' % (method, args, kwargs))
                     if e.error.is_to():
-                        inside_error: files.WriteError = e.error.get_to()
+                        inside_error = e.error.get_to()
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
                                 'File already exists when executing %s(%s)' % (method, kwargs))
@@ -248,7 +250,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 if isinstance(e.error, files.CreateFolderError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.WriteError):
-                        inside_error: files.WriteError = e.error.get_path()
+                        inside_error = e.error.get_path()
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
                                 'File already exists when executing %s(%s)' % (method, kwargs))
