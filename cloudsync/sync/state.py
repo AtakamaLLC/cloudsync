@@ -15,7 +15,7 @@ import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING
+from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable
 
 from typing import Union
 from pystrict import strict
@@ -335,6 +335,7 @@ class SyncEntry(Reprable):
         rhma = abbrev_bool(self[REMOTE].hash and self[REMOTE].sync_hash !=
                            self[REMOTE].hash, ("H", "=", "?"))
 
+        _sig: Callable[[Any], Any]
         if use_sigs:
             _sig = debug_sig
         else:
@@ -540,14 +541,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if oid:
             assert self.lookup_oid(side, oid) is ent
 
-    def lookup_oid(self, side, oid):
+    def lookup_oid(self, side, oid) -> SyncEntry:
         try:
             ret = self._oids[side][oid]
             return ret
         except KeyError:
             return None
 
-    def lookup_path(self, side, path, stale=False):
+    def lookup_path(self, side, path, stale=False) -> List[SyncEntry]:
         try:
             ret = self._paths[side][path].values()
             if ret:
@@ -739,8 +740,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def pretty_print(self, use_sigs=True):
         ret = SyncEntry.prettyheaders() + "\n"
+        e: SyncEntry
         for e in self.get_all():
-            e: SyncEntry
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
         return ret
 

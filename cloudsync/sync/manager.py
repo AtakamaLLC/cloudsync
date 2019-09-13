@@ -1073,7 +1073,7 @@ class SyncManager(Runnable):
             # other side already agrees
             _update_syncs(other.oid)
 
-    def _get_parent_conflict(self, sync: SyncEntry, changed) -> Optional[SyncEntry]:
+    def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]
         path = sync[changed].path
         parent = provider.dirname(path)

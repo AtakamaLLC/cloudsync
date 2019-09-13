@@ -1,7 +1,7 @@
 import queue
 from threading import Lock
 from collections import namedtuple
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 
 
 class Muxer:
@@ -12,8 +12,8 @@ class Muxer:
 
     def __init__(self, func, key=None, restart=False):
         self.restart = restart
-        self.func = func
-        self.queue = queue.Queue()
+        self.func: Callable = func
+        self.queue: queue.Queue = queue.Queue()
         self.shutdown = False
         self.key = key or func
 
