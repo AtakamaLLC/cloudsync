@@ -285,6 +285,17 @@ class SyncEntry(Reprable):
     def is_rename(self, changed):
         return self[changed].sync_path and self[changed].path \
                 and self[changed].sync_path != self[changed].path
+    def needs_sync(self):
+        for i in (LOCAL, REMOTE):
+            if not self[i].changed:
+                continue
+            if self[i].path != self[i].sync_path:
+                return True
+            if self[i].hash != self[i].sync_hash:
+                return True
+        if self[LOCAL].exists != self[REMOTE].exists:
+            return True
+        return False
 
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
@@ -410,6 +421,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
+        self.__change_count = 0
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
@@ -433,6 +445,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                     self._oids[side][oid] = ent
                     if ent[side].changed:
                         self._changeset.add(ent)
+                        if ent.needs_sync():
+                            self.__change_count += 1
             self._loading = False
 
     def updated(self, ent, side, key, val):
@@ -451,9 +465,26 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             self._changeset.discard(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
-                self._changeset.add(ent)
+                if ent not in self._changeset:
+                    self._changeset.add(ent)
+                    if ent.needs_sync():
+                        self.__change_count += 1
             else:
-                self._changeset.discard(ent)
+                if ent in self._changeset:
+                    self._changeset.discard(ent)
+                    if ent.needs_sync():
+                        self.__change_count -= 1
+
+    def _slowly_calculate_change_count(self):
+        count = 0
+        for ent in self._changeset:
+            if ent.needs_sync():
+                count += 1
+        return count
+
+    @property
+    def change_count(self):
+          return self.__change_count
 
     def _change_path(self, side, ent, path, provider):
         assert type(ent) is SyncEntry
@@ -768,6 +799,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             if ent[LOCAL].changed or ent[REMOTE].changed:
                 if ent not in self._changeset:
                     assert False, ("changeset missing %s" % ent)
+
+        assert self._slowly_calculate_change_count() == self.__change_count
 
     def get_all(self, discarded=False) -> Set['SyncEntry']:
         ents = set()

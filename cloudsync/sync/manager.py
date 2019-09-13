@@ -143,6 +143,10 @@ class SyncManager(Runnable):
         log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
+    @property
+    def change_count(self):
+          return self.state.change_count
+
     def get_latest_state(self, ent):
         log.log(TRACE, "before update state %s", ent)
         for i in (LOCAL, REMOTE):
