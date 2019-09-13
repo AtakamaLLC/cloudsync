@@ -785,15 +785,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 if ent not in self._changeset:
                     assert False, ("changeset missing %s" % ent)
 
-        oids = (set(), set())
-        for ent in self.get_all():
-            assert ent[LOCAL].oid not in oids[LOCAL]
-            if ent[LOCAL].oid:
-                oids[LOCAL].add(ent[LOCAL].oid)
-            assert ent[REMOTE].oid not in oids[REMOTE]
-            if ent[REMOTE].oid:
-                oids[REMOTE].add(ent[REMOTE].oid)
-
     def get_all(self, discarded=False) -> Set['SyncEntry']:
         ents = set()
         for ent in self._oids[LOCAL].values():
