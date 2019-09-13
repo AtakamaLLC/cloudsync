@@ -465,26 +465,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             self._changeset.discard(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
-                if ent not in self._changeset:
-                    self._changeset.add(ent)
-                    if ent.needs_sync():
-                        self.__change_count += 1
+                self._changeset.add(ent)
             else:
-                if ent in self._changeset:
-                    self._changeset.discard(ent)
-                    if ent.needs_sync():
-                        self.__change_count -= 1
-
-    def _slowly_calculate_change_count(self):
-        count = 0
-        for ent in self._changeset:
-            if ent.needs_sync():
-                count += 1
-        return count
+                self._changeset.discard(ent)
 
     @property
     def change_count(self):
-          return self.__change_count
+          return len(self._changeset)
 
     def _change_path(self, side, ent, path, provider):
         assert type(ent) is SyncEntry
@@ -799,8 +786,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             if ent[LOCAL].changed or ent[REMOTE].changed:
                 if ent not in self._changeset:
                     assert False, ("changeset missing %s" % ent)
-
-        assert self._slowly_calculate_change_count() == self.__change_count
 
     def get_all(self, discarded=False) -> Set['SyncEntry']:
         ents = set()
