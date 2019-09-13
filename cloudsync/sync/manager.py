@@ -678,15 +678,15 @@ class SyncManager(Runnable):
         # deltions don't always have paths
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path) 
-
-            # find conflicting entries that will be  renamed away
-            ents = list(self.state.lookup_path(synced, translated_path))
-            ents = [ent for ent in ents if ent != sync]
-            for ent in ents:
-                if ent.is_rename(synced):
-                    log.debug("discard delete, pending rename %s:%s", synced, ent)
-                    self.discard_entry(sync)
-                    return FINISHED
+            if translated_path:
+                # find conflicting entries that will be  renamed away
+                ents = list(self.state.lookup_path(synced, translated_path))
+                ents = [ent for ent in ents if ent != sync]
+                for ent in ents:
+                    if ent.is_rename(synced):
+                        log.debug("discard delete, pending rename %s:%s", synced, ent)
+                        self.discard_entry(sync)
+                        return FINISHED
 
         if sync[synced].oid:
             try:
