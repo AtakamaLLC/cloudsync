@@ -746,9 +746,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
         return ret
 
-    def has_changes(self):
-        return bool(self._changeset)
-
     def finished(self, ent):
         if ent[1].changed or ent[0].changed:
             log.info("not marking finished: %s", ent)

@@ -510,7 +510,7 @@ def test_sync_conflict_resolve(sync, side, keep):
                       oid=rinfo.oid, hash=rinfo.hash)
 
     # ensure events are flushed a couple times
-    sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
+    sync.run(until=lambda: not sync.state.change_count, timeout=1)
 
     sync.providers[LOCAL].log_debug_state("LOCAL")
     sync.providers[REMOTE].log_debug_state("REMOTE")
@@ -639,7 +639,7 @@ def test_sync_cycle(sync):
     assert len(sync.state.get_all()) == 3
     sync.providers[REMOTE].log_debug_state("MIDDLE")
 
-    sync.run(until=lambda: not sync.state.has_changes(), timeout=1)
+    sync.run(until=lambda: not sync.state.change_count, timeout=1)
     sync.providers[REMOTE].log_debug_state("AFTER")
 
     i1 = sync.providers[REMOTE].info_path(rp1)
