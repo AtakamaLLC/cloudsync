@@ -33,7 +33,7 @@ class CloudSync(Runnable):
             sleep = (providers[0].default_sleep, providers[1].default_sleep)
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
-        state = SyncState(providers, storage, tag=self.storage_label())
+        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=True)
         smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible

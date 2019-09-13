@@ -153,6 +153,9 @@ class SyncManager(Runnable):
             if not ent[i].changed:
                 continue
 
+            if not ent[i].oid:
+                continue
+
             info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
             if not info:
