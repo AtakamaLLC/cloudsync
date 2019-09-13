@@ -1034,3 +1034,46 @@ def test_sync_rename_tmp(cs):
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+
+
+def test_sync_rename_up(cs):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    remote_sub = "/remote/sub"
+    local_sub = "/local/sub"
+    remote_path1 = "/remote/sub/stuff1"
+    local_path1 = "/local/sub/stuff1"
+    remote_path2 = "/remote/stuff1"
+    local_path2 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].mkdir(local_sub)
+    cs.providers[REMOTE].mkdir(remote_sub)
+
+    cs.do()
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
+    linfo2 = cs.providers[LOCAL].create(local_path2, BytesIO(b"file"))
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1
+            )
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    without_event = isinstance(cs.providers[LOCAL], MockProvider)
+    if without_event:
+        cs.providers[LOCAL]._delete(linfo2.oid, without_event=True)
+    else:
+        cs.providers[LOCAL].delete(linfo2.oid)
+    cs.providers[LOCAL].rename(linfo1.oid, local_path2)
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1
+            )
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    assert cs.providers[REMOTE].info_path(remote_path2)
+    assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+    assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
+    assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
