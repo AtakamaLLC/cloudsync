@@ -7,6 +7,8 @@ import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
+from typing import Callable, Dict
+
 import unittest
 
 # TODO: this is an inappropriate default server, default should be wsgiref builtin
@@ -16,8 +18,6 @@ import waitress
 from waitress.channel import HTTPChannel
 
 log = logging.getLogger(__name__)
-
-from typing import Callable, Dict
 
 class ApiServerLogLevel(Enum):
     NONE = 0  # do not log calls
@@ -85,7 +85,7 @@ class ApiServer:
         self.__server = waitress.server.create_server(self, host=self.__addr, port=self.__port, clear_untrusted_proxy_headers=False)
 
         self.__started = False
-        self.__routes : Dict[str, Callable] = {}
+        self.__routes: Dict[str, Callable] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
 
