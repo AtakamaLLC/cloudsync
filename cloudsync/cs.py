@@ -108,6 +108,10 @@ class CloudSync(Runnable):
         #     - "None", meaning there is no good resolution
         return None
 
+    @property
+    def change_count(self):
+        return self.smgr.change_count
+
     def start(self):
         self.sthread.start()
         self.ethreads[0].start()

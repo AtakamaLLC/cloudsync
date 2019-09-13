@@ -285,6 +285,17 @@ class SyncEntry(Reprable):
     def is_rename(self, changed):
         return self[changed].sync_path and self[changed].path \
                 and self[changed].sync_path != self[changed].path
+    def needs_sync(self):
+        for i in (LOCAL, REMOTE):
+            if not self[i].changed:
+                continue
+            if self[i].path != self[i].sync_path:
+                return True
+            if self[i].hash != self[i].sync_hash:
+                return True
+        if self[LOCAL].exists != self[REMOTE].exists:
+            return True
+        return False
 
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
@@ -454,6 +465,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
+
+    @property
+    def change_count(self):
+        return len(self._changeset)
 
     def _change_path(self, side, ent, path, provider):
         assert type(ent) is SyncEntry
@@ -727,9 +742,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 ret = e
 
         return ret
-
-    def has_changes(self):
-        return bool(self._changeset)
 
     def finished(self, ent):
         if ent[1].changed or ent[0].changed:
