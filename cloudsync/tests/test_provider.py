@@ -1174,11 +1174,12 @@ def test_cursor(provider: ProviderMixin):
     # do something to create an event
     info = provider.create("/file2", BytesIO(b"there"))
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
-    event_list = list(provider.events())
-    assert len(event_list) == 1
-    for i in provider.events():
-        log.debug("event = %s", i)
-        assert i.oid == info.oid
+    found = False
+    for e in provider.events_poll(timeout=600, until=lambda: found):
+        log.debug("event = %s", e)
+        if e.oid == info.oid:
+            found = True
+    assert found
 
     current_csr2 = provider.current_cursor
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
@@ -1188,12 +1189,12 @@ def test_cursor(provider: ProviderMixin):
     # check that we can go backwards
     provider.current_cursor = current_csr1
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
-    event_list = list(provider.events())
-    assert len(event_list) == 1
-    for i in provider.events():
+    found = False
+    for i in provider.events_poll(timeout=10, until=lambda: found):
         log.debug("event = %s", i)
-        assert i.oid == info2.oid
-        break
+        if i.oid == info.oid:
+            found = True
+    assert found
 
 # TODO: test that renaming A over B replaces B's OID with A's OID, and B's OID is trashed
 
