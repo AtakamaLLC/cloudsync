@@ -111,6 +111,17 @@ class SideState(Reprable):
         # setting to an old mtime marks this as fully aged
         self.changed = 1
 
+    def clear(self):
+        self.parent[1-self.side].sync_path = None
+        self.parent[1-self.side].sync_hash = None
+        self.exists = UNKNOWN
+        self.changed = None
+        self.hash = None
+        self.sync_hash = None
+        self.sync_path = None
+        self.path = None
+        self.oid = None
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -193,10 +204,10 @@ class SyncEntry(Reprable):
             ret = dict()
             ret['otype'] = side_state.otype.value
             ret['side'] = side_state.side
-            ret['hash'] = side_state.hash.hex() if isinstance(
+            ret['hash'] = cast(bytes, side_state.hash).hex() if isinstance(
                 side_state.hash, bytes) else None
             ret['changed'] = side_state.changed
-            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(
+            ret['sync_hash'] = cast(bytes, side_state.sync_hash).hex() if isinstance(
                 side_state.sync_hash, bytes) else None
             ret['path'] = side_state.path
             ret['sync_path'] = side_state.sync_path
@@ -219,10 +230,10 @@ class SyncEntry(Reprable):
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
             side_state.side = side_dict['side']
-            side_state.hash = bytes.fromhex(
+            side_state._hash = bytes.fromhex(
                 side_dict['hash']) if side_dict['hash'] else None
             side_state.changed = side_dict['changed']
-            side_state.sync_hash = bytes.fromhex(
+            side_state._sync_hash = bytes.fromhex(
                 side_dict['sync_hash']) if side_dict['sync_hash'] else None
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
@@ -283,8 +294,9 @@ class SyncEntry(Reprable):
         return not self[changed].sync_path and self[changed].path
 
     def is_rename(self, changed):
-        return self[changed].sync_path and self[changed].path \
-                and self[changed].sync_path != self[changed].path
+        return (self[changed].sync_path and self[changed].path
+                and self[changed].sync_path != self[changed].path)
+
     def needs_sync(self):
         for i in (LOCAL, REMOTE):
             if not self[i].changed:
@@ -822,7 +834,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if defer_ent[replace].path:
             assert self.lookup_path(replace, defer_ent[replace].path)
 
-        defer_ent[replace] = SideState(defer_ent, replace, ent[replace].otype)              # clear out
+        defer_ent[replace].clear()
 
         assert replace_ent[replace].oid
         assert replace_ent in self.get_all()
