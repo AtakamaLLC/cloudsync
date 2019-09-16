@@ -10,7 +10,8 @@ import pytest
 from cloudsync.event import Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudDisconnectedError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
+    CloudDisconnectedError, CloudCursorError
 
 log = logging.getLogger(__name__)
 

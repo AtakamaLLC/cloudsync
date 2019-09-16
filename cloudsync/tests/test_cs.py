@@ -1072,10 +1072,10 @@ def test_cursor(cs_storage):
         timeout=2)
 
     # let cleanups/discards/dedups happen if needed
-    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+    cs.run(until=lambda: not cs.state.change_count, timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
     assert len(cs.state) == 2
-    assert not cs.state.has_changes()
+    assert not cs.state.change_count
 
     linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
 

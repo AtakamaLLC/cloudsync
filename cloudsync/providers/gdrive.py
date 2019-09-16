@@ -17,7 +17,8 @@ from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
+    CloudFileExistsError, CloudCursorError
 from cloudsync.oauth_config import OAuthConfig
 
 
@@ -323,13 +324,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def current_cursor(self):
         if not self.__cursor:
             self.__cursor = self.latest_cursor
-        log.debug(f"current_cursor={self.__cursor}")
         return self.__cursor
 
     @current_cursor.setter
     def current_cursor(self, val):
-        self.__cursor = (val)  # TODO: add cheecking for val
-        log.debug(f"current_cursor={self.__cursor}")
+        if val is None:
+            val = self.latest_cursor
+        if not isinstance(val, str) and val is not None:
+            raise CloudCursorError
+        self.__cursor = val
 
     def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
         page_token = self.current_cursor
@@ -387,7 +390,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
             if new_cursor and page_token and new_cursor != page_token:
                 self.__cursor = new_cursor
-            log.debug(f"__cursor=={self.__cursor} new_cursor={new_cursor}")
             page_token = response.get('nextPageToken')
 
     def _walk(self, path, oid):

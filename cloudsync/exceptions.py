@@ -20,3 +20,7 @@ class CloudTokenError(CloudException):
 
 class CloudDisconnectedError(CloudException):
     pass
+
+
+class CloudCursorError(CloudException):
+    pass
