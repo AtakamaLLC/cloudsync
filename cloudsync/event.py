@@ -47,7 +47,6 @@ class EventManager(Runnable):
             log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
             try:
                 self.provider.current_cursor = self.cursor
-                pass
             except CloudCursorError as e:
                 log.exception(e)
                 self.cursor = None

@@ -188,7 +188,7 @@ class MockProvider(Provider):
         if val is None:
             val = self.latest_cursor
         if not isinstance(val, int) and val is not None:
-            raise CloudCursorError
+            raise CloudCursorError(val)
         self._cursor = val
 
     def events(self) -> Generator[Event, None, None]:

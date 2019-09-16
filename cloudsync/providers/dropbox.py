@@ -297,7 +297,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if val is None:
             val = self.latest_cursor
         if not isinstance(val, str) and val is not None:
-            raise CloudCursorError
+            raise CloudCursorError(val)
         self.__cursor = val
 
     def _events(self, cursor, path=None):  # pylint: disable=too-many-branches

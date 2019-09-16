@@ -331,7 +331,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if val is None:
             val = self.latest_cursor
         if not isinstance(val, str) and val is not None:
-            raise CloudCursorError
+            raise CloudCursorError(val)
         self.__cursor = val
 
     def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
