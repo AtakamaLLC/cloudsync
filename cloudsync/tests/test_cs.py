@@ -2,6 +2,8 @@ from io import BytesIO
 import logging
 import pytest
 from typing import List
+from unittest.mock import patch
+
 
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
@@ -1140,6 +1142,65 @@ def test_sync_rename_up(cs):
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+
+def test_many_small_files_mkdir_perf(cs):
+    local_root = "/local"
+    remote_root = "/remote"
+
+    cs.providers[LOCAL].mkdir(local_root)
+    cs.providers[REMOTE].mkdir(remote_root)
+    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+
+    def make_files(dir_suffix: str, clear_before: bool):
+        local_base = f"{local_root}/{dir_suffix}"
+        local_file_base = f"{local_base}/file" + dir_suffix
+        remote_base = f"{remote_root}/{dir_suffix}"
+        remote_file_base = f"{remote_base}/file" + dir_suffix
+
+        # Let's make some subdirs
+        cs.providers[LOCAL].mkdir(local_base)
+
+        # Optionally, give ourselves a clean slate before starting to process
+        # all the file uploads. Since all the child file events rely on this
+        # happening first, it's easy for performance issues to sneak in.
+        if clear_before:
+            cs.run(until=lambda: not cs.state.change_count, timeout=1)
+
+        # Upload 100 x 3 KiB files. The size and number shouldn't actually
+        # matter.
+        content = BytesIO(b"\0" * (3 * 1024))
+        for i in range(100):
+            local_file_name = local_file_base + str(i)
+            linfo = cs.providers[LOCAL].create(local_file_name, content, None)
+            assert linfo is not None
+
+        cs.run(until=lambda: not cs.state.change_count, timeout=1000)
+
+        # Check that the process took less than 1000 seconds
+        for i in range(100):
+            rinfo = cs.providers[REMOTE].info_path(remote_file_base + str(i))
+            assert rinfo is not None
+
+    local_old_api = cs.providers[LOCAL]._api
+    remote_old_api = cs.providers[REMOTE]._api
+
+    # Count the number of API hits without the clean slate
+    with patch.object(cs.providers[LOCAL], "_api",
+                      side_effect=local_old_api) as local_no_clear, \
+         patch.object(cs.providers[REMOTE], "_api",
+                      side_effect=remote_old_api) as remote_no_clear:
+        make_files("_no_clear", clear_before=False)
+
+    # Count the number of API hits with the clean slate
+    with patch.object(cs.providers[LOCAL], "_api",
+                      side_effect=local_old_api) as local_clear, \
+         patch.object(cs.providers[REMOTE], "_api",
+                      side_effect=remote_old_api) as remote_clear:
+        make_files("_clear", clear_before=True)
+
+    # Check that the two are approximately the same
+    assert abs(local_no_clear.call_count - local_clear.call_count) < 10
+    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 10
 
 def test_sync_folder_conflicts_del(cs):
     local_path1 = "/local/stuff1"
