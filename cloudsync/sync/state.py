@@ -206,11 +206,9 @@ class SyncEntry(Reprable):
             ret = dict()
             ret['otype'] = side_state.otype.value
             ret['side'] = side_state.side
-            ret['hash'] = cast(bytes, side_state.hash).hex() if isinstance(
-                side_state.hash, bytes) else None
+            ret['hash'] = side_state.hash.hex() if isinstance(side_state.hash, bytes) else None
             ret['changed'] = side_state.changed
-            ret['sync_hash'] = cast(bytes, side_state.sync_hash).hex() if isinstance(
-                side_state.sync_hash, bytes) else None
+            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(side_state.sync_hash, bytes) else None
             ret['path'] = side_state.path
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
