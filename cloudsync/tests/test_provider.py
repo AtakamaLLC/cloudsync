@@ -201,6 +201,14 @@ class ProviderHelper():
                 # deleting the root might now be supported
                 pass
 
+    @property
+    def current_cursor(self):
+        return self.prov.current_cursor
+
+    @current_cursor.setter
+    def current_cursor(self, val):
+        self.prov.current_cursor = val
+
 
 def mixin_provider(prov):
     assert prov
@@ -1155,6 +1163,38 @@ def test_file_exists(provider: ProviderMixin):
     provider.rename(oid1, temp)
     provider.rename(oid2, name1)
 
+
+def test_cursor(provider: ProviderMixin):
+    # get the ball rolling
+    provider.create("/file1", BytesIO(b"hello"))
+    for i in provider.events():
+        log.debug("event = %s", i)
+    current_csr1 = provider.current_cursor
+
+    # do something to create an event
+    info = provider.create("/file2", BytesIO(b"there"))
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    found = False
+    for e in provider.events_poll(timeout=600, until=lambda: found):
+        log.debug("event = %s", e)
+        if e.oid == info.oid:
+            found = True
+    assert found
+
+    current_csr2 = provider.current_cursor
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+
+    assert current_csr1 != current_csr2
+
+    # check that we can go backwards
+    provider.current_cursor = current_csr1
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    found = False
+    for i in provider.events_poll(timeout=10, until=lambda: found):
+        log.debug("event = %s", i)
+        if i.oid == info.oid:
+            found = True
+    assert found
 
 # TODO: test that renaming A over B replaces B's OID with A's OID, and B's OID is trashed
 

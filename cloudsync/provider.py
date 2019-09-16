@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Union, List
+from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -56,14 +56,17 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def name(self):
         ...
 
-    @property
     @abstractmethod
     def latest_cursor(self):
         ...
 
     @property
     @abstractmethod
-    def current_cursor(self):
+    def current_cursor(self) -> Any:
+        ...
+
+    @current_cursor.setter
+    def current_cursor(self, val: Any) -> None:  # pylint: disable=no-self-use, unused-argument
         ...
 
     @abstractmethod

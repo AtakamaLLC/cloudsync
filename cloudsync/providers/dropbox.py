@@ -18,7 +18,7 @@ from cloudsync.oauth_config import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, \
-    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError
+    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError
 
 log = logging.getLogger(__name__)
 logging.getLogger('dropbox').setLevel(logging.INFO)
@@ -291,6 +291,14 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if not self.__cursor:
             self.__cursor = self.latest_cursor
         return self.__cursor
+
+    @current_cursor.setter
+    def current_cursor(self, val):
+        if val is None:
+            val = self.latest_cursor
+        if not isinstance(val, str) and val is not None:
+            raise CloudCursorError(val)
+        self.__cursor = val
 
     def _events(self, cursor, path=None):  # pylint: disable=too-many-branches
         if path and path != "/":

@@ -3,7 +3,7 @@ import time
 from typing import TYPE_CHECKING, Optional
 from dataclasses import dataclass
 from pystrict import strict
-from .exceptions import CloudTemporaryError, CloudDisconnectedError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType
@@ -43,23 +43,28 @@ class EventManager(Runnable):
         self._walk_tag = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
+        if self.cursor is not None:
+            log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
+            try:
+                self.provider.current_cursor = self.cursor
+            except CloudCursorError as e:
+                log.exception(e)
+                self.cursor = None
+
         if walk_root:
             self._walk_tag = self.label + "_walked_" + walk_root
-            if not self.cursor or not self.state.storage_get_data(self._walk_tag):
+            if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
                 self.walk_root = walk_root
+
+        if self.cursor is None:
+            self.cursor = provider.current_cursor
+            if self.cursor is not None:
+                self.state.storage_update_data(self._cursor_tag, self.cursor)
 
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 4
         self.mult_backoff = 2
         self.backoff = self.min_backoff
-
-        if not self.cursor:
-            self.cursor = provider.current_cursor
-            if self.cursor:
-                self.state.storage_update_data(self._cursor_tag, self.cursor)
-        else:
-            log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
-# TODO!!!!            provider.current_cursor = self.cursor
 
     def do(self):
         try:

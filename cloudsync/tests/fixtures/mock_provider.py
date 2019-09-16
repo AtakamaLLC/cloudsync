@@ -10,7 +10,8 @@ import pytest
 from cloudsync.event import Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudDisconnectedError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
+    CloudDisconnectedError, CloudCursorError
 
 log = logging.getLogger(__name__)
 
@@ -181,6 +182,14 @@ class MockProvider(Provider):
     @property
     def current_cursor(self):
         return self._cursor
+
+    @current_cursor.setter
+    def current_cursor(self, val):
+        if val is None:
+            val = self.latest_cursor
+        if not isinstance(val, int) and val is not None:
+            raise CloudCursorError(val)
+        self._cursor = val
 
     def events(self) -> Generator[Event, None, None]:
         self._api()
