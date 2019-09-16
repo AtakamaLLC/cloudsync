@@ -181,11 +181,21 @@ class SyncManager(Runnable):
 
     def path_conflict(self, ent):
         # both are synced
-        if ent[0].path and ent[1].path and ((ent[0].sync_hash and ent[1].sync_hash)         # pylint: disable=too-many-boolean-expressions
-                                            or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)):
-            return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-                    not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
-        return False
+        have_paths = ent[0].path and ent[1].path
+        if not have_paths:
+            return False
+
+        are_synced = (ent[0].sync_hash and ent[1].sync_hash) or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)
+        if not are_synced:
+            return False
+
+        both_exist = ent[0].exists == EXISTS and ent[0].exists == EXISTS
+
+        if not both_exist:
+            return False
+
+        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
+            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
 
     def check_revivify(self, sync):
         if sync.discarded:
@@ -795,6 +805,11 @@ class SyncManager(Runnable):
         if not sync[changed].path:
             log.debug("can't sync, no path %s", sync)
 
+        if sync[changed].sync_path and sync[synced].exists == TRASHED:
+            # see test: test_sync_folder_conflicts_del
+            sync[synced].clear()
+            log.debug("cleared trashed info, converting to create %s", sync)
+
         if sync.is_creation(changed):
             # never synced this before, maybe there's another local path with
             # the same name already?
@@ -957,7 +972,7 @@ class SyncManager(Runnable):
             else:
                 sync.unconflict()
 
-        if sync[changed].path:
+        if sync[changed].path and sync[changed].exists == EXISTS:
             # parent_conflict code
             # todo: make this walk up parents to the translate == None "root"
             conflict = self._get_parent_conflict(sync, changed)
@@ -966,7 +981,6 @@ class SyncManager(Runnable):
                 conflict[changed].set_aged()
                 sync.punt()
                 return REQUEUE
-
 
         if sync[changed].exists == TRASHED:
             log.debug("delete")
@@ -1096,7 +1110,7 @@ class SyncManager(Runnable):
         try:
             if other_info.path == other_path:
                 # don't sync this entry
-                log.warning("supposed rename conflict, but the names are the same")
+                log.info("supposed rename conflict, but the names are the same")
                 if not sync[other.side].sync_hash and sync[other.side].otype == FILE:
                     log.warning("sync_hashes missing even though the sync_path is set...")
                     sync[other.side].sync_path = None
@@ -1109,6 +1123,11 @@ class SyncManager(Runnable):
         except CloudFileExistsError:
             # other side already agrees
             _update_syncs(other.oid)
+        except CloudFileNotFoundError:
+            # other side doesnt exist, or maybe parent doesn't exist
+            log.info("punting path conflict %s", sync)
+            sync.punt()
+            return
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]

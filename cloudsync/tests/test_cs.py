@@ -1140,3 +1140,52 @@ def test_sync_rename_up(cs):
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+
+def test_sync_folder_conflicts_del(cs):
+    local_path1 = "/local/stuff1"
+    local_path1_u = "/local/stuff1/under"
+    remote_path1 = "/remote/stuff1"
+    remote_path1_u = "/remote/stuff1/under"
+
+    local_path2 = "/local/stuff2"
+    local_path2_u = "/local/stuff2/under"
+    remote_path2 = "/remote/stuff2"
+    remote_path2_u = "/remote/stuff2/under"
+    remote_path3 = "/remote/stuff3"
+    remote_path3_u = "/remote/stuff3/under"
+
+    cs.providers[LOCAL].mkdir("/local")
+    linfo1_oid = cs.providers[LOCAL].mkdir(local_path1)
+    cs.providers[LOCAL].create(local_path1_u, BytesIO(b'fff'))
+
+    cs.run_until_found(
+        (REMOTE, remote_path1),
+        (REMOTE, remote_path1_u),
+        timeout=2)
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    # rename both at same time
+    cs.providers[LOCAL].rename(linfo1_oid, local_path2)
+    rinfo3_oid = cs.providers[REMOTE].rename(rinfo1.oid, remote_path3)
+
+    # then delete remote
+    rinfo3_u = cs.providers[REMOTE].info_path(remote_path3_u)
+    cs.providers[REMOTE].delete(rinfo3_u.oid)
+    cs.providers[REMOTE].delete(rinfo3_oid)
+
+    cs.run(until=lambda: cs.state.change_count == 0, timeout=1)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    assert cs.state.change_count == 0
+
+    # either a deletion happend or a rename... whatever
+
+    if cs.providers[REMOTE].info_path(remote_path2_u):
+        assert cs.providers[LOCAL].info_path(local_path2_u)
+        assert cs.providers[REMOTE].info_path(remote_path2)
+    else:
+        assert not cs.providers[LOCAL].info_path(local_path2_u)
+        assert not cs.providers[LOCAL].info_path(local_path2)
