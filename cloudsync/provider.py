@@ -66,6 +66,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def current_cursor(self):
         ...
 
+    @current_cursor.setter
+    def current_cursor(self, val):
+        ...
+
     @abstractmethod
     def events(self) -> Generator["Event", None, None]:
         ...

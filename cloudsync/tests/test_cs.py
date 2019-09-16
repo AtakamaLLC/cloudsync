@@ -3,7 +3,7 @@ import logging
 import pytest
 from typing import List
 
-from .fixtures import MockProvider, MockStorage
+from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.event import EventManager
@@ -13,24 +13,39 @@ from .test_sync import WaitFor, RunUntilHelper
 log = logging.getLogger(__name__)
 
 
+@pytest.fixture(name="cs_storage")
+def fixture_cs_storage(mock_provider_generator):
+    storage_dict = dict()
+    storage = MockStorage(storage_dict)
+    for cs in _fixture_cs(mock_provider_generator, storage):
+        yield cs, storage
+
+
 @pytest.fixture(name="cs")
 def fixture_cs(mock_provider_generator):
+    yield from _fixture_cs(mock_provider_generator)
+
+
+def _fixture_cs(mock_provider_generator, storage=None):
     roots = ("/local", "/remote")
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
 
-    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), roots, sleep=None)
+    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_generator()), roots, storage=storage, sleep=None)
 
     yield cs
 
     cs.done()
 
-def make_cs(mock_provider_creator, left, right):
+
+def make_cs(mock_provider_creator, left, right, storage=None):
     roots = ("/local", "/remote")
+
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
-    return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, sleep=None)
+    return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
+
 
 @pytest.fixture(name="multi_cs")
 def fixture_multi_cs(mock_provider_generator):
@@ -132,8 +147,8 @@ def test_sync_rename_away(multi_cs):
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
-    assert len(cs1.state) == 1  #  1 dir
-    assert len(cs2.state) == 2  #  1 file and 1 dir
+    assert len(cs1.state) == 1   # 1 dir
+    assert len(cs2.state) == 2   # 1 file and 1 dir
 
 
 def test_sync_multi(multi_cs):
@@ -989,11 +1004,11 @@ def test_sync_rename_tmp(cs):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
-
     import time, threading
 
     done = False
     ok = True
+
     def mover():
         nonlocal done
         nonlocal ok
@@ -1026,7 +1041,7 @@ def test_sync_rename_tmp(cs):
     cs.do()
 
     cs.run(until=lambda: not cs.state.has_changes(), timeout=1
-            )
+           )
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
     assert ok
@@ -1034,3 +1049,76 @@ def test_sync_rename_tmp(cs):
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+
+
+# def get_cs_params(csync):
+#     return (
+#         (
+#             csync.providers[LOCAL].oid_is_path,
+#             csync.providers[LOCAL].case_sensitive,
+#         ),
+#         (
+#             csync.providers[REMOTE].oid_is_path,
+#             csync.providers[REMOTE].case_sensitive,
+#         ),
+#         csync.roots,
+#         (
+#             csync.providers[LOCAL].connection_id,
+#             csync.providers[REMOTE].connection_id,
+#         )
+#     )
+
+
+def test_cursor(cs_storage):
+    cs = cs_storage[0]
+    storage = cs_storage[1]
+
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+    local_path2 = "/local/stuff2"
+    remote_path1 = "/remote/stuff1"
+    remote_path2 = "/remote/stuff2"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello1"), None)
+
+    cs.run_until_found(
+        (LOCAL, local_path1),
+        (REMOTE, remote_path1),
+        timeout=2)
+
+    # let cleanups/discards/dedups happen if needed
+    cs.run(until=lambda: not cs.state.has_changes(), timeout=1)
+    log.info("TABLE\n%s", cs.state.pretty_print())
+    assert len(cs.state) == 2
+    assert not cs.state.has_changes()
+
+    linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
+    # params = get_cs_params(cs)
+    # log.warning(f"params={params}")
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    # p1: MockProvider = mock_provider_instance(*params[0])
+    # p2: MockProvider = mock_provider_instance(*params[1])
+
+    # p1.connection_id = params[3][0]
+    # p2.connection_id = params[3][1]
+    p1 = cs.providers[LOCAL]
+    p2 = cs.providers[REMOTE]
+    p1.current_cursor = None
+    p2.current_cursor = None
+    roots = cs.roots
+
+    cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
+    cs2.run_until_found(
+        (LOCAL, local_path2),
+        timeout=2)
+    cs2.run_until_found(
+        (REMOTE, remote_path2),
+        timeout=2)
+
+

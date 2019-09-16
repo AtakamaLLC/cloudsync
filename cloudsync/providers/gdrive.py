@@ -323,7 +323,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def current_cursor(self):
         if not self.__cursor:
             self.__cursor = self.latest_cursor
+        log.debug(f"current_cursor={self.__cursor}")
         return self.__cursor
+
+    @current_cursor.setter
+    def current_cursor(self, val):
+        self.__cursor = (val)  # TODO: add cheecking for val
+        log.debug(f"current_cursor={self.__cursor}")
 
     def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
         page_token = self.current_cursor
@@ -381,6 +387,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
             if new_cursor and page_token and new_cursor != page_token:
                 self.__cursor = new_cursor
+            log.debug(f"__cursor=={self.__cursor} new_cursor={new_cursor}")
             page_token = response.get('nextPageToken')
 
     def _walk(self, path, oid):

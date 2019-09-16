@@ -182,6 +182,14 @@ class MockProvider(Provider):
     def current_cursor(self):
         return self._cursor
 
+    @current_cursor.setter
+    def current_cursor(self, val):
+        if val is None:
+            val = self.latest_cursor
+        if not isinstance(val, int) and val is not None:
+            raise CloudCursorError
+        self._cursor = val
+
     def events(self) -> Generator[Event, None, None]:
         self._api()
         while self._cursor < self._latest_cursor:
