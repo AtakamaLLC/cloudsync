@@ -179,10 +179,9 @@ class SyncEntry(Reprable):
             object.__setattr__(self, k, v)
             return
 
-        log.debug("setting %s to %s in SyncEntry", k, v)
-        self.updated(None, k, v)
-
-        object.__setattr__(self, "_" + k, v)
+        if getattr(self, "_" + k) != v:
+            self.updated(None, k, v)
+            object.__setattr__(self, "_" + k, v)
 
     def updated(self, side, key, val):
         self._dirty = True
@@ -282,6 +281,21 @@ class SyncEntry(Reprable):
 
     def is_creation(self, changed):
         return not self[changed].sync_path and self[changed].path
+
+    def is_rename(self, changed):
+        return self[changed].sync_path and self[changed].path \
+                and self[changed].sync_path != self[changed].path
+    def needs_sync(self):
+        for i in (LOCAL, REMOTE):
+            if not self[i].changed:
+                continue
+            if self[i].path != self[i].sync_path:
+                return True
+            if self[i].hash != self[i].sync_hash:
+                return True
+        if self[LOCAL].exists != self[REMOTE].exists:
+            return True
+        return False
 
     def discard(self):
         self.discarded = ''.join(traceback.format_stack())
@@ -403,7 +417,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
-                 shuffle: bool = True):
+                 shuffle: bool = False):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
@@ -451,6 +465,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
+
+    @property
+    def change_count(self):
+        return len(self._changeset)
 
     def _change_path(self, side, ent, path, provider):
         assert type(ent) is SyncEntry
@@ -524,7 +542,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
                 if prior_ent is not ent:
                     # no longer indexed by oid, also clear change bit
-                    prior_ent[side]._oid = None
+                    prior_ent[side].oid = None
                     prior_ent[side].changed = False
 
         if oid:
@@ -589,31 +607,28 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                             ent = SyncEntry(self, otype)
 
             ent[side].oid = oid
-            if oid and not ent.discarded and not ent.conflicted:
-                assert ent in self.get_all()
 
-        if otype is not None:
+            if oid and not ent.discarded and not ent.conflicted:
+                if ent not in self.get_all():
+                    assert False, "Index is fucked %s" % ent[side]
+
+        if otype is not None and otype != ent[side].otype:
             ent[side].otype = otype
 
         assert otype is not NOTKNOWN or not exists
 
-        if path is not None:
+        if path is not None and path != ent[side].path:
             ent[side].path = path
 
-        if hash is not None:
+        if hash is not None and hash != ent[side].hash:
             ent[side].hash = hash
-            ent.dirty = True
 
         if exists is not None and exists is not ent[side].exists:
-            assert type(ent[side]) is SideState
             ent[side].exists = exists
-            ent.dirty = True
-            assert type(ent[side].exists) is Exists
 
         if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
-            log.debug("add %s to changeset", ent)
             self.mark_changed(side, ent)
 
         log.log(TRACE, "updated %s", ent)
@@ -629,29 +644,36 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if self._storage is not None:
             if data_tag in self.data_id:
                 retval = self._storage.read(data_tag, self.data_id[data_tag])
-            if not retval:
+            # retval can be 0, but None is reserved
+            if retval is None:
                 datas = self._storage.read_all(data_tag)
                 for eid, data in datas.items():
                     self.data_id[data_tag] = eid
                     retval = data
                 if len(datas) > 1:
                     log.warning("Multiple datas found for %s", data_tag)
+                    assert False
         log.debug("storage_get_data id=%s data=%s", data_tag, str(retval))
         return retval
 
     def storage_update_data(self, data_tag, data):
         if data_tag is None:
             return
+
+        # None is reserved, cannot be stored
+        assert data is not None
+
         updated = 0
         if self._storage is not None:
             # stuff cache
             self.storage_get_data(data_tag)
-            if data_tag in self.data_id and self.data_id[data_tag]:
+            # data_id's cannot be None, but 0 is valid
+            if data_tag in self.data_id and self.data_id[data_tag] is not None:
                 updated = self._storage.update(data_tag, data, self.data_id[data_tag])
-                log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
+                log.log(TRACE, "storage_update_data data %s %s -> %s", data_tag, data, updated)
             if not updated:
                 self.data_id[data_tag] = self._storage.create(data_tag, data)
-                log.log(TRACE, "storage_update_data data %s %s", data_tag, data)
+                log.log(TRACE, "storage_update_data data CREATE %s %s", data_tag, data)
 
     def storage_update(self, ent: SyncEntry):
         if self._tag is None:
@@ -675,6 +697,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ent: SyncEntry = self.lookup_oid(side, oid)
 
         prior_ent = None
+
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
             if prior_ent and not prior_ent.discarded:
@@ -683,11 +706,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 ent = prior_ent
                 prior_ent = None
 
-        if prior_oid and prior_oid != oid:
-            # this is an oid_is_path provider
-            path_ents = self.lookup_path(side, path, stale=True)
-            for path_ent in path_ents:
-                if not ent:
+            if not ent:
+                # this is an oid_is_path provider
+                path_ents = self.lookup_path(side, path, stale=True)
+                for path_ent in path_ents:
                     ent = path_ent
                     ent.discarded = False
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
@@ -704,10 +726,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if not self._changeset:
             return None
 
-        changes = self._changeset
         if self.shuffle:
-            # at most 20 are randomized
-            changes = scramble(changes, 20)
+            changes = scramble(self._changeset, 10)
+        else:
+            changes = sorted(self._changeset, key=lambda a: max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
 
         earlier_than = time.time() - age
         for puntlevel in range(3):
@@ -724,9 +746,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 ret = e
 
         return ret
-
-    def has_changes(self):
-        return bool(self._changeset)
 
     def finished(self, ent):
         if ent[1].changed or ent[0].changed:

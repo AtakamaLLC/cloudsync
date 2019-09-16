@@ -11,7 +11,7 @@ from cloudsync import EventManager, SyncState, LOCAL
 def fixture_manager(mock_provider_generator):
     # TODO extend this to take any provider
     provider = mock_provider_generator()
-    state = SyncState((provider, provider))
+    state = SyncState((provider, provider), shuffle=True)
 
     yield EventManager(provider, state, LOCAL)
 

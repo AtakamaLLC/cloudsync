@@ -33,7 +33,7 @@ class CloudSync(Runnable):
             sleep = (providers[0].default_sleep, providers[1].default_sleep)
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
-        state = SyncState(providers, storage, tag=self.storage_label())
+        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False)
         smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible
@@ -107,6 +107,10 @@ class CloudSync(Runnable):
         #     - One of f1 or f2,  which is selected as the correct version
         #     - "None", meaning there is no good resolution
         return None
+
+    @property
+    def change_count(self):
+        return self.smgr.change_count
 
     def start(self):
         self.sthread.start()
