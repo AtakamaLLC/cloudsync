@@ -292,7 +292,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             self.__cursor = self.latest_cursor
         return self.__cursor
 
-    @ current_cursor.setter
+    @current_cursor.setter
     def current_cursor(self, val):
         if val is None:
             val = self.latest_cursor
