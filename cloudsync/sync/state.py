@@ -73,6 +73,8 @@ class SideState(Reprable):
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
+        self.hash: Optional[bytes]
+        self.sync_hash: Optional[bytes]
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -230,11 +232,9 @@ class SyncEntry(Reprable):
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
             side_state.side = side_dict['side']
-            side_state._hash = bytes.fromhex(
-                side_dict['hash']) if side_dict['hash'] else None
+            side_state.hash = bytes.fromhex(side_dict['hash']) if side_dict['hash'] else None
             side_state.changed = side_dict['changed']
-            side_state._sync_hash = bytes.fromhex(
-                side_dict['sync_hash']) if side_dict['sync_hash'] else None
+            side_state.sync_hash = bytes.fromhex(side_dict['sync_hash']) if side_dict['sync_hash'] else None
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
