@@ -168,7 +168,7 @@ class Storage(ABC):
 class SyncEntry(Reprable):
     def __init__(self, parent: 'SyncState', otype: Optional[OType], storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
-        assert otype or storage_init
+        assert otype is not None or storage_init
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
         self._conflicted: bool = False
