@@ -566,7 +566,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             assert self.lookup_oid(side, oid) is ent
 
     def get_kids(self, parent_path: str, side: int) -> Iterator[SyncEntry]:
-        provider = self.providers[side] # TODO ...right?
+        provider = self.providers[side]
         for sub in self.get_all():
             if not sub[side].path:
                 continue

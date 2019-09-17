@@ -520,6 +520,8 @@ class SyncManager(Runnable):
 
             else:
                 if not ents[0][changed].changed:
+                    # Clear the sync_path so we will recognize that this dir needs to be created
+                    ents[0][changed].sync_path = None
                     self.update_entry(ents[0], changed, ents[0][changed].oid, changed=True)
                     log.debug("updated entry %s", parent)
 
@@ -711,20 +713,19 @@ class SyncManager(Runnable):
             except CloudFileNotFoundError:
                 pass
             except CloudFileExistsError:
-                # If all children are fully synced, this dir won't become deletable magically
-                all_synced = True
-                for kid in self.state.get_kids(sync[changed].path, changed):
-                    if kid.needs_sync():
-                        all_synced = False
-                        break
-                if all_synced:
-                    log.info("dropping dir removal because children fully synced %s", sync[changed].path)
-                    self.discard_entry(sync) # TODO right?
-                    return FINISHED
-                else:
-                    log.debug("kids exist, punt %s", sync[changed].path)
-                    sync.punt()
-                    return REQUEUE
+                if sync.punted > 0:
+                    # If all children are fully synced, this dir won't become deletable magically
+                    all_synced = True
+                    for kid in self.state.get_kids(sync[changed].path, changed):
+                        if kid.needs_sync():
+                            all_synced = False
+                            break
+                    if all_synced:
+                        log.info("dropping dir removal because children fully synced %s", sync[changed].path)
+                        return FINISHED
+                log.debug("kids exist, punt %s", sync[changed].path)
+                sync.punt()
+                return REQUEUE
         else:
             log.debug("was never synced, ignoring deletion")
 
