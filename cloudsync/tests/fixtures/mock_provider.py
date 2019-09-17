@@ -232,7 +232,6 @@ class MockProvider(Provider):
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         # TODO: store the metadata
-        self._api()
         file = self._get_by_path(path)
         if file is not None and file.exists:
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
@@ -327,7 +326,6 @@ class MockProvider(Provider):
         self.log_debug_state()
 
     def mkdir(self, path) -> str:
-        self._api()
         self._verify_parent_folder_exists(path)
         file = self._get_by_path(path)
         if file and file.exists:
@@ -373,7 +371,6 @@ class MockProvider(Provider):
         return file is not None and file.exists
 
     def exists_path(self, path) -> bool:
-        self._api()
         file = self._get_by_path(path)
         return file is not None and file.exists
 
@@ -389,7 +386,6 @@ class MockProvider(Provider):
         return md5(file_like.read()).digest()
 
     def info_path(self, path: str) -> Optional[OInfo]:
-        self._api()
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None

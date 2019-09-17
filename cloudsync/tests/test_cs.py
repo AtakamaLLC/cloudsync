@@ -97,8 +97,8 @@ def test_sync_rename_away(multi_cs):
         (REMOTE, remote_path),
         timeout=2)
 
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.has_changes, timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes, timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
     log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
 
@@ -110,10 +110,10 @@ def test_sync_rename_away(multi_cs):
     log.debug("here")
     linfo2 = cs1.providers[LOCAL].rename(linfo1.oid, local_path21)
     log.debug("here")
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.has_changes, timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
     log.debug("here")
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes, timeout=1)
     log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
     log.debug("here")
 
@@ -143,8 +143,8 @@ def test_sync_rename_away(multi_cs):
         raise
 
     # let cleanups/discards/dedups happen if needed
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.has_changes, timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes, timeout=1)
 
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
@@ -185,7 +185,7 @@ def test_sync_multi(multi_cs):
         (REMOTE, remote_path2),
         timeout=2)
 
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.has_changes, timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
@@ -216,7 +216,7 @@ def test_sync_multi(multi_cs):
     assert linfo22.hash == rinfo2.hash
 
     # let cleanups/discards/dedups happen if needed
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)
+    cs2.run(until=lambda: not cs2.state.has_changes, timeout=1)
     log.info("TABLE\n%s", cs2.state.pretty_print())
 
     assert len(cs1.state) == 3
@@ -255,11 +255,11 @@ def test_sync_basic(cs):
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
     # let cleanups/discards/dedups happen if needed
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
 
     assert len(cs.state) == 3
-    assert not cs.state.change_count
+    assert not cs.state.has_changes
 
 
 def setup_remote_local(cs, *names):
@@ -277,7 +277,7 @@ def setup_remote_local(cs, *names):
         found.append((REMOTE, remote_path1))
 
     cs.run_until_found(*found)
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
 
 @pytest.mark.repeat(4)
@@ -292,7 +292,7 @@ def test_sync_create_delete_same_name(cs):
 
     linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
-    cs.run(until=lambda: not cs.state.change_count, timeout=2)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=2)
 
     rinfo = cs.providers[REMOTE].info_path(remote_path1)
 
@@ -314,7 +314,7 @@ def test_sync_create_delete_same_name(cs):
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
@@ -396,7 +396,7 @@ def test_sync_rename_heavy(cs):
     linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
@@ -431,7 +431,7 @@ def test_sync_rename_heavy(cs):
 
     cs.do()
 
-    cs.run(until=lambda: not cs.state.change_count, timeout=1
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1
             )
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
@@ -468,7 +468,7 @@ def test_sync_two_conflicts(cs):
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     # conflicted files are discarded, not in table
     log.info("TABLE 2\n%s", cs.state.pretty_print())
@@ -618,7 +618,7 @@ def test_sync_folder_conflicts_file(cs):
 
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 4 or len(cs.state) == 3)
@@ -725,7 +725,7 @@ def test_sync_already_there(cs, drain: int):
     cs.do()
 
     # all changes processed
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -756,7 +756,7 @@ def test_sync_already_there_conflict(cs, drain: int):
     cs.do()
 
     # all changes processed
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -784,7 +784,7 @@ def test_conflict_recover(cs):
     cs.do()
 
     # all changes processed
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -814,7 +814,7 @@ def test_conflict_recover(cs):
     cs.do()
 
     # all changes processed
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("AFTER RENAME AWAY\n%s", cs.state.pretty_print())
 
@@ -845,7 +845,7 @@ def test_conflict_recover_modify(cs):
     cs.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"), None)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
@@ -880,7 +880,7 @@ def test_conflict_recover_modify(cs):
     assert new_hash != old_hash
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("AFTER MODIFY\n%s", cs.state.pretty_print())
     local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
@@ -897,7 +897,7 @@ def test_conflict_recover_modify(cs):
         cs.providers[REMOTE].rename(remote_conflicted.oid, remote_path2)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("AFTER RENAME AWAY\n%s", cs.state.pretty_print())
     local_conflicted = cs.providers[LOCAL].info_path(local_conflicted_path)
@@ -915,7 +915,7 @@ def test_conflict_recover_modify(cs):
     cs.providers[LOCAL].upload(local_new.oid, newer_content)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     local_newer = cs.providers[LOCAL].info_path(local_path2)
     remote_newer = cs.providers[REMOTE].info_path(remote_path2)
@@ -940,7 +940,7 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
     linfo = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello"), None)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.debug("--- cs: %s ---", [e.case_sensitive for e in cs.providers])
     cs.providers[LOCAL].log_debug_state()
@@ -949,7 +949,7 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
     cs.providers[LOCAL].rename(ldir, local_path3)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
     rinfo2 = cs.providers[REMOTE].info_path(remote_path2)
@@ -1002,7 +1002,7 @@ def test_sync_rename_tmp(cs):
     cs.providers[REMOTE].mkdir(remote_sub)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
@@ -1042,7 +1042,7 @@ def test_sync_rename_tmp(cs):
 
     cs.do()
 
-    cs.run(until=lambda: not cs.state.change_count, timeout=1
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1
            )
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
@@ -1074,10 +1074,10 @@ def test_cursor(cs_storage):
         timeout=2)
 
     # let cleanups/discards/dedups happen if needed
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
     log.info("TABLE\n%s", cs.state.pretty_print())
     assert len(cs.state) == 2
-    assert not cs.state.change_count
+    assert not cs.state.has_changes
 
     linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
 
@@ -1117,11 +1117,11 @@ def test_sync_rename_up(cs):
     cs.providers[REMOTE].mkdir(remote_sub)
 
     cs.do()
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
     linfo2 = cs.providers[LOCAL].create(local_path2, BytesIO(b"file"))
-    cs.run(until=lambda: not cs.state.change_count, timeout=1
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1
             )
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
@@ -1132,7 +1132,7 @@ def test_sync_rename_up(cs):
     else:
         cs.providers[LOCAL].delete(linfo2.oid)
     cs.providers[LOCAL].rename(linfo1.oid, local_path2)
-    cs.run(until=lambda: not cs.state.change_count, timeout=1
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1
             )
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
@@ -1149,7 +1149,7 @@ def test_many_small_files_mkdir_perf(cs):
 
     cs.providers[LOCAL].mkdir(local_root)
     cs.providers[REMOTE].mkdir(remote_root)
-    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
     def make_files(dir_suffix: str, clear_before: bool):
         local_base = f"{local_root}/{dir_suffix}"
@@ -1164,7 +1164,7 @@ def test_many_small_files_mkdir_perf(cs):
         # all the file uploads. Since all the child file events rely on this
         # happening first, it's easy for performance issues to sneak in.
         if clear_before:
-            cs.run(until=lambda: not cs.state.change_count, timeout=1)
+            cs.run(until=lambda: not cs.state.has_changes, timeout=1)
 
         # Upload 100 x 3 KiB files. The size and number shouldn't actually
         # matter.
@@ -1174,7 +1174,7 @@ def test_many_small_files_mkdir_perf(cs):
             linfo = cs.providers[LOCAL].create(local_file_name, content, None)
             assert linfo is not None
 
-        cs.run(until=lambda: not cs.state.change_count, timeout=1000)
+        cs.run(until=lambda: not cs.state.has_changes, timeout=1000)
 
         # Check that the process took less than 1000 seconds
         for i in range(100):
@@ -1237,10 +1237,10 @@ def test_sync_folder_conflicts_del(cs):
     cs.providers[REMOTE].delete(rinfo3_u.oid)
     cs.providers[REMOTE].delete(rinfo3_oid)
 
-    cs.run(until=lambda: cs.state.change_count == 0, timeout=1)
+    cs.run(until=lambda: cs.state.has_changes == 0, timeout=1)
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
-    assert cs.state.change_count == 0
+    assert cs.state.has_changes == 0
 
     # either a deletion happend or a rename... whatever
 
@@ -1250,3 +1250,55 @@ def test_sync_folder_conflicts_del(cs):
     else:
         assert not cs.providers[LOCAL].info_path(local_path2_u)
         assert not cs.providers[LOCAL].info_path(local_path2)
+
+
+def test_api_hit_perf(cs):
+    local_root = "/local"
+    remote_root = "/remote"
+    local_file_base = f"{local_root}/file"
+    remote_file_base = f"{remote_root}/file"
+
+    cs.providers[LOCAL].mkdir(local_root)
+    cs.providers[REMOTE].mkdir(remote_root)
+    cs.run(until=lambda: not cs.state.has_changes, timeout=1)
+
+    remote_old_api = cs.providers[REMOTE]._api
+    
+    import traceback
+
+    remote_counter = 0
+
+    def remote_tb_api(*a, **kw):
+        nonlocal remote_counter
+        remote_counter += 1
+        log.debug("API HIT %s", traceback.format_stack(limit=7))
+        remote_old_api(*a, **kw)
+
+    # upload 10 files
+    content = BytesIO(b"hello")
+    prev_oid = None
+    for i in range(10):
+        local_file_name = local_file_base + str(i)
+        info = cs.providers[LOCAL].create(local_file_name, content, None)
+        if prev_oid:
+            cs.providers[LOCAL].delete(prev_oid)
+        prev_oid = cs.providers[LOCAL].rename(info.oid, local_file_base)
+
+    cs.emgrs[0].do()
+
+    log.debug("RUNNING")
+
+    with patch.object(cs.providers[REMOTE], "_api",
+                      side_effect=remote_tb_api):
+
+        cs.run(until=lambda: not cs.state.has_changes, timeout=2)
+
+    assert abs(remote_counter) < 20
+
+    for i in range(10):
+        remote_file_name = remote_file_base + str(i)
+        rinfo = cs.providers[REMOTE].info_path(remote_file_name)
+        assert rinfo is None
+    rinfo = cs.providers[REMOTE].info_path(remote_file_base)
+    assert rinfo
+
