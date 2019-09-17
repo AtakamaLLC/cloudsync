@@ -143,7 +143,7 @@ class SyncManager(Runnable):
         log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
-    def change_count(self, side: Optional[int] = None, unvalidated: bool = False):
+    def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
 
         sides: Tuple[int, ...]
@@ -153,7 +153,7 @@ class SyncManager(Runnable):
             sides = (side, )
 
         for i in sides:
-            if unvalidated:
+            if unverified:
                 count += self.state.changeset_len
             else:
                 for e in self.state.changes:
