@@ -711,12 +711,20 @@ class SyncManager(Runnable):
             except CloudFileNotFoundError:
                 pass
             except CloudFileExistsError:
-                for kid in self.state.get_kids(sync[changed].path, changed)
-                    #TODO TODO here - are all of my children fully synced?
-                    pass
-                log.debug("kids exist, punt %s", sync[changed].path)
-                sync.punt()
-                return REQUEUE
+                # If all children are fully synced, this dir won't become deletable magically
+                all_synced = True
+                for kid in self.state.get_kids(sync[changed].path, changed):
+                    if kid.needs_sync():
+                        all_synced = False
+                        break
+                if all_synced:
+                    log.info("dropping dir removal because children fully synced %s", sync[changed].path)
+                    self.discard_entry(sync) # TODO right?
+                    return FINISHED
+                else:
+                    log.debug("kids exist, punt %s", sync[changed].path)
+                    sync.punt()
+                    return REQUEUE
         else:
             log.debug("was never synced, ignoring deletion")
 

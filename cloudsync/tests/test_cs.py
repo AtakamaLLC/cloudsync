@@ -1268,8 +1268,8 @@ def test_dir_delete_give_up(cs):
     remote_f2 = "/remote/dir/f2"
 
     # Setup, create initial dir and file
-    cs.providers[LOCAL].mkdir(local_parent)
-    cs.providers[REMOTE].mkdir(remote_parent)
+    lpoid = cs.providers[LOCAL].mkdir(local_parent)
+    rpoid = cs.providers[REMOTE].mkdir(remote_parent)
     cs.providers[LOCAL].mkdir(local_dir)
     cs.providers[LOCAL].create(local_f1, BytesIO(b"hello"), None)
 
@@ -1287,7 +1287,11 @@ def test_dir_delete_give_up(cs):
 
     cs.run(until=lambda: not cs.state.change_count, timeout=1)
     assert cs.state.change_count == 0
-    assert not cs.providers[LOCAL].info_path(local_f1)
-    assert not cs.providers[REMOTE].info_path(remote_f1)
-    assert cs.providers[REMOTE].info_path(remote_f2)
-    #TODO should f2 exist in local?
+    ldir = list(cs.providers[LOCAL].listdir(lpoid))
+    rdir = list(cs.providers[REMOTE].listdir(rpoid))
+
+    # dirs should still exist on both sides
+    assert len(rdir) == 1
+    assert rdir[0].path == remote_dir
+    assert len(ldir) == 1
+    assert ldir[0].path == local_dir
