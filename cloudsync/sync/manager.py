@@ -711,6 +711,9 @@ class SyncManager(Runnable):
             except CloudFileNotFoundError:
                 pass
             except CloudFileExistsError:
+                for kid in self.state.get_kids(sync[changed].path, changed)
+                    #TODO TODO here - are all of my children fully synced?
+                    pass
                 log.debug("kids exist, punt %s", sync[changed].path)
                 sync.punt()
                 return REQUEUE

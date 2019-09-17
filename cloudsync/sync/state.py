@@ -15,7 +15,7 @@ import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable
+from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Iterator
 
 from typing import Union
 from pystrict import strict
@@ -515,23 +515,19 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def _update_kids(self, ent, side, prior_path, path, provider):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
             # changing directory also changes child paths
-            for sub in self.get_all():
-                if not sub[side].path:
-                    continue
-                relative = provider.is_subpath(prior_path, sub[side].path, strict=True)
-                if relative:
-                    new_path = provider.join(path, relative)
-                    sub[side].path = new_path
-                    if provider.oid_is_path:
-                        # TODO: state should not do online hits esp from event manager
-                        # either
-                        # a) have event manager *not* trigger this, maybe by passing none as the provider, etc
-                        #    this may have knock on effects where the sync engine needs to process parent folders first
-                        # b) have a special oid_from_path function that is guaranteed not to be "online"
-                        #    assert not _api() called, etc.
-                        new_info = provider.info_path(new_path)
-                        if new_info:
-                            sub[side].oid = new_info.oid
+            for sub in self.get_kids(prior_path, side):
+                new_path = provider.join(path, relative)
+                sub[side].path = new_path
+                if provider.oid_is_path:
+                    # TODO: state should not do online hits esp from event manager
+                    # either
+                    # a) have event manager *not* trigger this, maybe by passing none as the provider, etc
+                    #    this may have knock on effects where the sync engine needs to process parent folders first
+                    # b) have a special oid_from_path function that is guaranteed not to be "online"
+                    #    assert not _api() called, etc.
+                    new_info = provider.info_path(new_path)
+                    if new_info:
+                        sub[side].oid = new_info.oid
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
@@ -568,6 +564,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
         if oid:
             assert self.lookup_oid(side, oid) is ent
+
+    def get_kids(self, parent_path: str, side: int) -> Iterator[SyncEntry]:
+        provider = self.providers[side] # TODO ...right?
+        for sub in self.get_all():
+            if not sub[side].path:
+                continue
+            if provider.is_subpath(parent_path, sub[side].path, strict=True):
+                yield sub
 
     def lookup_oid(self, side, oid) -> SyncEntry:
         try:
