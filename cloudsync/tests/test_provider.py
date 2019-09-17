@@ -523,10 +523,11 @@ def test_event_basic(provider: ProviderMixin):
     dest = provider.temp_name("dest")
 
     # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep, 1)):
-        log.debug("event %s", e)
-
-    wait_sleep_cycles = 30
+    try:
+        for e in provider.events_poll(timeout=min(provider.event_sleep, 1)):
+            log.debug("event %s", e)
+    except TimeoutError:
+        pass
 
     log.debug("create event")
     info1 = provider.create(dest, temp, None)
@@ -535,31 +536,26 @@ def test_event_basic(provider: ProviderMixin):
     received_event = None
     event_count = 0
     done = False
-    waiting = None
-    wait_secs = min(provider.event_sleep * wait_sleep_cycles, 2)
 
-    with pytest.raises(TimeoutError):
-        for e in provider.events_poll(until=lambda: done):
-            log.debug("got event %s", e)
-            # you might get events for the root folder here or other setup stuff
-            if e.exists:
-                if not e.path:
-                    info = provider.info_oid(e.oid)
-                    if info:
-                        e.path = info.path
+    for e in provider.events_poll(until=lambda: done):
+        log.debug("got event %s", e)
+        # you might get events for the root folder here or other setup stuff
+        if e.exists:
+            if not e.path:
+                info = provider.info_oid(e.oid)
+                if info:
+                    e.path = info.path
 
-                if e.path == dest:
-                    received_event = e
-                    event_count += 1
-
-                log.debug("%s vs %s", e.path, dest)
-
-                if e.path == dest and not waiting:
-                    waiting = time.monotonic() + wait_secs
-
-            if waiting and time.monotonic() > waiting:
-                # wait for extra events up to 10 sleep cycles, or 2 seconds
+            if e.path == dest:
+                received_event = e
+                event_count += 1
                 done = True
+
+    for e in provider.events():
+        if not e.path:
+            info = provider.info_oid(e.oid)
+            if info:
+                e.path = info.path
 
     assert event_count == 1
     assert received_event is not None
@@ -587,6 +583,8 @@ def test_event_basic(provider: ProviderMixin):
             else:
                 e.exists = False
             # assert not e.exists or e.path is not None  # This is actually OK, google will do this legitimately
+
+        assert e.otype is not None
 
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
