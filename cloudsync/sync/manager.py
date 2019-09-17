@@ -700,25 +700,28 @@ class SyncManager(Runnable):
             except CloudFileNotFoundError:
                 pass
             except CloudFileExistsError:
-                if sync.punted > 0:
-                    # If all children are fully synced, this dir won't become deletable magically
-                    all_synced = True
-                    for kid, _ in self.state.get_kids(sync[changed].path, changed):
-                        if kid.needs_sync():
-                            all_synced = False
-                            break
-                    if all_synced:
-                        log.info("dropping dir removal because children fully synced %s", sync[changed].path)
-                        return FINISHED
-                log.debug("kids exist, punt %s", sync[changed].path)
-                sync.punt()
-                return REQUEUE
+                return self._handle_dir_delete_not_empty(sync, changed)
         else:
             log.debug("was never synced, ignoring deletion")
 
         sync[synced].exists = TRASHED
         self.discard_entry(sync)
         return FINISHED
+
+    def _handle_dir_delete_not_empty(self, sync, changed):
+        if sync.punted > 0:
+            # If all children are fully synced, this dir won't become deletable magically
+            all_synced = True
+            for kid, _ in self.state.get_kids(sync[changed].path, changed):
+                if kid.needs_sync():
+                    all_synced = False
+                    break
+            if all_synced:
+                log.info("dropping dir removal because children fully synced %s", sync[changed].path)
+                return FINISHED
+        log.debug("kids exist, punt %s", sync[changed].path)
+        sync.punt()
+        return REQUEUE
 
     def _get_unstrashed_peers(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table

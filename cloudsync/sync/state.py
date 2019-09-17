@@ -15,7 +15,7 @@ import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Iterator
+from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
 
 from typing import Union
 from pystrict import strict
@@ -580,7 +580,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if oid:
             assert self.lookup_oid(side, oid) is ent
 
-    def get_kids(self, parent_path: str, side: int) -> Tuple[Iterator[SyncEntry], str]:
+    def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]
         for sub in self.get_all():
             if not sub[side].path:
@@ -659,11 +659,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
-            self.mark_changed(side, ent)
+            self._mark_changed(side, ent)
 
         log.log(TRACE, "updated %s", ent)
 
-    def mark_changed(self, side, ent):
+    def _mark_changed(self, side, ent):
         ent[side].changed = time.time()
         assert ent in self._changeset
 
@@ -860,8 +860,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert replace_ent[replace].oid
         assert replace_ent in self.get_all()
 
-        self.mark_changed(replace, replace_ent)
-        self.mark_changed(defer, defer_ent)
+        self._mark_changed(replace, replace_ent)
+        self._mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
         # we aren't synced
