@@ -15,7 +15,7 @@ def time_helper(timeout, sleep=None, multiply=1):
         if sleep is not None:
             time.sleep(sleep)
             sleep = sleep * multiply
-
+    raise TimeoutError()
 
 class Runnable(ABC):
     stopped = False

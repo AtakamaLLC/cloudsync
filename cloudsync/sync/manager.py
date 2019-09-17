@@ -143,41 +143,28 @@ class SyncManager(Runnable):
         log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
-    @property
-    def change_count(self):
-        return self.state.change_count
+    def change_count(self, side: Optional[int] = None, unverified: bool = False):
+        count = 0
 
-    def get_latest_state(self, ent):
-        log.log(TRACE, "before update state %s", ent)
-        for i in (LOCAL, REMOTE):
-            if not ent[i].changed:
-                continue
+        sides: Tuple[int, ...]
+        if side is None:
+            sides = (LOCAL, REMOTE)
+        else:
+            sides = (side, )
 
-            if not ent[i].oid:
-                continue
+        if unverified:
+            for i in sides:
+                count += self.state.changeset_len
+        else:
+            for e in self.state.changes:
+                for i in sides:
+                    if e[i].path and e[i].changed:
+                        translated_path = self.translate(other_side(i), e[i].path)
+                        if translated_path:
+                            count += 1
+                            break
 
-            info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
-
-            if not info:
-                continue
-
-            ent[i].exists = EXISTS
-            ent[i].hash = info.hash
-            ent[i].otype = info.otype
-
-            if ent[i].otype == FILE:
-                if ent[i].hash is None:
-                    ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
-
-                if ent[i].exists == EXISTS:
-                    if ent[i].hash is None:
-                        log.warning("Cannot sync %s, since hash is None", ent[i])
-
-            if ent[i].path != info.path:
-                ent[i].path = info.path
-                self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
-
-        log.log(TRACE, "after update state %s", ent)
+        return count
 
     def path_conflict(self, ent):
         # both are synced
@@ -229,7 +216,7 @@ class SyncManager(Runnable):
             self.finished(REMOTE, sync)
             return
 
-        self.get_latest_state(sync)
+        sync.get_latest()
 
         if sync.hash_conflict():
             log.debug("handle hash conflict")
@@ -892,15 +879,12 @@ class SyncManager(Runnable):
         return FINISHED
 
     def _resolve_rename(self, replace):
-        replace_ent = self.state.lookup_oid(replace.side, replace.oid)
-        if not replace_ent:
-            return False
-
         _old_oid, new_oid, new_name = self.conflict_rename(replace.side, replace.path)
         if new_name is None:
             return False
 
-        self.update_entry(replace_ent, side=replace.side, oid=new_oid)
+        replace.oid = new_oid
+        replace.changed = time.time()
         return True
 
     def rename_to_fix_conflict(self, sync, side, path):
