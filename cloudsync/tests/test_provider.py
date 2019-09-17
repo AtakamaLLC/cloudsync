@@ -201,6 +201,13 @@ class ProviderHelper():
                 # deleting the root might now be supported
                 pass
 
+    def prime_events(self):
+        try:
+            for e in self.events_poll(timeout=1):
+                log.debug("ignored event %s", e)
+        except TimeoutError:
+            pass
+
     @property
     def current_cursor(self):
         return self.prov.current_cursor
@@ -517,17 +524,13 @@ def check_event_path(event: Event, provider: ProviderMixin, target_path):
             if event.exists:
                 raise
 
+## event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 
 def test_event_basic(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
-    # just get the cursor going
-    try:
-        for e in provider.events_poll(timeout=min(provider.event_sleep, 1)):
-            log.debug("event %s", e)
-    except TimeoutError:
-        pass
+    provider.prime_events()
 
     log.debug("create event")
     info1 = provider.create(dest, temp, None)
@@ -606,9 +609,7 @@ def test_event_del_create(provider: ProviderMixin):
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
-    # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
-        log.debug("event %s", e)
+    provider.prime_events()
 
     info1 = provider.create(dest, temp)
     provider.delete(info1.oid)
@@ -669,9 +670,7 @@ def test_event_rename(provider: ProviderMixin):
     dest2 = provider.temp_name("dest")
     dest3 = provider.temp_name("dest")
 
-    # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
-        log.debug("event %s", e)
+    provider.prime_events()
 
     info1 = provider.create(dest, temp)
     oid2 = provider.rename(info1.oid, dest2)
