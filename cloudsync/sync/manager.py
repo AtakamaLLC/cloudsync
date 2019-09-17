@@ -143,7 +143,7 @@ class SyncManager(Runnable):
         log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
-    def change_count(self, side: Optional[int] = None):
+    def change_count(self, side: Optional[int] = None, unvalidated: bool = False):
         count = 0
 
         sides: Tuple[int, ...]
@@ -153,11 +153,14 @@ class SyncManager(Runnable):
             sides = (side, )
 
         for i in sides:
-            for e in self.state.changes:
-                if e[i].path and e[i].changed:
-                    translated_path = self.translate(other_side(i), e[i].path)
-                    if translated_path:
-                        count += 1
+            if unvalidated:
+                count += self.state.changeset_len
+            else:
+                for e in self.state.changes:
+                    if e[i].path and e[i].changed:
+                        translated_path = self.translate(other_side(i), e[i].path)
+                        if translated_path:
+                            count += 1
         return count
 
     def path_conflict(self, ent):
