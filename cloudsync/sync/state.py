@@ -67,6 +67,7 @@ class SideState(Reprable):
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
         self._changed: Optional[float] = None
+        self._last_gotten: float = 0.0               # set to == changed when getting
         self._sync_hash: Optional[bytes] = None      # hash at last sync
         self._sync_path: Optional[str] = None        # path at last sync
         self._path: Optional[str] = None             # path at provider
@@ -413,13 +414,22 @@ class SyncEntry(Reprable):
         # do this one later
         # TODO provide help for making sure that we don't punt too many times
         self.punted += 1                    # pylint: disable=no-member
-        if self.punted > 2:                 # pylint: disable=no-member
-            # slow down
-            if self[LOCAL].changed:
-                self[LOCAL].changed = time.time()
-            if self[REMOTE].changed:
-                self[REMOTE].changed = time.time()
+        if self[LOCAL].changed:
+            self[LOCAL].changed += self._parent._punt_secs[LOCAL]
+        if self[REMOTE].changed:
+            self[REMOTE].changed = self._parent._punt_secs[REMOTE]
 
+    def get_latest(self):
+        for side in (LOCAL, REMOTE):
+            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+                self._parent.unconditionally_get_latest(self, side)
+                self[side]._last_gotten = self[side]._changed
+
+    def is_latest(self) -> bool:
+        for side in (LOCAL, REMOTE):
+            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+                return False
+        return True
 
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
@@ -434,6 +444,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
+        self._punt_secs = (providers[0].default_sleep/10, providers[1].default_sleep/10)
         assert len(providers) == 2
 
         self.lock = RLock()
@@ -477,7 +488,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 self._changeset.discard(ent)
 
     @property
-    def change_count(self):
+    def changes(self):
+        return tuple(self._changeset)
+
+    @property
+    def changeset_len(self):
         return len(self._changeset)
 
     def _change_path(self, side, ent, path, provider):
@@ -770,7 +785,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def pretty_print(self, use_sigs=True):
         ret = SyncEntry.prettyheaders() + "\n"
         e: SyncEntry
-        for e in self.get_all():
+        for e in self.get_all(discarded=True):
+            # allow conflicted to be printed
+            if e.discarded:
+                continue
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
         return ret
 
@@ -860,3 +878,31 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self.storage_update(replace_ent)
 
         return defer_ent, defer, replace_ent, replace
+
+
+    def unconditionally_get_latest(self, ent, i):
+        if not ent[i].oid:
+            ent[i].exists = UNKNOWN
+            return
+
+        info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
+
+        if not info:
+            ent[i].exists = TRASHED
+            return
+
+        ent[i].exists = EXISTS
+        ent[i].hash = info.hash
+        ent[i].otype = info.otype
+
+        if ent[i].otype == FILE:
+            if ent[i].hash is None:
+                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+
+            if ent[i].exists == EXISTS:
+                if ent[i].hash is None:
+                    log.warning("Cannot sync %s, since hash is None", ent[i])
+
+        if ent[i].path != info.path:
+            ent[i].path = info.path
+            self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
