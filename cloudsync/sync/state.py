@@ -488,6 +488,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 self._changeset.discard(ent)
 
     @property
+    def changes(self):
+        return tuple(self._changeset)
+
+    @property
     def has_changes(self):
         return len(self._changeset)
 

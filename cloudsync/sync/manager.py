@@ -151,10 +151,10 @@ class SyncManager(Runnable):
         else:
             sides = (side, )
 
-        for side in sides:
-            for e in self.state._changeset:
-                if e[side].path and e[side].changed:
-                    translated_path = self.translate(other_side(side), e[side].path)
+        for i in sides:
+            for e in self.state.changes:
+                if e[i].path and e[i].changed:
+                    translated_path = self.translate(other_side(i), e[i].path)
                     if translated_path:
                         count += 1
         return count
