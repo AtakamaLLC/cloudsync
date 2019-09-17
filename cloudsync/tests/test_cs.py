@@ -1250,3 +1250,44 @@ def test_sync_folder_conflicts_del(cs):
     else:
         assert not cs.providers[LOCAL].info_path(local_path2_u)
         assert not cs.providers[LOCAL].info_path(local_path2)
+
+
+def test_dir_delete_give_up(cs):
+    # Local: dir with file inside, delete file then dir
+    # Remote: at same time, add file to dir
+    # Sometimes we'll process the remote file add before our dir delete, so we cannot
+    # dir delete
+    # In that case, we should not retry the dir delete forever
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_dir = "/local/dir"
+    remote_dir = "/remote/dir"
+    local_f1 = "/local/dir/f1"
+    remote_f1 = "/remote/dir/f1"
+    local_f2 = "/local/dir/f2"
+    remote_f2 = "/remote/dir/f2"
+
+    # Setup, create initial dir and file
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].mkdir(local_dir)
+    cs.providers[LOCAL].create(local_f1, BytesIO(b"hello"), None)
+
+    cs.run_until_found(
+        (LOCAL, local_dir),
+        (LOCAL, local_f1),
+        (REMOTE, remote_dir),
+        (REMOTE, remote_f1),
+        timeout=2)
+
+    # Delete local dir while adding file remotely
+    cs.providers[LOCAL].delete(local_f1)
+    cs.providers[LOCAL].delete(local_dir)
+    cs.providers[REMOTE].create(remote_f2, BytesIO(b"goodbye"), None)
+
+    cs.run(until=lambda: not cs.state.change_count, timeout=1)
+    assert cs.state.change_count == 0
+    assert not cs.providers[LOCAL].info_path(local_f1)
+    assert not cs.providers[REMOTE].info_path(remote_f1)
+    assert cs.providers[REMOTE].info_path(remote_f2)
+    #TODO should f2 exist in local?
