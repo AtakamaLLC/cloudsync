@@ -556,6 +556,8 @@ def test_event_basic(provider: ProviderMixin):
             info = provider.info_oid(e.oid)
             if info:
                 e.path = info.path
+        if e.path == dest:
+            event_count += 1
 
     assert event_count == 1
     assert received_event is not None
