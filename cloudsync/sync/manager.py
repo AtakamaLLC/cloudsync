@@ -152,15 +152,18 @@ class SyncManager(Runnable):
         else:
             sides = (side, )
 
-        for i in sides:
-            if unverified:
+        if unverified:
+            for i in sides:
                 count += self.state.changeset_len
-            else:
-                for e in self.state.changes:
+        else:
+            for e in self.state.changes:
+                for i in sides:
                     if e[i].path and e[i].changed:
                         translated_path = self.translate(other_side(i), e[i].path)
                         if translated_path:
                             count += 1
+                            break
+
         return count
 
     def path_conflict(self, ent):
