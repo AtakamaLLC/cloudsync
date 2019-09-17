@@ -143,9 +143,10 @@ class SyncManager(Runnable):
         log.info("cleanup %s", self.tempdir)
         shutil.rmtree(self.tempdir)
 
-    def change_count(self, side=None):
+    def change_count(self, side: Optional[int] = None):
         count = 0
 
+        sides: Tuple[int, ...]
         if side is None:
             sides = (LOCAL, REMOTE)
         else:
