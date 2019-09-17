@@ -709,8 +709,8 @@ class SyncManager(Runnable):
         return FINISHED
 
     def _handle_dir_delete_not_empty(self, sync, changed):
+        # punt once to allow children to be processed, if already done just forget about it
         if sync.punted > 0:
-            # If all children are fully synced, this dir won't become deletable magically
             all_synced = True
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
                 if kid.needs_sync():
