@@ -716,7 +716,7 @@ class SyncManager(Runnable):
                 if sync.punted > 0:
                     # If all children are fully synced, this dir won't become deletable magically
                     all_synced = True
-                    for kid in self.state.get_kids(sync[changed].path, changed):
+                    for kid, _ in self.state.get_kids(sync[changed].path, changed):
                         if kid.needs_sync():
                             all_synced = False
                             break

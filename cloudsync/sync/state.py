@@ -515,7 +515,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def _update_kids(self, ent, side, prior_path, path, provider):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
             # changing directory also changes child paths
-            for sub in self.get_kids(prior_path, side):
+            for sub, relative in self.get_kids(prior_path, side):
                 new_path = provider.join(path, relative)
                 sub[side].path = new_path
                 if provider.oid_is_path:
@@ -565,13 +565,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if oid:
             assert self.lookup_oid(side, oid) is ent
 
-    def get_kids(self, parent_path: str, side: int) -> Iterator[SyncEntry]:
+    def get_kids(self, parent_path: str, side: int) -> Tuple[Iterator[SyncEntry], str]:
         provider = self.providers[side]
         for sub in self.get_all():
             if not sub[side].path:
                 continue
-            if provider.is_subpath(parent_path, sub[side].path, strict=True):
-                yield sub
+            relpath = provider.is_subpath(parent_path, sub[side].path, strict=True)
+            if relpath:
+                yield sub, relpath
 
     def lookup_oid(self, side, oid) -> SyncEntry:
         try:
