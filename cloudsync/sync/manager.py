@@ -241,7 +241,7 @@ class SyncManager(Runnable):
                     self.finished(i, sync)
                     break
 
-                if sync[i].oid is None:
+                if sync[i].oid is None and sync[i].exists != TRASHED:
                     log.debug("ignore:%s, side:%s", sync, i)
                     self.finished(i, sync)
                     continue

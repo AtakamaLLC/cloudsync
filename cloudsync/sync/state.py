@@ -564,7 +564,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 if prior_ent is not ent:
                     # no longer indexed by oid, also clear change bit
                     prior_ent[side].oid = None
-                    prior_ent[side].changed = False
+                    if prior_ent[side].exists != TRASHED:
+                        prior_ent[side].changed = False
 
         if oid:
             ent[side]._oid = oid
@@ -887,7 +888,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:
-            ent[i].exists = UNKNOWN
+            if ent[i].exists != TRASHED:
+                ent[i].exists = UNKNOWN
             return
 
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
