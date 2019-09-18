@@ -1321,8 +1321,8 @@ def test_dir_delete_give_up(cs):
     # Setup, create initial dir and file
     lpoid = cs.providers[LOCAL].mkdir(local_parent)
     rpoid = cs.providers[REMOTE].mkdir(remote_parent)
-    cs.providers[LOCAL].mkdir(local_dir)
-    cs.providers[LOCAL].create(local_f1, BytesIO(b"hello"), None)
+    ldoid = cs.providers[LOCAL].mkdir(local_dir)
+    lf1obj = cs.providers[LOCAL].create(local_f1, BytesIO(b"hello"), None)
 
     cs.run_until_found(
         (LOCAL, local_dir),
@@ -1332,8 +1332,8 @@ def test_dir_delete_give_up(cs):
         timeout=2)
 
     # Delete local dir while adding file remotely
-    cs.providers[LOCAL].delete(local_f1)
-    cs.providers[LOCAL].delete(local_dir)
+    cs.providers[LOCAL].delete(lf1obj.oid)
+    cs.providers[LOCAL].delete(ldoid)
     cs.providers[REMOTE].create(remote_f2, BytesIO(b"goodbye"), None)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
@@ -1346,17 +1346,3 @@ def test_dir_delete_give_up(cs):
     assert rdir[0].path == remote_dir
     assert len(ldir) == 1
     assert ldir[0].path == local_dir
-
-
-def test_large_remote_dir_delete(cs):
-    # Simulate the remote deleting a large directory
-    # We do not get the events all at once and must ensure we handle the rmdir
-    # correctly
-    local_parent = "/local"
-    remote_parent = "/remote"
-    local_dir = "/local/dir"
-    remote_dir = "/remote/dir"
-
-    lpoid = cs.providers[LOCAL].mkdir(local_parent)
-    rpoid = cs.providers[REMOTE].mkdir(remote_parent)
-    cs.providers[LOCAL].mkdir(local_dir)
