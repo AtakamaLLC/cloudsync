@@ -727,8 +727,7 @@ class SyncManager(Runnable):
         # Mark children changed so we will check if already deleted
         log.debug("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
-            kid[other_side(changed)].changed = time.time()
-            pass
+            kid[changed].changed = time.time()
 
         sync.punt()
         return REQUEUE
