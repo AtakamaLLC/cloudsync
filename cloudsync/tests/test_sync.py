@@ -681,6 +681,48 @@ def test_remove_folder_with_kids(sync_sh):
     sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False), WaitFor(REMOTE, folder1[REMOTE], exists=False))
 
 
+def test_dir_rm(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_dir = Provider.join(local_parent, "dir")
+    remote_dir = Provider.join(remote_parent, "dir")
+    local_file = Provider.join(local_dir, "file")
+    remote_file = Provider.join(remote_dir, "file")
+
+    lparent = sync.providers[LOCAL].mkdir(local_parent)
+    rparent = sync.providers[REMOTE].mkdir(remote_parent)
+    ldir = sync.providers[LOCAL].mkdir(local_dir)
+    rdir = sync.providers[REMOTE].mkdir(remote_dir)
+    lfile = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, DIRECTORY, path=local_dir,
+                      oid=ldir)
+    sync.change_state(LOCAL, FILE, path=local_file,
+                      oid=lfile.oid, hash=lfile.hash)
+
+    sync.run_until_found((REMOTE, remote_file), (REMOTE, remote_dir))
+
+    rfile = sync.providers[REMOTE].info_path(remote_file)
+    sync.providers[REMOTE].delete(rfile.oid)
+    sync.providers[REMOTE].delete(rdir)
+
+    # Directory delete - should punt because of children
+    sync.aging = 0
+    sync.change_state(REMOTE, DIRECTORY, path=remote_dir, oid=rdir, exists=False)
+    sync.do()
+    assert len(list(sync.providers[LOCAL].listdir(ldir))) == 1
+
+    # Next action should be on deleted child (detected in above)
+    sync.do()
+    assert len(list(sync.providers[LOCAL].listdir(ldir))) == 0
+
+    # Now it should successfully rmdir
+    sync.do()
+    assert len(list(sync.providers[LOCAL].listdir(lparent))) == 0
+
+    sync.state.assert_index_is_correct()
+
+
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
