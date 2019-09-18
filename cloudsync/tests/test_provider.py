@@ -201,6 +201,13 @@ class ProviderHelper():
                 # deleting the root might now be supported
                 pass
 
+    def prime_events(self):
+        try:
+            for e in self.events_poll(timeout=1):
+                log.debug("ignored event %s", e)
+        except TimeoutError:
+            pass
+
     @property
     def current_cursor(self):
         return self.prov.current_cursor
@@ -517,16 +524,13 @@ def check_event_path(event: Event, provider: ProviderMixin, target_path):
             if event.exists:
                 raise
 
+## event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 
 def test_event_basic(provider: ProviderMixin):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
-    # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep, 1)):
-        log.debug("event %s", e)
-
-    wait_sleep_cycles = 30
+    provider.prime_events()
 
     log.debug("create event")
     info1 = provider.create(dest, temp, None)
@@ -535,31 +539,28 @@ def test_event_basic(provider: ProviderMixin):
     received_event = None
     event_count = 0
     done = False
-    waiting = None
-    wait_secs = min(provider.event_sleep * wait_sleep_cycles, 2)
 
-    with pytest.raises(TimeoutError):
-        for e in provider.events_poll(until=lambda: done):
-            log.debug("got event %s", e)
-            # you might get events for the root folder here or other setup stuff
-            if e.exists:
-                if not e.path:
-                    info = provider.info_oid(e.oid)
-                    if info:
-                        e.path = info.path
+    for e in provider.events_poll(until=lambda: done):
+        log.debug("got event %s", e)
+        # you might get events for the root folder here or other setup stuff
+        if e.exists:
+            if not e.path:
+                info = provider.info_oid(e.oid)
+                if info:
+                    e.path = info.path
 
-                if e.path == dest:
-                    received_event = e
-                    event_count += 1
-
-                log.debug("%s vs %s", e.path, dest)
-
-                if e.path == dest and not waiting:
-                    waiting = time.monotonic() + wait_secs
-
-            if waiting and time.monotonic() > waiting:
-                # wait for extra events up to 10 sleep cycles, or 2 seconds
+            if e.path == dest:
+                received_event = e
+                event_count += 1
                 done = True
+
+    for e in provider.events():
+        if not e.path:
+            info = provider.info_oid(e.oid)
+            if info:
+                e.path = info.path
+        if e.path == dest:
+            event_count += 1
 
     assert event_count == 1
     assert received_event is not None
@@ -588,6 +589,8 @@ def test_event_basic(provider: ProviderMixin):
                 e.exists = False
             # assert not e.exists or e.path is not None  # This is actually OK, google will do this legitimately
 
+        assert e.otype is not None
+
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
             received_event = e
@@ -606,9 +609,7 @@ def test_event_del_create(provider: ProviderMixin):
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
-    # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
-        log.debug("event %s", e)
+    provider.prime_events()
 
     info1 = provider.create(dest, temp)
     provider.delete(info1.oid)
@@ -669,9 +670,7 @@ def test_event_rename(provider: ProviderMixin):
     dest2 = provider.temp_name("dest")
     dest3 = provider.temp_name("dest")
 
-    # just get the cursor going
-    for e in provider.events_poll(timeout=min(provider.event_sleep * 10, 1)):
-        log.debug("event %s", e)
+    provider.prime_events()
 
     info1 = provider.create(dest, temp)
     oid2 = provider.rename(info1.oid, dest2)

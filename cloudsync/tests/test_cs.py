@@ -10,7 +10,7 @@ from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileNotFoundError, CloudFileExistsError
 from cloudsync.event import EventManager
 
-from .test_sync import WaitFor, RunUntilHelper
+from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def fixture_multi_cs(mock_provider_generator):
     cs2.done()
 
 
-def test_sync_rename_away(multi_cs):
+def test_cs_rename_away(multi_cs):
     cs1, cs2 = multi_cs
 
     remote_parent = "/remote"
@@ -153,7 +153,7 @@ def test_sync_rename_away(multi_cs):
     assert len(cs2.state) == 2   # 1 file and 1 dir
 
 
-def test_sync_multi(multi_cs):
+def test_cs_multi(multi_cs):
     cs1, cs2 = multi_cs
 
     local_parent1 = "/local1"
@@ -223,7 +223,7 @@ def test_sync_multi(multi_cs):
     assert len(cs2.state) == 3
 
 
-def test_sync_basic(cs):
+def test_cs_basic(cs):
     local_parent = "/local"
     remote_parent = "/remote"
     remote_path1 = "/remote/stuff1"
@@ -281,7 +281,7 @@ def setup_remote_local(cs, *names):
 
 
 @pytest.mark.repeat(4)
-def test_sync_create_delete_same_name(cs):
+def test_cs_create_delete_same_name(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_path1 = "/remote/stuff1"
@@ -334,7 +334,7 @@ def test_sync_create_delete_same_name(cs):
 # it covers cases where events arrive in unexpected orders... could be possible to get the same coverage
 # with a more deterministic version
 @pytest.mark.repeat(10)
-def test_sync_create_delete_same_name_heavy(cs):
+def test_cs_create_delete_same_name_heavy(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_path1 = "/remote/stuff1"
@@ -379,7 +379,7 @@ def test_sync_create_delete_same_name_heavy(cs):
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
 
-def test_sync_rename_heavy(cs):
+def test_cs_rename_heavy(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_sub = "/remote/sub"
@@ -438,7 +438,7 @@ def test_sync_rename_heavy(cs):
     assert ok
     assert cs.providers[REMOTE].info_path(remote_path1)
 
-def test_sync_two_conflicts(cs):
+def test_cs_two_conflicts(cs):
     remote_path1 = "/remote/stuff1"
     local_path1 = "/local/stuff1"
 
@@ -488,7 +488,7 @@ def test_sync_two_conflicts(cs):
 
 
 @pytest.mark.repeat(10)
-def test_sync_subdir_rename(cs):
+def test_cs_subdir_rename(cs):
     local_dir = "/local/a"
     local_base = "/local/a/stuff"
     local_dir2 = "/local/b"
@@ -536,7 +536,7 @@ def test_sync_subdir_rename(cs):
 # so run it a few times
 
 
-def test_sync_rename_over(cs):
+def test_cs_rename_over(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     fn1 = "hello1"
@@ -580,7 +580,7 @@ def test_sync_rename_over(cs):
 
 
 @pytest.mark.repeat(10)
-def test_sync_folder_conflicts_file(cs):
+def test_cs_folder_conflicts_file(cs):
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
     local_path1 = "/local/stuff1"
@@ -661,7 +661,7 @@ def test_storage(storage):
     assert old_cursor is not None
     log.debug("cursor=%s", old_cursor)
 
-    test_sync_basic(cs1)  # do some syncing, to get some entries into the state table
+    test_cs_basic(cs1)  # do some syncing, to get some entries into the state table
 
     storage2 = storage_class(storage_mechanism)
     cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
@@ -706,7 +706,7 @@ def test_storage(storage):
 
 
 @pytest.mark.parametrize("drain", [None, LOCAL, REMOTE])
-def test_sync_already_there(cs, drain: int):
+def test_cs_already_there(cs, drain: int):
     local_parent = "/local"
     remote_parent = "/remote"
     remote_path1 = "/remote/stuff1"
@@ -737,7 +737,7 @@ def test_sync_already_there(cs, drain: int):
 
 
 @pytest.mark.parametrize("drain", [LOCAL, REMOTE])
-def test_sync_already_there_conflict(cs, drain: int):
+def test_cs_already_there_conflict(cs, drain: int):
     local_parent = "/local"
     remote_parent = "/remote"
     remote_path1 = "/remote/stuff1"
@@ -925,7 +925,7 @@ def test_conflict_recover_modify(cs):
 
 @pytest.mark.parametrize('right', (True, False), ids=["right_cs", "right_in"])
 @pytest.mark.parametrize('left', (True, False), ids=["left_cs", "left_in"])
-def test_sync_rename_folder_case(mock_provider_creator, left, right):
+def test_cs_rename_folder_case(mock_provider_creator, left, right):
     cs = make_cs(mock_provider_creator, (True, left), (False, right))
     local_parent = "/local"
     remote_parent = "/remote"
@@ -964,7 +964,7 @@ def test_sync_rename_folder_case(mock_provider_creator, left, right):
 #    2. for oid_as_path... events coming in for old creations, long since deleted or otherwise overwritten (renamed away, etc)
 
 
-def test_sync_disconnect(cs):
+def test_cs_disconnect(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_path1 = "/remote/stuff1"
@@ -986,7 +986,7 @@ def test_sync_disconnect(cs):
     cs.run_until_found((REMOTE, remote_path1))
 
 
-def test_sync_rename_tmp(cs):
+def test_cs_rename_tmp(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_sub = "/remote/sub"
@@ -1101,7 +1101,7 @@ def test_cursor(cs_storage):
     cs2.done()
 
 
-def test_sync_rename_up(cs):
+def test_cs_rename_up(cs):
     remote_parent = "/remote"
     local_parent = "/local"
     remote_sub = "/remote/sub"
@@ -1202,7 +1202,7 @@ def test_many_small_files_mkdir_perf(cs):
     assert abs(local_no_clear.call_count - local_clear.call_count) < 10
     assert abs(remote_no_clear.call_count - remote_clear.call_count) < 10
 
-def test_sync_folder_conflicts_del(cs):
+def test_cs_folder_conflicts_del(cs):
     local_path1 = "/local/stuff1"
     local_path1_u = "/local/stuff1/under"
     remote_path1 = "/remote/stuff1"
