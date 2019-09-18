@@ -510,6 +510,8 @@ class SyncManager(Runnable):
 
             else:
                 if not ents[0][changed].changed:
+                    # Clear the sync_path so we will recognize that this dir needs to be created
+                    ents[0][changed].sync_path = None
                     self.update_entry(ents[0], changed, ents[0][changed].oid, changed=True)
                     log.debug("updated entry %s", parent)
 
@@ -701,15 +703,37 @@ class SyncManager(Runnable):
             except CloudFileNotFoundError:
                 pass
             except CloudFileExistsError:
-                log.debug("kids exist, punt %s", sync[changed].path)
-                sync.punt()
-                return REQUEUE
+                return self._handle_dir_delete_not_empty(sync, changed)
         else:
             log.debug("was never synced, ignoring deletion")
 
         sync[synced].exists = TRASHED
         self.discard_entry(sync)
         return FINISHED
+
+    def _handle_dir_delete_not_empty(self, sync, changed):
+        # punt once to allow children to be processed, if already done just forget about it
+        if sync.punted > 0:
+            all_synced = True
+            for kid, _ in self.state.get_kids(sync[changed].path, changed):
+                if kid.needs_sync():
+                    all_synced = False
+                    break
+            if all_synced:
+                log.info("dropping dir removal because children fully synced %s", sync[changed].path)
+                return FINISHED
+            else:
+                log.debug("all children not fully synced, punt %s", sync[changed].path)
+                sync.punt()
+                return REQUEUE
+
+        # Mark children changed so we will check if already deleted
+        log.debug("kids exist, mark changed and punt %s", sync[changed].path)
+        for kid, _ in self.state.get_kids(sync[changed].path, changed):
+            kid[changed].changed = time.time()
+
+        sync.punt()
+        return REQUEUE
 
     def _get_unstrashed_peers(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table
