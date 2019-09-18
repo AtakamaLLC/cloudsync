@@ -108,9 +108,6 @@ class MockProvider(Provider):
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
         }
-        self.__event_delay_count = 0
-        self._event_delay_freq = -1  # disabled by default
-        self._event_delay_time = 0.1  # seconds
         self.event_timeout = 1
         self.event_sleep = 0.001
         self.creds = {"key": "val"}
@@ -197,12 +194,6 @@ class MockProvider(Provider):
     def events(self) -> Generator[Event, None, None]:
         self._api()
         while self._cursor < self._latest_cursor:
-            if self._event_delay_freq != -1:
-                self.__event_delay_count += 1
-                if self.__event_delay_count == self._event_delay_freq:
-                    time.sleep(self._event_delay_time)
-                    self.__event_delay_count = 0
-
             self._cursor += 1
             pe = self._events[self._cursor]
             yield self._translate_event(pe, self._cursor)
