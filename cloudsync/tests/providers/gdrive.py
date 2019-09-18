@@ -30,9 +30,12 @@ def on_success(auth_dict=None):
 
 def gdrive_provider():
     cls = GDriveProvider
-    cls.event_timeout = 60
-    cls.event_sleep = 2
-    cls.creds = gdrive_creds()
+
+    # duck type in testing parameters
+    cls.event_timeout = 60                  # type: ignore
+    cls.event_sleep = 2                     # type: ignore
+    cls.creds = gdrive_creds()              # type: ignore
+
     return cls()
 
 

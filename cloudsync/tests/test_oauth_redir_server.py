@@ -37,7 +37,7 @@ def test_oauth_redir_server():
     on_failure = Mock()
 
     srv.run(on_success=on_success, on_failure=on_failure, use_predefined_ports=False)
-    port = srv._OAuthRedirServer__api_server.port()
+    port = srv.port()
 
     def send_req():
         res = requests.get(url=f'http://127.0.0.1:{port}/auth/', params={

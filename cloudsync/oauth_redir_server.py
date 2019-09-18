@@ -128,5 +128,7 @@ class OAuthRedirServer:
     def uri(self, *args, **kwargs):
         return self.__api_server.uri(*args, **kwargs)
 
+    def port(self):
+        return self.__api_server.port()
 
 __all__ = ['OAuthFlowException', 'OAuthBadTokenException', 'OAuthRedirServer']
