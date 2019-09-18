@@ -719,7 +719,17 @@ class SyncManager(Runnable):
             if all_synced:
                 log.info("dropping dir removal because children fully synced %s", sync[changed].path)
                 return FINISHED
-        log.debug("kids exist, punt %s", sync[changed].path)
+            else:
+                log.debug("all children not fully synced, punt %s", sync[changed].path)
+                sync.punt()
+                return REQUEUE
+
+        # Mark children changed so we will check if already deleted
+        log.debug("kids exist, mark changed and punt %s", sync[changed].path)
+        for kid, _ in self.state.get_kids(sync[changed].path, changed):
+            #kid[other_side(changed)] = time.time() TODO
+            pass
+
         sync.punt()
         return REQUEUE
 
