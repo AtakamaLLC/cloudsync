@@ -24,6 +24,15 @@ jobs:
         - ./test_providers.sh
       python:
         - '3.6'
+    - stage: deploy
+      if: branch = master
+      script:
+        - ./deploy.sh
+
+# all pull reqs are built, but only master branch is build/deployed for now
+branches:
+  only:
+  - master
 
 install:
 - pip install -r requirements-dev.txt
