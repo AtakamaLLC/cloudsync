@@ -733,7 +733,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
             if prior_ent and not prior_ent.discarded:
-                if ent and ent[side].exists == TRASHED and ent[side].changed and not ent.discarded:
+                if ent:
                     ent[side].oid = None  # avoid having duplicate oids, and avoid discarding a changed entry
                 ent = prior_ent
                 prior_ent = None

@@ -192,8 +192,8 @@ def test_sync_multi_local_rename_conflict(multi_local_cs):
     local_path1 = "/local/stuff1"
     local_path2 = "/local/stuff2"
 
-    cs1.providers[LOCAL].mkdir(local_parent)
-    cs2.providers[LOCAL].mkdir(local_parent)
+    cs1_parent_oid = cs1.providers[LOCAL].mkdir(local_parent)
+    cs2_parent_oid = cs2.providers[LOCAL].mkdir(local_parent)
     cs1.providers[REMOTE].mkdir(remote_parent)  # also creates on cs2[REMOTE]
     linfo1 = cs1.providers[LOCAL].create(local_path1, BytesIO(b"hello1"), None)
     linfo2 = cs2.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
@@ -202,13 +202,13 @@ def test_sync_multi_local_rename_conflict(multi_local_cs):
     try:
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
-        cs1.run(until=lambda: not cs1.state.change_count, timeout=1)  # file1 up
+        cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # file1 up
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
-        cs2.run(until=lambda: not cs2.state.change_count, timeout=1)  # file2 up and file1 down
+        cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)  # file2 up and file1 down
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
-        cs1.run(until=lambda: not cs1.state.change_count, timeout=1)  # file2 down
+        cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # file2 down
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         cs1.run_until_found(
@@ -237,34 +237,34 @@ def test_sync_multi_local_rename_conflict(multi_local_cs):
     cs1.providers[LOCAL].rename(linfo1.oid, local_path1 + "a")  # rename 'stuff1' to 'stuff1a'
     cs2.providers[LOCAL].rename(other_linfo1.oid, local_path1 + "b")  # rename 'stuff1' to 'stuff1b'
 
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)  # let rename 'stuff1a' sync to cloud
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # let rename 'stuff1a' sync to cloud
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)  # try to sync 'stuff1b' rename. Conflict?
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)  # try to sync 'stuff1b' rename. Conflict?
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)  # if cloud changed, let the change come down
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # if cloud changed, let the change come down
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
     # let cleanups/discards/dedups happen if needed
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
-    a1 = cs1.providers[LOCAL].exists(local_path1 + "a")
-    a2 = cs2.providers[LOCAL].exists(local_path1 + "a")
-    b1 = cs1.providers[LOCAL].exists(local_path1 + "b")
-    b2 = cs2.providers[LOCAL].exists(local_path1 + "b")
+    a1 = cs1.providers[LOCAL].exists_path(local_path1 + "a")
+    a2 = cs2.providers[LOCAL].exists_path(local_path1 + "a")
+    b1 = cs1.providers[LOCAL].exists_path(local_path1 + "b")
+    b2 = cs2.providers[LOCAL].exists_path(local_path1 + "b")
+    dir1 = [x.name for x in cs1.providers[LOCAL].listdir(cs1_parent_oid)]
+    dir2 = [x.name for x in cs2.providers[LOCAL].listdir(cs2_parent_oid)]
+    log.debug("cs1=%s", dir1)
+    log.debug("cs2=%s", dir2)
     assert a1 == a2  # either stuff1a exists on both providers, or neither
-    assert a2 == b2  # either stuff1b exists on both providers, or neither
-
-    dir1 = list(cs1.providers[LOCAL].listdir(local_parent))
-    dir2 = list(cs2.providers[LOCAL].listdir(local_parent))
+    assert b1 == b2  # either stuff1b exists on both providers, or neither
 
     assert all("conflicted" not in x for x in dir1)
     assert all("conflicted" not in x for x in dir2)
-
 
 
 def test_sync_multi_local(multi_local_cs):
@@ -301,7 +301,7 @@ def test_sync_multi_local(multi_local_cs):
         log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
         raise
 
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
 
@@ -349,8 +349,8 @@ def test_sync_multi_local(multi_local_cs):
         raise
 
     # let cleanups/discards/dedups happen if needed
-    cs1.run(until=lambda: not cs1.state.change_count, timeout=1)
-    cs2.run(until=lambda: not cs2.state.change_count, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
     log.info("TABLE\n%s", cs2.state.pretty_print())
 
 
@@ -422,14 +422,6 @@ def test_sync_multi_remote(multi_remote_cs):
 
     assert len(cs1.state) == 3
     assert len(cs2.state) == 3
-
-    log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
-    log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
-
-    linfo2 = cs2.providers[LOCAL].rename(local_path21, BytesIO(b"hello2"), None)
-    rinfo1 = cs1.providers[REMOTE].create(remote_path2, BytesIO(b"hello3"), None)
-
-    assert False
 
 
 def test_cs_basic(cs):
@@ -1356,11 +1348,11 @@ def test_cs_rename_up(cs):
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    assert cs.providers[REMOTE].info_path(remote_path2)
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert cs.providers[REMOTE].info_path(remote_path2)
 
 def test_many_small_files_mkdir_perf(cs):
     local_root = "/local"

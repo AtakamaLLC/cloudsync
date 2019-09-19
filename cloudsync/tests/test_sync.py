@@ -421,8 +421,8 @@ def test_sync_cycle(sync: SyncMgrMixin):
     rp1, rp2, rp3 = "/remote/a", "/remote/b", "/remote/c",
     templ = "/local/d"
 
-    sync.providers[LOCAL].mkdir(l_parent)
-    sync.providers[REMOTE].mkdir(r_parent)
+    l_parent_oid = sync.providers[LOCAL].mkdir(l_parent)
+    r_parent_oid = sync.providers[REMOTE].mkdir(r_parent)
 
     linfo1 = sync.providers[LOCAL].create(lp1, BytesIO(b"hello1"))
     sync.change_state(LOCAL, FILE, path=lp1, oid=linfo1.oid, hash=linfo1.hash)
@@ -465,8 +465,21 @@ def test_sync_cycle(sync: SyncMgrMixin):
     i1 = sync.providers[REMOTE].info_path(rp1)
     i2 = sync.providers[REMOTE].info_path(rp2)
     i3 = sync.providers[REMOTE].info_path(rp3)
+    ldir = sorted([x.name for x in sync.providers[LOCAL].listdir(l_parent_oid)])
+    rdir = sorted([x.name for x in sync.providers[REMOTE].listdir(r_parent_oid)])
 
-    assert i1 and i2 and i3
+    log.debug("ldir=%s", ldir)
+    log.debug("rdir=%s", rdir)
+    log.debug("path %s has info %s", rp1, i1)
+    log.debug("path %s has info %s", rp2, i2)
+    log.debug("path %s has info %s", rp3, i3)
+
+    from time import sleep
+    sleep(5)
+
+    assert i1
+    assert i2
+    assert i3
 
     assert i1.hash == rinfo3.hash
     assert i2.hash == rinfo1.hash
