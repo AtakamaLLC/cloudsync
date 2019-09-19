@@ -31,6 +31,7 @@ class CloudSync(Runnable):
 
         if sleep is None:
             sleep = (providers[0].default_sleep, providers[1].default_sleep)
+        self.sleep = sleep
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
         state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False)
@@ -51,14 +52,10 @@ class CloudSync(Runnable):
             EventManager(smgr.providers[0], state, 0, _roots[0]),
             EventManager(smgr.providers[1], state, 1, _roots[1])
         )
-        self.sthread = threading.Thread(target=smgr.run, kwargs={'sleep': 0.1})
-
-        self.ethreads = (
-            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': sleep[0]}),
-            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': sleep[1]})
-        )
-
         log.info("initialized sync: %s", self.storage_label())
+
+        self.sthread = None
+        self.ethreads = (None, None)
 
     @property
     def aging(self):
@@ -114,16 +111,27 @@ class CloudSync(Runnable):
     def change_count(self):
         return self.smgr.change_count
 
-    def start(self):
+    def start(self, **kwargs):
+        # override Runnable start/stop so that events can be processed in separate threads
+        self.sthread = threading.Thread(target=self.smgr.run, kwargs={'sleep': 0.1, **kwargs}, daemon=True)
+        self.ethreads = (
+            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': self.sleep[0], **kwargs}, daemon=True),
+            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': self.sleep[1], **kwargs}, daemon=True)
+        )
         self.sthread.start()
         self.ethreads[0].start()
         self.ethreads[1].start()
 
-    def stop(self):
+    def stop(self, forever=True):
         log.info("stopping sync: %s", self.storage_label())
-        self.smgr.stop()
-        self.emgrs[0].stop()
-        self.emgrs[1].stop()
+        self.smgr.stop(forever=forever)
+        self.emgrs[0].stop(forever=forever)
+        self.emgrs[1].stop(forever=forever)
+        if self.sthread:
+            self.sthread.join()
+            self.ethreads[0].join()
+            self.ethreads[1].join()
+            self.sthread = None
 
     # for tests, make this manually runnable
     def do(self):

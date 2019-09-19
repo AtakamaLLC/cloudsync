@@ -35,10 +35,13 @@ def bad_dropbox_creds():
 
 
 def dropbox_provider():
+
     cls = DropboxProvider
-    cls.event_timeout = 20
-    cls.event_sleep = 2
-    cls.creds = dropbox_creds()
+
+    # duck type in testing parameters
+    cls.event_timeout = 20          # type: ignore
+    cls.event_sleep = 2             # type: ignore
+    cls.creds = dropbox_creds()     # type: ignore
     return cls()
 
 

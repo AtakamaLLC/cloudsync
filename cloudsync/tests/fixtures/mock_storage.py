@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 
 class MockStorage(Storage):  # Does not actually persist the data... but it's just a mock
     top_lock = Lock()
-    lock_dict = dict()
+    lock_dict: Dict[str, Lock] = dict()
 
     def __init__(self, storage_dict: Dict[str, Dict[int, bytes]]):
         self.storage_dict = storage_dict

@@ -1,71 +1,81 @@
-import pytest
-import os
-import tempfile
-import shutil
-from inspect import getframeinfo, stack
+from typing import NamedTuple, Union, Sequence, List, cast, Any, Tuple
 import logging
+
 from cloudsync.provider import Provider
+from cloudsync.runnable import time_helper
+from cloudsync import CloudFileNotFoundError
+
 
 log = logging.getLogger(__name__)
 
 log.setLevel(logging.INFO)
 
+TIMEOUT = 4
 
-class Util:
-    def __init__(self):
-        self.base = tempfile.mkdtemp(suffix=".cloudsync")
-        log.debug("temp files will be in: %s", self.base)
+WaitForArg = Union[Tuple[int, str], 'WaitFor']
+
+
+class WaitFor(NamedTuple):
+    side: int = None
+    path: str = None
+    hash: bytes = None
+    oid: str = None
+    exists: bool = True
 
     @staticmethod
-    def get_context(level):
-        caller = getframeinfo(stack()[level+1][0])
-        return caller
+    def is_found(files: Sequence[WaitForArg], providers: Tuple[Provider, Provider], errs: List[str]):
+        ok = True
 
-    def temp_file(self, *, fill_bytes=None):
-        # pretty names for temps
-        caller = self.get_context(1)
-        fn = os.path.basename(caller.filename)
-        if not fn:
-            fn = "unk"
+        errs.clear()
+        for f in files:
+            if type(f) is tuple:
+                info = WaitFor(side=f[0], path=f[1])
+            else:
+                info = cast(WaitFor, f)
+
+            try:
+                other_info = providers[info.side].info_path(info.path)
+            except CloudFileNotFoundError:
+                other_info = None
+
+            if other_info is None:
+                if info.exists is False:
+                    log.debug("waiting not exists %s", info.path)
+                    continue
+                log.debug("waiting exists %s", info.path)
+                errs.append("file not found %s" % info.path)
+                ok = False
+                break
+
+            if info.exists is False:
+                errs.append("file exists %s" % info.path)
+                ok = False
+                break
+
+            if info.hash and info.hash != other_info.hash:
+                log.debug("waiting hash %s", info.path)
+                errs.append("mismatch hash %s" % info.path)
+                ok = False
+                break
+
+        return ok
+
+
+class RunUntilHelper:
+    def run_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT, threaded=False):
+        log.debug("running until found")
+
+        errs: List[str] = []
+        found = lambda: WaitFor.is_found(files, self.providers, errs)
+
+        if threaded:
+            self.start()
+            for _ in time_helper(timeout=timeout):
+                if found():
+                    break
+            self.stop(forever=False)
         else:
-            fn = os.path.splitext(fn)[0]
+            self.run(timeout=timeout, until=found)
 
-        func = caller.function
-
-        name = fn + '-' + func + "." + os.urandom(16).hex()
-
-        fp = Provider.join(self.base, name)
-
-        if fill_bytes is not None:
-            with open(fp, "wb") as f:
-                f.write(os.urandom(fill_bytes))
-
-        log.debug("temp file %s", fp)
-
-        return fp
-
-    def do_cleanup(self):
-        shutil.rmtree(self.base)
-
-
-@pytest.fixture(scope="module")
-def util(request):
-    # user can override at the module level or class level
-    # if tehy want to look at the temp files made
-
-    cleanup = getattr(getattr(request, "cls", None), "util_cleanup", True)
-    if cleanup:
-        cleanup = getattr(request.module, "util_cleanup", True)
-
-    u = Util()
-
-    yield u
-
-    if cleanup:
-        u.do_cleanup()
-
-
-def test_util(util):
-    log.setLevel(logging.DEBUG)
-    f = util.temp_file(fill_bytes=32)
-    assert len(open(f, "rb").read()) == 32
+        if not found():
+            raise TimeoutError("timed out while waiting: %s" % errs)

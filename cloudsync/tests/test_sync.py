@@ -1,72 +1,18 @@
 import logging
 from io import BytesIO
 import pytest
-from typing import NamedTuple
+from typing import NamedTuple, List
 
+from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo
 from cloudsync.sync.state import SideState
 
 
-class WaitFor(NamedTuple):
-    side: int = None
-    path: str = None
-    hash: bytes = None
-    oid: str = None
-    exists: bool = True
-
-
 log = logging.getLogger(__name__)
 
 TIMEOUT = 4
-
-
-class RunUntilHelper:
-    def run_until_found(self: SyncManager, *files, timeout=TIMEOUT):
-        log.debug("running until found")
-        last_error = None
-
-        def found():
-            ok = True
-
-            for info in files:
-                if type(info) is tuple:
-                    info = WaitFor(side=info[0], path=info[1])
-
-                try:
-                    other_info = self.providers[info.side].info_path(info.path)
-                except CloudFileNotFoundError:
-                    other_info = None
-
-                if other_info is None:
-                    nonlocal last_error
-                    if info.exists is False:
-                        log.debug("waiting not exists %s", info.path)
-                        continue
-                    log.debug("waiting exists %s", info.path)
-                    last_error = CloudFileNotFoundError(info.path)
-                    ok = False
-                    break
-
-                if info.exists is False:
-                    ok = False
-                    break
-
-                if info.hash and info.hash != other_info.hash:
-                    log.debug("waiting hash %s", info.path)
-                    ok = False
-                    break
-
-            return ok
-
-        self.run(timeout=timeout, until=found)
-
-        if not found():
-            if last_error:
-                raise TimeoutError("timed out while waiting: %s" % last_error)
-            else:
-                raise TimeoutError("timed out while waiting")
 
 
 class SyncMgrMixin(SyncManager, RunUntilHelper):
@@ -110,144 +56,6 @@ def fixture_sync(request, mock_provider_generator):
 def fixture_sync_sh(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, request.param)
 
-
-def test_sync_state_basic(mock_provider):
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-    state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
-
-    assert state.lookup_path(LOCAL, path="foo")
-    assert state.lookup_oid(LOCAL, oid="123")
-    state.assert_index_is_correct()
-
-
-def test_sync_state_rename(mock_provider):
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-    state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
-    state.update(LOCAL, FILE, path="foo2", oid="123")
-    assert state.lookup_path(LOCAL, path="foo2")
-    assert not state.lookup_path(LOCAL, path="foo")
-    state.assert_index_is_correct()
-
-
-def test_sync_state_rename2(mock_provider):
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-    state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
-    assert state.lookup_path(LOCAL, path="foo")
-    assert state.lookup_oid(LOCAL, "123")
-    state.update(LOCAL, FILE, path="foo2", oid="456", prior_oid="123")
-    assert state.lookup_path(LOCAL, path="foo2")
-    assert state.lookup_oid(LOCAL, "456")
-    assert not state.lookup_path(LOCAL, path="foo")
-    assert state.lookup_oid(LOCAL, oid="456")
-    assert not state.lookup_oid(LOCAL, oid="123")
-    state.assert_index_is_correct()
-
-
-def test_sync_state_rename3(mock_provider):
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-    ahash = "ah"
-    bhash = "bh"
-    state.update(LOCAL, FILE, path="a", oid="a", hash=ahash)
-    state.update(LOCAL, FILE, path="b", oid="b", hash=bhash)
-
-    infoa = state.lookup_oid(LOCAL, "a")
-    infob = state.lookup_oid(LOCAL, "b")
-
-    assert infoa[LOCAL].hash == ahash
-    assert infob[LOCAL].hash == bhash
-
-    # rename in a circle
-
-    state.update(LOCAL, FILE, path="c", oid="c", prior_oid="a")
-    log.debug("TABLE 0:\n%s", state.pretty_print(use_sigs=False))
-    state.update(LOCAL, FILE, path="a", oid="a", prior_oid="b")
-    log.debug("TABLE 1:\n%s", state.pretty_print(use_sigs=False))
-    state.update(LOCAL, FILE, path="b", oid="b", prior_oid="c")
-    log.debug("TABLE 2:\n%s", state.pretty_print(use_sigs=False))
-
-    assert state.lookup_path(LOCAL, "a")
-    assert state.lookup_path(LOCAL, "b")
-    infoa = state.lookup_oid(LOCAL, "a")
-    infob = state.lookup_oid(LOCAL, "b")
-
-    # hashes should be flipped
-    assert infoa[LOCAL].hash == bhash
-    assert infob[LOCAL].hash == ahash
-
-    state.assert_index_is_correct()
-
-
-def test_sync_state_multi(mock_provider):
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-    state.update(LOCAL, FILE, path="foo2", oid="123")
-    assert state.lookup_path(LOCAL, path="foo2")
-    assert not state.lookup_path(LOCAL, path="foo")
-    state.assert_index_is_correct()
-
-
-def test_sync_state_kids(mock_provider):
-    # annoyingly, the state manager now interacts with the provider
-    # this means that the state manager needs to know how to get an oid
-
-    # TODO: make a layer that knows about providers and state, and ANOTHER layer that just knows about state
-    # that way we can go back to have a pure state/storage manager
-
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-    state.update(LOCAL, DIRECTORY, path="/dir", oid="123")
-    assert state.lookup_path(LOCAL, path="/dir")
-    state.update(LOCAL, FILE, path="/dir/foo", oid="124")
-    assert state.lookup_path(LOCAL, path="/dir/foo")
-    new_oid = mock_provider.mkdir("/dir2")
-    mock_provider.create("/dir2/foo", BytesIO(b'hi'))
-    state.update(LOCAL, DIRECTORY, path="/dir2", oid=new_oid, prior_oid="123")
-
-    log.debug("TABLE:\n%s", state.pretty_print(use_sigs=False))
-
-    state.assert_index_is_correct()
-    assert len(state) == 2
-    assert state.lookup_path(LOCAL, "/dir2/foo")
-
-def test_sync_state_split(mock_provider):
-    # annoyingly, the state manager now interacts with the provider
-    # this means that the state manager needs to know how to get an oid
-
-    # TODO: make a layer that knows about providers and state, and ANOTHER layer that just knows about state
-    # that way we can go back to have a pure state/storage manager
-
-    providers = (mock_provider, mock_provider)
-    state = SyncState(providers, shuffle=True)
-
-    state.update(LOCAL, DIRECTORY, path="/dir", oid="123")
-
-    ent  = state.lookup_oid(LOCAL, "123")
-
-    # oid/path updated
-    ent[REMOTE].oid="999"
-    ent[REMOTE].path="/rem"
-
-    assert state.lookup_oid(LOCAL, "123")
-    assert state.lookup_path(LOCAL, "/dir")
-
-    assert state.lookup_path(REMOTE, "/rem")
-    assert state.lookup_oid(REMOTE, "999")
-
-    (defer, ds, repl, rs) = state.split(ent)
-
-    assert state.lookup_oid(LOCAL, "123") is repl
-    assert state.lookup_path(LOCAL, "/dir")
-
-    assert state.lookup_path(REMOTE, "/rem") 
-    assert state.lookup_oid(REMOTE, "999") is defer
-
-    state.assert_index_is_correct()
-
-
 def test_sync_basic(sync: "SyncMgrMixin"):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -269,6 +77,9 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     sync.change_state(LOCAL, FILE, oid=linfo.oid, exists=True)
 
     assert sync.state.entry_count() == 1
+    assert sync.state.changeset_len == 1
+    assert sync.change_count(REMOTE) == 0
+    assert sync.change_count(LOCAL) == 1
 
     rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
 
@@ -277,7 +88,7 @@ def test_sync_basic(sync: "SyncMgrMixin"):
                       path=remote_path2, hash=rinfo.hash)
 
     def done():
-        has_info = [None] * 4
+        has_info: List[OInfo] = [None] * 4
         try:
             has_info[0] = sync.providers[LOCAL].info_path("/local/stuff1")
             has_info[1] = sync.providers[LOCAL].info_path("/local/stuff2")
@@ -464,8 +275,8 @@ def test_sync_conflict_simul(sync):
         (LOCAL, "/local/stuff1")
     )
 
-    sync.providers[LOCAL].log_debug_state("LOCAL")
-    sync.providers[REMOTE].log_debug_state("REMOTE")
+    sync.providers[LOCAL].log_debug_state("LOCAL")              # type: ignore
+    sync.providers[REMOTE].log_debug_state("REMOTE")            # type: ignore
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -520,10 +331,10 @@ def test_sync_conflict_resolve(sync, side, keep):
                       oid=rinfo.oid, hash=rinfo.hash)
 
     # ensure events are flushed a couple times
-    sync.run(until=lambda: not sync.state.change_count, timeout=1)
+    sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
 
-    sync.providers[LOCAL].log_debug_state("LOCAL")
-    sync.providers[REMOTE].log_debug_state("REMOTE")
+    sync.providers[LOCAL].log_debug_state("LOCAL")      # type: ignore
+    sync.providers[REMOTE].log_debug_state("REMOTE")    # type: ignore
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -573,12 +384,12 @@ def test_sync_conflict_path(sync):
 
     ent = sync.state.get_all().pop()
 
-    sync.providers[REMOTE].log_debug_state("BEFORE")
+    sync.providers[REMOTE].log_debug_state("BEFORE")        # type: ignore
 
     new_oid_l = sync.providers[LOCAL].rename(linfo.oid, local_path2)
     new_oid_r = sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
 
-    sync.providers[REMOTE].log_debug_state("AFTER")
+    sync.providers[REMOTE].log_debug_state("AFTER")         # type: ignore
 
     sync.change_state(LOCAL, FILE, path=local_path2,
                       oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
@@ -603,8 +414,7 @@ def test_sync_conflict_path(sync):
     sync.state.assert_index_is_correct()
 
 
-def test_sync_cycle(sync):
-    sync: SyncMgrMixin
+def test_sync_cycle(sync: SyncMgrMixin):
     l_parent = "/local"
     r_parent = "/remote"
     lp1, lp2, lp3 = "/local/a", "/local/b", "/local/c",
@@ -629,7 +439,7 @@ def test_sync_cycle(sync):
     sync.run_until_found((REMOTE, rp3))
     rinfo3 = sync.providers[REMOTE].info_path(rp3)
 
-    sync.providers[REMOTE].log_debug_state("BEFORE")
+    sync.providers[REMOTE].log_debug_state("BEFORE")                # type: ignore
     tmp1oid = sync.providers[LOCAL].rename(linfo1.oid, templ)
     lp1oid = sync.providers[LOCAL].rename(linfo3.oid, lp1)
     lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
@@ -647,10 +457,10 @@ def test_sync_cycle(sync):
     sync.change_state(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
     log.debug("TABLE 4:\n%s", sync.state.pretty_print())
     assert len(sync.state.get_all()) == 3
-    sync.providers[REMOTE].log_debug_state("MIDDLE")
+    sync.providers[REMOTE].log_debug_state("MIDDLE")                # type: ignore
 
-    sync.run(until=lambda: not sync.state.change_count, timeout=1)
-    sync.providers[REMOTE].log_debug_state("AFTER")
+    sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
+    sync.providers[REMOTE].log_debug_state("AFTER")                 # type: ignore
 
     i1 = sync.providers[REMOTE].info_path(rp1)
     i2 = sync.providers[REMOTE].info_path(rp2)
@@ -792,12 +602,10 @@ def _test_rename_folder_with_kids(sync, source, dest):
     sync.change_state(source, DIRECTORY, path=folder2[source], oid=new_oid, hash=None, prior_oid=folder_oid)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
-    sync.run_until_found((source, file2[source]))
-    sync.run_until_found((dest, file2[dest]))
     sync.run_until_found(
         (source, file2[source]),
-        (dest, file2[dest]),
-    )
+        (dest, file2[dest])
+    , threaded=True)
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
 
@@ -868,6 +676,48 @@ def test_remove_folder_with_kids(sync_sh):
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
     sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False), WaitFor(REMOTE, folder1[REMOTE], exists=False))
+
+
+def test_dir_rm(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_dir = Provider.join(local_parent, "dir")
+    remote_dir = Provider.join(remote_parent, "dir")
+    local_file = Provider.join(local_dir, "file")
+    remote_file = Provider.join(remote_dir, "file")
+
+    lparent = sync.providers[LOCAL].mkdir(local_parent)
+    rparent = sync.providers[REMOTE].mkdir(remote_parent)
+    ldir = sync.providers[LOCAL].mkdir(local_dir)
+    rdir = sync.providers[REMOTE].mkdir(remote_dir)
+    lfile = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, DIRECTORY, path=local_dir,
+                      oid=ldir)
+    sync.change_state(LOCAL, FILE, path=local_file,
+                      oid=lfile.oid, hash=lfile.hash)
+
+    sync.run_until_found((REMOTE, remote_file), (REMOTE, remote_dir))
+
+    rfile = sync.providers[REMOTE].info_path(remote_file)
+    sync.providers[REMOTE].delete(rfile.oid)
+    sync.providers[REMOTE].delete(rdir)
+
+    # Directory delete - should punt because of children
+    sync.aging = 0
+    sync.change_state(REMOTE, DIRECTORY, path=remote_dir, oid=rdir, exists=False)
+    sync.do()
+    assert len(list(sync.providers[LOCAL].listdir(ldir))) == 1
+
+    # Next action should be on deleted child (detected in above)
+    sync.do()
+    assert len(list(sync.providers[LOCAL].listdir(ldir))) == 0
+
+    # Now it should successfully rmdir
+    sync.do()
+    assert len(list(sync.providers[LOCAL].listdir(lparent))) == 0
+
+    sync.state.assert_index_is_correct()
 
 
 

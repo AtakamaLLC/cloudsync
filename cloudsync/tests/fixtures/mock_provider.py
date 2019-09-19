@@ -193,6 +193,7 @@ class MockProvider(Provider):
 
     def events(self) -> Generator[Event, None, None]:
         self._api()
+#        log.error("GETTING EVENTS : %s", self._cursor)
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
@@ -232,16 +233,16 @@ class MockProvider(Provider):
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         # TODO: store the metadata
-        self._api()
         file = self._get_by_path(path)
         if file is not None and file.exists:
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         self._verify_parent_folder_exists(path)
         if file is None or not file.exists:
             file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path)
-            self._store_object(file)
         file.contents = file_like.read()
         file.exists = True
+        self._store_object(file)
+
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockEvent.ACTION_CREATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
@@ -327,7 +328,6 @@ class MockProvider(Provider):
         self.log_debug_state()
 
     def mkdir(self, path) -> str:
-        self._api()
         self._verify_parent_folder_exists(path)
         file = self._get_by_path(path)
         if file and file.exists:
@@ -373,7 +373,6 @@ class MockProvider(Provider):
         return file is not None and file.exists
 
     def exists_path(self, path) -> bool:
-        self._api()
         file = self._get_by_path(path)
         return file is not None and file.exists
 
@@ -389,7 +388,6 @@ class MockProvider(Provider):
         return md5(file_like.read()).digest()
 
     def info_path(self, path: str) -> Optional[OInfo]:
-        self._api()
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None

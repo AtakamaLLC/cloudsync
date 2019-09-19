@@ -15,7 +15,7 @@ import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable
+from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
 
 from typing import Union
 from pystrict import strict
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY']
+__all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 # adds a repr to some classes
 
@@ -67,6 +67,7 @@ class SideState(Reprable):
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
         self._changed: Optional[float] = None
+        self._last_gotten: float = 0.0               # set to == changed when getting
         self._sync_hash: Optional[bytes] = None      # hash at last sync
         self._sync_path: Optional[str] = None        # path at last sync
         self._path: Optional[str] = None             # path at provider
@@ -167,7 +168,7 @@ class Storage(ABC):
 class SyncEntry(Reprable):
     def __init__(self, parent: 'SyncState', otype: Optional[OType], storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
-        assert otype or storage_init
+        assert otype is not None or storage_init
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._discarded: str = ""
         self._conflicted: bool = False
@@ -413,13 +414,22 @@ class SyncEntry(Reprable):
         # do this one later
         # TODO provide help for making sure that we don't punt too many times
         self.punted += 1                    # pylint: disable=no-member
-        if self.punted > 2:                 # pylint: disable=no-member
-            # slow down
-            if self[LOCAL].changed:
-                self[LOCAL].changed = time.time()
-            if self[REMOTE].changed:
-                self[REMOTE].changed = time.time()
+        if self[LOCAL].changed:
+            self[LOCAL].changed += self._parent._punt_secs[LOCAL]
+        if self[REMOTE].changed:
+            self[REMOTE].changed = self._parent._punt_secs[REMOTE]
 
+    def get_latest(self):
+        for side in (LOCAL, REMOTE):
+            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+                self._parent.unconditionally_get_latest(self, side)
+                self[side]._last_gotten = self[side]._changed
+
+    def is_latest(self) -> bool:
+        for side in (LOCAL, REMOTE):
+            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+                return False
+        return True
 
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes
@@ -434,6 +444,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
+        self._punt_secs = (providers[0].default_sleep/10, providers[1].default_sleep/10)
         assert len(providers) == 2
 
         self.lock = RLock()
@@ -477,7 +488,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 self._changeset.discard(ent)
 
     @property
-    def change_count(self):
+    def changes(self):
+        return tuple(self._changeset)
+
+    @property
+    def changeset_len(self):
         return len(self._changeset)
 
     def _change_path(self, side, ent, path, provider):
@@ -515,23 +530,19 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def _update_kids(self, ent, side, prior_path, path, provider):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
             # changing directory also changes child paths
-            for sub in self.get_all():
-                if not sub[side].path:
-                    continue
-                relative = provider.is_subpath(prior_path, sub[side].path, strict=True)
-                if relative:
-                    new_path = provider.join(path, relative)
-                    sub[side].path = new_path
-                    if provider.oid_is_path:
-                        # TODO: state should not do online hits esp from event manager
-                        # either
-                        # a) have event manager *not* trigger this, maybe by passing none as the provider, etc
-                        #    this may have knock on effects where the sync engine needs to process parent folders first
-                        # b) have a special oid_from_path function that is guaranteed not to be "online"
-                        #    assert not _api() called, etc.
-                        new_info = provider.info_path(new_path)
-                        if new_info:
-                            sub[side].oid = new_info.oid
+            for sub, relative in self.get_kids(prior_path, side):
+                new_path = provider.join(path, relative)
+                sub[side].path = new_path
+                if provider.oid_is_path:
+                    # TODO: state should not do online hits esp from event manager
+                    # either
+                    # a) have event manager *not* trigger this, maybe by passing none as the provider, etc
+                    #    this may have knock on effects where the sync engine needs to process parent folders first
+                    # b) have a special oid_from_path function that is guaranteed not to be "online"
+                    #    assert not _api() called, etc.
+                    new_info = provider.info_path(new_path)
+                    if new_info:
+                        sub[side].oid = new_info.oid
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
@@ -553,7 +564,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 if prior_ent is not ent:
                     # no longer indexed by oid, also clear change bit
                     prior_ent[side].oid = None
-                    prior_ent[side].changed = False
+                    if prior_ent[side].exists != TRASHED:
+                        prior_ent[side].changed = False
 
         if oid:
             ent[side]._oid = oid
@@ -568,6 +580,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
         if oid:
             assert self.lookup_oid(side, oid) is ent
+
+    def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
+        provider = self.providers[side]
+        for sub in self.get_all():
+            if not sub[side].path:
+                continue
+            relpath = provider.is_subpath(parent_path, sub[side].path, strict=True)
+            if relpath:
+                yield sub, relpath
 
     def lookup_oid(self, side, oid) -> SyncEntry:
         try:
@@ -639,11 +660,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
-            self.mark_changed(side, ent)
+            self._mark_changed(side, ent)
 
         log.log(TRACE, "updated %s", ent)
 
-    def mark_changed(self, side, ent):
+    def _mark_changed(self, side, ent):
         ent[side].changed = time.time()
         assert ent in self._changeset
 
@@ -770,7 +791,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def pretty_print(self, use_sigs=True):
         ret = SyncEntry.prettyheaders() + "\n"
         e: SyncEntry
-        for e in self.get_all():
+        for e in self.get_all(discarded=True):
+            # allow conflicted to be printed
+            if e.discarded:
+                continue
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
         return ret
 
@@ -837,8 +861,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert replace_ent[replace].oid
         assert replace_ent in self.get_all()
 
-        self.mark_changed(replace, replace_ent)
-        self.mark_changed(defer, defer_ent)
+        self._mark_changed(replace, replace_ent)
+        self._mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
         # we aren't synced
@@ -860,3 +884,32 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self.storage_update(replace_ent)
 
         return defer_ent, defer, replace_ent, replace
+
+
+    def unconditionally_get_latest(self, ent, i):
+        if not ent[i].oid:
+            if ent[i].exists != TRASHED:
+                ent[i].exists = UNKNOWN
+            return
+
+        info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
+
+        if not info:
+            ent[i].exists = TRASHED
+            return
+
+        ent[i].exists = EXISTS
+        ent[i].hash = info.hash
+        ent[i].otype = info.otype
+
+        if ent[i].otype == FILE:
+            if ent[i].hash is None:
+                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+
+            if ent[i].exists == EXISTS:
+                if ent[i].hash is None:
+                    log.warning("Cannot sync %s, since hash is None", ent[i])
+
+        if ent[i].path != info.path:
+            ent[i].path = info.path
+            self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)

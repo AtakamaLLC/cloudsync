@@ -2,6 +2,7 @@ import threading
 
 from cloudsync.muxer import Muxer
 
+from typing import Callable, List
 
 def test_simple_mux():
     def gen():
@@ -24,26 +25,26 @@ def test_thready_mux():
 
     def counter(m):
         def inner():
-            inner.count = 0
+            inner.count = 0         # type: ignore
             for _ in m:
-                inner.count += 1
+                inner.count += 1    # type: ignore
         return inner
 
-    m = [None] * threads
-    c = [None] * threads
-    t = [None] * threads
+    m: List[Muxer] = [None] * threads
+    c: List[Callable] = [None] * threads
+    t: List[threading.Thread] = [None] * threads
 
     for i in range(threads):
         m[i] = Muxer(gen)
         c[i] = counter(m[i])
-        t[i] = threading.Thread(target=c[i])
+        t[i] = threading.Thread(target=c[i], daemon=True)
 
     for i in range(threads):
         t[i].start()
 
     for i in range(threads):
         t[i].join()
-        assert c[i].count == count
+        assert c[i].count == count  # type: ignore
 
 
 def test_later_mux():

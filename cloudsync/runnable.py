@@ -19,7 +19,9 @@ def time_helper(timeout, sleep=None, multiply=1):
 
 class Runnable(ABC):
     stopped = False
+    shutdown = False
     wakeup = False
+    thread = None
 
     def run(self, *, timeout=None, until=None, sleep=0.01):
         self.stopped = False
@@ -39,20 +41,31 @@ class Runnable(ABC):
                 break
             endtime = sleep + time.monotonic()
 
-        if self.stopped:
+        if self.shutdown:
             self.done()
 
     def wake(self):
         self.wakeup = True
 
+    def start(self, **kwargs):
+        self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=True)
+        self.thread.start()
+
     @abstractmethod
     def do(self):
         ...
 
-    def stop(self):
-        self.stopped = True                                                     # pylint: disable=attribute-defined-outside-init
+    def stop(self, forever=True):
+        self.stopped = True
+        self.shutdown = forever
+        if self.thread:
+            self.thread.join()
+            self.thread = None
+        elif forever:
+            self.done()
 
     def done(self):
+        # cleanup code goes here
         pass
 
 
