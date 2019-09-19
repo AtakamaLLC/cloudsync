@@ -420,10 +420,11 @@ class SyncEntry(Reprable):
             self[REMOTE].changed = self._parent._punt_secs[REMOTE]
 
     def get_latest(self):
+        max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+            if max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
-                self[side]._last_gotten = self[side]._changed
+                self[side]._last_gotten = max_changed
 
     def is_latest(self) -> bool:
         for side in (LOCAL, REMOTE):
