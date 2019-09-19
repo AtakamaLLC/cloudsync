@@ -1,12 +1,18 @@
 class CloudException(Exception):
-    pass
+    def __init__(self, *args, original_exception=None):
+        super().__init__(*args)
+        self.original_exception = original_exception
 
 
-class CloudFileNotFoundError(CloudException):
+class CloudFileNotFoundError(CloudException):       # ENOENT
     pass
 
 
 class CloudTemporaryError(CloudException):
+    pass
+
+
+class CloudOutOfSpaceError(CloudTemporaryError):     # ENOSPC
     pass
 
 

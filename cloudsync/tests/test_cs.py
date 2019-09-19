@@ -1405,3 +1405,22 @@ def test_replace_dir(cs):
 
     bad_linfo_file = local.info_path("/local/Test2/Excel.xlsx")
     assert bad_linfo_file is None
+
+def test_out_of_space(cs):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+
+    remote.set_quota(1024)
+
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    local.create("/local/foo", BytesIO(b'0' * 1025))
+
+    with pytest.raises(TimeoutError):
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
+
+    assert cs.smgr.in_backoff()
+    assert cs.state.changeset_len
+
+    log.info("END TABLE\n%s", cs.state.pretty_print())

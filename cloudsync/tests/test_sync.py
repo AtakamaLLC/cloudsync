@@ -331,6 +331,8 @@ def test_sync_conflict_resolve(sync, side, keep):
                       oid=rinfo.oid, hash=rinfo.hash)
 
     # ensure events are flushed a couple times
+    sync.run_until_found((REMOTE, "/remote/stuff1"), threaded=True)
+
     sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
 
     sync.providers[LOCAL].log_debug_state("LOCAL")      # type: ignore

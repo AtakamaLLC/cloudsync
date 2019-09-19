@@ -8,7 +8,7 @@ from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, 
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, FILE
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE
 from cloudsync.tests.fixtures import Provider, mock_provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -254,10 +254,10 @@ class ProviderConfig:
 
 @pytest.fixture
 def config_provider(request, provider_config):
-    try:
-        request.raiseerror("foo")
-    except Exception as e:
-        FixtureLookupError = type(e)
+#    try:
+#        request.raiseerror("foo")
+#    except Exception as e:
+#        FixtureLookupError = type(e)
 
     if provider_config.name == "external":
         # if there's a fixture available, use it
@@ -313,7 +313,7 @@ def configs_from_keyword(kw):
                 log.error("%s %s", type(e), e)
                 ok = False
             if type(ok) is list:
-                ok = any(cast(List[bool],ok))
+                ok = any(cast(List[bool], ok))
         if ok:
             provs += configs_from_name(known_prov)
     return provs
@@ -1301,6 +1301,14 @@ def test_rename_case_change(provider, otype):
         assert infopl.path == temp_nameu
 
 
+def test_quota_limit(mock_provider):
+    mock_provider.set_quota(1024)
+    mock_provider.create("/foo", BytesIO(b'0' * 1024))
+    with pytest.raises(CloudOutOfSpaceError):
+        mock_provider.create("/bar", BytesIO(b'0' * 2))
+    assert not mock_provider.info_path("/bar")
+
+
 def test_special_characters(provider):
     fname = ""
     for i in range(32, 127):
@@ -1311,7 +1319,7 @@ def test_special_characters(provider):
             continue
         fname = fname + str(chr(i))
     fname = "/fn-" + fname
-    log.error("fname = %s", fname)
+    log.debug("fname = %s", fname)
     contents = b"hello world"
     info = provider.create(fname, BytesIO(contents))
     log.debug("info = %s", info)
