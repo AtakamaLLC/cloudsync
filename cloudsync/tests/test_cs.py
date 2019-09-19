@@ -1352,3 +1352,56 @@ def test_dir_delete_give_up(cs):
     assert rdir[0].path == remote_dir
     assert len(ldir) == 1
     assert ldir[0].path == local_dir
+
+
+def test_replace_dir(cs):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    def get_oid(prov, path):
+        return prov.info_path(path).oid
+
+    # Make first set
+    local.mkdir("/local/Test")
+    local.create("/local/Test/Excel.xlsx", BytesIO(b"aaa"))
+
+    # Make "copy" of files
+    local.mkdir("/local/Test2")
+    linfo = local.create("/local/Test2/Excel.xlsx", BytesIO(b"aab"))
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    # Now simulate a dir replace (e.g. shutil rmtree/rename)
+    local.delete(get_oid(local, "/local/Test/Excel.xlsx"))
+    local.delete(get_oid(local, "/local/Test"))
+    local.rename(get_oid(local, "/local/Test2"), "/local/Test")
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    log.info("END TABLE\n%s", cs.state.pretty_print())
+
+    # Check that the file got synced
+    rinfo = remote.info_path("/remote/Test/Excel.xlsx")
+    assert rinfo
+
+    # Check that the *correct* file got synced
+    assert linfo.hash == rinfo.hash
+
+    # That was the important one, what follows are just checks for consistent
+    # internal state
+
+    # Check that there aren't any weird duplicate entries on the remote
+    bad_rinfo_dir = remote.info_path("/remote/Test2")
+    assert bad_rinfo_dir is None
+
+    bad_rinfo_file = remote.info_path("/remote/Test2/Excel.xlsx")
+    assert bad_rinfo_file is None
+
+    # And do the same for local
+    bad_linfo_dir = local.info_path("/local/Test2")
+    assert bad_linfo_dir is None
+
+    bad_linfo_file = local.info_path("/local/Test2/Excel.xlsx")
+    assert bad_linfo_file is None
