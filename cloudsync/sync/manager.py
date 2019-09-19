@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List
 
 __all__ = ['SyncManager']
 
@@ -42,37 +42,45 @@ class ResolveFile():
         self.path = info.path
         self.side = info.side
         self.otype = info.otype
-        self.temp_file = info.temp_file
+        self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
         self.__fh = None
 
+    def download(self):
+        if not os.path.exists(self.__temp_file):
+            try:
+                with open(self.__temp_file + ".tmp", "wb") as f:
+                    self.provider.download(self.info.oid, f)
+                os.rename(self.__temp_file + ".tmp", self.__temp_file)
+            except Exception as e:
+                log.debug("error downloading %s", e)
+                try:
+                    os.unlink(self.__temp_file)
+                except FileNotFoundError:
+                    pass
+                raise
+        return self.__temp_file
+
     @property
     def fh(self):
         if not self.__fh:
-            if not os.path.exists(self.info.temp_file):
-                try:
-                    with open(self.info.temp_file, "wb") as f:
-                        self.provider.download(self.info.oid, f)
-                except Exception as e:
-                    log.debug("error downloading %s", e)
-                    try:
-                        os.unlink(self.info.temp_file)
-                    except FileNotFoundError:
-                        pass
-                    raise
-
-            self.__fh = open(self.info.temp_file, "rb")
+            self.download()  # NOOP if it was already downloaded
+            self.__fh = open(self.__temp_file, "rb")
+            log.debug("ResolveFile opening temp file %s for real file %s", self.__temp_file, self.path)
         return self.__fh
 
     def read(self, *a):
         return self.fh.read(*a)
 
-    def write(self, buf):
-        return self.fh.write(buf)
+    def write(self, buf):  # we don't want this
+        raise NotImplementedError()
 
     def close(self):
-        return self.fh.close()
+        # don't use self.fh, use self.__fh. No need to download and open it, just to close it
+        if self.__fh:
+            log.debug("ResolveFile closing temp file %s for real file %s", self.__temp_file, self.path)
+            self.__fh.close()
 
     def seek(self, *a):
         return self.fh.seek(*a)
@@ -267,13 +275,15 @@ class SyncManager(Runnable):
                     self.finished(i, sync)
                 break
 
-    def temp_file(self):
+    def temp_file(self, temp_for=None):
         if not os.path.exists(self.tempdir):
             # in case user deletes it... recreate
             self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         # prefer big random name over NamedTemp which can infinite loop
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
+        if temp_for:
+            log.debug("%s is temped by %s", temp_for, ret)
         return ret
 
     def finished(self, side, sync):
@@ -300,7 +310,7 @@ class SyncManager(Runnable):
                 sync[side].temp_file = None
 
     def download_changed(self, changed, sync):
-        sync[changed].temp_file = sync[changed].temp_file or self.temp_file()
+        sync[changed].temp_file = sync[changed].temp_file or self.temp_file(temp_for=sync[changed].path)
 
         assert sync[changed].oid
 
@@ -549,17 +559,28 @@ class SyncManager(Runnable):
             return REQUEUE
 
     def __resolve_file_likes(self, side_states):
-        fhs = []
-        for ss in side_states:
-            assert type(ss) is SideState
+        class Guard:
+            def __init__(guard, side_states):  # pylint: disable=no-self-argument
+                guard.side_states = side_states
+                guard.fhs: List[ResolveFile] = []
 
-            if not ss.temp_file and ss.otype == FILE:
-                ss.temp_file = self.temp_file()
+            def __enter__(guard):  # pylint: disable=no-self-argument
+                for ss in guard.side_states:
+                    assert type(ss) is SideState
 
-            fhs.append(ResolveFile(ss, self.providers[ss.side]))
+                    if not ss.temp_file and ss.otype == FILE:
+                        ss.temp_file = self.temp_file(temp_for=ss.path)
 
-            assert ss.oid
-        return fhs
+                    guard.fhs.append(ResolveFile(ss, self.providers[ss.side]))
+
+                    assert ss.oid
+                return guard.fhs
+
+            def __exit__(guard, *args):  # pylint: disable=no-self-argument
+                for fh in guard.fhs:
+                    fh.close()
+
+        return Guard(side_states)
 
     def __safe_call_resolver(self, fhs):
         if DIRECTORY in (fhs[0].otype, fhs[1].otype):
@@ -575,11 +596,15 @@ class SyncManager(Runnable):
         ret = None
         try:
             ret = self.__resolve_conflict(*fhs)
+
             if ret:
-                if len(ret) != 2:
+                if not isinstance(ret, tuple):
+                    log.error("resolve conflict should return a tuple of 2 values, got %s(%s)", ret, type(ret))
+                    ret = None
+                elif len(ret) != 2:
                     log.error("bad return value for resolve conflict %s", ret)
                     ret = None
-                if not is_file_like(ret[0]):
+                elif not is_file_like(ret[0]):
                     log.error("bad return value for resolve conflict %s", ret)
                     ret = None
         except Exception as e:
@@ -631,54 +656,71 @@ class SyncManager(Runnable):
         self.discard_entry(replace_ent)
 
     def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements
-        fhs = self.__resolve_file_likes(side_states)
+        with self.__resolve_file_likes(side_states) as fhs:
+            fh: ResolveFile
+            keep: bool
+            fh, keep = self.__safe_call_resolver(fhs)
 
-        fh, keep = self.__safe_call_resolver(fhs)
+            log.debug("keeping ret side %s", getattr(fh, "side", None))
+            log.debug("fhs[0].side=%s", fhs[0].side)
 
-        log.debug("got ret side %s", getattr(fh, "side", None))
+            defer = None
 
-        defer = None
+            # if fh.dirty:
+            #     log.debug(">>> winner side %s contents may have changed. updating side %s", fh.side, fh.side)
+            #     fh.seek(0)
+            #     fh_side_state = side_states[fh.side]
+            #     new_fh_info: OInfo = self.providers[fh.side].upload(fh_side_state.oid, fh)
+            #     fh_side_state.hash = new_fh_info.hash
+            #     fh_side_state.sync_hash = new_fh_info.hash
 
-        for i, rfh in enumerate(fhs):
-            this = side_states[i]
-            that = side_states[1-i]
+            # search the fhs for any fh that is going away
+            # could be one, the other, or both (if the fh returned by the conflict resolver is a new one, not in fhs)
+            for i, rfh in enumerate(fhs):
+                if fh is not rfh:  # this rfh is getting replaced (this will be true for at least one rfh)
+                    loser = side_states[i]
+                    winner = side_states[1 - i]
+                    log.debug("i=%s, fhs=%s", i, fhs)
+                    log.debug("loser.side=%s, winner.side=%s", loser.side, winner.side)
 
-            if fh is not rfh:
-                # user didn't opt to keep my rfh
-                log.debug("replacing %s", this.side)
-                if not keep:
-                    fh.seek(0)
-                    info2 = self.providers[this.side].upload(this.oid, fh)
-                    this.hash = info2.hash
-                    assert info2.hash
-                    that.sync_hash = that.hash
-                    that.sync_path = that.path
-                    this.sync_hash = this.hash
-                    this.sync_path = this.path
-                else:
-                    try:
-                        self._resolve_rename(this)
-                    except CloudFileNotFoundError:
-                        log.debug("there is no conflict, because the file doesn't exist? %s", this)
+                    # user didn't opt to keep my rfh
+                    log.debug("replacing side %s", loser.side)
+                    if not keep:
+                        log.debug("not keeping side %s, simply uploading to replace with new contents", loser.side)
+                        fh.seek(0)
+                        info2 = self.providers[loser.side].upload(loser.oid, fh)
+                        loser.hash = info2.hash
+                        assert info2.hash
+                        winner.sync_hash = winner.hash
+                        winner.sync_path = winner.path
+                        loser.sync_hash = loser.hash
+                        loser.sync_path = loser.path
+                    else:
+                        log.debug("rename side %s to conflicted", loser.side)
+                        try:
+                            self._resolve_rename(loser)
+                        except CloudFileNotFoundError:
+                            log.debug("there is no conflict, because the file doesn't exist? %s", loser)
 
-                if defer is None:
-                    defer = that.side
-                else:
-                    defer = None
+                    if defer is None:  # the first time we see an rfh to replace, defer gets set to the winner side
+                        defer = winner.side
+                    else:  # if we replace both rfh, then defer gets set back to None
+                        defer = None
 
-        if defer is not None:
-            # toss the other side that was replaced
-            sorted_states = sorted(side_states, key=lambda e: e.side)
-            replace_side = other_side(defer)
-            replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
-            if replace_ent:
-                self.conflict_entry(replace_ent)
-        else:
-            # both sides were modified....
-            self.__resolver_merge_upload(side_states, fh, keep)
+            if defer is not None:  # we are replacing one side, not both
+                # toss the other side that was replaced
+                if keep:
+                    sorted_states = sorted(side_states, key=lambda e: e.side)
+                    replace_side = other_side(defer)
+                    replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+                    if replace_ent:
+                        self.conflict_entry(replace_ent)
+            else:
+                # both sides were modified, because the fh returned was some third thing that should replace both
+                self.__resolver_merge_upload(side_states, fh, keep)
 
-        log.debug("RESOLVED CONFLICT: %s dide: %s", side_states, defer)
-        log.debug("table\r\n%s", self.state.pretty_print())
+            log.debug("RESOLVED CONFLICT: %s side: %s", side_states, defer)
+            log.debug("table\r\n%s", self.state.pretty_print())
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -964,6 +1006,7 @@ class SyncManager(Runnable):
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
+        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         if sync.conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
@@ -1075,6 +1118,7 @@ class SyncManager(Runnable):
             except FileNotFoundError:
                 return False
 
+        log.debug(">>> about to resolve_conflict")
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
         return True
 

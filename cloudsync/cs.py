@@ -103,9 +103,11 @@ class CloudSync(Runnable):
         #
         # Return Values:
         #
+        #     A tuple of (result, keep) or None, meaning there is no good resolution
+        #     result is one of:
         #     - A "merged" file-like which should be used as the data to replace both f1/f2 with
         #     - One of f1 or f2,  which is selected as the correct version
-        #     - "None", meaning there is no good resolution
+        #     keep is true if we want to keep the old version of the file around as a .conflicted file, else False
         return None
 
     @property
