@@ -24,8 +24,8 @@ jobs:
         - ./test_providers.sh
       python:
         - '3.6'
-    - stage: deploy
-      if: branch = master
+    - if: branch = master
+      stage: deploy
       script:
         - ./deploy.sh
 
