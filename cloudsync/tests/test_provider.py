@@ -3,7 +3,7 @@ import time
 import logging
 from io import BytesIO
 from unittest.mock import patch
-from typing import Union, NamedTuple, Optional, Generator
+from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, cast
 
 import pytest
 import cloudsync
@@ -16,11 +16,16 @@ from cloudsync.types import OInfo
 
 log = logging.getLogger(__name__)
 
+# this is, apparently, the only way to deal with mixins, see: https://github.com/python/mypy/issues/5837
+if TYPE_CHECKING:
+    # we know that the providerhelper will always be mixed in with a provider
+    ProviderBase = Provider
+else:
+    # but we can't actually derive from it or stuff will break
+    ProviderBase = object
 
-ProviderMixin = Union[Provider, "ProviderHelper"]
 
-
-class ProviderHelper():
+class ProviderHelper(ProviderBase):
     def __init__(self, prov):
         self.api_retry = True
         self.prov = prov
@@ -45,7 +50,7 @@ class ProviderHelper():
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
 
-    def __api_retry(self: ProviderMixin, func, *ar, **kw):
+    def __api_retry(self, func, *ar, **kw):
         # the cloud providers themselves should *not* have their own backoff logic
         # rather, they should punt rate limit and temp errors to the sync system
         # since we're not testing the sync system here, we need to make our own
@@ -153,11 +158,11 @@ class ProviderHelper():
         return obj
     # HELPERS
 
-    def temp_name(self: ProviderMixin, name="tmp", *, folder=None):
+    def temp_name(self, name="tmp", *, folder=None):
         fname = self.join(folder or self.sep, os.urandom(16).hex() + "." + name)
         return fname
 
-    def events_poll(self: ProviderMixin, timeout=None, until=None) -> Generator[Event, None, None]:
+    def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
             timeout = self.event_timeout
 
@@ -175,7 +180,7 @@ class ProviderHelper():
             elif until and until():
                 break
 
-    def __cleanup(self: ProviderMixin, oid):
+    def __cleanup(self, oid):
         try:
             for info in self.prov.listdir(oid):
                 if info.otype == FILE:
@@ -188,7 +193,7 @@ class ProviderHelper():
         except CloudFileNotFoundError:
             pass
 
-    def test_cleanup(self: ProviderMixin, timeout=None, until=None):
+    def test_cleanup(self, timeout=None, until=None):
         info = self.prov.info_path(self.test_root)
         self.__cleanup(info.oid)
 
@@ -221,7 +226,7 @@ def mixin_provider(prov):
     assert prov
     assert isinstance(prov, Provider)
 
-    prov = ProviderHelper(prov)
+    prov = ProviderHelper(prov)         # type: ignore
 
     yield prov
 
@@ -274,7 +279,7 @@ known_providers = ('gdrive', 'external', 'dropbox', 'mock')
 
 
 def configs_from_name(name):
-    provs = []
+    provs: List[ProviderConfig] = []
 
     if name == "mock":
         provs += [ProviderConfig("mock", (False, True), "mock_oid_cs")]
@@ -286,27 +291,29 @@ def configs_from_name(name):
 
 
 def configs_from_keyword(kw):
-    provs = []
+    provs: List[ProviderConfig] = []
     # crappy approximation of pytest evaluation routine, because
     false = {}
     for known_prov in known_providers:
         false[known_prov] = False
 
+    ok: Union[bool, List[bool]]
     for known_prov in known_providers:
         if known_prov == kw or '[' + known_prov + ']' == kw:
             ok = True
         else:
             ids = false.copy()
             ids[known_prov] = True
+
             try:
                 ok = eval(kw, {}, ids)
-            except NameError as e:
+            except NameError:
                 ok = False
             except Exception as e:
                 log.error("%s %s", type(e), e)
                 ok = False
             if type(ok) is list:
-                ok = any(ok)
+                ok = any(cast(List[bool],ok))
         if ok:
             provs += configs_from_name(known_prov)
     return provs
@@ -325,7 +332,7 @@ def pytest_generate_tests(metafunc):
         _registered = True
 
     if "provider_config" in metafunc.fixturenames:
-        provs = []
+        provs: List[ProviderConfig] = []
 
         for e in metafunc.config.getoption("provider", []):
             for n in e.split(","):
@@ -392,7 +399,7 @@ def test_create_upload_download(provider):
     assert dest.getvalue() == dat
 
 
-def test_rename(provider: ProviderMixin):
+def test_rename(provider):
     dat = os.urandom(32)
 
     def data():
@@ -455,7 +462,7 @@ def test_rename(provider: ProviderMixin):
     info1 = provider.create(dest, data())
     provider.rename(info1.oid, sub_file_path3)
 
-def test_mkdir(provider: ProviderMixin):
+def test_mkdir(provider):
     dat = os.urandom(32)
 
     def data():
@@ -473,7 +480,7 @@ def test_mkdir(provider: ProviderMixin):
     provider.create(sub_f, data(), None)
 
 
-def test_walk(provider: ProviderMixin):
+def test_walk(provider):
     temp = BytesIO(os.urandom(32))
     folder = provider.temp_name("folder")
     provider.mkdir(folder)
@@ -511,7 +518,7 @@ def test_walk(provider: ProviderMixin):
     assert got_event
 
 
-def check_event_path(event: Event, provider: ProviderMixin, target_path):
+def check_event_path(event: Event, provider, target_path):
     # confirms that the path in the event matches the target_path
     # if the provider doesn't provide the path in the event, look it up by the oid in the event
     # if we can't get the path, that's OK if the file doesn't exist
@@ -526,7 +533,7 @@ def check_event_path(event: Event, provider: ProviderMixin, target_path):
 
 ## event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 
-def test_event_basic(provider: ProviderMixin):
+def test_event_basic(provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
@@ -604,7 +611,7 @@ def test_event_basic(provider: ProviderMixin):
     assert received_event.mtime
 
 
-def test_event_del_create(provider: ProviderMixin):
+def test_event_del_create(provider):
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
@@ -664,7 +671,7 @@ def test_event_del_create(provider: ProviderMixin):
     assert not disordered
 
 
-def test_event_rename(provider: ProviderMixin):
+def test_event_rename(provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
     dest2 = provider.temp_name("dest")
@@ -731,7 +738,7 @@ def test_api_failure(provider):
                 provider.exists_path("/notexists")
 
 
-def test_file_not_found(provider: ProviderMixin):
+def test_file_not_found(provider):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
     dat = os.urandom(32)
@@ -897,7 +904,7 @@ def test_file_not_found(provider: ProviderMixin):
     # TODO: Google drive raises FNF when it can't find the root... can we test for that here?
 
 
-def test_file_exists(provider: ProviderMixin):
+def test_file_exists(provider):
     dat = os.urandom(32)
 
     def data(da=dat):
@@ -1165,7 +1172,7 @@ def test_file_exists(provider: ProviderMixin):
     provider.rename(oid2, name1)
 
 
-def test_cursor(provider: ProviderMixin):
+def test_cursor(provider):
     # get the ball rolling
     provider.create("/file1", BytesIO(b"hello"))
     for i in provider.events():
@@ -1200,7 +1207,7 @@ def test_cursor(provider: ProviderMixin):
 # TODO: test that renaming A over B replaces B's OID with A's OID, and B's OID is trashed
 
 
-def test_listdir(provider: ProviderMixin):
+def test_listdir(provider):
     outer = provider.temp_name()
     root = provider.dirname(outer)
     temp_name = provider.is_subpath(root, outer)
@@ -1222,10 +1229,10 @@ def test_listdir(provider: ProviderMixin):
     contents = [x.name for x in provider.listdir(outer_oid)]
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
-    assert contents.sort() == expected.sort()
+    assert sorted(contents) == sorted(expected)
 
 
-def test_upload_to_a_path(provider: ProviderMixin):
+def test_upload_to_a_path(provider):
     temp_name = provider.temp_name()
     info = provider.create(temp_name, BytesIO(b"test"))
     assert info.hash
@@ -1235,7 +1242,7 @@ def test_upload_to_a_path(provider: ProviderMixin):
         info = provider.upload(temp_name, BytesIO(b"test2"))
 
 
-def test_upload_zero_bytes(provider: ProviderMixin):
+def test_upload_zero_bytes(provider):
     temp_name = provider.temp_name()
     info = provider.create(temp_name, BytesIO(b""))
     info2 = provider.upload(info.oid, BytesIO(b""))
@@ -1246,7 +1253,7 @@ def test_upload_zero_bytes(provider: ProviderMixin):
     assert info.hash == info2.hash
 
 
-def test_delete_doesnt_cross_oids(provider: ProviderMixin):
+def test_delete_doesnt_cross_oids(provider):
     temp_name = provider.temp_name()
     info1 = provider.create(temp_name, BytesIO(b"test1"))
     provider.delete(info1.oid)
@@ -1268,7 +1275,7 @@ def test_delete_doesnt_cross_oids(provider: ProviderMixin):
 
 
 @pytest.mark.parametrize("otype", ["file", "folder"])
-def test_rename_case_change(provider: ProviderMixin, otype):
+def test_rename_case_change(provider, otype):
     temp_namel = provider.temp_name().lower()
     temp_nameu = temp_namel.upper()
     if otype == "file":
@@ -1294,7 +1301,7 @@ def test_rename_case_change(provider: ProviderMixin, otype):
         assert infopl.path == temp_nameu
 
 
-def test_special_characters(provider: ProviderMixin):
+def test_special_characters(provider):
     fname = ""
     for i in range(32, 127):
         char = str(chr(i))

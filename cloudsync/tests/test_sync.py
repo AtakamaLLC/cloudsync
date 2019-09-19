@@ -1,7 +1,7 @@
 import logging
 from io import BytesIO
 import pytest
-from typing import NamedTuple
+from typing import NamedTuple, List
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
@@ -88,7 +88,7 @@ def test_sync_basic(sync: "SyncMgrMixin"):
                       path=remote_path2, hash=rinfo.hash)
 
     def done():
-        has_info = [None] * 4
+        has_info: List[OInfo] = [None] * 4
         try:
             has_info[0] = sync.providers[LOCAL].info_path("/local/stuff1")
             has_info[1] = sync.providers[LOCAL].info_path("/local/stuff2")
@@ -275,8 +275,8 @@ def test_sync_conflict_simul(sync):
         (LOCAL, "/local/stuff1")
     )
 
-    sync.providers[LOCAL].log_debug_state("LOCAL")
-    sync.providers[REMOTE].log_debug_state("REMOTE")
+    sync.providers[LOCAL].log_debug_state("LOCAL")              # type: ignore
+    sync.providers[REMOTE].log_debug_state("REMOTE")            # type: ignore
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -333,8 +333,8 @@ def test_sync_conflict_resolve(sync, side, keep):
     # ensure events are flushed a couple times
     sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
 
-    sync.providers[LOCAL].log_debug_state("LOCAL")
-    sync.providers[REMOTE].log_debug_state("REMOTE")
+    sync.providers[LOCAL].log_debug_state("LOCAL")      # type: ignore
+    sync.providers[REMOTE].log_debug_state("REMOTE")    # type: ignore
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -384,12 +384,12 @@ def test_sync_conflict_path(sync):
 
     ent = sync.state.get_all().pop()
 
-    sync.providers[REMOTE].log_debug_state("BEFORE")
+    sync.providers[REMOTE].log_debug_state("BEFORE")        # type: ignore
 
     new_oid_l = sync.providers[LOCAL].rename(linfo.oid, local_path2)
     new_oid_r = sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
 
-    sync.providers[REMOTE].log_debug_state("AFTER")
+    sync.providers[REMOTE].log_debug_state("AFTER")         # type: ignore
 
     sync.change_state(LOCAL, FILE, path=local_path2,
                       oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
@@ -414,8 +414,7 @@ def test_sync_conflict_path(sync):
     sync.state.assert_index_is_correct()
 
 
-def test_sync_cycle(sync):
-    sync: SyncMgrMixin
+def test_sync_cycle(sync: SyncMgrMixin):
     l_parent = "/local"
     r_parent = "/remote"
     lp1, lp2, lp3 = "/local/a", "/local/b", "/local/c",
@@ -440,7 +439,7 @@ def test_sync_cycle(sync):
     sync.run_until_found((REMOTE, rp3))
     rinfo3 = sync.providers[REMOTE].info_path(rp3)
 
-    sync.providers[REMOTE].log_debug_state("BEFORE")
+    sync.providers[REMOTE].log_debug_state("BEFORE")                # type: ignore
     tmp1oid = sync.providers[LOCAL].rename(linfo1.oid, templ)
     lp1oid = sync.providers[LOCAL].rename(linfo3.oid, lp1)
     lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
@@ -458,10 +457,10 @@ def test_sync_cycle(sync):
     sync.change_state(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
     log.debug("TABLE 4:\n%s", sync.state.pretty_print())
     assert len(sync.state.get_all()) == 3
-    sync.providers[REMOTE].log_debug_state("MIDDLE")
+    sync.providers[REMOTE].log_debug_state("MIDDLE")                # type: ignore
 
     sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
-    sync.providers[REMOTE].log_debug_state("AFTER")
+    sync.providers[REMOTE].log_debug_state("AFTER")                 # type: ignore
 
     i1 = sync.providers[REMOTE].info_path(rp1)
     i2 = sync.providers[REMOTE].info_path(rp2)
@@ -603,12 +602,10 @@ def _test_rename_folder_with_kids(sync, source, dest):
     sync.change_state(source, DIRECTORY, path=folder2[source], oid=new_oid, hash=None, prior_oid=folder_oid)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
-    sync.run_until_found((source, file2[source]))
-    sync.run_until_found((dest, file2[dest]))
     sync.run_until_found(
         (source, file2[source]),
-        (dest, file2[dest]),
-    )
+        (dest, file2[dest])
+    , threaded=True)
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
 

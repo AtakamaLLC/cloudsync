@@ -1,15 +1,13 @@
 from io import BytesIO
 import logging
 import pytest
-from typing import List
+from typing import List, Dict, Any
 from unittest.mock import patch
 
 
-from .fixtures import MockProvider, MockStorage, mock_provider_instance
+from .fixtures import MockProvider, MockStorage
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileNotFoundError, CloudFileExistsError
-from cloudsync.event import EventManager
-
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -17,7 +15,7 @@ log = logging.getLogger(__name__)
 
 @pytest.fixture(name="cs_storage")
 def fixture_cs_storage(mock_provider_generator):
-    storage_dict = dict()
+    storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
     for cs in _fixture_cs(mock_provider_generator, storage):
         yield cs, storage
@@ -51,7 +49,7 @@ def make_cs(mock_provider_creator, left, right, storage=None):
 
 @pytest.fixture(name="multi_cs")
 def fixture_multi_cs(mock_provider_generator):
-    storage_dict = dict()
+    storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
@@ -243,11 +241,22 @@ def test_cs_basic(cs):
         (REMOTE, remote_path2),
         timeout=2)
 
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
     linfo2 = cs.providers[LOCAL].info_path(local_path2)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
 
     assert linfo2.oid
     assert rinfo1.oid
+
+    bio = BytesIO()
+    cs.providers[REMOTE].download(rinfo1.oid, bio)
+    assert bio.getvalue() == b'hello'
+
+    bio = BytesIO()
+    cs.providers[LOCAL].download(linfo2.oid, bio)
+    assert bio.getvalue() == b'hello2'
+
     assert linfo2.hash == rinfo2.hash
     assert linfo1.hash == rinfo1.hash
 
@@ -256,7 +265,7 @@ def test_cs_basic(cs):
 
     # let cleanups/discards/dedups happen if needed
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
-    log.info("TABLE\n%s", cs.state.pretty_print())
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
 
     assert len(cs.state) == 3
     assert not cs.state.changeset_len
@@ -466,7 +475,7 @@ def test_cs_two_conflicts(cs):
     else:
         assert(len(cs.state) == 4)
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2, threaded=True)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
@@ -492,9 +501,6 @@ def test_cs_subdir_rename(cs):
     local_dir = "/local/a"
     local_base = "/local/a/stuff"
     local_dir2 = "/local/b"
-    local_base2 = "/local/b/stuff"
-    remote_dir = "/remote/a"
-    remote_dir2 = "/remote/b"
     remote_base = "/remote/a/stuff"
     remote_base2 = "/remote/b/stuff"
 
@@ -528,7 +534,7 @@ def test_cs_subdir_rename(cs):
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    cs.run_until_found(*rpaths2, timeout=2)
+    cs.run_until_found(*rpaths2, timeout=2, threaded=True)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
@@ -616,7 +622,7 @@ def test_cs_folder_conflicts_file(cs):
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
         assert(len(cs.state) == 5)
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2, threaded=True)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
@@ -670,17 +676,17 @@ def test_storage(storage):
     log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
 
     def not_dirty(s: SyncState):
+        se: SyncEntry
         for se in s.get_all():
-            se: SyncEntry
             assert not se.dirty
 
     def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
         ret = []
         found = False
+        e1: SyncEntry
         for e1 in s1.get_all():
-            e1: SyncEntry
+            e2: SyncEntry
             for e2 in s2.get_all():
-                e2: SyncEntry
                 if e1.serialize() == e2.serialize():
                     found = True
             if not found:

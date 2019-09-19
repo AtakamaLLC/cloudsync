@@ -27,7 +27,7 @@ class Event:
     new_cursor: Optional[str] = None
 
 @strict             # pylint: disable=too-many-instance-attributes
-class EventManager(Runnable): 
+class EventManager(Runnable):
     def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: Optional[str] = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
@@ -36,7 +36,6 @@ class EventManager(Runnable):
         self.events = Muxer(provider.events, restart=True)
         self.state = state
         self.side = side
-        self.shutdown = False
         self._cursor_tag = self.label + "_cursor"
 
         self.walk_root = None
@@ -67,6 +66,7 @@ class EventManager(Runnable):
         self.backoff = self.min_backoff
 
     def do(self):
+        self.events.shutdown = False
         try:
             if self.walk_root:
                 log.debug("walking all %s/%s files as events, because no working cursor on startup",
@@ -126,7 +126,7 @@ class EventManager(Runnable):
             self.state.update(self.side, otype, event.oid, path=path, hash=event.hash,
                               exists=exists, prior_oid=event.prior_oid)
 
-    def stop(self):
-        self.events.shutdown = True
-        self.shutdown = True
-        super().stop()
+    def stop(self, forever=True):
+        if forever:
+            self.events.shutdown = True
+        super().stop(forever=forever)

@@ -141,7 +141,10 @@ class SyncManager(Runnable):
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
-        shutil.rmtree(self.tempdir)
+        try:
+            shutil.rmtree(self.tempdir)
+        except FileNotFoundError:
+            pass
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
@@ -257,7 +260,7 @@ class SyncManager(Runnable):
     def temp_file(self):
         if not os.path.exists(self.tempdir):
             # in case user deletes it... recreate
-            self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
+            os.mkdir(self.tempdir)
         # prefer big random name over NamedTemp which can infinite loop
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)

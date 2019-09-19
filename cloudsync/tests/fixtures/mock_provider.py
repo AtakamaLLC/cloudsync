@@ -193,6 +193,7 @@ class MockProvider(Provider):
 
     def events(self) -> Generator[Event, None, None]:
         self._api()
+#        log.error("GETTING EVENTS : %s", self._cursor)
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
@@ -238,9 +239,10 @@ class MockProvider(Provider):
         self._verify_parent_folder_exists(path)
         if file is None or not file.exists:
             file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path)
-            self._store_object(file)
         file.contents = file_like.read()
         file.exists = True
+        self._store_object(file)
+
         log.debug("created %s %s", file.oid, file.type)
         self._register_event(MockEvent.ACTION_CREATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
