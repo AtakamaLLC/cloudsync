@@ -23,7 +23,7 @@ cloudsync -p gdrive --token "236723782347823642786" -f ~/gdrive-folder --daemon
 
 """
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 from pystrict import strict, StrictError
 
