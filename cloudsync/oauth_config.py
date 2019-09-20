@@ -1,9 +1,14 @@
-from typing import Optional
+from typing import Optional, Tuple
 from .oauth_redir_server import OAuthRedirServer
+from collections import NamedTuple
+
+class OAuthCreds(NamedTuple):
+    client_id: str
+    client_secret: str
 
 # this class delibarately not strict, since it can contain provider-specific configutation
 class OAuthConfig:
-    def __init__(self, manual_mode: bool = False, oauth_redir_server: Optional[OAuthRedirServer] = None):
+    def __init__(self, client_creds: Tuple(str, str), *, manual_mode: bool = False, oauth_redir_server: Optional[OAuthRedirServer] = None):
         """
         There are two ways to create an OAuthConfig object: by providing a OAuthRedirServer or by providing the
         success and failure callbacks, as well as changing the `use_predefined_ports` parameter if desired.
@@ -11,6 +16,7 @@ class OAuthConfig:
         :param oauth_redir_server:
         """
 
+        self.client_creds = client_creds
         self.manual_mode = manual_mode
         self._oauth_redir_server = oauth_redir_server
         if self.manual_mode and self._oauth_redir_server:
