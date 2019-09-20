@@ -134,13 +134,14 @@ class CloudSync(Runnable):
 
     # for tests, make this manually runnable
     def do(self, threaded=True):
-        if threaded:
-            if not self.tpool:
-                import multiprocessing.dummy
-                self.tpool = multiprocessing.dummy.Pool(3)
-            self.tpool.map(lambda x: x.do(), (*self.emgrs, self.smgr))
-        else:
-            map(lambda x: x.do(), (*self.emgrs, self.smgr))
+        # imports are in the body of this test-only function
+        import random
+        mgrs = (*self.emgrs, self.smgr)
+        mgrs = random.sample(mgrs, 3)
+        import multiprocessing.dummy
+        if not self.tpool:
+            self.tpool = multiprocessing.dummy.Pool(3)
+        self.tpool.map(lambda x: x.do(), mgrs)
 
     def done(self):
         self.smgr.done()

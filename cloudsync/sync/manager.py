@@ -663,16 +663,17 @@ class SyncManager(Runnable):
 
         if defer is not None:
             # toss the other side that was replaced
-            sorted_states = sorted(side_states, key=lambda e: e.side)
-            replace_side = other_side(defer)
-            replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
-            if replace_ent:
-                self.conflict_entry(replace_ent)
+            if keep:
+                sorted_states = sorted(side_states, key=lambda e: e.side)
+                replace_side = other_side(defer)
+                replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+                if replace_ent:
+                    self.conflict_entry(replace_ent)
         else:
             # both sides were modified....
             self.__resolver_merge_upload(side_states, fh, keep)
 
-        log.debug("RESOLVED CONFLICT: %s dide: %s", side_states, defer)
+        log.debug("RESOLVED CONFLICT: %s defer-side: %s", side_states, defer)
         log.debug("table\r\n%s", self.state.pretty_print())
 
     def delete_synced(self, sync, changed, synced):

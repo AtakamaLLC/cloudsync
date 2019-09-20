@@ -33,15 +33,7 @@ log = logging.getLogger(__name__)
 
 __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
-# adds a repr to some classes
-
-
-class Reprable:                                     # pylint: disable=too-few-public-methods
-    def __repr__(self):
-        return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(self.__dict__)
-
 # safe ternary, don't allow traditional comparisons
-
 
 class Exists(Enum):
     UNKNOWN = None
@@ -59,7 +51,7 @@ TRASHED = Exists.TRASHED
 
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
-class SideState(Reprable):
+class SideState():
     def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
         self._side: int = side                            # just for assertions
@@ -125,6 +117,10 @@ class SideState(Reprable):
         self.path = None
         self.oid = None
 
+    def __repr__(self):
+        d = self.__dict__.copy()
+        d.pop("_parent", None)
+        return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -165,7 +161,7 @@ class Storage(ABC):
 
 # single entry in the syncs state collection
 @strict         # pylint: disable=too-many-instance-attributes
-class SyncEntry(Reprable):
+class SyncEntry():
     def __init__(self, parent: 'SyncState', otype: Optional[OType], storage_init: Optional[Tuple[Any, bytes]] = None):
         super().__init__()
         assert otype is not None or storage_init
@@ -404,6 +400,11 @@ class SyncEntry(Reprable):
     def __str__(self):
         return self.pretty(fixed=False)
 
+    def __repr__(self):
+        d = self.__dict__.copy()
+        d.pop("_parent", None)
+        return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+
     def store(self, tag: str, storage: Storage):
         if not self.storage_id:
             self.storage_id = storage.create(tag, self.serialize())
@@ -420,10 +421,11 @@ class SyncEntry(Reprable):
             self[REMOTE].changed = self._parent._punt_secs[REMOTE]
 
     def get_latest(self):
+        max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+            if max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
-                self[side]._last_gotten = self[side]._changed
+                self[side]._last_gotten = max_changed
 
     def is_latest(self) -> bool:
         for side in (LOCAL, REMOTE):
@@ -785,8 +787,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         e: SyncEntry
         for e in self.get_all(discarded=True):
             # allow conflicted to be printed
-            if e.discarded:
-                continue
             ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
         return ret
 

@@ -331,7 +331,7 @@ def test_sync_conflict_resolve(sync, side, keep):
                       oid=rinfo.oid, hash=rinfo.hash)
 
     # ensure events are flushed a couple times
-    sync.run_until_found((REMOTE, "/remote/stuff1"), threaded=True)
+    sync.run_until_found((REMOTE, "/remote/stuff1"))
 
     sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
 
@@ -607,7 +607,7 @@ def _test_rename_folder_with_kids(sync, source, dest):
     sync.run_until_found(
         (source, file2[source]),
         (dest, file2[dest])
-    , threaded=True)
+    )
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
 
 
