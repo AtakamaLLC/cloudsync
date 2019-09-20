@@ -136,7 +136,7 @@ def test_state_split(mock_provider):
     assert state.lookup_oid(LOCAL, "123") is repl
     assert state.lookup_path(LOCAL, "/dir")
 
-    assert state.lookup_path(REMOTE, "/rem") 
+    assert state.lookup_path(REMOTE, "/rem")
     assert state.lookup_oid(REMOTE, "999") is defer
 
     state.assert_index_is_correct()
