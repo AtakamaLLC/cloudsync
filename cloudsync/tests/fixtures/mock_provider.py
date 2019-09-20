@@ -12,6 +12,7 @@ from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
     CloudDisconnectedError, CloudCursorError
+from cloudsync.sync.util import debug_sig
 
 log = logging.getLogger(__name__)
 
@@ -243,7 +244,7 @@ class MockProvider(Provider):
         file.exists = True
         self._store_object(file)
 
-        log.debug("created %s %s", file.oid, file.type)
+        log.debug("created %s %s", debug_sig(file.oid), file.type)
         self._register_event(MockEvent.ACTION_CREATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
@@ -257,7 +258,7 @@ class MockProvider(Provider):
         file_like.write(file.contents)
 
     def rename(self, oid, path) -> str:
-        log.debug("renaming %s -> %s", oid, path)
+        log.debug("renaming %s -> %s", debug_sig(oid), path)
         self._api()
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
@@ -274,7 +275,7 @@ class MockProvider(Provider):
         self._verify_parent_folder_exists(path)
         if possible_conflict and possible_conflict.exists:
             if possible_conflict.type != object_to_rename.type:
-                log.debug("rename %s:%s conflicts with existing object of another type", oid, object_to_rename.path)
+                log.debug("rename %s:%s conflicts with existing object of another type", debug_sig(oid), object_to_rename.path)
                 raise CloudFileExistsError(path)
             if possible_conflict.type == MockFSObject.DIR:
                 try:
@@ -345,7 +346,7 @@ class MockProvider(Provider):
         return self._delete(oid)
 
     def _delete(self, oid, without_event=False):
-        log.debug("delete %s", oid)
+        log.debug("delete %s", debug_sig(oid))
         self._api()
         file = self._fs_by_oid.get(oid, None)
         log.debug("got %s", file)
@@ -358,7 +359,7 @@ class MockProvider(Provider):
                     pass  # Folder is empty, delete it no problem
         else:
             path = file.path if file else "<UNKNOWN>"
-            log.debug("Deleting non-existent oid %s:%s ignored", oid, path)
+            log.debug("Deleting non-existent oid %s:%s ignored", debug_sig(oid), path)
             return
         file.exists = False
         # todo: rename on top of another file needs to be allowed... and not require deletes
