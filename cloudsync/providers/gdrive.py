@@ -18,7 +18,7 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
-    CloudFileExistsError, CloudCursorError
+    CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
 from cloudsync.oauth_config import OAuthConfig
 
 
@@ -270,6 +270,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if str(e.resp.status) == '416':
                     raise GDriveFileDoneError()
 
+                if str(e.resp.status) == '413':
+                    raise CloudOutOfSpaceError('Payload too large')
+
+                if str(e.resp.status) == '409':
+                    raise CloudFileExistsError('Another user is modifying')
+
                 if str(e.resp.status) == '404':
                     raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % (
                         resource, method, kwargs
@@ -277,10 +283,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
                 reason = self._get_reason_from_http_error(e)
 
+                if str(e.resp.status) == '403' and str(reason) == 'storageQuotaExceeded':
+                    raise CloudOutOfSpaceError("Storage storageQuotaExceeded")
+
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
 
-                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', )) \
+                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', 'dailyLimitExceeded')) \
                         or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
 
@@ -293,6 +302,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 should_retry = _should_retry_response(e.resp.status, e.content)
                 if should_retry:
                     raise CloudTemporaryError("unknown error %s" % e)
+                log.error("Unhandled %s error %s", e.resp.status, reason)
                 raise
             except (TimeoutError, HttpLib2Error):
                 self.disconnect()

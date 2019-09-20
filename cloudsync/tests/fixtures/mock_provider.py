@@ -11,7 +11,7 @@ from cloudsync.event import Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
-    CloudDisconnectedError, CloudCursorError
+    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class MockProvider(Provider):
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path: bool, case_sensitive: bool):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -104,6 +104,8 @@ class MockProvider(Provider):
         self._events: List[MockEvent] = []
         self._latest_cursor = -1
         self._cursor = -1
+        self._quota = quota
+        self._total_size = 0
         self._type_map = {
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
@@ -146,14 +148,27 @@ class MockProvider(Provider):
     def _store_object(self, fo: MockFSObject):
         # TODO: support case insensitive storage
         assert fo.path == fo.path.rstrip("/")
+        if fo.oid in self._fs_by_oid and self._fs_by_oid[fo.oid].contents:
+            self._total_size -= len(self._fs_by_oid[fo.oid].contents)
+
+        if fo.contents and self._quota is not None and self._total_size + len(fo.contents) > self._quota:
+            raise CloudOutOfSpaceError("out of space in mock")
+
         self._fs_by_path[self.normalize(fo.path)] = fo
         self._fs_by_oid[fo.oid] = fo
+        if fo.contents:
+            self._total_size += len(fo.contents)
+
+    def set_quota(self, quota: int):
+        self._quota = quota
 
     def _unstore_object(self, fo: MockFSObject):
         # TODO: do I need to check if the path and ID exist before del to avoid a key error,
         #  or perhaps just catch and swallow that exception?
         del self._fs_by_path[self.normalize(fo.path)]
         del self._fs_by_oid[fo.oid]
+        if fo.contents:
+            self._total_size -= len(fo.contents)
 
     def _translate_event(self, pe: MockEvent, cursor) -> Event:
         event = pe.serialize()

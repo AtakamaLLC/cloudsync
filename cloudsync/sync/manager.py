@@ -12,7 +12,7 @@ __all__ = ['SyncManager']
 
 from pystrict import strict
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError
 from cloudsync.types import DIRECTORY, FILE
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -118,6 +118,9 @@ class SyncManager(Runnable):
     def set_resolver(self, resolver):
         self.__resolve_conflict = resolver
 
+    def in_backoff(self):
+        return self.backoff > self.min_backoff
+
     def do(self):
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
@@ -127,7 +130,7 @@ class SyncManager(Runnable):
                     self.sync(sync)
                     self.state.storage_update(sync)
                     self.backoff = self.min_backoff
-                except (CloudTemporaryError, CloudDisconnectedError) as e:
+                except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError) as e:
                     log.error(
                         "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
                     time.sleep(self.backoff)

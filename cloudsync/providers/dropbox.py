@@ -17,7 +17,7 @@ from dropbox.oauth import OAuth2FlowResult
 from cloudsync.oauth_config import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, \
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
     CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError
 
 log = logging.getLogger(__name__)
@@ -223,6 +223,19 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                                       method, args, kwargs, e)
                             raise CloudFileNotFoundError(
                                 'File not found when executing %s(%s)' % (method, kwargs))
+
+                if isinstance(e.error, files.UploadError):
+                    if e.error.is_path() and isinstance(e.error.get_path(), files.UploadWriteFailed):
+                        inside_error = e.error.get_path()
+                        write_error = inside_error.reason
+                        if write_error.is_insufficient_space():
+                            log.debug('out of space %s(%s %s) : %s',
+                                      method, args, kwargs, e)
+                            raise CloudOutOfSpaceError(
+                                'Out of space when executing %s(%s)' % (method, kwargs))
+                        if write_error.is_conflict():
+                            raise CloudFileExistsError(
+                                'Conflict when executing %s(%s)' % (method, kwargs))
 
                 if isinstance(e.error, files.DeleteError):
                     if e.error.is_path_lookup():
