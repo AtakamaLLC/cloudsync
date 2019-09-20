@@ -9,25 +9,27 @@ log = logging.getLogger(__name__)
 MAX_DEBUG_STR = 64
 
 def _debug_arg(val: Any):
+    ret: Any = val
     if isinstance(val, dict):
         r: Dict[Any, Any] = {}
         for k, v in val.items():
             r[k] = _debug_arg(v)
+        ret = r
     elif isinstance(val, str):
         if len(val) > 64:
-            val = val[0:61] + "..."
+            ret = val[0:61] + "..."
     elif isinstance(val, bytes):
         if len(val) > 64:
-            val = val[0:61] + b"..."
+            ret = val[0:61] + b"..."
     else:
         try:
             rlist: List[Any] = []
             for v in iter(val):
                 rlist.append(_debug_arg(v))
-            val = rlist
+            ret = rlist
         except TypeError:
-            return val
-    return val
+            pass
+    return ret
 
 # prevents very long arguments from getting logged
 def debug_args(*stuff: Any):
