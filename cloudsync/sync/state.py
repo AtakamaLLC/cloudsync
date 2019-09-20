@@ -307,15 +307,15 @@ class SyncEntry:
             return True
         return False
 
-    @property
-    def ignored(self):
-        return self._ignored != IgnoreReason.NONE
-
-    @ignored.setter
-    def ignored(self, val: Optional[IgnoreReason]):
-        if val is None:
-            val = IgnoreReason.NONE
-        self._ignored = val
+    # @property
+    # def ignored(self):
+    #     return self._ignored != IgnoreReason.NONE
+    #
+    # @ignored.setter
+    # def ignored(self, val: Optional[IgnoreReason]):
+    #     if val is None:
+    #         val = IgnoreReason.NONE
+    #     self._ignored = val
 
     @property
     def is_trashed(self):
@@ -336,12 +336,16 @@ class SyncEntry:
     # def discard(self):
     #     raise NotImplementedError(                                                                                        )
     #     self.discarded = ''.join(traceback.format_stack())
-    #
-    # def conflict(self):
-    #     self.conflicted = True
-    #
-    # def unconflict(self):
-    #     self.conflicted = False
+
+    def ignore(self, reason: IgnoreReason):
+        if self._ignored != reason:
+            log.warning("Ignoring entry for %s that was already ignored because of %s:%s",
+                        reason.value(), self._ignored, self)
+        self._ignored = reason
+
+    def unignore(self, reason: IgnoreReason):
+        assert self._ignored == reason
+        self._ignored = IgnoreReason.NONE
 
     @staticmethod
     def prettyheaders():

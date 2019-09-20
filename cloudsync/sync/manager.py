@@ -204,7 +204,7 @@ class SyncManager(Runnable):
                 changed = i
                 synced = other_side(i)
                 se = sync[changed]
-                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.conflicted:
+                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.is_conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -1018,7 +1018,7 @@ class SyncManager(Runnable):
             if "conflicted" in sync[changed].path:
                 return FINISHED
             else:
-                sync.unconflict()
+                sync.unignore(IgnoreReason.CONFLICT)
 
         if sync[changed].path and sync[changed].exists == EXISTS:
             # parent_conflict code
