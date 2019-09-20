@@ -343,7 +343,7 @@ class SyncEntry(Reprable):
 
         def secs(t):
             if t:
-                return str(int(1000*round(t-self.parent._pretty_time,3)))
+                return str(int(1000*round(t-self.parent._pretty_time, 3)))
             else:
                 return 0
 
