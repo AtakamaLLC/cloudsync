@@ -56,6 +56,7 @@ class CloudSync(Runnable):
 
         self.sthread = None
         self.ethreads = (None, None)
+        self.tpool = None
 
     @property
     def aging(self):
@@ -132,10 +133,14 @@ class CloudSync(Runnable):
             self.sthread = None
 
     # for tests, make this manually runnable
-    def do(self):
-        self.smgr.do()
-        self.emgrs[0].do()
-        self.emgrs[1].do()
+    def do(self, threaded=True):
+        if threaded:
+            if not self.tpool:
+                import multiprocessing.dummy
+                self.tpool = multiprocessing.dummy.Pool(3)
+            self.tpool.map(lambda x: x.do(), (*self.emgrs, self.smgr))
+        else:
+            map(lambda x: x.do(), (*self.emgrs, self.smgr))
 
     def done(self):
         self.smgr.done()

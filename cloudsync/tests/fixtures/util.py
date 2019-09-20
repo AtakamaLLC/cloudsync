@@ -62,20 +62,13 @@ class WaitFor(NamedTuple):
 
 
 class RunUntilHelper:
-    def run_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT, threaded=False):
+    def run_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT):
         log.debug("running until found")
 
         errs: List[str] = []
         found = lambda: WaitFor.is_found(files, self.providers, errs)
 
-        if threaded:
-            self.start()
-            for _ in time_helper(timeout=timeout):
-                if found():
-                    break
-            self.stop(forever=False)
-        else:
-            self.run(timeout=timeout, until=found)
+        self.run(timeout=timeout, until=found)
 
         if not found():
             raise TimeoutError("timed out while waiting: %s" % errs)

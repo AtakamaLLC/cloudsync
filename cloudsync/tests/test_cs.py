@@ -475,7 +475,7 @@ def test_cs_two_conflicts(cs):
     else:
         assert(len(cs.state) == 4)
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2, threaded=True)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
@@ -534,7 +534,7 @@ def test_cs_subdir_rename(cs):
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    cs.run_until_found(*rpaths2, timeout=2, threaded=True)
+    cs.run_until_found(*rpaths2, timeout=2)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
@@ -622,7 +622,7 @@ def test_cs_folder_conflicts_file(cs):
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
         assert(len(cs.state) == 5)
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2, threaded=True)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
@@ -1141,9 +1141,8 @@ def test_cs_rename_up(cs):
     cs.run_until_found(
             WaitFor(REMOTE, remote_path1, exists=False),
             WaitFor(REMOTE, remote_path2, exists=True),
-            timeout=2, threaded=True)
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1
-            )
+            timeout=2)
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
