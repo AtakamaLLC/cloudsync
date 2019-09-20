@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from pystrict import strict
 
@@ -14,7 +14,7 @@ from .log import TRACE
 log = logging.getLogger(__name__)
 
 
-@strict
+@strict # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
@@ -57,7 +57,7 @@ class CloudSync(Runnable):
         self.sthread = None
         self.ethreads = (None, None)
         self.test_mgr_iter = None
-        self.test_mgr_order = []
+        self.test_mgr_order: List[int] = []
 
     @property
     def aging(self):
