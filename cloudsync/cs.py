@@ -56,7 +56,8 @@ class CloudSync(Runnable):
 
         self.sthread = None
         self.ethreads = (None, None)
-        self.tpool = None
+        self.test_mgr_iter = None
+        self.test_mgr_order = []
 
     @property
     def aging(self):
@@ -138,12 +139,22 @@ class CloudSync(Runnable):
     def do(self, threaded=True):
         # imports are in the body of this test-only function
         import random
-        mgrs = (*self.emgrs, self.smgr)
-        mgrs = random.sample(mgrs, 3)
-        import multiprocessing.dummy
-        if not self.tpool:
-            self.tpool = multiprocessing.dummy.Pool(3)
-        self.tpool.map(lambda x: x.do(), mgrs)
+        mgrs = [*self.emgrs, self.smgr]
+        random.shuffle(mgrs)
+        for m in mgrs:
+            m.do()
+
+        ##  conceptually this should work, but our tests rely on changeset_len
+        # instead we need to expose a stuff-to-do property in cs
+        # if self.test_mgr_iter:
+        #    try:
+        #        r = next(self.test_mgr_iter)
+        #    except StopIteration:
+        #        r = random.randint(0, 2)
+        # else:
+        #    r = random.randint(0, 2)
+        # self.test_mgr_order.append(r)
+        # mgrs[r].do()
 
     def done(self):
         self.smgr.done()
