@@ -13,7 +13,7 @@ class IgnoreReason(Enum):
     NONE = "none"
     TRASHED = "trashed"
     CONFLICT = "conflict"
-    TEMP_CONFLICT = "temporary conflict"
+    TEMP_RENAME = "temp rename"
     IRRELEVANT = "irrelevant"
 
 

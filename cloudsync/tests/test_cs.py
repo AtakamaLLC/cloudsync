@@ -904,9 +904,13 @@ def test_storage(storage):
     missing2 = compare_states(cs2.state, cs1.state)
 
     for e in missing1:
-        log.debug(f"entry in 1 not found in 2 {e.pretty()}")
+        log.debug(f"entry in 1 not found in 2\n{e.pretty()}")
     for e in missing2:
-        log.debug(f"entry in 2 not found in 1 {e.pretty()}")
+        log.debug(f"entry in 2 not found in 1\n{e.pretty()}")
+
+    if missing1 or missing2:
+        log.debug("TABLE 1\n%s", cs1.state.pretty_print())
+        log.debug("TABLE 2\n%s", cs2.state.pretty_print())
 
     assert not missing1
     assert not missing2

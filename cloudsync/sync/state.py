@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
 
-from typing import Union
+from typing import Union, Sequence
 from pystrict import strict
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
@@ -164,13 +164,11 @@ class SyncEntry:
     def __init__(self, parent: 'SyncState',
                  otype: Optional[OType],
                  storage_init: Optional[Tuple[Any, bytes]] = None,
-                 ignore_reason=IgnoreReason.NONE):
+                 ignore_reason: IgnoreReason = IgnoreReason.NONE):
         super().__init__()
         assert otype is not None or storage_init
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._ignored = ignore_reason
-        # self._discarded: str = ""
-        # self._conflicted: bool = False
         self._storage_id: Any = None
         self._dirty: bool = True
         self._punted: int = 0
@@ -220,8 +218,7 @@ class SyncEntry:
         ser = dict()
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
-        ser['discarded'] = self.discarded
-        ser['conflicted'] = self.conflicted
+        ser['ignored'] = self._ignored.value
         return json.dumps(ser).encode('utf-8')
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
@@ -244,8 +241,20 @@ class SyncEntry:
         ser: dict = json.loads(storage_init[1].decode('utf-8'))
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
-        self.discarded = ser.get('discarded', "")
-        self.conflicted = ser.get('conflicted', False)
+        reason_string = ser.get('ignored', "")
+        log.debug("here")
+        if reason_string:
+            try:
+                reason = IgnoreReason(reason_string)
+                self._ignored = reason
+            except ValueError:  # reason was specified, but had an unrecognized value?
+                log.warning("deserializing state, but ignored had bad value %s", reason_string)
+                reason = IgnoreReason.TRASHED  # is this the best thing to use here?
+        elif ser.get('discarded', ""):
+            self._ignored = IgnoreReason.TRASHED
+        elif ser.get('conflicted', ""):
+            self._ignored = IgnoreReason.CONFLICT
+
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -319,33 +328,43 @@ class SyncEntry:
 
     @property
     def is_trashed(self):
-        return self._ignored == IgnoreReason.TRASHED
+        return self.ignored in (IgnoreReason.TRASHED, IgnoreReason.IRRELEVANT)
 
     @property
     def is_irrelevant(self):
-        return self._ignored == IgnoreReason.IRRELEVANT
+        return self.ignored == IgnoreReason.IRRELEVANT
 
     @property
     def is_conflicted(self):
-        return self._ignored == IgnoreReason.CONFLICT
+        return self.ignored == IgnoreReason.CONFLICT
+
+    @property
+    def is_temp_rename(self):
+        return self.ignored == IgnoreReason.TEMP_RENAME
 
     # @property
     # def is_temp_conflicted(self):
-    #     return self._ignored == IgnoreReason.TEMP_CONFLICT
+    #     return self.ignored == IgnoreReason.TEMP_CONFLICT
     #
     # def discard(self):
     #     raise NotImplementedError(                                                                                        )
     #     self.discarded = ''.join(traceback.format_stack())
 
-    def ignore(self, reason: IgnoreReason):
-        if self._ignored != reason:
-            log.warning("Ignoring entry for %s that was already ignored because of %s:%s",
-                        reason.value(), self._ignored, self)
-        self._ignored = reason
+    def ignore(self, reason: IgnoreReason, previous_reasons: Union[Sequence[IgnoreReason], IgnoreReason] = (IgnoreReason.NONE,)):
+        if isinstance(previous_reasons, IgnoreReason):
+            previous_reasons = (previous_reasons,)
+
+        # always ok to set the target reason if the current reason is none or is already the target reason
+        if self._ignored not in (IgnoreReason.NONE, reason, *previous_reasons):
+            log.warning("Ignoring entry for reason '%s' that should have been '%s' already, but was actually '%s':%s",
+                        reason.value, [x.value for x in previous_reasons], self._ignored, self)
+        if reason == IgnoreReason.NONE:
+            log.warning("don't call ignore(IgnoreReason.NONE), call unignore() with the reason to stop ignoring")
+        self.ignored = reason
 
     def unignore(self, reason: IgnoreReason):
-        assert self._ignored == reason
-        self._ignored = IgnoreReason.NONE
+        assert self.ignored in (reason, IgnoreReason.NONE)
+        self.ignored = IgnoreReason.NONE
 
     @staticmethod
     def prettyheaders():
@@ -362,14 +381,14 @@ class SyncEntry:
             "OID",  # _sig(self[REMOTE].oid),
             "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
             "Punt",  # self.punted or ""
-            "Conflict",  # self.conflicted or ""
+            "Ignored",  # self.ignored or ""
         )
         return ret
 
     def pretty(self, fixed=True, use_sigs=True):
         ret = ""
-        if self.discarded:
-            ret = "DISCARDED"
+        if self.ignored != IgnoreReason.NONE:
+            ret = "IGN:%s" % self.ignored
 
         def secs(t):
             if t:
@@ -411,7 +430,8 @@ class SyncEntry:
                         (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
                             self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
                         self._punted,
-                        self._conflicted or bool(self._discarded)))
+                        self.ignored.value
+                        ))
 
         ret += "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
             _sig(id(self)),
@@ -426,7 +446,7 @@ class SyncEntry:
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
             self._punted or "",
-            self._conflicted or "",
+            self.ignored.value if self.ignored != IgnoreReason.NONE else "",
         )
 
         return ret
@@ -514,10 +534,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             self._change_path(side, ent, val, self.providers[side])
         elif key == "oid":
             self._change_oid(side, ent, val)
-        elif key == "discarded" and val:
-            ent[LOCAL]._changed = False
-            ent[REMOTE]._changed = False
-            self._changeset.discard(ent)
+        elif key == "ignored":
+            if val == IgnoreReason.TRASHED:
+                ent[LOCAL]._changed = False
+                ent[REMOTE]._changed = False
+                self._changeset.discard(ent)
+            ent._ignored = val  # TODO: remove this when storage_update is refactored
+            self.storage_update(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
                 self._changeset.add(ent)
@@ -631,9 +654,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def lookup_path(self, side, path, stale=False) -> List[SyncEntry]:
         try:
-            ret = self._paths[side][path].values()
+            ret: Sequence[SyncEntry] = list(self._paths[side][path].values())
             if ret:
-                return [e for e in ret if stale or (not e.discarded and not e.conflicted)]
+                return [e for e in ret if stale or (not e.is_trashed and not e.is_conflicted)]
             return []
         except KeyError:
             return []
@@ -662,7 +685,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert ent
 
         if oid is not None:
-            if ent.discarded:
+            if ent.is_trashed:
                 if self.providers[side].oid_is_path:
                     if path:
                         if otype:
@@ -758,16 +781,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         prior_ent = None
 
         if prior_oid and prior_oid != oid:
+            # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
-            if prior_ent and not prior_ent.discarded:
-                if not ent or not ent.conflicted:
+            if prior_ent and not prior_ent.is_trashed:
+                if not ent or not ent.is_conflicted:
                     ent = prior_ent
             elif not ent:
-                # this is an oid_is_path provider
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:
                     ent = path_ent
-                    ent.discarded = False
+                    ent.unignore(IgnoreReason.TRASHED)
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
 
         if not ent:
@@ -790,7 +813,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         earlier_than = time.time() - age
         for puntlevel in range(3):
             for e in changes:
-                if not e.discarded and e.punted == puntlevel:
+                if not e.is_trashed and e.punted == puntlevel:
                     if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
                             or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                         return e
@@ -823,7 +846,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.discarded and not ent.conflicted:
+            if not ent.is_trashed and not ent.is_conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -846,13 +869,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if (ent.discarded or ent.conflicted) and not discarded:
+            if (ent.is_trashed or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if (ent.discarded or ent.conflicted) and not discarded:
+            if (ent.is_trashed or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
 

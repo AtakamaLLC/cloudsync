@@ -476,9 +476,6 @@ def test_sync_cycle(sync: SyncMgrMixin):
     log.debug("path %s has info %s", rp2, i2)
     log.debug("path %s has info %s", rp3, i3)
 
-    from time import sleep
-    sleep(5)
-
     assert i1
     assert i2
     assert i3
