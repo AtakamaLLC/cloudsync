@@ -9,6 +9,10 @@ class OType(Enum):
     NOTKNOWN = "trashed"
 
 
+# class ConflictType(Enum):
+    # TODO
+
+
 DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
 NOTKNOWN = OType.NOTKNOWN                  # only allowed for deleted files!

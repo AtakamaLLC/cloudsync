@@ -661,14 +661,6 @@ class SyncManager(Runnable):
 
             defer = None
 
-            # if fh.dirty:
-            #     log.debug(">>> winner side %s contents may have changed. updating side %s", fh.side, fh.side)
-            #     fh.seek(0)
-            #     fh_side_state = side_states[fh.side]
-            #     new_fh_info: OInfo = self.providers[fh.side].upload(fh_side_state.oid, fh)
-            #     fh_side_state.hash = new_fh_info.hash
-            #     fh_side_state.sync_hash = new_fh_info.hash
-
             # search the fhs for any fh that is going away
             # could be one, the other, or both (if the fh returned by the conflict resolver is a new one, not in fhs)
             for i, rfh in enumerate(fhs):
