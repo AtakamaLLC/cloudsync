@@ -562,8 +562,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 if prior_ent is not ent:
                     # no longer indexed by oid, also clear change bit
                     prior_ent[side].oid = None
-                    if prior_ent[side].exists != TRASHED:
-                        prior_ent[side].changed = False
 
         if oid:
             ent[side]._oid = oid
