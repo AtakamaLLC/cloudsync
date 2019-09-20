@@ -343,7 +343,7 @@ class SyncEntry(Reprable):
 
         def secs(t):
             if t:
-                return str(round(t % 300, 3)).replace(".", "")
+                return str(int(1000*round(t-self.parent._pretty_time,3)))
             else:
                 return 0
 
@@ -444,7 +444,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
-        self._punt_secs = (providers[0].default_sleep/10, providers[1].default_sleep/10)
+        self._punt_secs = (providers[0].default_sleep/10.0, providers[1].default_sleep/10.0)
+        self._pretty_time = time.time()
         assert len(providers) == 2
 
         self.lock = RLock()
@@ -547,17 +548,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
 
-        prior_oid = ent[side].oid
-
-        prior_ent = None
-        if prior_oid:
-            prior_ent = self._oids[side].pop(prior_oid, None)
+        for remove_oid in set([ent[side].oid, oid]):
+            prior_ent = self._oids[side].pop(remove_oid, None)
 
             if prior_ent:
                 if prior_ent[side].path:
                     prior_path = prior_ent[side].path
                     if prior_path in self._paths[side]:
-                        self._paths[side][prior_path].pop(prior_oid, None)
+                        self._paths[side][prior_path].pop(remove_oid, None)
                         if not self._paths[side][prior_path]:
                             del self._paths[side][prior_path]
 
@@ -732,12 +730,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
             if prior_ent and not prior_ent.discarded:
-                if ent and ent[side].exists == TRASHED and ent[side].changed and not ent.discarded:
-                    ent[side].oid = None  # avoid having duplicate oids, and avoid discarding a changed entry
                 ent = prior_ent
-                prior_ent = None
-
-            if not ent:
+            elif not ent:
                 # this is an oid_is_path provider
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:

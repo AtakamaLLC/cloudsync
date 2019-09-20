@@ -1106,7 +1106,7 @@ def test_cursor(cs_storage):
         timeout=2)
     cs2.done()
 
-
+@pytest.mark.repeat(3)
 def test_cs_rename_up(cs):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -1138,6 +1138,10 @@ def test_cs_rename_up(cs):
     else:
         cs.providers[LOCAL].delete(linfo2.oid)
     cs.providers[LOCAL].rename(linfo1.oid, local_path2)
+    cs.run_until_found(
+            WaitFor(REMOTE, remote_path1, exists=False),
+            WaitFor(REMOTE, remote_path2, exists=True),
+            timeout=2, threaded=True)
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1
             )
 
@@ -1172,18 +1176,17 @@ def test_many_small_files_mkdir_perf(cs):
         if clear_before:
             cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
-        # Upload 100 x 3 KiB files. The size and number shouldn't actually
+        # Upload 20 x 3 KiB files. The size and number shouldn't actually
         # matter.
         content = BytesIO(b"\0" * (3 * 1024))
-        for i in range(100):
+        for i in range(20):
             local_file_name = local_file_base + str(i)
             linfo = cs.providers[LOCAL].create(local_file_name, content, None)
             assert linfo is not None
 
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=1000)
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=10)
 
-        # Check that the process took less than 1000 seconds
-        for i in range(100):
+        for i in range(20):
             rinfo = cs.providers[REMOTE].info_path(remote_file_base + str(i))
             assert rinfo is not None
 
@@ -1205,8 +1208,8 @@ def test_many_small_files_mkdir_perf(cs):
         make_files("_clear", clear_before=True)
 
     # Check that the two are approximately the same
-    assert abs(local_no_clear.call_count - local_clear.call_count) < 10
-    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 10
+    assert abs(local_no_clear.call_count - local_clear.call_count) < 3
+    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
 
 def test_cs_folder_conflicts_del(cs):
     local_path1 = "/local/stuff1"
