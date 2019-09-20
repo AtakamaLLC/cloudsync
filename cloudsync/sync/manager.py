@@ -1058,7 +1058,7 @@ class SyncManager(Runnable):
             return REQUEUE
         # not a new file, which means we must have last sync info
 
-        if sync[synced].exists == TRASHED:
+        if sync[synced].exists == TRASHED or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
             # not an upload
             sync[synced].exists = UNKNOWN
@@ -1071,7 +1071,7 @@ class SyncManager(Runnable):
             sync[changed].sync_path = None
             sync[changed].sync_hash = None
             return REQUEUE
-            
+
         log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
         assert sync[synced].oid

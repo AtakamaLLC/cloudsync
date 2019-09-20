@@ -637,10 +637,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
             ent[side].oid = oid
 
-            if oid and not ent.discarded and not ent.conflicted:
-                if ent not in self.get_all():
-                    assert False, "Index is fucked %s" % ent[side]
-
         if otype is not None and otype != ent[side].otype:
             ent[side].otype = otype
 
@@ -730,7 +726,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if prior_oid and prior_oid != oid:
             prior_ent = self.lookup_oid(side, prior_oid)
             if prior_ent and not prior_ent.discarded:
-                ent = prior_ent
+                if not ent or not ent.conflicted:
+                    ent = prior_ent
             elif not ent:
                 # this is an oid_is_path provider
                 path_ents = self.lookup_path(side, path, stale=True)
