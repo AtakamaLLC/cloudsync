@@ -11,7 +11,6 @@ import copy
 import json
 import logging
 import time
-import traceback
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -20,7 +19,7 @@ from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, C
 from typing import Union
 from pystrict import strict
 
-from cloudsync.types import DIRECTORY, FILE, NOTKNOWN
+from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
 from cloudsync.types import OType
 from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
@@ -161,13 +160,17 @@ class Storage(ABC):
 
 # single entry in the syncs state collection
 @strict         # pylint: disable=too-many-instance-attributes
-class SyncEntry():
-    def __init__(self, parent: 'SyncState', otype: Optional[OType], storage_init: Optional[Tuple[Any, bytes]] = None):
+class SyncEntry:
+    def __init__(self, parent: 'SyncState',
+                 otype: Optional[OType],
+                 storage_init: Optional[Tuple[Any, bytes]] = None,
+                 ignore_reason=IgnoreReason.NONE):
         super().__init__()
         assert otype is not None or storage_init
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
-        self._discarded: str = ""
-        self._conflicted: bool = False
+        self._ignored = ignore_reason
+        # self._discarded: str = ""
+        # self._conflicted: bool = False
         self._storage_id: Any = None
         self._dirty: bool = True
         self._punted: int = 0
@@ -304,14 +307,41 @@ class SyncEntry():
             return True
         return False
 
-    def discard(self):
-        self.discarded = ''.join(traceback.format_stack())
+    @property
+    def ignored(self):
+        return self._ignored != IgnoreReason.NONE
 
-    def conflict(self):
-        self.conflicted = True
+    @ignored.setter
+    def ignored(self, val: Optional[IgnoreReason]):
+        if val is None:
+            val = IgnoreReason.NONE
+        self._ignored = val
 
-    def unconflict(self):
-        self.conflicted = False
+    @property
+    def is_trashed(self):
+        return self._ignored == IgnoreReason.TRASHED
+
+    @property
+    def is_irrelevant(self):
+        return self._ignored == IgnoreReason.IRRELEVANT
+
+    @property
+    def is_conflicted(self):
+        return self._ignored == IgnoreReason.CONFLICT
+
+    # @property
+    # def is_temp_conflicted(self):
+    #     return self._ignored == IgnoreReason.TEMP_CONFLICT
+    #
+    # def discard(self):
+    #     raise NotImplementedError(                                                                                        )
+    #     self.discarded = ''.join(traceback.format_stack())
+    #
+    # def conflict(self):
+    #     self.conflicted = True
+    #
+    # def unconflict(self):
+    #     self.conflicted = False
 
     @staticmethod
     def prettyheaders():

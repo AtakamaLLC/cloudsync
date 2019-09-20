@@ -13,7 +13,7 @@ __all__ = ['SyncManager']
 from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError
-from cloudsync.types import DIRECTORY, FILE
+from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
 
@@ -198,8 +198,8 @@ class SyncManager(Runnable):
         return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
             not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
 
-    def check_revivify(self, sync):
-        if sync.discarded:
+    def check_revivify(self, sync: SyncEntry):
+        if sync.is_trashed:
             for i in (LOCAL, REMOTE):
                 changed = i
                 synced = other_side(i)
@@ -216,13 +216,13 @@ class SyncManager(Runnable):
                 if not provider_path:
                     continue
                 translated_path = self.translate(synced, provider_path)
-                if sync.discarded and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                if sync.is_irrelevant and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
                     log.debug(">>>about to embrace %s", sync)
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
-                    sync.discarded = False
+                    sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
 
-    def sync(self, sync):
+    def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
 
         if sync.discarded:
@@ -987,12 +987,12 @@ class SyncManager(Runnable):
         log.debug("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def discard_entry(self, sync: SyncEntry):
+    def discard_entry(self, sync: SyncEntry):  # TODO: remove this                                                         !
         if sync:
             sync.discard()
             self.state.storage_update(sync)
 
-    def conflict_entry(self, sync: SyncEntry):
+    def conflict_entry(self, sync: SyncEntry):  # TODO: remove this                                                         !
         if sync:
             sync.conflict()
             self.state.storage_update(sync)
@@ -1001,20 +1001,19 @@ class SyncManager(Runnable):
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
+                log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
+                sync.ignored = IgnoreReason.IRRELEVANT
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
                     log.debug(">>>Removing remnants of file moved out of cloud root")
                     sync[changed].exists = TRASHED  # This will discard the ent later
-                else:  # we don't have a new or old translated path... just irrelevant so discard
-                    log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
-                    self.discard_entry(sync)
 
-        if sync.discarded:
+        if sync.is_trashed:
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
         log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
-        if sync.conflicted:
+        if sync.is_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
             if "conflicted" in sync[changed].path:
                 return FINISHED

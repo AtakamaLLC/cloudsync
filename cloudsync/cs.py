@@ -135,10 +135,10 @@ class CloudSync(Runnable):
             self.sthread = None
 
     # for tests, make this manually runnable
-    def do(self, threaded=True):
+    def do(self):
         # imports are in the body of this test-only function
         import random
-        mgrs = (*self.emgrs, self.smgr)
+        mgrs = [*self.emgrs, self.smgr]
         mgrs = random.sample(mgrs, 3)
         import multiprocessing.dummy
         if not self.tpool:

@@ -9,8 +9,12 @@ class OType(Enum):
     NOTKNOWN = "trashed"
 
 
-# class ConflictType(Enum):
-    # TODO
+class IgnoreReason(Enum):
+    NONE = "none"
+    TRASHED = "trashed"
+    CONFLICT = "conflict"
+    TEMP_CONFLICT = "temporary conflict"
+    IRRELEVANT = "irrelevant"
 
 
 DIRECTORY = OType.DIRECTORY
