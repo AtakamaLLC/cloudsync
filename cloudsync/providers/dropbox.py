@@ -104,6 +104,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     on_failure=self._on_oauth_failure,
                     use_predefined_ports=True,
                 )
+                if not key and secret:
+                    raise ValueError("require app key and secret")
                 self._flow = DropboxOAuth2Flow(consumer_key=key,
                                                consumer_secret=secret,
                                                redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'),
@@ -114,6 +116,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 log.exception('Unable to use redir server. Falling back to manual mode')
                 self._oauth_config.manual_mode = False
         if self._oauth_config.manual_mode:
+            if not key and secret:
+                raise ValueError("require app key and secret")
             self._flow = DropboxOAuth2Flow(consumer_key=key,
                                           consumer_secret=secret,
                                           redirect_uri=self._redir,
@@ -195,9 +199,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.connection_id = quota['login']
             except Exception as e:
                 self.disconnect()
-                log.exception("error connecting %s", e)
                 if isinstance(e, exceptions.AuthError):
+                    log.debug("auth error connecting %s", e)
                     raise CloudTokenError()
+                log.exception("error connecting %s", e)
                 raise CloudDisconnectedError()
             self.api_key = api_key
 
