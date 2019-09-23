@@ -199,12 +199,12 @@ class SyncManager(Runnable):
             not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
 
     def check_revivify(self, sync: SyncEntry):
-        if sync.is_trashed:
+        if sync.ignore_bc_trashed:
             for i in (LOCAL, REMOTE):
                 changed = i
                 synced = other_side(i)
                 se = sync[changed]
-                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.is_conflicted:
+                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.ignore_bc_conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -216,7 +216,7 @@ class SyncManager(Runnable):
                 if not provider_path:
                     continue
                 translated_path = self.translate(synced, provider_path)
-                if sync.is_irrelevant and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                if sync.ignore_bc_irrelevant and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
                     log.debug(">>>about to embrace %s", sync)
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
@@ -225,7 +225,7 @@ class SyncManager(Runnable):
     def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
 
-        if sync.is_trashed:
+        if sync.ignore_bc_trashed:
             self.finished(LOCAL, sync)
             self.finished(REMOTE, sync)
             return
@@ -237,7 +237,7 @@ class SyncManager(Runnable):
             self.handle_hash_conflict(sync)
             return
 
-        if self.path_conflict(sync) and not sync.is_temp_rename:
+        if self.path_conflict(sync) and not sync.ignore_bc_temp_rename:
             log.debug("handle path conflict")
             self.handle_path_conflict(sync)
             return
@@ -668,8 +668,6 @@ class SyncManager(Runnable):
                 if fh is not rfh:  # this rfh is getting replaced (this will be true for at least one rfh)
                     loser = side_states[i]
                     winner = side_states[1 - i]
-                    log.debug("i=%s, fhs=%s", i, fhs)
-                    log.debug("loser.side=%s, winner.side=%s", loser.side, winner.side)
 
                     # user didn't opt to keep my rfh
                     log.debug("replacing side %s", loser.side)
@@ -709,7 +707,6 @@ class SyncManager(Runnable):
                 self.__resolver_merge_upload(side_states, fh, keep)
 
             log.debug("RESOLVED CONFLICT: %s side: %s", side_states, defer)
-            log.debug("table\r\n%s", self.state.pretty_print())
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -846,7 +843,7 @@ class SyncManager(Runnable):
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
-            if sync[changed].exists == TRASHED or sync.is_trashed:
+            if sync[changed].exists == TRASHED or sync.ignore_bc_trashed:
                 log.debug("requeue trashed event %s", sync)
                 return REQUEUE
 
@@ -1004,14 +1001,14 @@ class SyncManager(Runnable):
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
                     sync.ignore(IgnoreReason.IRRELEVANT)
 
-        if sync.is_trashed:
+        if sync.ignore_bc_trashed:
             log.log(TRACE, "Ignoring entry because %s:%s", sync.ignored.value, sync)
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
         log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
-        if sync.is_conflicted:
+        if sync.ignore_bc_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
             if "conflicted" in sync[changed].path:
                 return FINISHED

@@ -327,28 +327,20 @@ class SyncEntry:
     #     self._ignored = val
 
     @property
-    def is_trashed(self):
+    def ignore_bc_trashed(self):
         return self.ignored in (IgnoreReason.TRASHED, IgnoreReason.IRRELEVANT)
 
     @property
-    def is_irrelevant(self):
+    def ignore_bc_irrelevant(self):
         return self.ignored == IgnoreReason.IRRELEVANT
 
     @property
-    def is_conflicted(self):
+    def ignore_bc_conflicted(self):
         return self.ignored == IgnoreReason.CONFLICT
 
     @property
-    def is_temp_rename(self):
+    def ignore_bc_temp_rename(self):
         return self.ignored == IgnoreReason.TEMP_RENAME
-
-    # @property
-    # def is_temp_conflicted(self):
-    #     return self.ignored == IgnoreReason.TEMP_CONFLICT
-    #
-    # def discard(self):
-    #     raise NotImplementedError(                                                                                        )
-    #     self.discarded = ''.join(traceback.format_stack())
 
     def ignore(self, reason: IgnoreReason, previous_reasons: Union[Sequence[IgnoreReason], IgnoreReason] = (IgnoreReason.NONE,)):
         if isinstance(previous_reasons, IgnoreReason):
@@ -656,7 +648,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         try:
             ret: Sequence[SyncEntry] = list(self._paths[side][path].values())
             if ret:
-                return [e for e in ret if stale or (not e.is_trashed and not e.is_conflicted)]
+                return [e for e in ret if stale or (not e.ignore_bc_trashed and not e.ignore_bc_conflicted)]
             return []
         except KeyError:
             return []
@@ -685,7 +677,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert ent
 
         if oid is not None:
-            if ent.is_trashed:
+            if ent.ignore_bc_trashed:
                 if self.providers[side].oid_is_path:
                     if path:
                         if otype:
@@ -783,8 +775,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
-            if prior_ent and not prior_ent.is_trashed:
-                if not ent or not ent.is_conflicted:
+            if prior_ent and not prior_ent.ignore_bc_trashed:
+                if not ent or not ent.ignore_bc_conflicted:
                     ent = prior_ent
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
@@ -813,7 +805,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         earlier_than = time.time() - age
         for puntlevel in range(3):
             for e in changes:
-                if not e.is_trashed and e.punted == puntlevel:
+                if not e.ignore_bc_trashed and e.punted == puntlevel:
                     if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
                             or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                         return e
@@ -846,7 +838,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.is_trashed and not ent.is_conflicted:
+            if not ent.ignore_bc_trashed and not ent.ignore_bc_conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -869,13 +861,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if (ent.is_trashed or ent.is_conflicted) and not discarded:
+            if (ent.ignore_bc_trashed or ent.ignore_bc_conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if (ent.is_trashed or ent.is_conflicted) and not discarded:
+            if (ent.ignore_bc_trashed or ent.ignore_bc_conflicted) and not discarded:
                 continue
             ents.add(ent)
 
