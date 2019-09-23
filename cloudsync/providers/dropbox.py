@@ -16,7 +16,7 @@ from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
 
 from cloudsync.utils import debug_args
-from cloudsync.oauth_config import OAuthConfig
+from cloudsync.oauth import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
@@ -24,6 +24,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudO
 
 log = logging.getLogger(__name__)
 logging.getLogger('dropbox').setLevel(logging.INFO)
+
 
 class _FolderIterator:
     def __init__(self, api, path, *, recursive, cursor=None):
@@ -69,7 +70,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id=None, app_secret=None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -81,7 +82,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._session: Dict[Any, Any] = {}
-        self._oauth_config = oauth_config if oauth_config else OAuthConfig()
+        self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
 
     @property
@@ -93,8 +94,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def initialize(self):
         self._csrf = u_b64enc(urandom(32))
-        key = 'objo7li90yqmnfi'
-        secret = '9usaijv8g3fsqsl'
+        key = self._oauth_config.app_id
+        secret = self._oauth_config.app_secret
         log.debug('Initializing Dropbox with manual mode=%s', self._oauth_config.manual_mode)
         if not self._oauth_config.manual_mode:
             try:
@@ -103,6 +104,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     on_failure=self._on_oauth_failure,
                     use_predefined_ports=True,
                 )
+                if not key and secret:
+                    raise ValueError("require app key and secret")
                 self._flow = DropboxOAuth2Flow(consumer_key=key,
                                                consumer_secret=secret,
                                                redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'),
@@ -113,6 +116,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 log.exception('Unable to use redir server. Falling back to manual mode')
                 self._oauth_config.manual_mode = False
         if self._oauth_config.manual_mode:
+            if not key and secret:
+                raise ValueError("require app key and secret")
             self._flow = DropboxOAuth2Flow(consumer_key=key,
                                           consumer_secret=secret,
                                           redirect_uri=self._redir,
@@ -150,7 +155,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         try:
             self.initialize()
             self._oauth_done.wait()
-            return {"key": self.api_key,}
+            return {"key": self.api_key, }
         finally:
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()
@@ -194,9 +199,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.connection_id = quota['login']
             except Exception as e:
                 self.disconnect()
-                log.exception("error connecting %s", e)
                 if isinstance(e, exceptions.AuthError):
+                    log.debug("auth error connecting %s", e)
                     raise CloudTokenError()
+                log.exception("error connecting %s", e)
                 raise CloudDisconnectedError()
             self.api_key = api_key
 

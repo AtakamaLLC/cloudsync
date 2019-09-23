@@ -3,10 +3,11 @@ import time
 import threading
 import requests
 from unittest.mock import Mock, patch
-from cloudsync.apiserver import ApiServer
-from cloudsync.oauth_redir_server import OAuthRedirServer
-log = logging.getLogger(__name__)
 
+from cloudsync.oauth import OAuthRedirServer
+from cloudsync.oauth.apiserver import ApiServer
+
+log = logging.getLogger(__name__)
 
 def resp_gen(success: bool, error_msg: str) -> str:
     time.sleep(2)  # We are making a biiiiiig response that takes way too long
@@ -30,9 +31,9 @@ class EventApiServer(ApiServer):
         return super().__call__(*args, **kwargs)
 
 
-@patch('cloudsync.oauth_redir_server.ApiServer', EventApiServer)
+@patch('cloudsync.oauth.redir_server.ApiServer', EventApiServer)
 def test_oauth_redir_server():
-    srv = OAuthRedirServer(resp_gen)
+    srv = OAuthRedirServer(html_generator=resp_gen)
     on_success = Mock()
     on_failure = Mock()
 
