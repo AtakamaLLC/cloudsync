@@ -9,6 +9,14 @@ class OType(Enum):
     NOTKNOWN = "trashed"
 
 
+class IgnoreReason(Enum):
+    NONE = "none"
+    TRASHED = "trashed"
+    CONFLICT = "conflict"
+    TEMP_RENAME = "temp rename"
+    IRRELEVANT = "irrelevant"
+
+
 DIRECTORY = OType.DIRECTORY
 FILE = OType.FILE
 NOTKNOWN = OType.NOTKNOWN                  # only allowed for deleted files!

@@ -5,7 +5,7 @@ from cloudsync import SyncState, LOCAL, REMOTE, FILE, DIRECTORY
 
 log = logging.getLogger(__name__)
 
-def test_state_state_basic(mock_provider):
+def test_state_basic(mock_provider):
     providers = (mock_provider, mock_provider)
     state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
@@ -15,7 +15,7 @@ def test_state_state_basic(mock_provider):
     state.assert_index_is_correct()
 
 
-def test_state_state_rename(mock_provider):
+def test_state_rename(mock_provider):
     providers = (mock_provider, mock_provider)
     state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
@@ -25,7 +25,7 @@ def test_state_state_rename(mock_provider):
     state.assert_index_is_correct()
 
 
-def test_state_state_rename2(mock_provider):
+def test_state_rename2(mock_provider):
     providers = (mock_provider, mock_provider)
     state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo", oid="123", hash=b"foo")
@@ -40,7 +40,7 @@ def test_state_state_rename2(mock_provider):
     state.assert_index_is_correct()
 
 
-def test_state_state_rename3(mock_provider):
+def test_state_rename3(mock_provider):
     providers = (mock_provider, mock_provider)
     state = SyncState(providers, shuffle=True)
     ahash = "ah"
@@ -75,7 +75,7 @@ def test_state_state_rename3(mock_provider):
     state.assert_index_is_correct()
 
 
-def test_state_state_multi(mock_provider):
+def test_state_multi(mock_provider):
     providers = (mock_provider, mock_provider)
     state = SyncState(providers, shuffle=True)
     state.update(LOCAL, FILE, path="foo2", oid="123")
@@ -84,7 +84,7 @@ def test_state_state_multi(mock_provider):
     state.assert_index_is_correct()
 
 
-def test_state_state_kids(mock_provider):
+def test_state_kids(mock_provider):
     # annoyingly, the state manager now interacts with the provider
     # this means that the state manager needs to know how to get an oid
 
@@ -107,7 +107,7 @@ def test_state_state_kids(mock_provider):
     assert len(state) == 2
     assert state.lookup_path(LOCAL, "/dir2/foo")
 
-def test_state_state_split(mock_provider):
+def test_state_split(mock_provider):
     # annoyingly, the state manager now interacts with the provider
     # this means that the state manager needs to know how to get an oid
 
@@ -136,7 +136,25 @@ def test_state_state_split(mock_provider):
     assert state.lookup_oid(LOCAL, "123") is repl
     assert state.lookup_path(LOCAL, "/dir")
 
-    assert state.lookup_path(REMOTE, "/rem") 
+    assert state.lookup_path(REMOTE, "/rem")
     assert state.lookup_oid(REMOTE, "999") is defer
 
     state.assert_index_is_correct()
+
+def test_state_alter_oid(mock_provider):
+    providers = (mock_provider, mock_provider)
+    state = SyncState(providers, shuffle=True)
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    ent1 = state.lookup_oid(LOCAL, "123")
+    assert ent1 in state.changes
+    state.update(LOCAL, FILE, path="456", oid="456", hash=b"456")
+    ent2 = state.lookup_oid(LOCAL, "456")
+    assert ent2 in state.changes
+    ent1[LOCAL].oid = "456"
+    assert state.lookup_oid(LOCAL, "456") is ent1
+    assert state.lookup_oid(LOCAL, "123") is None
+    assert ent2 not in state.get_all()
+    ent1[LOCAL].oid = "456"
+    ent2[LOCAL].oid = "123"
+    assert state.lookup_oid(LOCAL, "123") is ent2
+    assert ent2 in state.changes
