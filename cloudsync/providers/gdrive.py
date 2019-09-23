@@ -178,6 +178,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 api_key = new_creds.get('api_key', None)
                 refresh_token = new_creds.get('refresh_token', None)
             kwargs = {}
+
+            if ( not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
+                raise ValueError("require app_id/secret or api_key")
+
             try:
                 with self.mutex:
                     creds = client.GoogleCredentials(access_token=api_key,
