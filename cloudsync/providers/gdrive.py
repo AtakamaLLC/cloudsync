@@ -16,6 +16,9 @@ from oauth2client import client         # pylint: disable=import-error
 from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
+
+
+from cloudsync.utils import debug_args
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
@@ -256,7 +259,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     ret = meth
                 else:
                     ret = meth.execute()
-                log.debug("api: %s %s (%s) -> %s", method, args, kwargs, ret)
+                log.debug("api: %s (%s) -> %s", method, debug_args(args, kwargs), ret)
                 return ret
             except HttpAccessTokenRefreshError:
                 self.disconnect()

@@ -23,7 +23,7 @@ from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
 from cloudsync.types import OType
 from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
-from .util import debug_sig
+from cloudsync.utils import debug_sig
 if TYPE_CHECKING:
     from cloudsync import Provider
 

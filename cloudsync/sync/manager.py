@@ -16,9 +16,9 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
+from cloudsync.utils import debug_sig
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
-from .util import debug_sig
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
