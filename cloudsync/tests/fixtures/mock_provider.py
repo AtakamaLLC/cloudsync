@@ -12,7 +12,7 @@ from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
     CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError
-from cloudsync.sync.util import debug_sig
+from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
 
