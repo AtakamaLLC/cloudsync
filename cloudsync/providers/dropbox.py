@@ -14,6 +14,8 @@ import arrow
 import dropbox
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
+
+from cloudsync.utils import debug_args
 from cloudsync.oauth_config import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
@@ -202,7 +204,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
-        log.debug("_api: %s (%s %s)", method, args, kwargs)
+        log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
 
         with self.mutex:
             try:
