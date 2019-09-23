@@ -58,7 +58,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id: str = None, app_secret: str = None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -71,7 +71,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids = {"/": "root"}
         self._trashed_ids: Dict[str, str] = {}
         self._flow = None
-        self._oauth_config = oauth_config if oauth_config else OAuthConfig()
+        self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
 
     @property

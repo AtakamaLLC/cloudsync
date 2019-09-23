@@ -70,7 +70,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id=None, app_secret=None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
@@ -82,7 +82,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._session: Dict[Any, Any] = {}
-        self._oauth_config = oauth_config if oauth_config else OAuthConfig()
+        self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
 
     @property

@@ -31,9 +31,6 @@ class OAuthConfig:
                 log.debug("Using environment specified oauth app secret")
                 self.insecure_app = True
 
-        if app_id is None or app_secret is None:
-            raise ValueError("missing app id and app secret for oauth2")
-
         self.app_id = app_id
         self.app_secret = app_secret
 

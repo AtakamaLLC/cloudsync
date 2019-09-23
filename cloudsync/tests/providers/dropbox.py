@@ -19,6 +19,7 @@ def dropbox_creds():
     creds = {
         "key": tokens[random.randrange(0, len(tokens))],
     }
+
     return creds
 
 def bad_dropbox_creds():
@@ -26,23 +27,27 @@ def bad_dropbox_creds():
     if not token_set:
         return None
 
-    tokens = token_set.split(",")
-
     creds = {
         "key": 'im a bad bad key',
     }
+
     return creds
 
+def app_id():
+    return os.environ.get("DROPBOX_APP_ID", None)
+
+def app_secret():
+    return os.environ.get("DROPBOX_APP_ID", None)
 
 def dropbox_provider():
-
     cls = DropboxProvider
 
     # duck type in testing parameters
     cls.event_timeout = 20          # type: ignore
     cls.event_sleep = 2             # type: ignore
     cls.creds = dropbox_creds()     # type: ignore
-    return cls()
+
+    return cls(app_id=app_id(), app_secret=app_secret())
 
 
 @pytest.fixture
@@ -58,10 +63,10 @@ def connect_test(want_oauth: bool, creds=None):
     if want_oauth:
         creds.pop("key", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = DropboxProvider()
+    gd = DropboxProvider(app_id=app_id(), app_secret=app_secret())
     gd.connect(creds)
     assert gd.client
-    quota = gd.get_quota()
+    gd.get_quota()
     try:
         info = gd.info_path(sync_root)
         if info and info.oid:
