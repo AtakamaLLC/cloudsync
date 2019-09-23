@@ -8,7 +8,9 @@ __all__ = ["OAuthConfig"]
 
 log = logging.getLogger(__name__)
 
-# this class delibarately not strict, since it can contain provider-specific configutation
+# this class delibarately not strict, since it can contain provider-specific configuration
+# applications can derive from this class and provide appropriate defaults
+
 class OAuthConfig:
     def __init__(self, *, app_id: str = None, app_secret: str = None, manual_mode: bool = False, oauth_redir_server: Optional[OAuthRedirServer] = None):
         """
@@ -17,19 +19,6 @@ class OAuthConfig:
         :param manual_mode:
         :param oauth_redir_server:
         """
-
-        if app_id is None:
-            app_id = os.environ.get("CLOUDSYNC_OAUTH_APP_ID", None)
-            if app_id is not None:
-                log.debug("Using environment specified oauth app id")
-                # oauth app secrets are never secure in distributed apps, so insecure options are sometimes ok
-                self.insecure_app = True
-
-        if app_secret is None:
-            app_secret = os.environ.get("CLOUDSYNC_OAUTH_APP_SECRET", None)
-            if app_secret is not None:
-                log.debug("Using environment specified oauth app secret")
-                self.insecure_app = True
 
         self.app_id = app_id
         self.app_secret = app_secret
