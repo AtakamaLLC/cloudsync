@@ -16,7 +16,7 @@ from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
 
 from cloudsync.utils import debug_args
-from cloudsync.oauth_config import OAuthConfig
+from cloudsync.oauth import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
@@ -24,6 +24,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudO
 
 log = logging.getLogger(__name__)
 logging.getLogger('dropbox').setLevel(logging.INFO)
+
 
 class _FolderIterator:
     def __init__(self, api, path, *, recursive, cursor=None):
@@ -93,8 +94,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def initialize(self):
         self._csrf = u_b64enc(urandom(32))
-        key = 'objo7li90yqmnfi'
-        secret = '9usaijv8g3fsqsl'
+        key = self._oauth_config.app_id
+        secret = self._oauth_config.app_secret
         log.debug('Initializing Dropbox with manual mode=%s', self._oauth_config.manual_mode)
         if not self._oauth_config.manual_mode:
             try:
@@ -150,7 +151,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         try:
             self.initialize()
             self._oauth_done.wait()
-            return {"key": self.api_key,}
+            return {"key": self.api_key, }
         finally:
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()

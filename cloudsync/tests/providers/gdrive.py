@@ -9,16 +9,13 @@ from cloudsync.oauth_config import OAuthConfig
 # move this to provider ci_creds() function?
 def gdrive_creds():
     token_set = os.environ.get("GDRIVE_TOKEN")
-    cli_sec = os.environ.get("GDRIVE_CLI_SECRET")
-    if not token_set or not cli_sec:
+    if not token_set:
         return None
 
     tokens = token_set.split(",")
 
     creds = {
         "refresh_token": tokens[random.randrange(0, len(tokens))],
-        "client_secret": cli_sec,
-        "client_id": '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com',
     }
 
     return creds
@@ -47,7 +44,7 @@ def cloudsync_provider():
 def connect_test(want_oauth: bool):
     creds = gdrive_creds()
     if not creds:
-        pytest.skip('requires gdrive token and client secret')
+        pytest.skip('requires gdrive token')
     if want_oauth:
         creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()

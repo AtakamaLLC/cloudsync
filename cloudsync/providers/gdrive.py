@@ -22,7 +22,7 @@ from cloudsync.utils import debug_args
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
-from cloudsync.oauth_config import OAuthConfig
+from cloudsync.oauth import OAuthConfig
 
 
 class GDriveFileDoneError(Exception):
@@ -53,8 +53,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     _scope = ['https://www.googleapis.com/auth/drive',
               'https://www.googleapis.com/auth/drive.activity.readonly'
               ]
-    _client_id = '433538542924-ehhkb8jn358qbreg865pejbdpjnm31c0.apps.googleusercontent.com'
-    _client_secret = 'Y-GBVYGO2v5V9cV4WsjMSXDV'
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _token_uri = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
@@ -90,8 +88,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     on_success=self._on_oauth_success,
                     on_failure=self._on_oauth_failure,
                 )
-                self._flow = OAuth2WebServerFlow(client_id=self._client_id,
-                                                 client_secret=self._client_secret,
+                self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
+                                                 client_secret=self._oauth_config.app_secret,
                                                  scope=self._scope,
                                                  redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'))
             except OSError:
@@ -99,8 +97,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self._oauth_config.manual_mode = False
 
         if self._oauth_config.manual_mode:
-            self._flow = OAuth2WebServerFlow(client_id=self._client_id,
-                                             client_secret=self._client_secret,
+            self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
+                                             client_secret=self._oauth_config.app_secret,
                                              scope=self._scope,
                                              redirect_uri=self._redir)
 
@@ -137,8 +135,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self._oauth_done.wait()
             return {"refresh_token": self.refresh_token,
                     "api_key": self.api_key,
-                    "client_secret": self._client_secret,
-                    "client_id": self._client_id,
                     }
         finally:
             if not self._oauth_config.manual_mode:
@@ -185,10 +181,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             try:
                 with self.mutex:
                     creds = client.GoogleCredentials(access_token=api_key,
-                                                     client_id=creds.get(
-                                                         'client_id', self._client_id),
-                                                     client_secret=creds.get(
-                                                         'client_secret', self._client_secret),
+                                                     client_id=self._oauth_config.app_id,
+                                                     client_secret=self._oauth_config.app_secret,
                                                      refresh_token=refresh_token,
                                                      token_expiry=None,
                                                      token_uri=self._token_uri,

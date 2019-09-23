@@ -6,14 +6,17 @@ import errno
 from typing import Callable, Any, Optional
 # from src import config
 from .apiserver import ApiServer
-# from src.osutil import is_windows
-# from src.vapiserver import VApiClient
+
 log = logging.getLogger(__name__)
 
+__all__ = ['OAuthFlowException', 'OAuthBadTokenException', 'OAuthRedirServer']
 
-def is_windows():
+# todo: use https://requests-oauthlib.readthedocs.io/en/latest/oauth2_workflow.html#web-application-flow
+# then provide tools to that provider-writers don't have to do much to get their app-specific oauth to work other than
+# providing the resource name, auth url and any app-specific parameters
+
+def _is_windows():
     return sys.platform in ("win32", "cygwin")
-
 
 class OAuthFlowException(Exception):
     pass
@@ -28,8 +31,8 @@ class OAuthRedirServer:
     PORT_MAX = 52450
     GUI_TIMEOUT = 15
 
-    def __init__(self, html_response_generator: Callable[[bool, str], str] = None):
-        self.__html_response_generator = html_response_generator
+    def __init__(self, *, html_generator: Callable[[bool, str], str] = None):
+        self.__html_response_generator = html_generator
         self.__on_success: Optional[Callable[[Any], None]] = None
         self.__on_failure: Optional[Callable[[str], None]] = None
         self.__api_server: Optional[ApiServer] = None
@@ -58,7 +61,7 @@ class OAuthRedirServer:
             #  127.0.0.1:(PORT_MIN..PORT_MAX) as valid redir URLs
             for port in range(self.PORT_MIN, self.PORT_MAX):
                 try:
-                    if is_windows():
+                    if _is_windows():
                         # Windows is dumb and will be weird if we just try to
                         #  connect to the port directly. Check to see if the
                         #  port is responsive before claiming it as our own
@@ -131,4 +134,3 @@ class OAuthRedirServer:
     def port(self):
         return self.__api_server.port()
 
-__all__ = ['OAuthFlowException', 'OAuthBadTokenException', 'OAuthRedirServer']

@@ -6,7 +6,7 @@ import pytest
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudTokenError
 from cloudsync.providers.dropbox import DropboxProvider
-from cloudsync.oauth_config import OAuthConfig
+from cloudsync.oauth import OAuthConfig
 
 
 def dropbox_creds():
