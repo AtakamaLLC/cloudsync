@@ -16,7 +16,7 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
-from cloudsync.utils import debug_sig
+from cloudsync.utils import debug_sig, disable_log_multiline
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 
@@ -242,7 +242,8 @@ class SyncManager(Runnable):
             self.handle_path_conflict(sync)
             return
 
-        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+        with disable_log_multiline():
+            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         for i in (LOCAL, REMOTE):
             if sync[i].changed:
@@ -1006,7 +1007,8 @@ class SyncManager(Runnable):
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
-        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+        with disable_log_multiline():
+            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         if sync.ignore_bc_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)

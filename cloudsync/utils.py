@@ -2,6 +2,8 @@ import logging
 from hashlib import md5
 from base64 import b64encode
 from typing import Any, Union, List, Dict
+from unittest.mock import patch
+from _pytest.logging import PercentStyleMultiline
 
 log = logging.getLogger(__name__)
 
@@ -46,3 +48,18 @@ def debug_sig(t: Any, size: int = 3) -> Union[str, int]:
         return 0
     return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
 
+
+class disable_log_multiline:
+    @staticmethod
+    def _format(loggerclass, record):
+        return loggerclass._fmt % record.__dict__  # pylint: disable=protected-access
+
+    def __init__(self):
+        self.patch_object = patch.object(PercentStyleMultiline, "format", new=disable_log_multiline._format)
+
+    def __enter__(self):
+        self.patch_object.__enter__()
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self.patch_object.__exit__(*args, **kwargs)

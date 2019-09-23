@@ -23,7 +23,7 @@ from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
 from cloudsync.types import OType
 from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
-from cloudsync.utils import debug_sig
+from cloudsync.utils import debug_sig, disable_log_multiline
 if TYPE_CHECKING:
     from cloudsync import Provider
 
@@ -922,7 +922,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        log.log(TRACE, "SPLIT\n%s", self.pretty_print())
+        with disable_log_multiline():
+            log.log(TRACE, "SPLIT\n%s", self.pretty_print())
 
         assert replace_ent[replace].oid
 
