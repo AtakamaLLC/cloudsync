@@ -6,19 +6,19 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List
 
 __all__ = ['SyncManager']
 
 from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError
-from cloudsync.types import DIRECTORY, FILE
+from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
+from cloudsync.utils import debug_sig
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
-from .util import debug_sig
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
@@ -42,37 +42,45 @@ class ResolveFile():
         self.path = info.path
         self.side = info.side
         self.otype = info.otype
-        self.temp_file = info.temp_file
+        self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
         self.__fh = None
 
+    def download(self):
+        if not os.path.exists(self.__temp_file):
+            try:
+                with open(self.__temp_file + ".tmp", "wb") as f:
+                    self.provider.download(self.info.oid, f)
+                os.rename(self.__temp_file + ".tmp", self.__temp_file)
+            except Exception as e:
+                log.debug("error downloading %s", e)
+                try:
+                    os.unlink(self.__temp_file)
+                except FileNotFoundError:
+                    pass
+                raise
+        return self.__temp_file
+
     @property
     def fh(self):
         if not self.__fh:
-            if not os.path.exists(self.info.temp_file):
-                try:
-                    with open(self.info.temp_file, "wb") as f:
-                        self.provider.download(self.info.oid, f)
-                except Exception as e:
-                    log.debug("error downloading %s", e)
-                    try:
-                        os.unlink(self.info.temp_file)
-                    except FileNotFoundError:
-                        pass
-                    raise
-
-            self.__fh = open(self.info.temp_file, "rb")
+            self.download()  # NOOP if it was already downloaded
+            self.__fh = open(self.__temp_file, "rb")
+            log.debug("ResolveFile opening temp file %s for real file %s", self.__temp_file, self.path)
         return self.__fh
 
     def read(self, *a):
         return self.fh.read(*a)
 
-    def write(self, buf):
-        return self.fh.write(buf)
+    def write(self, buf):  # we don't want this
+        raise NotImplementedError()
 
     def close(self):
-        return self.fh.close()
+        # don't use self.fh, use self.__fh. No need to download and open it, just to close it
+        if self.__fh:
+            log.debug("ResolveFile closing temp file %s for real file %s", self.__temp_file, self.path)
+            self.__fh.close()
 
     def seek(self, *a):
         return self.fh.seek(*a)
@@ -190,13 +198,13 @@ class SyncManager(Runnable):
         return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
             not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
 
-    def check_revivify(self, sync):
-        if sync.discarded:
+    def check_revivify(self, sync: SyncEntry):
+        if sync.is_trashed:
             for i in (LOCAL, REMOTE):
                 changed = i
                 synced = other_side(i)
                 se = sync[changed]
-                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.conflicted:
+                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.is_conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -208,16 +216,16 @@ class SyncManager(Runnable):
                 if not provider_path:
                     continue
                 translated_path = self.translate(synced, provider_path)
-                if sync.discarded and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                if sync.is_irrelevant and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
                     log.debug(">>>about to embrace %s", sync)
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
-                    sync.discarded = False
+                    sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
 
-    def sync(self, sync):
+    def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
 
-        if sync.discarded:
+        if sync.is_trashed:
             self.finished(LOCAL, sync)
             self.finished(REMOTE, sync)
             return
@@ -229,7 +237,7 @@ class SyncManager(Runnable):
             self.handle_hash_conflict(sync)
             return
 
-        if self.path_conflict(sync):
+        if self.path_conflict(sync) and not sync.is_temp_rename:
             log.debug("handle path conflict")
             self.handle_path_conflict(sync)
             return
@@ -260,13 +268,15 @@ class SyncManager(Runnable):
                     self.finished(i, sync)
                 break
 
-    def temp_file(self):
+    def temp_file(self, temp_for=None):
         if not os.path.exists(self.tempdir):
             # in case user deletes it... recreate
             os.mkdir(self.tempdir)
         # prefer big random name over NamedTemp which can infinite loop
         ret = os.path.join(self.tempdir, os.urandom(16).hex())
         log.debug("tempdir %s -> %s", self.tempdir, ret)
+        if temp_for:
+            log.debug("%s is temped by %s", temp_for, ret)
         return ret
 
     def finished(self, side, sync):
@@ -293,7 +303,7 @@ class SyncManager(Runnable):
                 sync[side].temp_file = None
 
     def download_changed(self, changed, sync):
-        sync[changed].temp_file = sync[changed].temp_file or self.temp_file()
+        sync[changed].temp_file = sync[changed].temp_file or self.temp_file(temp_for=sync[changed].path)
 
         assert sync[changed].oid
 
@@ -343,7 +353,7 @@ class SyncManager(Runnable):
                     # these we can toss, they are other folders
                     # keep the current one, since it exists for sure
                     log.debug("discard %s", ent)
-                    self.discard_entry(ent)
+                    ent.ignore(IgnoreReason.TRASHED)
 
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
@@ -369,7 +379,7 @@ class SyncManager(Runnable):
                 # dup dirs on remote side can be ignored
                 if ent[synced].otype == DIRECTORY:
                     log.debug("discard duplicate dir entry %s", ent)
-                    self.discard_entry(ent)
+                    ent.ignore(IgnoreReason.TRASHED)
 
             cent = self.get_folder_file_conflict(sync, translated_path, synced)
             if cent:
@@ -386,7 +396,7 @@ class SyncManager(Runnable):
             already_dir = self.state.lookup_oid(synced, oid)
             if already_dir and already_dir != sync and already_dir[synced].otype == DIRECTORY:
                 log.debug("discard %s", already_dir)
-                self.discard_entry(already_dir)
+                already_dir.ignore(IgnoreReason.TRASHED)
 
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
@@ -544,17 +554,28 @@ class SyncManager(Runnable):
             return REQUEUE
 
     def __resolve_file_likes(self, side_states):
-        fhs = []
-        for ss in side_states:
-            assert type(ss) is SideState
+        class Guard:
+            def __init__(guard, side_states):  # pylint: disable=no-self-argument
+                guard.side_states = side_states
+                guard.fhs: List[ResolveFile] = []
 
-            if not ss.temp_file and ss.otype == FILE:
-                ss.temp_file = self.temp_file()
+            def __enter__(guard):  # pylint: disable=no-self-argument
+                for ss in guard.side_states:
+                    assert type(ss) is SideState
 
-            fhs.append(ResolveFile(ss, self.providers[ss.side]))
+                    if not ss.temp_file and ss.otype == FILE:
+                        ss.temp_file = self.temp_file(temp_for=ss.path)
 
-            assert ss.oid
-        return fhs
+                    guard.fhs.append(ResolveFile(ss, self.providers[ss.side]))
+
+                    assert ss.oid
+                return guard.fhs
+
+            def __exit__(guard, *args):  # pylint: disable=no-self-argument
+                for fh in guard.fhs:
+                    fh.close()
+
+        return Guard(side_states)
 
     def __safe_call_resolver(self, fhs):
         if DIRECTORY in (fhs[0].otype, fhs[1].otype):
@@ -570,11 +591,15 @@ class SyncManager(Runnable):
         ret = None
         try:
             ret = self.__resolve_conflict(*fhs)
+
             if ret:
-                if len(ret) != 2:
+                if not isinstance(ret, tuple):
+                    log.error("resolve conflict should return a tuple of 2 values, got %s(%s)", ret, type(ret))
+                    ret = None
+                elif len(ret) != 2:
                     log.error("bad return value for resolve conflict %s", ret)
                     ret = None
-                if not is_file_like(ret[0]):
+                elif not is_file_like(ret[0]):
                     log.error("bad return value for resolve conflict %s", ret)
                     ret = None
         except Exception as e:
@@ -623,57 +648,67 @@ class SyncManager(Runnable):
 
         defer_ent[ent2.side].sync_hash = ent2.sync_hash
         defer_ent[ent2.side].sync_path = ent2.sync_path
-        self.discard_entry(replace_ent)
+        replace_ent.ignore(IgnoreReason.TRASHED)
 
     def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements
-        fhs = self.__resolve_file_likes(side_states)
+        with self.__resolve_file_likes(side_states) as fhs:
+            fh: ResolveFile
+            keep: bool
+            fh, keep = self.__safe_call_resolver(fhs)
 
-        fh, keep = self.__safe_call_resolver(fhs)
+            log.debug("keeping ret side %s", getattr(fh, "side", None))
+            log.debug("fhs[0].side=%s", fhs[0].side)
 
-        log.debug("got ret side %s", getattr(fh, "side", None))
+            defer = None
 
-        defer = None
+            # search the fhs for any fh that is going away
+            # could be one, the other, or both (if the fh returned by the conflict resolver is a new one, not in fhs)
+            for i, rfh in enumerate(fhs):
+                if fh is not rfh:  # this rfh is getting replaced (this will be true for at least one rfh)
+                    loser = side_states[i]
+                    winner = side_states[1 - i]
+                    log.debug("i=%s, fhs=%s", i, fhs)
+                    log.debug("loser.side=%s, winner.side=%s", loser.side, winner.side)
 
-        for i, rfh in enumerate(fhs):
-            this = side_states[i]
-            that = side_states[1-i]
+                    # user didn't opt to keep my rfh
+                    log.debug("replacing side %s", loser.side)
+                    if not keep:
+                        log.debug("not keeping side %s, simply uploading to replace with new contents", loser.side)
+                        fh.seek(0)
+                        info2 = self.providers[loser.side].upload(loser.oid, fh)
+                        loser.hash = info2.hash
+                        assert info2.hash
+                        winner.sync_hash = winner.hash
+                        winner.sync_path = winner.path
+                        loser.sync_hash = loser.hash
+                        loser.sync_path = loser.path
+                    else:
+                        log.debug("rename side %s to conflicted", loser.side)
+                        try:
+                            self._resolve_rename(loser)
+                        except CloudFileNotFoundError:
+                            log.debug("there is no conflict, because the file doesn't exist? %s", loser)
 
-            if fh is not rfh:
-                # user didn't opt to keep my rfh
-                log.debug("replacing %s", this.side)
-                if not keep:
-                    fh.seek(0)
-                    info2 = self.providers[this.side].upload(this.oid, fh)
-                    this.hash = info2.hash
-                    assert info2.hash
-                    that.sync_hash = that.hash
-                    that.sync_path = that.path
-                    this.sync_hash = this.hash
-                    this.sync_path = this.path
-                else:
-                    try:
-                        self._resolve_rename(this)
-                    except CloudFileNotFoundError:
-                        log.debug("there is no conflict, because the file doesn't exist? %s", this)
+                    if defer is None:  # the first time we see an rfh to replace, defer gets set to the winner side
+                        defer = winner.side
+                    else:  # if we replace both rfh, then defer gets set back to None
+                        defer = None
 
-                if defer is None:
-                    defer = that.side
-                else:
-                    defer = None
+            if defer is not None:  # we are replacing one side, not both
+                # toss the other side that was replaced
+                if keep:
+                    sorted_states = sorted(side_states, key=lambda e: e.side)
+                    replace_side = other_side(defer)
+                    replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+                    if replace_ent:
+                        replace_ent.ignore(IgnoreReason.CONFLICT)
 
-        if defer is not None:
-            # toss the other side that was replaced
-            sorted_states = sorted(side_states, key=lambda e: e.side)
-            replace_side = other_side(defer)
-            replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
-            if replace_ent:
-                self.conflict_entry(replace_ent)
-        else:
-            # both sides were modified....
-            self.__resolver_merge_upload(side_states, fh, keep)
+            else:
+                # both sides were modified, because the fh returned was some third thing that should replace both
+                self.__resolver_merge_upload(side_states, fh, keep)
 
-        log.debug("RESOLVED CONFLICT: %s dide: %s", side_states, defer)
-        log.debug("table\r\n%s", self.state.pretty_print())
+            log.debug("RESOLVED CONFLICT: %s side: %s", side_states, defer)
+            log.debug("table\r\n%s", self.state.pretty_print())
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -684,7 +719,7 @@ class SyncManager(Runnable):
         for ent in ents:
             if ent.is_creation(synced):
                 log.debug("discard delete, pending create %s:%s", synced, ent)
-                self.discard_entry(sync)
+                sync.ignore(IgnoreReason.TRASHED)
                 return FINISHED
 
         # deltions don't always have paths
@@ -697,7 +732,7 @@ class SyncManager(Runnable):
                 for ent in ents:
                     if ent.is_rename(synced):
                         log.debug("discard delete, pending rename %s:%s", synced, ent)
-                        self.discard_entry(sync)
+                        sync.ignore(IgnoreReason.TRASHED)
                         return FINISHED
 
         if sync[synced].oid:
@@ -711,7 +746,7 @@ class SyncManager(Runnable):
             log.debug("was never synced, ignoring deletion")
 
         sync[synced].exists = TRASHED
-        self.discard_entry(sync)
+        sync.ignore(IgnoreReason.TRASHED, previous_reasons=IgnoreReason.IRRELEVANT)
         return FINISHED
 
     def _handle_dir_delete_not_empty(self, sync, changed):
@@ -758,7 +793,7 @@ class SyncManager(Runnable):
             for ent in other_ents:
                 if ent[synced].exists == TRASHED:
                     # old trashed entries can be safely ignored
-                    ent.discarded = True
+                    ent.ignore(IgnoreReason.TRASHED)
             return None
 
         other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
@@ -810,7 +845,7 @@ class SyncManager(Runnable):
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
-            if sync[changed].exists == TRASHED or sync.discarded:
+            if sync[changed].exists == TRASHED or sync.is_trashed:
                 log.debug("requeue trashed event %s", sync)
                 return REQUEUE
 
@@ -887,7 +922,7 @@ class SyncManager(Runnable):
                         sync.punt()
                         return REQUEUE
                 log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
-                self.rename_to_fix_conflict(sync, synced, translated_path)
+                self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
 
@@ -905,7 +940,7 @@ class SyncManager(Runnable):
         replace.changed = time.time()
         return True
 
-    def rename_to_fix_conflict(self, sync, side, path):
+    def rename_to_fix_conflict(self, sync, side, path, temp_rename=False):
         old_oid, new_oid, new_name = self.conflict_rename(side, path)
         if new_name is None:
             return False
@@ -913,10 +948,14 @@ class SyncManager(Runnable):
         # file can get renamed back, if there's a cycle
         if old_oid == sync[side].oid:
             self.update_entry(sync, side=side, oid=new_oid)
+            if temp_rename:
+                sync.ignore(IgnoreReason.TEMP_RENAME)
         else:
             ent = self.state.lookup_oid(side, old_oid)
             if ent:
                 self.update_entry(ent, side=side, oid=new_oid)
+                if temp_rename:
+                    ent.ignore(IgnoreReason.TEMP_RENAME)
 
         return True
 
@@ -953,16 +992,6 @@ class SyncManager(Runnable):
         log.debug("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def discard_entry(self, sync: SyncEntry):
-        if sync:
-            sync.discard()
-            self.state.storage_update(sync)
-
-    def conflict_entry(self, sync: SyncEntry):
-        if sync:
-            sync.conflict()
-            self.state.storage_update(sync)
-
     def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements, too-many-branches
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
@@ -972,19 +1001,21 @@ class SyncManager(Runnable):
                     sync[changed].exists = TRASHED  # This will discard the ent later
                 else:  # we don't have a new or old translated path... just irrelevant so discard
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
-                    self.discard_entry(sync)
+                    sync.ignore(IgnoreReason.IRRELEVANT)
 
-        if sync.discarded:
+        if sync.is_trashed:
+            log.log(TRACE, "Ignoring entry because %s:%s", sync.ignored.value, sync)
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
+        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
-        if sync.conflicted:
+        if sync.is_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
             if "conflicted" in sync[changed].path:
                 return FINISHED
             else:
-                sync.unconflict()
+                sync.unignore(IgnoreReason.CONFLICT)
 
         if sync[changed].path and sync[changed].exists == EXISTS:
             # parent_conflict code
@@ -1023,7 +1054,7 @@ class SyncManager(Runnable):
             return REQUEUE
         # not a new file, which means we must have last sync info
 
-        if sync[synced].exists == TRASHED:
+        if sync[synced].exists == TRASHED or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
             # not an upload
             sync[synced].exists = UNKNOWN
@@ -1036,7 +1067,7 @@ class SyncManager(Runnable):
             sync[changed].sync_path = None
             sync[changed].sync_hash = None
             return REQUEUE
-            
+
         log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
         assert sync[synced].oid
@@ -1059,7 +1090,7 @@ class SyncManager(Runnable):
             log.warning("impossible sync, no path. "
                         "Probably a file that was shared, but not placed into a folder. discarding. %s",
                         sync[changed])
-            self.discard_entry(sync)
+            sync.ignore(IgnoreReason.TRASHED)
             return
 
         log.debug("UPDATE PATH %s->%s", sync, info.path)
@@ -1084,11 +1115,12 @@ class SyncManager(Runnable):
                     dhash = self.providers[replace_side].hash_data(f)
                     if dhash == replace_ent[replace_side].hash:
                         log.debug("same hash as remote, discard entry")
-                        self.discard_entry(replace_ent)
+                        replace_ent.ignore(IgnoreReason.TRASHED)
                         return True
             except FileNotFoundError:
                 return False
 
+        log.debug(">>> about to resolve_conflict")
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
         return True
 

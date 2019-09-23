@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from pystrict import strict
 
@@ -14,7 +14,7 @@ from .log import TRACE
 log = logging.getLogger(__name__)
 
 
-@strict
+@strict # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
@@ -56,6 +56,8 @@ class CloudSync(Runnable):
 
         self.sthread = None
         self.ethreads = (None, None)
+        self.test_mgr_iter = None
+        self.test_mgr_order: List[int] = []
 
     @property
     def aging(self):
@@ -100,9 +102,11 @@ class CloudSync(Runnable):
         #
         # Return Values:
         #
+        #     A tuple of (result, keep) or None, meaning there is no good resolution
+        #     result is one of:
         #     - A "merged" file-like which should be used as the data to replace both f1/f2 with
         #     - One of f1 or f2,  which is selected as the correct version
-        #     - "None", meaning there is no good resolution
+        #     keep is true if we want to keep the old version of the file around as a .conflicted file, else False
         return None
 
     @property
@@ -133,9 +137,24 @@ class CloudSync(Runnable):
 
     # for tests, make this manually runnable
     def do(self):
-        self.smgr.do()
-        self.emgrs[0].do()
-        self.emgrs[1].do()
+        # imports are in the body of this test-only function
+        import random
+        mgrs = [*self.emgrs, self.smgr]
+        random.shuffle(mgrs)
+        for m in mgrs:
+            m.do()
+
+        #  conceptually this should work, but our tests rely on changeset_len
+        # instead we need to expose a stuff-to-do property in cs
+        # if self.test_mgr_iter:
+        #    try:
+        #        r = next(self.test_mgr_iter)
+        #    except StopIteration:
+        #        r = random.randint(0, 2)
+        # else:
+        #    r = random.randint(0, 2)
+        # self.test_mgr_order.append(r)
+        # mgrs[r].do()
 
     def done(self):
         self.smgr.done()

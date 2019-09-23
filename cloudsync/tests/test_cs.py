@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from unittest.mock import patch
 
 
-from .fixtures import MockProvider, MockStorage
+from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError
 from .fixtures import WaitFor, RunUntilHelper
@@ -47,8 +47,39 @@ def make_cs(mock_provider_creator, left, right, storage=None):
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
-@pytest.fixture(name="multi_cs")
-def fixture_multi_cs(mock_provider_generator):
+# multi local test has two local providers, each syncing up to the same folder on one remote provider.
+#   this simulates two separate machines syncing up to a shared folder
+@pytest.fixture(name="multi_local_cs")
+def fixture_multi_local_cs(mock_provider_generator):
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        pass
+
+    p1 = mock_provider_generator()  # local
+    p2 = mock_provider_generator()  # local
+    p3 = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # remote (cloud) storage
+
+    log.debug(f"p1 oip={p1.oid_is_path} cs={p1.case_sensitive}")
+    log.debug(f"p2 oip={p2.oid_is_path} cs={p2.case_sensitive}")
+    log.debug(f"p3 oip={p3.oid_is_path} cs={p3.case_sensitive}")
+
+    roots = ("/local", "/remote")
+
+    cs1 = CloudSyncMixin((p1, p3), roots, storage, sleep=None)
+    cs2 = CloudSyncMixin((p2, p3), roots, storage, sleep=None)
+
+    yield cs1, cs2
+
+    cs1.done()
+    cs2.done()
+
+
+# multi remote test has one local provider with two folders, and each of those folders
+# syncs up with a folder on one of two remote providers.
+@pytest.fixture(name="multi_remote_cs")
+def fixture_multi_remote_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
@@ -71,8 +102,8 @@ def fixture_multi_cs(mock_provider_generator):
     cs2.done()
 
 
-def test_cs_rename_away(multi_cs):
-    cs1, cs2 = multi_cs
+def test_sync_rename_away(multi_remote_cs):
+    cs1, cs2 = multi_remote_cs
 
     remote_parent = "/remote"
     remote_path = "/remote/stuff1"
@@ -151,8 +182,180 @@ def test_cs_rename_away(multi_cs):
     assert len(cs2.state) == 2   # 1 file and 1 dir
 
 
-def test_cs_multi(multi_cs):
-    cs1, cs2 = multi_cs
+def test_sync_multi_local_rename_conflict(multi_local_cs):
+    cs1, cs2 = multi_local_cs
+
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    remote_path2 = "/remote/stuff2"
+    local_path1 = "/local/stuff1"
+    local_path2 = "/local/stuff2"
+
+    cs1_parent_oid = cs1.providers[LOCAL].mkdir(local_parent)
+    cs2_parent_oid = cs2.providers[LOCAL].mkdir(local_parent)
+    cs1.providers[REMOTE].mkdir(remote_parent)  # also creates on cs2[REMOTE]
+    linfo1 = cs1.providers[LOCAL].create(local_path1, BytesIO(b"hello1"), None)
+    linfo2 = cs2.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
+
+    # Allow file1 to copy up to the cloud
+    try:
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # file1 up
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)  # file2 up and file1 down
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # file2 down
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs1.run_until_found(
+            (LOCAL, local_path1),
+            (LOCAL, local_path2),
+            (REMOTE, remote_path1),
+            (REMOTE, remote_path2),
+            timeout=2)
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+        cs2.run_until_found(
+            (LOCAL, local_path1),
+            (LOCAL, local_path2),
+            (REMOTE, remote_path1),
+            (REMOTE, remote_path2),
+            timeout=2)
+    except TimeoutError:
+        raise
+    finally:
+        log.info("TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("TABLE 2\n%s", cs2.state.pretty_print())
+
+    # test file rename conflict
+    other_linfo1 = cs2.providers[LOCAL].info_path(local_path1)
+
+    cs1.providers[LOCAL].rename(linfo1.oid, local_path1 + "a")  # rename 'stuff1' to 'stuff1a'
+    cs2.providers[LOCAL].rename(other_linfo1.oid, local_path1 + "b")  # rename 'stuff1' to 'stuff1b'
+
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # let rename 'stuff1a' sync to cloud
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)  # try to sync 'stuff1b' rename. Conflict?
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)  # if cloud changed, let the change come down
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
+
+    # let cleanups/discards/dedups happen if needed
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
+    a1 = cs1.providers[LOCAL].exists_path(local_path1 + "a")
+    a2 = cs2.providers[LOCAL].exists_path(local_path1 + "a")
+    b1 = cs1.providers[LOCAL].exists_path(local_path1 + "b")
+    b2 = cs2.providers[LOCAL].exists_path(local_path1 + "b")
+    dir1 = [x.name for x in cs1.providers[LOCAL].listdir(cs1_parent_oid)]
+    dir2 = [x.name for x in cs2.providers[LOCAL].listdir(cs2_parent_oid)]
+    log.debug("cs1=%s", dir1)
+    log.debug("cs2=%s", dir2)
+    assert a1 == a2  # either stuff1a exists on both providers, or neither
+    assert b1 == b2  # either stuff1b exists on both providers, or neither
+
+    assert all("conflicted" not in x for x in dir1)
+    assert all("conflicted" not in x for x in dir2)
+
+
+def test_sync_multi_local(multi_local_cs):
+    cs1, cs2 = multi_local_cs
+
+    local_parent = "/local"
+    remote_parent = "/remote"
+
+    remote_path1 = "/remote/stuff1"
+    remote_path2 = "/remote/stuff2"
+
+    local_path1 = "/local/stuff1"
+    local_path2 = "/local/stuff2"
+
+    cs1.providers[LOCAL].mkdir(local_parent)
+    cs2.providers[LOCAL].mkdir(local_parent)
+    cs1.providers[REMOTE].mkdir(remote_parent)  # also creates on cs2[REMOTE]
+
+    linfo1 = cs1.providers[LOCAL].create(local_path1, BytesIO(b"hello1"), None)
+    linfo2 = cs2.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
+    # rinfo1 = cs1.providers[REMOTE].create(remote_path2, BytesIO(b"hello3"), None)
+    # rinfo2 = cs2.providers[REMOTE].create(remote_path2, BytesIO(b"hello4"), None)
+
+    assert linfo1 and linfo2 # and rinfo1 and rinfo2
+
+    # Allow file1 to copy up to the cloud
+    try:
+        cs1.run_until_found(
+            (LOCAL, local_path1),
+            (REMOTE, remote_path1),
+            timeout=2)
+    except TimeoutError:
+        log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
+        raise
+
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    log.info("TABLE 1\n%s", cs1.state.pretty_print())
+    log.info("TABLE 2\n%s", cs2.state.pretty_print())
+
+    assert len(cs1.state) == 2, cs1.state.pretty_print()      # 1 dirs, 1 files (haven't gotten the second file yet)
+
+    # Allow file2 to copy up to the cloud, and to sync file1 down from the cloud to local2
+    try:
+        cs2.run_until_found(
+            (LOCAL, local_path1),
+            (LOCAL, local_path2),
+            (REMOTE, remote_path1),
+            (REMOTE, remote_path2),
+            timeout=2)
+    except TimeoutError:
+        log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
+        raise
+
+    linfo1 = cs1.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs1.providers[REMOTE].info_path(remote_path1)
+    linfo2 = cs2.providers[LOCAL].info_path(local_path2)
+    rinfo2 = cs2.providers[REMOTE].info_path(remote_path2)
+
+    assert linfo1.oid
+    assert linfo2.oid
+    assert rinfo1.oid
+    assert rinfo2.oid
+    assert linfo1.hash == rinfo1.hash
+    assert linfo2.hash == rinfo2.hash
+
+    assert len(cs1.state) == 2, cs1.state.pretty_print()  # still the same as before
+    assert len(cs2.state) == 3, cs2.state.pretty_print()  # cs2 now has file1 and file2, plus the dir
+
+    # Allow file2 to sync down to local1
+    try:
+        cs1.run_until_found(
+            (LOCAL, local_path1),
+            (LOCAL, local_path2),
+            (REMOTE, remote_path1),
+            (REMOTE, remote_path2),
+            timeout=2)
+    except TimeoutError:
+        log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
+        log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
+        raise
+
+    # let cleanups/discards/dedups happen if needed
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    log.info("TABLE\n%s", cs2.state.pretty_print())
+
+
+def test_sync_multi_remote(multi_remote_cs):
+    cs1, cs2 = multi_remote_cs
 
     local_parent1 = "/local1"
     local_parent2 = "/local2"
@@ -269,6 +472,8 @@ def test_cs_basic(cs):
 
     assert len(cs.state) == 3
     assert not cs.state.changeset_len
+
+
 
 
 def setup_remote_local(cs, *names):
@@ -475,7 +680,7 @@ def test_cs_two_conflicts(cs):
     else:
         assert(len(cs.state) == 4)
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2, threaded=True)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
@@ -534,7 +739,7 @@ def test_cs_subdir_rename(cs):
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    cs.run_until_found(*rpaths2, timeout=2, threaded=True)
+    cs.run_until_found(*rpaths2, timeout=2)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
@@ -622,7 +827,7 @@ def test_cs_folder_conflicts_file(cs):
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
         assert(len(cs.state) == 5)
 
-    cs.run_until_found((REMOTE, remote_path1), timeout=2, threaded=True)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
@@ -699,9 +904,13 @@ def test_storage(storage):
     missing2 = compare_states(cs2.state, cs1.state)
 
     for e in missing1:
-        log.debug(f"entry in 1 not found in 2 {e.pretty()}")
+        log.debug(f"entry in 1 not found in 2\n{e.pretty()}")
     for e in missing2:
-        log.debug(f"entry in 2 not found in 1 {e.pretty()}")
+        log.debug(f"entry in 2 not found in 1\n{e.pretty()}")
+
+    if missing1 or missing2:
+        log.debug("TABLE 1\n%s", cs1.state.pretty_print())
+        log.debug("TABLE 2\n%s", cs2.state.pretty_print())
 
     assert not missing1
     assert not missing2
@@ -1106,7 +1315,7 @@ def test_cursor(cs_storage):
         timeout=2)
     cs2.done()
 
-
+@pytest.mark.repeat(3)
 def test_cs_rename_up(cs):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -1138,16 +1347,19 @@ def test_cs_rename_up(cs):
     else:
         cs.providers[LOCAL].delete(linfo2.oid)
     cs.providers[LOCAL].rename(linfo1.oid, local_path2)
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1
-            )
+    cs.run_until_found(
+            WaitFor(REMOTE, remote_path1, exists=False),
+            WaitFor(REMOTE, remote_path2, exists=True),
+            timeout=2)
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    assert cs.providers[REMOTE].info_path(remote_path2)
     assert not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
     assert not cs.providers[REMOTE].info_path(remote_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path2 + ".conflicted")
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
+    assert cs.providers[REMOTE].info_path(remote_path2)
 
 def test_many_small_files_mkdir_perf(cs):
     local_root = "/local"
@@ -1172,18 +1384,17 @@ def test_many_small_files_mkdir_perf(cs):
         if clear_before:
             cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
-        # Upload 100 x 3 KiB files. The size and number shouldn't actually
+        # Upload 20 x 3 KiB files. The size and number shouldn't actually
         # matter.
         content = BytesIO(b"\0" * (3 * 1024))
-        for i in range(100):
+        for i in range(20):
             local_file_name = local_file_base + str(i)
             linfo = cs.providers[LOCAL].create(local_file_name, content, None)
             assert linfo is not None
 
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=1000)
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=10)
 
-        # Check that the process took less than 1000 seconds
-        for i in range(100):
+        for i in range(20):
             rinfo = cs.providers[REMOTE].info_path(remote_file_base + str(i))
             assert rinfo is not None
 
@@ -1205,8 +1416,8 @@ def test_many_small_files_mkdir_perf(cs):
         make_files("_clear", clear_before=True)
 
     # Check that the two are approximately the same
-    assert abs(local_no_clear.call_count - local_clear.call_count) < 10
-    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 10
+    assert abs(local_no_clear.call_count - local_clear.call_count) < 3
+    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
 
 def test_cs_folder_conflicts_del(cs):
     local_path1 = "/local/stuff1"
@@ -1269,7 +1480,7 @@ def test_api_hit_perf(cs):
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
     remote_old_api = cs.providers[REMOTE]._api
-    
+
     import traceback
 
     remote_counter = 0
