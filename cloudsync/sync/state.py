@@ -159,7 +159,7 @@ class Storage(ABC):
 
 
 # single entry in the syncs state collection
-@strict         # pylint: disable=too-many-instance-attributes
+@strict         # pylint: disable=too-many-instance-attributes, too-many-public-methods
 class SyncEntry:
     def __init__(self, parent: 'SyncState',
                  otype: Optional[OType],
@@ -242,7 +242,6 @@ class SyncEntry:
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
-        log.debug("here")
         if reason_string:
             try:
                 reason = IgnoreReason(reason_string)
@@ -316,16 +315,6 @@ class SyncEntry:
             return True
         return False
 
-    # @property
-    # def ignored(self):
-    #     return self._ignored != IgnoreReason.NONE
-    #
-    # @ignored.setter
-    # def ignored(self, val: Optional[IgnoreReason]):
-    #     if val is None:
-    #         val = IgnoreReason.NONE
-    #     self._ignored = val
-
     @property
     def ignore_bc_trashed(self):
         return self.ignored in (IgnoreReason.TRASHED, IgnoreReason.IRRELEVANT)
@@ -358,30 +347,7 @@ class SyncEntry:
         assert self.ignored in (reason, IgnoreReason.NONE)
         self.ignored = IgnoreReason.NONE
 
-    @staticmethod
-    def prettyheaders():
-        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
-            "EID",  # _sig(id(self)),
-            "SID",  # _sig(self.storage_id),
-            "Typ",  # otype,
-            "Change",  # secs(self[LOCAL].changed),
-            "Path",  # self[LOCAL].path,
-            "OID",  # _sig(self[LOCAL].oid),
-            "Last Sync Path E H",  # str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
-            "Change",  # secs(self[REMOTE].changed),
-            "Path",  # self[REMOTE].path,
-            "OID",  # _sig(self[REMOTE].oid),
-            "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            "Punt",  # self.punted or ""
-            "Ignored",  # self.ignored or ""
-        )
-        return ret
-
-    def pretty(self, fixed=True, use_sigs=True):
-        ret = ""
-        if self.ignored != IgnoreReason.NONE:
-            ret = "IGN:%s" % self.ignored
-
+    def summary(self, use_sigs=True):
         def secs(t):
             if t:
                 return str(int(1000*round(t-self.parent._pretty_time, 3)))
@@ -415,17 +381,7 @@ class SyncEntry:
         else:
             otype = local_otype
 
-        if not fixed:
-            return str((_sig(id(self)), otype,
-                        (secs(self[LOCAL].changed), self[LOCAL].path, _sig(
-                            self[LOCAL].oid), str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma),
-                        (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
-                            self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
-                        self._punted,
-                        self.ignored.value
-                        ))
-
-        ret += "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
+        return (
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
@@ -438,13 +394,31 @@ class SyncEntry:
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
             self._punted or "",
-            self.ignored.value if self.ignored != IgnoreReason.NONE else "",
-        )
+            self.ignored.value if self.ignored.value != IgnoreReason.NONE else "",
+            )
 
+    def as_tuple(self, use_sigs=True):  # pretty(fixed=False) becomes as_tuple()
+        s = self.summary(use_sigs=use_sigs)
+        return (s[0], s[1], s[2], s[3:7], s[7:11], s[11], s[12])
+
+    @staticmethod
+    def pretty_format(widths, sep="|"):
+        formats = ["%" + str(w) + "s" for w in widths]
+        format_str = sep.join(formats[0:7]) + sep + "--" + sep + sep.join(formats[7:13])
+        return format_str
+
+    def pretty(self, use_sigs=True, summary=None, widths=None):  # pretty() or pretty(fixed=True) becomes pretty()
+        summary = summary or self.summary(use_sigs=use_sigs)
+
+        if widths is None:
+            widths = (3, 3, 3, 6, 20, 6, 22, 6, 20, 6, 22, 0, 0)
+
+        format_string = SyncEntry.pretty_format(widths)
+        ret = format_string % tuple(summary)
         return ret
 
     def __str__(self):
-        return self.pretty(fixed=False)
+        return str(self.as_tuple())
 
     def __repr__(self):
         d = self.__dict__.copy()
@@ -480,7 +454,23 @@ class SyncEntry:
         return True
 
 @strict
-class SyncState:  # pylint: disable=too-many-instance-attributes
+class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    headers = (
+        "EID",  # _sig(id(self)),
+        "SID",  # _sig(self.storage_id),
+        "Typ",  # otype,
+        "Change",  # secs(self[LOCAL].changed),
+        "Path",  # self[LOCAL].path,
+        "OID",  # _sig(self[LOCAL].oid),
+        "Sync Path E H",  # str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+        "Change",  # secs(self[REMOTE].changed),
+        "Path",  # self[REMOTE].path,
+        "OID",  # _sig(self[REMOTE].oid),
+        "Sync Path E H",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+        "Punt",  # self.punted or ""
+        "Ignored",  # self.ignored or ""
+    )
+
     def __init__(self,
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional[Storage] = None,
@@ -828,12 +818,30 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         for e in self._changeset:
             e.punted = 0
 
+    @staticmethod
+    def pretty_headers(widths=None):
+        if not widths:
+            widths = (3, 3, 3, 6, 20, 6, 22, 6, 20, 6, 22, 0, 0)
+        format_string = SyncEntry.pretty_format(widths, sep=" ")
+        ret = format_string % SyncState.headers
+        return ret
+
     def pretty_print(self, use_sigs=True):
-        ret = SyncEntry.prettyheaders() + "\n"
+        ents: List[SyncEntry] = list()
+        widths: List[int] = [len(x) for x in SyncState.headers]
+
         e: SyncEntry
-        for e in self.get_all(discarded=True):
-            # allow conflicted to be printed
-            ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
+        for e in self.get_all(discarded=True):  # allow conflicted to be printed
+            ents.append(e)
+            for i, val in enumerate(e.summary(use_sigs=use_sigs)):
+                width = len(str(val))
+                if width > widths[i]:
+                    widths[i] = width
+
+        ret = SyncState.pretty_headers(widths=widths) + "\n"
+        for e in ents:
+            ret += e.pretty(widths=widths) + "\n"
+
         return ret
 
     def assert_index_is_correct(self):
@@ -914,7 +922,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        log.info("SPLIT\n%s", self.pretty_print())
+        log.log(TRACE, "SPLIT\n%s", self.pretty_print())
 
         assert replace_ent[replace].oid
 
