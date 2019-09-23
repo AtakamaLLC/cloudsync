@@ -179,7 +179,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 refresh_token = new_creds.get('refresh_token', None)
             kwargs = {}
 
-            if ( not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
+            if (not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
                 raise ValueError("require app_id/secret or api_key")
 
             try:
