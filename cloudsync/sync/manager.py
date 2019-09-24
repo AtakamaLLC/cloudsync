@@ -12,7 +12,7 @@ __all__ = ['SyncManager']
 
 from pystrict import strict
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudException
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -1116,11 +1116,23 @@ class SyncManager(Runnable):
     def handle_hash_conflict(self, sync):
         log.debug("splitting hash conflict %s", sync)
 
-        # split the sync in two
-        defer_ent, defer_side, replace_ent, replace_side \
-            = self.state.split(sync)
-        return self.handle_split_conflict(
-            defer_ent, defer_side, replace_ent, replace_side)
+        try:
+            save = ({}, {})
+            for side in (LOCAL, REMOTE):
+                for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
+                    save[side][field] = getattr(sync[side], field)
+            # split the sync in two
+            defer_ent, defer_side, replace_ent, replace_side \
+                = self.state.split(sync)
+            return self.handle_split_conflict(
+                defer_ent, defer_side, replace_ent, replace_side)
+        except CloudException as e:
+            log.info("exception during hash conflict split: %s", e)
+            for side in (LOCAL, REMOTE):
+                for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
+                    setattr(defer_ent[side], field, save[side][field])
+            replace_ent.ignore(IgnoreReason.TRASHED)
+            raise
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
         if defer_ent[defer_side].otype == FILE:

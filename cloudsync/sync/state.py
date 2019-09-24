@@ -393,7 +393,9 @@ class SyncEntry:
 
         def secs(t):
             if t:
-                return str(int(1000*round(t-self.parent._pretty_time, 3)))
+                if t >= self.parent._pretty_time:
+                    return str(int(1000*round(t-self.parent._pretty_time, 3)))
+                return -t
             else:
                 return 0
 
