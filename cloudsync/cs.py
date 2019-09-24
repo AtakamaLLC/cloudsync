@@ -89,23 +89,8 @@ class CloudSync(Runnable):
         # mark all events as "aged" by setting the times to low values
         # to prevent parent folder punting, dfs is used as the time
 
-        dfs = 1
         for i, fp in enumerate(paths):
-            for event in self.providers[i].walk(fp):
-                if not event.path:
-                    latest = self.providers[i].info_oid(event.oid)
-                    if latest:
-                        event.path = latest.path
-                        event.hash = latest.hash
-                        event.exists = True
-                    else:
-                        event.exists = False
-
-                self.emgrs[i].process_event(event)
-                ent = self.state.lookup_oid(i, event.oid)
-                # move up to process now...
-                ent[i].changed = dfs
-                dfs += 1
+            self.emgrs[i].prioritize(fp)
 
     def storage_label(self):
         """
