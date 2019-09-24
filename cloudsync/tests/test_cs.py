@@ -1636,7 +1636,6 @@ def test_out_of_space(cs):
     assert cs.smgr.in_backoff()
     assert cs.state.changeset_len
 
-
 def test_cs_prioritize(cs):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -1685,4 +1684,56 @@ def test_cs_prioritize(cs):
     assert cs.providers[LOCAL].info_path(local_path2)
     assert not cs.providers[REMOTE].info_path(remote_path1)
 
-  
+
+MERGE = 2
+
+
+@pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE])
+def test_hash_mess(cs, side):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    def get_oid(prov, path):
+        return prov.info_path(path).oid
+
+    # Make first set
+    local.mkdir("/local/")
+    linfo = local.create("/local/foo", BytesIO(b"aaa"))
+
+    cs.run_until_found((REMOTE, "/remote/foo"))
+
+    rinfo = remote.info_path("/remote/foo")
+
+    remote_oid = remote.rename(rinfo.oid, "/remote/foo-r")
+    local_oid = local.rename(linfo.oid, "/local/foo-l")
+    local.upload(local_oid, BytesIO(b"zzz1"))
+    remote.upload(remote_oid, BytesIO(b"zzz2"))
+
+    f3 = BytesIO(b'merged')
+
+    if side == LOCAL:
+        cs.smgr._resolve_conflict = lambda f1, f2: (f1, False)
+    elif side == REMOTE:
+        cs.smgr._resolve_conflict = lambda f1, f2: (f2, False)
+    elif side == MERGE:
+        cs.smgr._resolve_conflict = lambda f1, f2: (f3, False)
+
+    log.info("START TABLE\n%s", cs.state.pretty_print())
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
+
+    log.info("END TABLE\n%s", cs.state.pretty_print())
+
+    l_r = local.info_path("/local/foo-r")
+    l_l = local.info_path("/local/foo-l")
+    r_l = remote.info_path("/remote/foo-l")
+    r_r = remote.info_path("/remote/foo-r")
+
+    assert l_r is not None or l_l is not None
+    assert r_r is not None or r_l is not None
+    assert bool(l_r) == bool(r_r)
+    assert bool(r_l) == bool(l_l)
+

@@ -96,7 +96,7 @@ class SyncManager(Runnable):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.translate = translate
-        self.__resolve_conflict = resolve_conflict
+        self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
 
         if not sleep:
@@ -124,7 +124,7 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def set_resolver(self, resolver):
-        self.__resolve_conflict = resolver
+        self._resolve_conflict = resolver
 
     def in_backoff(self):
         return self.backoff > self.min_backoff
@@ -591,7 +591,7 @@ class SyncManager(Runnable):
         is_file_like = lambda f: hasattr(f, "read") and hasattr(f, "close")
         ret = None
         try:
-            ret = self.__resolve_conflict(*fhs)
+            ret = self._resolve_conflict(*fhs)
 
             if ret:
                 if not isinstance(ret, tuple):
@@ -643,6 +643,12 @@ class SyncManager(Runnable):
             ent2.sync_path = info2.path
             ent1.sync_hash = info1.hash
             ent1.sync_path = info1.path
+        else:
+            info1 = self.providers[ent1.side].info_oid(ent1.oid)
+            info2 = self.providers[ent2.side].info_oid(ent2.oid)
+
+            ent2.sync_path = ent2.path
+            ent1.sync_path = self.translate(ent1.side, ent2.path)
 
         # in case oids have changed
         self.update_entry(defer_ent, ent2.side, ent2.oid, path=ent2.path, hash=ent2.hash)
@@ -678,11 +684,11 @@ class SyncManager(Runnable):
                         fh.seek(0)
                         info2 = self.providers[loser.side].upload(loser.oid, fh)
                         loser.hash = info2.hash
+                        loser.path = info2.path
                         assert info2.hash
-                        winner.sync_hash = winner.hash
-                        winner.sync_path = winner.path
                         loser.sync_hash = loser.hash
-                        loser.sync_path = loser.path
+                        if not loser.sync_path:
+                            loser.sync_path = loser.path
                     else:
                         log.debug("rename side %s to conflicted", loser.side)
                         try:
@@ -696,16 +702,25 @@ class SyncManager(Runnable):
                         defer = None
 
             if defer is not None:  # we are replacing one side, not both
-                # toss the other side that was replaced
+                sorted_states = sorted(side_states, key=lambda e: e.side)
+                replace_side = other_side(defer)
+                replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
                 if keep:
-                    sorted_states = sorted(side_states, key=lambda e: e.side)
-                    replace_side = other_side(defer)
-                    replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+                    # toss the other side that was replaced
                     if replace_ent:
                         replace_ent.ignore(IgnoreReason.CONFLICT)
-
+                else:
+                    log.debug("defer not none, and not keeping, so merge sides")
+                    defer_ent = self.state.lookup_oid(defer, sorted_states[defer].oid)
+                    replace_ent[defer] = defer_ent[defer]
+                    defer_ent.ignore(IgnoreReason.TRASHED)
+                    replace_ent[replace_side].sync_path = replace_ent[replace_side].path
+                    replace_ent[replace_side].sync_hash = replace_ent[replace_side].hash
+                    replace_ent[defer].sync_path = self.translate(defer, replace_ent[replace_side].path)
+                    replace_ent[defer].sync_hash = replace_ent[defer].hash
             else:
                 # both sides were modified, because the fh returned was some third thing that should replace both
+                log.debug("resolver merge upload to both sides: %s", keep)
                 self.__resolver_merge_upload(side_states, fh, keep)
 
             log.debug("RESOLVED CONFLICT: %s side: %s", side_states, defer)
