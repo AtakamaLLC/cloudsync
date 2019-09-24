@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, IO, Any
 
 from pystrict import strict
 
@@ -60,14 +60,61 @@ class CloudSync(Runnable):
         self.test_mgr_order: List[int] = []
 
     @property
-    def aging(self):
+    def aging(self) -> float:
+        """float: The number of seconds to wait before syncing a file.   
+        
+        Reduces storage provider traffic at the expense of increased conflict risk.  
+
+        Default is based on the max(provider.default_sleep) value
+        """
         return self.smgr.aging
 
     @aging.setter
-    def aging(self, val):
-        self.smgr.aging = val
+    def aging(self, secs: float):
+        self.smgr.aging = secs
+
+    def prioritize(self, side: int, path: str) -> None:
+        """Move path and all children of the path to be synchronized first
+
+        Args:
+            side (int): By convention 0 is local and 1 is remote
+            path (str): The full path to the file
+        """
+
+        paths: List[str] = [None, None]
+        paths[side] = path
+        paths[1 - side] = self.translate(1 - side, path)
+
+        # forge events and fill the state table with the latest info
+        # mark all events as "aged" by setting the times to low values
+        # to prevent parent folder punting, dfs is used as the time
+
+        dfs = 1
+        for i, fp in enumerate(paths):
+            for event in self.providers[i].walk(fp):
+                if not event.path:
+                    latest = self.providers[i].info_oid(event.oid)
+                    if latest:
+                        event.path = latest.path
+                        event.hash = latest.hash
+                        event.exists = True
+                    else:
+                        event.exists = False
+
+                self.emgrs[i].process_event(event)
+                ent = self.state.lookup_oid(i, event.oid)
+                # move up to process now...
+                ent[i].changed = dfs
+                dfs += 1
 
     def storage_label(self):
+        """
+        Returns:
+            str: a unique label representing this paired, translated sync
+
+        Override this if if you are re-using storage and are using a rootless translate.
+        """
+
         # if you're using a pure translate, and not roots, you don't have to override the storage label
         # just don't resuse storage for the same pair of providers
 
@@ -83,30 +130,48 @@ class CloudSync(Runnable):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
-    def translate(self, index, path):
+    def translate(self, side: int, path: str):
+        """Override this method to translate between local and remote paths
+
+        By default uses `self.roots` to strip the path provided, and 
+        join the result to the root of the other side.
+
+        If `self.roots` is None, this function must be overridden.
+
+        Example:
+            translate(REMOTE, "/home/full/local/path.txt") -> "/cloud/path.txt"
+
+        Args:
+            side: either 0 (LOCAL) or 1 (REMOTE)
+            path: a path valid in the (1-side) provider
+            
+        Returns:
+             The path, valid for the provider[side], or None to mean "don't sync"
+        """
         if not self.roots:
             raise ValueError("Override translate function or provide root paths")
 
-        relative = self.providers[1-index].is_subpath(self.roots[1-index], path)
+        relative = self.providers[1-side].is_subpath(self.roots[1-side], path)
         if not relative:
-            log.log(TRACE, "%s is not subpath of %s", path, self.roots[1-index])
+            log.log(TRACE, "%s is not subpath of %s", path, self.roots[1-side])
             return None
-        return self.providers[index].join(self.roots[index], relative)
+        return self.providers[side].join(self.roots[side], relative)
 
-    @staticmethod
-    def resolve_conflict(_f1, _f2):
-        # Input:
-        #     - f1 and f2 are file-likes that will block on read, and can possibly pull data from the network, internet, etc
-        #     - f1 and f2 also support the .path property to get a relative path to the file
-        #     - f1 and f2 also support the .side property
-        #
-        # Return Values:
-        #
-        #     A tuple of (result, keep) or None, meaning there is no good resolution
-        #     result is one of:
-        #     - A "merged" file-like which should be used as the data to replace both f1/f2 with
-        #     - One of f1 or f2,  which is selected as the correct version
-        #     keep is true if we want to keep the old version of the file around as a .conflicted file, else False
+    def resolve_conflict(self, f1: IO, f2: IO) -> Tuple[Any, bool]:     # pylint: disable=no-self-use, unused-argument
+        """Override this method to handle conflict resolution of files
+
+        Note:
+         - f1 and f2 are file-likes that will block on read, and can possibly pull data from the network, internet, etc
+         - f1 and f2 also support the .path property to get a relative path to the file
+         - f1 and f2 also support the .side property
+        
+        Returns:
+             A tuple of (result, keep) or None, meaning there is no good resolution
+             result is one of:
+             - A "merged" file-like which should be used as the data to replace both f1/f2 with
+             - One of f1 or f2,  which is selected as the correct version
+             keep is true if we want to keep the old version of the file around as a .conflicted file, else False
+        """
         return None
 
     @property
