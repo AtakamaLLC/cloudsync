@@ -6,7 +6,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional, List, Dict
+from typing import Generator, Optional, List, Dict, Any
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -19,7 +19,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylin
 
 
 from cloudsync.utils import debug_args
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
 from cloudsync.oauth import OAuthConfig
@@ -36,6 +36,10 @@ logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids: List[str] = []
+    oid: str
+    hash: Any
+    otype: OType
+    path: str
 
     def __init__(self, *a, pids=None, **kws):
         super().__init__(*a, **kws)

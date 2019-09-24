@@ -56,6 +56,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def name(self):
         ...
 
+    @property
     @abstractmethod
     def latest_cursor(self):
         ...
