@@ -326,12 +326,12 @@ class SyncManager(Runnable):
             sync[changed].exists = TRASHED
             return False
 
-    def get_folder_file_conflict(self, sync, translated_path, synced):
+    def get_folder_file_conflict(self, sync: SyncEntry, translated_path: str, synced: int) -> SyncEntry:
         # if a non-dir file exists with the same name on the sync side
-        syents = list(self.state.lookup_path(synced, translated_path))
+        syents: List[SyncEntry] = list(self.state.lookup_path(synced, translated_path))
         conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
 
-        nc = []
+        nc: List[SyncEntry] = []
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
@@ -381,10 +381,11 @@ class SyncManager(Runnable):
                     log.debug("discard duplicate dir entry %s", ent)
                     ent.ignore(IgnoreReason.TRASHED)
 
-            cent = self.get_folder_file_conflict(sync, translated_path, synced)
-            if cent:
-                log.debug("resolve %s conflict with %s", translated_path, cent)
-                self.resolve_conflict((sync[changed], cent[synced]))
+            chent: SyncEntry = self.get_folder_file_conflict(sync, translated_path, synced)
+            if chent:
+                log.debug("resolve %s conflict with %s", translated_path, chent)
+                # pylint bugs here... no idea why
+                self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
                 return FINISHED
 
             # make the dir
@@ -969,7 +970,7 @@ class SyncManager(Runnable):
             ext = base[index:]
             base = base[:index]
         else:
-            base = base
+            # base = base
             ext = ""
 
         oinfo = self.providers[side].info_path(path)

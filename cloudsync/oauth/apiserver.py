@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Callable, Dict
 
 import unittest
+import requests
 
 # TODO: this is an inappropriate default server, default should be wsgiref builtin
 import waitress
@@ -244,7 +245,6 @@ class TestApiServer(unittest.TestCase):
 
             threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-            import requests
             response = requests.post(httpd.uri("/popup"), data='{}')
             self.assertEqual(response.text, "HERE{}")
 
@@ -270,7 +270,6 @@ class TestApiServer(unittest.TestCase):
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
             thread.start()
 
-            import requests
             response = requests.post(httpd.uri("/popup"), data='{}')
             self.assertEqual(response.status_code, 501)
         finally:

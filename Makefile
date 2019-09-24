@@ -14,7 +14,7 @@ lint:
 	./check_version.sh
 
 test:
-	pytest --durations=0 -n=4 cloudsync/tests
+	pytest --durations=0 -n=8 cloudsync/tests
 
 format:
 	autopep8 --in-place -r -j 8 cloudsync/
