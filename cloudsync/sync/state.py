@@ -388,7 +388,8 @@ class SyncEntry:
     def pretty(self, fixed=True, use_sigs=True):
         ret = ""
         if self.ignored != IgnoreReason.NONE:
-            ret = "IGN:%s" % self.ignored
+            # reason is printed at the end
+            ret = "# "
 
         def secs(t):
             if t:
