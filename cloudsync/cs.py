@@ -188,7 +188,7 @@ class CloudSync(Runnable):
     # for tests, make this manually runnable
     def do(self):
         # imports are in the body of this test-only function
-        import random           # pylint: disable=import-outside-toplevel
+        import random
         mgrs = [*self.emgrs, self.smgr]
         random.shuffle(mgrs)
         for m in mgrs:

@@ -385,21 +385,24 @@ class SyncEntry:
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
+
             secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
             str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+
             secs(self[REMOTE].changed),
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+
             self._punted or "",
             self.ignored.value if self.ignored.value != IgnoreReason.NONE else "",
             )
 
     def as_tuple(self, use_sigs=True):  # pretty(fixed=False) becomes as_tuple()
         s = self.summary(use_sigs=use_sigs)
-        return (s[0], s[1], s[2], s[3:7], s[7:11], s[11], s[12])
+        return s[0], s[1], s[2], s[3:7], s[7:11], s[11], s[12]
 
     @staticmethod
     def pretty_format(widths, sep="|"):
@@ -837,6 +840,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 width = len(str(val))
                 if width > widths[i]:
                     widths[i] = width
+
+        for col, header in enumerate(SyncState.headers):
+            if "path" in header.lower():
+                widths[col] = 0 - widths[col]
 
         ret = SyncState.pretty_headers(widths=widths) + "\n"
         for e in ents:
