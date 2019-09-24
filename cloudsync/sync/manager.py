@@ -384,6 +384,7 @@ class SyncManager(Runnable):
             chent: SyncEntry = self.get_folder_file_conflict(sync, translated_path, synced)
             if chent:
                 log.debug("resolve %s conflict with %s", translated_path, chent)
+                # pylint bugs here... no idea why
                 self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
                 return FINISHED
 
