@@ -1,4 +1,4 @@
-# pylint: disable=attribute-defined-outside-init, protected-access
+# pylint: disable=attribute-defined-outside-init, protected-access, too-many-lines
 """
 SyncEntry[SideState, SideState] is a pair of entries, indexed by oid.  The SideState class makes
 extensive use of __getattr__ logic to keep indexes up to date.
@@ -856,6 +856,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         ret = format_string % SyncState.headers
         return ret
 
+    @staticmethod
+    def pretty_sort_key(ent: SyncEntry):
+        if ent.ignored != IgnoreReason.NONE:
+            return 2
+        if ent[LOCAL].changed or ent[REMOTE].changed:
+            return 0
+        return 1
+
     def pretty_print(self, use_sigs=True):
         ents: List[SyncEntry] = list()
         widths: List[int] = [len(x) for x in SyncState.headers]
@@ -874,7 +882,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         ret = SyncState.pretty_headers(widths=widths) + "\n"
         found_ignored = False
-        for e in sorted(ents, key=lambda x: 0 if x.ignored == IgnoreReason.NONE else 1):
+        for e in sorted(ents, key=self.pretty_sort_key):
             if e.ignored != IgnoreReason.NONE and not found_ignored:
                 ret += "------\n"
                 found_ignored = True
