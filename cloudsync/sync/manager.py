@@ -6,13 +6,13 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING, List
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any
 
 __all__ = ['SyncManager']
 
 from pystrict import strict
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudException
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -139,7 +139,7 @@ class SyncManager(Runnable):
                     self.state.storage_update(sync)
                     self.backoff = self.min_backoff
                 except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError) as e:
-                    log.error(
+                    log.warning(
                         "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
                     time.sleep(self.backoff)
                     self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
@@ -875,6 +875,9 @@ class SyncManager(Runnable):
 
         if sync[changed].sync_path and sync[synced].exists == TRASHED:
             # see test: test_sync_folder_conflicts_del
+            if not sync.punted:
+                sync.punt()
+                return REQUEUE
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
@@ -1116,11 +1119,23 @@ class SyncManager(Runnable):
     def handle_hash_conflict(self, sync):
         log.debug("splitting hash conflict %s", sync)
 
-        # split the sync in two
-        defer_ent, defer_side, replace_ent, replace_side \
-            = self.state.split(sync)
-        return self.handle_split_conflict(
-            defer_ent, defer_side, replace_ent, replace_side)
+        try:
+            save: Tuple[Dict[str, Any], Dict[str, Any]] = ({}, {})
+            for side in (LOCAL, REMOTE):
+                for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
+                    save[side][field] = getattr(sync[side], field)
+            # split the sync in two
+            defer_ent, defer_side, replace_ent, replace_side \
+                = self.state.split(sync)
+            return self.handle_split_conflict(
+                defer_ent, defer_side, replace_ent, replace_side)
+        except CloudException as e:
+            log.info("exception during hash conflict split: %s", e)
+            for side in (LOCAL, REMOTE):
+                for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
+                    setattr(defer_ent[side], field, save[side][field])
+            replace_ent.ignore(IgnoreReason.TRASHED)
+            raise
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
         if defer_ent[defer_side].otype == FILE:

@@ -3,7 +3,7 @@ import time
 import copy
 import logging
 from hashlib import md5
-from typing import Dict, List, Any, Optional, Generator
+from typing import Dict, List, Any, Optional, Generator, Set
 
 import pytest
 
@@ -11,11 +11,11 @@ from cloudsync.event import Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
-    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError
+    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError
+
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
-
 
 class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
@@ -106,6 +106,7 @@ class MockProvider(Provider):
         self._latest_cursor = -1
         self._cursor = -1
         self._quota = quota
+        self.locked_for_test: Set[str] = set()
         self._total_size = 0
         self._type_map = {
             MockFSObject.FILE: OType.FILE,
@@ -149,6 +150,10 @@ class MockProvider(Provider):
     def _store_object(self, fo: MockFSObject):
         # TODO: support case insensitive storage
         assert fo.path == fo.path.rstrip("/")
+
+        if fo.path in self.locked_for_test:
+            raise CloudTemporaryError("path %s is locked for test" % (fo.path))
+
         if fo.oid in self._fs_by_oid and self._fs_by_oid[fo.oid].contents:
             self._total_size -= len(self._fs_by_oid[fo.oid].contents)
 
@@ -229,6 +234,8 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         if file.type != MockFSObject.FILE:
             raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
+        if file.path in self.locked_for_test:
+            raise CloudTemporaryError("path %s is locked for test" % (file.path))
         contents = file_like.read()
         file.contents = contents
         self._register_event(MockEvent.ACTION_UPDATE, file)
@@ -364,6 +371,8 @@ class MockProvider(Provider):
         log.debug("delete %s", debug_sig(oid))
         self._api()
         file = self._fs_by_oid.get(oid, None)
+        if file and file.path in self.locked_for_test:
+            raise CloudTemporaryError("path %s is locked for test" % (file.path))
         log.debug("got %s", file)
         if file and file.exists:
             if file.otype == OType.DIRECTORY:
@@ -440,8 +449,8 @@ def mock_provider_instance(oid_is_path, case_sensitive):
     return prov
 
 
-@pytest.fixture(params=[(False, True), (True, True)], ids=["mock_oid_cs", "mock_path_cs"])
-def mock_provider(request):
+@pytest.fixture(name="mock_provider", params=[(False, True), (True, True)], ids=["mock_oid_cs", "mock_path_cs"])
+def mock_provider_fixture(request):
     return mock_provider_instance(*request.param)
 
 

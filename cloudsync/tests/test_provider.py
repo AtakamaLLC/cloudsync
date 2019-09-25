@@ -9,7 +9,7 @@ import pytest
 import cloudsync
 
 from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE
-from cloudsync.tests.fixtures import Provider, mock_provider, mock_provider_instance
+from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 # from cloudsync.providers import GDriveProvider, DropboxProvider
