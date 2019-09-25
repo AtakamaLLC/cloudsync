@@ -20,6 +20,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False
     connection_id: Optional[str] = None
     default_sleep: float = 0.01
+    __creds: None
 
     @abstractmethod
     def _api(self, *args, **kwargs):
