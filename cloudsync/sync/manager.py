@@ -16,7 +16,7 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
-from cloudsync.utils import debug_sig
+from cloudsync.utils import debug_sig, disable_log_multiline
 
 from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 
@@ -202,7 +202,7 @@ class SyncManager(Runnable):
             not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
 
     def check_revivify(self, sync: SyncEntry):
-        if sync.is_trashed:
+        if sync.is_discarded:
             for i in (LOCAL, REMOTE):
                 changed = i
                 synced = other_side(i)
@@ -228,7 +228,7 @@ class SyncManager(Runnable):
     def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
 
-        if sync.is_trashed:
+        if sync.is_discarded:
             self.finished(LOCAL, sync)
             self.finished(REMOTE, sync)
             return
@@ -245,7 +245,8 @@ class SyncManager(Runnable):
             self.handle_path_conflict(sync)
             return
 
-        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+        with disable_log_multiline():
+            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         for i in (LOCAL, REMOTE):
             if sync[i].changed:
@@ -660,7 +661,7 @@ class SyncManager(Runnable):
         defer_ent[ent2.side].sync_path = ent2.sync_path
         replace_ent.ignore(IgnoreReason.TRASHED)
 
-    def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements, too-many-branches
+    def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements, too-many-branches, too-many-locals
         with self.__resolve_file_likes(side_states) as fhs:
             fh: ResolveFile
             keep: bool
@@ -677,8 +678,6 @@ class SyncManager(Runnable):
                 if fh is not rfh:  # this rfh is getting replaced (this will be true for at least one rfh)
                     loser = side_states[i]
                     winner = side_states[1 - i]
-                    log.debug("i=%s, fhs=%s", i, fhs)
-                    log.debug("loser.side=%s, winner.side=%s", loser.side, winner.side)
 
                     # user didn't opt to keep my rfh
                     log.debug("replacing side %s", loser.side)
@@ -727,7 +726,6 @@ class SyncManager(Runnable):
                 self.__resolver_merge_upload(side_states, fh, keep)
 
             log.debug("RESOLVED CONFLICT: %s side: %s", side_states, defer)
-            log.debug("table\r\n%s", self.state.pretty_print())
 
     def delete_synced(self, sync, changed, synced):
         log.debug("try sync deleted %s", sync[changed].path)
@@ -864,7 +862,7 @@ class SyncManager(Runnable):
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
-            if sync[changed].exists == TRASHED or sync.is_trashed:
+            if sync[changed].exists == TRASHED or sync.is_discarded:
                 log.debug("requeue trashed event %s", sync)
                 return REQUEUE
 
@@ -1025,12 +1023,13 @@ class SyncManager(Runnable):
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
                     sync.ignore(IgnoreReason.IRRELEVANT)
 
-        if sync.is_trashed:
+        if sync.is_discarded:
             log.log(TRACE, "Ignoring entry because %s:%s", sync.ignored.value, sync)
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
-        log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+        with disable_log_multiline():
+            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         if sync.is_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
