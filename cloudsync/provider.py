@@ -25,18 +25,28 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def _api(self, *args, **kwargs):
         ...
 
-    def connect(self, creds):           # pylint: disable=unused-argument
+    def connect(self, creds):
         # some providers don't need connections, so just don't implement/overload this method
         # providers who implement connections need to set the connection_id to a value
         #   that is unique to each connection, so that connecting to this provider
         #   under multiple userid's will produce different connection_id's. One
         #   suggestion is to just set the connection_id to the user's login_id
         self.connection_id = os.urandom(16).hex()
+        self.__creds = creds
 
-    def reconnect(self):                # pylint: disable=no-self-use
+    def reconnect(self):
         # reuse existing credentials and reconnect
         # raises: CloudDisconnectedError on failure
-        pass
+        if not self.connected:
+            self.connect(self.__creds)
+
+    def disconnect(self):
+        # disconnect from cloud
+        self.connection_id = None
+
+    @property
+    def connected(self):
+        return self.connection_id is not None
 
     def authenticate(self):
         # implement this method for providers that need authentication
