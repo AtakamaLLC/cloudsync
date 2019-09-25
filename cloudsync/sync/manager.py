@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING, List
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any
 
 __all__ = ['SyncManager']
 
@@ -1120,7 +1120,7 @@ class SyncManager(Runnable):
         log.debug("splitting hash conflict %s", sync)
 
         try:
-            save = ({}, {})
+            save: Tuple[Dict[str, Any], Dict[str, Any]] = ({}, {})
             for side in (LOCAL, REMOTE):
                 for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
                     save[side][field] = getattr(sync[side], field)
