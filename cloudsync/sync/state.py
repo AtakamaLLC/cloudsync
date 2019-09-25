@@ -436,12 +436,9 @@ class SyncEntry:
 
     def pretty(self, use_sigs=True, summary=None, widths=None):  # pretty() or pretty(fixed=True) becomes pretty()
         summary = summary or self.pretty_summary(use_sigs=use_sigs)
-
         if widths is None:
             widths = (3, 3, 3, 6, 20, 6, 20, 1, 1, 6, 20, 6, 20, 1, 1, 0, 0)
-
         format_string = SyncEntry.pretty_format(widths)
-
         ret = ""  # if self.ignored == IgnoreReason.NONE else "# "
         ret += format_string % tuple(summary)
         return ret

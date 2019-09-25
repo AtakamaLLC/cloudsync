@@ -658,7 +658,7 @@ class SyncManager(Runnable):
         defer_ent[ent2.side].sync_path = ent2.sync_path
         replace_ent.ignore(IgnoreReason.TRASHED)
 
-    def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements, too-many-branches
+    def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements, too-many-branches, too-many-locals
         with self.__resolve_file_likes(side_states) as fhs:
             fh: ResolveFile
             keep: bool
