@@ -316,19 +316,19 @@ class SyncEntry:
         return False
 
     @property
-    def ignore_bc_trashed(self):
+    def is_discarded(self):
         return self.ignored in (IgnoreReason.TRASHED, IgnoreReason.IRRELEVANT)
 
     @property
-    def ignore_bc_irrelevant(self):
+    def is_irrelevant(self):
         return self.ignored == IgnoreReason.IRRELEVANT
 
     @property
-    def ignore_bc_conflicted(self):
+    def is_conflicted(self):
         return self.ignored == IgnoreReason.CONFLICT
 
     @property
-    def ignore_bc_temp_rename(self):
+    def is_temp_rename(self):
         return self.ignored == IgnoreReason.TEMP_RENAME
 
     def ignore(self, reason: IgnoreReason, previous_reasons: Union[Sequence[IgnoreReason], IgnoreReason] = (IgnoreReason.NONE,)):
@@ -347,7 +347,7 @@ class SyncEntry:
         assert self.ignored in (reason, IgnoreReason.NONE)
         self.ignored = IgnoreReason.NONE
 
-    def summary(self, use_sigs=True):
+    def pretty_summary(self, use_sigs=True):
         def secs(t):
             if t:
                 return str(int(1000*round(t-self.parent._pretty_time, 3)))
@@ -389,39 +389,42 @@ class SyncEntry:
             secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
-            str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+            str(self[LOCAL].sync_path), lexv, lhma,
 
             secs(self[REMOTE].changed),
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
-            str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+            str(self[REMOTE].sync_path), rexv, rhma,
 
             self._punted or "",
             self.ignored.value if self.ignored.value != IgnoreReason.NONE else "",
             )
 
-    def as_tuple(self, use_sigs=True):  # pretty(fixed=False) becomes as_tuple()
-        s = self.summary(use_sigs=use_sigs)
-        return s[0], s[1], s[2], s[3:7], s[7:11], s[11], s[12]
+    def pretty_tuple(self, use_sigs=True):  # pretty(fixed=False) becomes pretty_tuple()
+        s = self.pretty_summary(use_sigs=use_sigs)
+        return (s[0], s[1], s[2],
+                (s[3], s[4], s[5], ":".join(s[6:9])),
+                (s[9], s[10], s[11], ":".join(s[12:15])),
+                s[15], s[16])
 
     @staticmethod
     def pretty_format(widths, sep="|"):
         formats = ["%" + str(w) + "s" for w in widths]
-        format_str = sep.join(formats[0:7]) + sep + "--" + sep + sep.join(formats[7:13])
+        format_str = sep.join(formats[0:9]) + sep + "--" + sep + sep.join(formats[9:17])
         return format_str
 
     def pretty(self, use_sigs=True, summary=None, widths=None):  # pretty() or pretty(fixed=True) becomes pretty()
-        summary = summary or self.summary(use_sigs=use_sigs)
+        summary = summary or self.pretty_summary(use_sigs=use_sigs)
 
         if widths is None:
-            widths = (3, 3, 3, 6, 20, 6, 22, 6, 20, 6, 22, 0, 0)
+            widths = (3, 3, 3, 6, 20, 6, 20, 1, 1, 6, 20, 6, 20, 1, 1, 0, 0)
 
         format_string = SyncEntry.pretty_format(widths)
         ret = format_string % tuple(summary)
         return ret
 
     def __str__(self):
-        return str(self.as_tuple())
+        return str(self.pretty_tuple())
 
     def __repr__(self):
         d = self.__dict__.copy()
@@ -465,11 +468,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         "Change",  # secs(self[LOCAL].changed),
         "Path",  # self[LOCAL].path,
         "OID",  # _sig(self[LOCAL].oid),
-        "Sync Path E H",  # str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+        "Sync Path",  # str(self[LOCAL].sync_path)
+        "E",  # lexv
+        "H",  # lhma
         "Change",  # secs(self[REMOTE].changed),
         "Path",  # self[REMOTE].path,
         "OID",  # _sig(self[REMOTE].oid),
-        "Sync Path E H",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+        "Sync Path",  # str(self[REMOTE].sync_path)
+        "E",  # rexv
+        "H",  # rhma
         "Punt",  # self.punted or ""
         "Ignored",  # self.ignored or ""
     )
@@ -641,7 +648,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         try:
             ret: Sequence[SyncEntry] = list(self._paths[side][path].values())
             if ret:
-                return [e for e in ret if stale or (not e.ignore_bc_trashed and not e.ignore_bc_conflicted)]
+                return [e for e in ret if stale or (not e.is_discarded and not e.is_conflicted)]
             return []
         except KeyError:
             return []
@@ -670,7 +677,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         assert ent
 
         if oid is not None:
-            if ent.ignore_bc_trashed:
+            if ent.is_discarded:
                 if self.providers[side].oid_is_path:
                     if path:
                         if otype:
@@ -768,8 +775,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
-            if prior_ent and not prior_ent.ignore_bc_trashed:
-                if not ent or not ent.ignore_bc_conflicted:
+            if prior_ent and not prior_ent.is_discarded:
+                if not ent or not ent.is_conflicted:
                     ent = prior_ent
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
@@ -798,7 +805,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         earlier_than = time.time() - age
         for puntlevel in range(3):
             for e in changes:
-                if not e.ignore_bc_trashed and e.punted == puntlevel:
+                if not e.is_discarded and e.punted == puntlevel:
                     if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
                             or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
                         return e
@@ -824,7 +831,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     @staticmethod
     def pretty_headers(widths=None):
         if not widths:
-            widths = (3, 3, 3, 6, 20, 6, 22, 6, 20, 6, 22, 0, 0)
+            widths = (3, 3, 3, 6, 20, 6, 20, 1, 1, 6, 20, 6, 20, 1, 1, 0, 0)
         format_string = SyncEntry.pretty_format(widths, sep=" ")
         ret = format_string % SyncState.headers
         return ret
@@ -836,7 +843,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         e: SyncEntry
         for e in self.get_all(discarded=True):  # allow conflicted to be printed
             ents.append(e)
-            for i, val in enumerate(e.summary(use_sigs=use_sigs)):
+            for i, val in enumerate(e.pretty_summary(use_sigs=use_sigs)):
                 width = len(str(val))
                 if width > widths[i]:
                     widths[i] = width
@@ -853,7 +860,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.ignore_bc_trashed and not ent.ignore_bc_conflicted:
+            if not ent.is_discarded and not ent.is_conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -876,13 +883,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if (ent.ignore_bc_trashed or ent.ignore_bc_conflicted) and not discarded:
+            if (ent.is_discarded or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if (ent.ignore_bc_trashed or ent.ignore_bc_conflicted) and not discarded:
+            if (ent.is_discarded or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
 

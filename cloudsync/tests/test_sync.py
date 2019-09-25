@@ -484,6 +484,7 @@ def test_sync_cycle(sync: SyncMgrMixin):
     assert i2.hash == rinfo1.hash
     assert i3.hash == rinfo2.hash
 
+    assert False
 
 def test_sync_conflict_path_combine(sync):
     remote_parent = "/remote"
