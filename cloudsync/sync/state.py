@@ -347,10 +347,31 @@ class SyncEntry:
         assert self.ignored in (reason, IgnoreReason.NONE)
         self.ignored = IgnoreReason.NONE
 
+    @staticmethod
+    def prettyheaders():
+        ret = "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
+            "EID",  # _sig(id(self)),
+            "SID",  # _sig(self.storage_id),
+            "Typ",  # otype,
+            "Change",  # secs(self[LOCAL].changed),
+            "Path",  # self[LOCAL].path,
+            "OID",  # _sig(self[LOCAL].oid),
+            "Last Sync Path E H",  # str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+            "Change",  # secs(self[REMOTE].changed),
+            "Path",  # self[REMOTE].path,
+            "OID",  # _sig(self[REMOTE].oid),
+            "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
+            "Punt",  # self.punted or ""
+            "Ignored",  # self.ignored or ""
+        )
+        return ret
+
     def pretty_summary(self, use_sigs=True):
         def secs(t):
             if t:
-                return str(int(1000*round(t-self.parent._pretty_time, 3)))
+                if t >= self.parent._pretty_time:
+                    return str(int(1000*round(t-self.parent._pretty_time, 3)))
+                return -t
             else:
                 return 0
 
@@ -420,7 +441,9 @@ class SyncEntry:
             widths = (3, 3, 3, 6, 20, 6, 20, 1, 1, 6, 20, 6, 20, 1, 1, 0, 0)
 
         format_string = SyncEntry.pretty_format(widths)
-        ret = format_string % tuple(summary)
+
+        ret = ""  # if self.ignored == IgnoreReason.NONE else "# "
+        ret += format_string % tuple(summary)
         return ret
 
     def __str__(self):
@@ -853,7 +876,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 widths[col] = 0 - widths[col]
 
         ret = SyncState.pretty_headers(widths=widths) + "\n"
-        for e in ents:
+        found_ignored = False
+        for e in sorted(ents, key=lambda x: 0 if x.ignored == IgnoreReason.NONE else 1):
+            if e.ignored != IgnoreReason.NONE and not found_ignored:
+                ret += "------\n"
+                found_ignored = True
             ret += e.pretty(widths=widths) + "\n"
 
         return ret
