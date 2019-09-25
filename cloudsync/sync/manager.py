@@ -139,7 +139,7 @@ class SyncManager(Runnable):
                     self.state.storage_update(sync)
                     self.backoff = self.min_backoff
                 except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError) as e:
-                    log.error(
+                    log.warning(
                         "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
                     time.sleep(self.backoff)
                     self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
@@ -875,6 +875,9 @@ class SyncManager(Runnable):
 
         if sync[changed].sync_path and sync[synced].exists == TRASHED:
             # see test: test_sync_folder_conflicts_del
+            if not sync.punted:
+                sync.punt()
+                return REQUEUE
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
