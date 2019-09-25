@@ -85,6 +85,9 @@ class ResolveFile():
     def seek(self, *a):
         return self.fh.seek(*a)
 
+    def tell(self):
+        return self.fh.tell()
+
 
 @strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
 class SyncManager(Runnable):
