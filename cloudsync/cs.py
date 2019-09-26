@@ -34,7 +34,11 @@ class CloudSync(Runnable):
         self.sleep = sleep
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
-        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False, prioritize=lambda *a: self.prioritize(*a))
+
+        # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through 
+        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
+                prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
+
         smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible
@@ -96,7 +100,7 @@ class CloudSync(Runnable):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
-    def prioritize(self, side: int, path: str):                     # pylint: disable=no-self-use, unused-arguments
+    def prioritize(self, side: int, path: str):     # pylint: disable=unused-argument, no-self-use
         """Override this method to change the sync priority
 
         Default priority is 0
@@ -110,7 +114,7 @@ class CloudSync(Runnable):
         """
         return 0
 
-    def translate(self, side: int, path: str):                      # pylint: disable=no-self-use, unused-arguments
+    def translate(self, side: int, path: str):
         """Override this method to translate between local and remote paths
 
         By default uses `self.roots` to strip the path provided, and 

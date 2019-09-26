@@ -192,6 +192,8 @@ class SyncEntry:
             self._dirty = False
         log.debug("new syncent %s", debug_sig(id(self)))
 
+        self.priority: float
+        
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
@@ -515,7 +517,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
                  shuffle: bool = False, 
-                 prioritize: Callable[[int, str], bool] = None):
+                 prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
