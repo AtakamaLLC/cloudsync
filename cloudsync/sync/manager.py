@@ -143,12 +143,12 @@ class SyncManager(Runnable):
                     self.backoff = self.min_backoff
                 except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError) as e:
                     log.warning(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted)
+                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
                     time.sleep(self.backoff)
                     self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
                 except Exception as e:
                     log.exception(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.punted, stack_info=True)
+                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority, stack_info=True)
                     sync.punt()
                     time.sleep(self.backoff)
                     self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
@@ -357,13 +357,13 @@ class SyncManager(Runnable):
                     # these we can toss, they are other folders
                     # keep the current one, since it exists for sure
                     log.debug("discard %s", ent)
-                    ent.ignore(IgnoreReason.TRASHED)
+                    ent.ignore(IgnoreReason.DISCARDED)
 
         ents = [ent for ent in ents if TRASHED not in (
             ent[changed].exists, ent[synced].exists)]
 
         if ents:
-            if not sync.punted:
+            if sync.priority <= 0:
                 log.debug("punt mkdir")
                 sync.punt()
                 return REQUEUE
@@ -383,7 +383,7 @@ class SyncManager(Runnable):
                 # dup dirs on remote side can be ignored
                 if ent[synced].otype == DIRECTORY:
                     log.debug("discard duplicate dir entry %s", ent)
-                    ent.ignore(IgnoreReason.TRASHED)
+                    ent.ignore(IgnoreReason.DISCARDED)
 
             chent: SyncEntry = self.get_folder_file_conflict(sync, translated_path, synced)
             if chent:
@@ -401,7 +401,7 @@ class SyncManager(Runnable):
             already_dir = self.state.lookup_oid(synced, oid)
             if already_dir and already_dir != sync and already_dir[synced].otype == DIRECTORY:
                 log.debug("discard %s", already_dir)
-                already_dir.ignore(IgnoreReason.TRASHED)
+                already_dir.ignore(IgnoreReason.DISCARDED)
 
             sync[synced].sync_path = translated_path
             sync[changed].sync_path = sync[changed].path
@@ -411,7 +411,7 @@ class SyncManager(Runnable):
 
             return FINISHED
         except CloudFileNotFoundError:
-            if not sync.punted:
+            if sync.priority <= 0:
                 sync.punt()
                 return REQUEUE
 
@@ -539,7 +539,7 @@ class SyncManager(Runnable):
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
 
-            if sync.punted > 0:
+            if sync.priority > 0:
                 info = self.providers[synced].info_path(translated_path)
                 if not info:
                     log.debug("got a file exists, and then it didn't exist %s", sync)
@@ -659,7 +659,8 @@ class SyncManager(Runnable):
 
         defer_ent[ent2.side].sync_hash = ent2.sync_hash
         defer_ent[ent2.side].sync_path = ent2.sync_path
-        replace_ent.ignore(IgnoreReason.TRASHED)
+        log.debug("discard ent %s", replace_ent)
+        replace_ent.ignore(IgnoreReason.DISCARDED)
 
     def resolve_conflict(self, side_states):  # pylint: disable=too-many-statements, too-many-branches, too-many-locals
         with self.__resolve_file_likes(side_states) as fhs:
@@ -707,15 +708,17 @@ class SyncManager(Runnable):
                 sorted_states = sorted(side_states, key=lambda e: e.side)
                 replace_side = other_side(defer)
                 replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+                defer_ent = self.state.lookup_oid(defer, sorted_states[defer].oid)
                 if keep:
                     # toss the other side that was replaced
                     if replace_ent:
                         replace_ent.ignore(IgnoreReason.CONFLICT)
+                        replace_ent[defer].clear()
                 else:
                     log.debug("defer not none, and not keeping, so merge sides")
-                    defer_ent = self.state.lookup_oid(defer, sorted_states[defer].oid)
                     replace_ent[defer] = defer_ent[defer]
-                    defer_ent.ignore(IgnoreReason.TRASHED)
+                    log.debug("discard ent %s", defer_ent)
+                    defer_ent.ignore(IgnoreReason.DISCARDED)
                     replace_ent[replace_side].sync_path = replace_ent[replace_side].path
                     replace_ent[replace_side].sync_hash = replace_ent[replace_side].hash
                     replace_ent[defer].sync_path = self.translate(defer, replace_ent[replace_side].path)
@@ -736,7 +739,7 @@ class SyncManager(Runnable):
         for ent in ents:
             if ent.is_creation(synced):
                 log.debug("discard delete, pending create %s:%s", synced, ent)
-                sync.ignore(IgnoreReason.TRASHED)
+                sync.ignore(IgnoreReason.DISCARDED)
                 return FINISHED
 
         # deltions don't always have paths
@@ -749,7 +752,7 @@ class SyncManager(Runnable):
                 for ent in ents:
                     if ent.is_rename(synced):
                         log.debug("discard delete, pending rename %s:%s", synced, ent)
-                        sync.ignore(IgnoreReason.TRASHED)
+                        sync.ignore(IgnoreReason.DISCARDED)
                         return FINISHED
 
         if sync[synced].oid:
@@ -763,12 +766,14 @@ class SyncManager(Runnable):
             log.debug("was never synced, ignoring deletion")
 
         sync[synced].exists = TRASHED
-        sync.ignore(IgnoreReason.TRASHED, previous_reasons=IgnoreReason.IRRELEVANT)
+        if not sync.is_conflicted:
+            log.debug("mark entry discarded %s", sync)
+            sync.ignore(IgnoreReason.DISCARDED, previous_reasons=IgnoreReason.IRRELEVANT)
         return FINISHED
 
     def _handle_dir_delete_not_empty(self, sync, changed):
         # punt once to allow children to be processed, if already done just forget about it
-        if sync.punted > 0:
+        if sync.priority > 0:
             all_synced = True
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
                 if kid.needs_sync():
@@ -786,7 +791,7 @@ class SyncManager(Runnable):
         log.debug("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
-
+            
         sync.punt()
         return REQUEUE
 
@@ -810,7 +815,8 @@ class SyncManager(Runnable):
             for ent in other_ents:
                 if ent[synced].exists == TRASHED:
                     # old trashed entries can be safely ignored
-                    ent.ignore(IgnoreReason.TRASHED)
+                    log.debug("discard ent %s", ent)
+                    ent.ignore(IgnoreReason.DISCARDED)
             return None
 
         other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
@@ -824,7 +830,7 @@ class SyncManager(Runnable):
         if not other_untrashed_ents:
             return False
 
-        if sync.punted == 0:
+        if sync.priority == 0:
             # delaying sometimes helps, because future events can resolve conflicts
             # it's generally better to wait before conflicting something
             log.debug("punting, maybe it will fix itself")
@@ -876,8 +882,9 @@ class SyncManager(Runnable):
 
         if sync[changed].sync_path and sync[synced].exists == TRASHED:
             # see test: test_sync_folder_conflicts_del
-            if not sync.punted:
+            if sync.priority <= 0:
                 sync.punt()
+                log.debug("requeue sync + trash %s", sync)
                 return REQUEUE
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
@@ -922,7 +929,7 @@ class SyncManager(Runnable):
             new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
         except CloudFileNotFoundError as e:
             log.debug("ERROR: can't rename for now %s: %s", sync, e)
-            if sync.punted > 5:
+            if sync.priority > 5:
                 log.exception("punted too many times, giving up")
                 return FINISHED
             else:
@@ -931,7 +938,7 @@ class SyncManager(Runnable):
             return REQUEUE
         except CloudFileExistsError:
             log.debug("can't rename, file exists")
-            if sync.punted:
+            if sync.priority > 0:
                 ents = self.state.lookup_path(synced, translated_path)
                 if ents:
                     conflict = ents[0]
@@ -1028,8 +1035,6 @@ class SyncManager(Runnable):
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
-        with disable_log_multiline():
-            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         if sync.is_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
@@ -1040,12 +1045,12 @@ class SyncManager(Runnable):
 
         if sync[changed].path and sync[changed].exists == EXISTS:
             # parent_conflict code
-            # todo: make this walk up parents to the translate == None "root"
             conflict = self._get_parent_conflict(sync, changed)
             if conflict:
-                log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
                 conflict[changed].set_aged()
-                sync.punt()
+                # gentle punt, based on parent's priority
+                sync.priority = conflict.priority + 0.1
+                log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
                 return REQUEUE
 
         if sync[changed].exists == TRASHED:
@@ -1111,7 +1116,7 @@ class SyncManager(Runnable):
             log.warning("impossible sync, no path. "
                         "Probably a file that was shared, but not placed into a folder. discarding. %s",
                         sync[changed])
-            sync.ignore(IgnoreReason.TRASHED)
+            sync.ignore(IgnoreReason.DISCARDED)
             return
 
         log.debug("UPDATE PATH %s->%s", sync, info.path)
@@ -1136,7 +1141,7 @@ class SyncManager(Runnable):
             for side in (LOCAL, REMOTE):
                 for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
                     setattr(defer_ent[side], field, save[side][field])
-            replace_ent.ignore(IgnoreReason.TRASHED)
+            replace_ent.ignore(IgnoreReason.DISCARDED)
             raise
 
     def handle_split_conflict(self, defer_ent, defer_side, replace_ent, replace_side):
@@ -1148,7 +1153,7 @@ class SyncManager(Runnable):
                     dhash = self.providers[replace_side].hash_data(f)
                     if dhash == replace_ent[replace_side].hash:
                         log.debug("same hash as remote, discard entry")
-                        replace_ent.ignore(IgnoreReason.TRASHED)
+                        replace_ent.ignore(IgnoreReason.DISCARDED)
                         return True
             except FileNotFoundError:
                 return False

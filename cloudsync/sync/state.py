@@ -11,6 +11,7 @@ import copy
 import json
 import logging
 import time
+import random
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -21,7 +22,6 @@ from pystrict import strict
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
 from cloudsync.types import OType
-from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
 if TYPE_CHECKING:
@@ -51,9 +51,12 @@ TRASHED = Exists.TRASHED
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
 class SideState():
+    hash: Any
+    sync_hash: Any
+
     def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
-        self._side: int = side                            # just for assertions
+        self._side: int = side                       
         self._otype: Optional[OType] = otype
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
@@ -65,8 +68,7 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-        self.hash: Optional[bytes]
-        self.sync_hash: Optional[bytes]
+
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -171,7 +173,7 @@ class SyncEntry:
         self._ignored = ignore_reason
         self._storage_id: Any = None
         self._dirty: bool = True
-        self._punted: int = 0
+        self._priority: float = 0         # 0 == normal, > 0 == high, < 0 == low
         self._parent = parent
 
         if storage_init is not None:
@@ -180,6 +182,8 @@ class SyncEntry:
             self._dirty = False
         log.debug("new syncent %s", debug_sig(id(self)))
 
+        self.priority: float
+        
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
@@ -215,10 +219,11 @@ class SyncEntry:
             # storage_id does not get serialized, it always comes WITH a serialization when deserializing
             return ret
 
-        ser = dict()
+        ser: Dict[str, Any] = dict()
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
+        ser['priority'] = self._priority
         return json.dumps(ser).encode('utf-8')
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
@@ -243,17 +248,20 @@ class SyncEntry:
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
         if reason_string:
+            if reason_string == "trashed":
+                reason_string = "discarded"
             try:
                 reason = IgnoreReason(reason_string)
                 self._ignored = reason
             except ValueError:  # reason was specified, but had an unrecognized value?
                 log.warning("deserializing state, but ignored had bad value %s", reason_string)
-                reason = IgnoreReason.TRASHED  # is this the best thing to use here?
+                reason = IgnoreReason.DISCARDED
         elif ser.get('discarded', ""):
-            self._ignored = IgnoreReason.TRASHED
+            self._ignored = IgnoreReason.DISCARDED
         elif ser.get('conflicted', ""):
             self._ignored = IgnoreReason.CONFLICT
 
+        ser['priority'] = ser.get('priority', 0)
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -317,7 +325,7 @@ class SyncEntry:
 
     @property
     def is_discarded(self):
-        return self.ignored in (IgnoreReason.TRASHED, IgnoreReason.IRRELEVANT)
+        return self.ignored in (IgnoreReason.DISCARDED, IgnoreReason.IRRELEVANT)
 
     @property
     def is_irrelevant(self):
@@ -361,7 +369,7 @@ class SyncEntry:
             "Path",  # self[REMOTE].path,
             "OID",  # _sig(self[REMOTE].oid),
             "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            "Punt",  # self.punted or ""
+            "Priority",  # self.priority or ""
             "Ignored",  # self.ignored or ""
         )
         return ret
@@ -417,7 +425,7 @@ class SyncEntry:
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path), rexv, rhma,
 
-            self._punted or "",
+            self._priority or "",
             self.ignored.value if self.ignored.value != IgnoreReason.NONE else "",
             )
 
@@ -447,9 +455,7 @@ class SyncEntry:
         return str(self.pretty_tuple())
 
     def __repr__(self):
-        d = self.__dict__.copy()
-        d.pop("_parent", None)
-        return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+        return str(self.pretty_tuple())
 
     def store(self, tag: str, storage: Storage):
         if not self.storage_id:
@@ -459,12 +465,7 @@ class SyncEntry:
 
     def punt(self):
         # do this one later
-        # TODO provide help for making sure that we don't punt too many times
-        self.punted += 1                    # pylint: disable=no-member
-        if self[LOCAL].changed:
-            self[LOCAL].changed += self._parent._punt_secs[LOCAL]
-        if self[REMOTE].changed:
-            self[REMOTE].changed = self._parent._punt_secs[REMOTE]
+        self.priority += 1
 
     def get_latest(self):
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
@@ -497,7 +498,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         "Sync Path",  # str(self[REMOTE].sync_path)
         "E",  # rexv
         "H",  # rhma
-        "Punt",  # self.punted or ""
+        "Prio",  # self.priority or ""
         "Ignored",  # self.ignored or ""
     )
 
@@ -505,7 +506,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
-                 shuffle: bool = False):
+                 shuffle: bool = False, 
+                 prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
@@ -535,8 +537,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     if ent[side].changed:
                         self._changeset.add(ent)
             self._loading = False
+        self.prioritize = prioritize
+        if prioritize is None:
+            self.prioritize = lambda side, path: 0
 
-    def updated(self, ent, side, key, val):
+    def updated(self, ent, side, key, val):     # pylint: disable=too-many-branches
         if self._loading:
             return
 
@@ -547,7 +552,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         elif key == "oid":
             self._change_oid(side, ent, val)
         elif key == "ignored":
-            if val == IgnoreReason.TRASHED:
+            if val == IgnoreReason.DISCARDED:
                 ent[LOCAL]._changed = False
                 ent[REMOTE]._changed = False
                 self._changeset.discard(ent)
@@ -558,6 +563,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
+        elif key == "priority":
+            if val > ent.priority and val > 0:
+                # move to later on priority drop below zero
+                if ent[LOCAL].changed:
+                    ent[LOCAL].changed += ent._parent._punt_secs[LOCAL]
+                if ent[REMOTE].changed:
+                    ent[REMOTE].changed = ent._parent._punt_secs[REMOTE]
 
     @property
     def changes(self):
@@ -598,6 +610,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side]._path = path
 
             self._update_kids(ent, side, prior_path, path, provider)
+
+            new_priority = self.prioritize(side, path)
+            if new_priority != ent.priority:
+                ent.priority = new_priority
 
     def _update_kids(self, ent, side, prior_path, path, provider):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
@@ -802,7 +818,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:
                     ent = path_ent
-                    ent.unignore(IgnoreReason.TRASHED)
+                    ent.unignore(IgnoreReason.DISCARDED)
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
 
         if not ent:
@@ -817,26 +833,20 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if not self._changeset:
             return None
 
+        sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
-            changes = scramble(self._changeset, 10)
-        else:
-            changes = sorted(self._changeset, key=lambda a: max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
+            sort_key = lambda a: (a.priority, random.random())
+
+        changes = sorted(self._changeset, key=sort_key)
 
         earlier_than = time.time() - age
-        for puntlevel in range(3):
-            for e in changes:
-                if not e.is_discarded and e.punted == puntlevel:
-                    if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
-                            or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                        return e
+        for e in changes:
+            if (e[LOCAL].changed and (e[LOCAL].changed <= earlier_than)) \
+                    or (e[REMOTE].changed and (e[REMOTE].changed <= earlier_than)) \
+                    or e.priority < 0:
+                return e
 
-        ret = None
-        for e in self._changeset:
-            if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
-                    or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                ret = e
-
-        return ret
+        return None
 
     def finished(self, ent):
         if ent[1].changed or ent[0].changed:
@@ -846,7 +856,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._changeset.discard(ent)
 
         for e in self._changeset:
-            e.punted = 0
+            if e.priority > 0:
+                # low priority items are brought back to normal any time something changes
+                e.priority = 0
 
     @staticmethod
     def pretty_headers(widths=None):
