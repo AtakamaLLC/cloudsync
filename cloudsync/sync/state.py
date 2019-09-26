@@ -571,11 +571,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 if ent[REMOTE].changed:
                     ent[REMOTE].changed = ent._parent._punt_secs[REMOTE]
 
-            if val < ent.priority and val < 0:
-                # move to now on priority bump above zero
-                ent[LOCAL].changed = 1
-                ent[REMOTE].changed = 1
-
     @property
     def changes(self):
         return tuple(self._changeset)
@@ -847,7 +842,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         earlier_than = time.time() - age
         for e in changes:
             if (e[LOCAL].changed and (e[LOCAL].changed <= earlier_than)) \
-                    or (e[REMOTE].changed and (e[REMOTE].changed <= earlier_than)):
+                    or (e[REMOTE].changed and (e[REMOTE].changed <= earlier_than)) \
+                    or e.priority < 0:
                 return e
 
         return None
