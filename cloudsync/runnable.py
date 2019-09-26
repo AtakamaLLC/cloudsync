@@ -19,7 +19,7 @@ def time_helper(timeout, sleep=None, multiply=1):
 
 class Runnable(ABC):
     stopped = False
-    shutdown = False
+    __shutdown = False
     wakeup = False
     thread = None
 
@@ -41,7 +41,7 @@ class Runnable(ABC):
                 break
             endtime = sleep + time.monotonic()
 
-        if self.shutdown:
+        if self.__shutdown:
             self.done()
 
     def wake(self):
@@ -57,7 +57,7 @@ class Runnable(ABC):
 
     def stop(self, forever=True):
         self.stopped = True
-        self.shutdown = forever
+        self.__shutdown = forever
         if self.thread:
             self.thread.join()
             self.thread = None
