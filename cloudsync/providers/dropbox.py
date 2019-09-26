@@ -453,7 +453,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         )
                     break
                 if not cursor:
-                    self._api('files_upload_session_start', data)
+                    res = self._api('files_upload_session_start', data)
                     cursor = files.UploadSessionCursor(
                         res.session_id, len(data))
                 else:
