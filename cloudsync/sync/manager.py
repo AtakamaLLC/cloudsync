@@ -1048,7 +1048,7 @@ class SyncManager(Runnable):
             if conflict:
                 conflict[changed].set_aged()
                 # gentle punt, based on parent's priority
-                sync.priority = conflict.priority + 1
+                sync.priority = conflict.priority + 0.1
                 log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
                 return REQUEUE
 
