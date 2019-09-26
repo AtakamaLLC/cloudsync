@@ -708,13 +708,14 @@ class SyncManager(Runnable):
                 sorted_states = sorted(side_states, key=lambda e: e.side)
                 replace_side = other_side(defer)
                 replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
+                defer_ent = self.state.lookup_oid(defer, sorted_states[defer].oid)
                 if keep:
                     # toss the other side that was replaced
                     if replace_ent:
                         replace_ent.ignore(IgnoreReason.CONFLICT)
+                        replace_ent[defer].clear()
                 else:
                     log.debug("defer not none, and not keeping, so merge sides")
-                    defer_ent = self.state.lookup_oid(defer, sorted_states[defer].oid)
                     replace_ent[defer] = defer_ent[defer]
                     log.debug("discard ent %s", defer_ent)
                     defer_ent.ignore(IgnoreReason.DISCARDED)
@@ -1037,7 +1038,7 @@ class SyncManager(Runnable):
 
         if sync.is_conflicted:
             log.debug("Conflicted file %s is changing", sync[changed].path)
-            if "conflicted" in sync[changed].path or sync[changed].exists == TRASHED:
+            if "conflicted" in sync[changed].path:
                 return FINISHED
             else:
                 sync.unignore(IgnoreReason.CONFLICT)
