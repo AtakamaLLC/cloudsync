@@ -499,7 +499,7 @@ def test_walk(provider):
 
     got_event = False
     found = {}
-    for e in provider.walk("/"):
+    for e in provider.walk(provider.test_root):
         if e.otype == cloudsync.DIRECTORY:
             continue
         log.debug("WALK %s", e)
@@ -1192,7 +1192,12 @@ def test_cursor(provider):
     current_csr2 = provider.current_cursor
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
 
-    assert current_csr1 != current_csr2
+    if (current_csr1 is None and current_csr2 is None):
+        # some providers don't support cursors... they will walk on start, always
+        return
+
+    assert current_csr1 != current_csr2 
+    
 
     # check that we can go backwards
     provider.current_cursor = current_csr1
