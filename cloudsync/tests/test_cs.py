@@ -791,7 +791,8 @@ def test_cs_rename_over(cs):
 
 
 @pytest.mark.repeat(10)
-def test_cs_folder_conflicts_file(cs):
+@pytest.mark.parametrize("use_prio", [0, 1], ids=["norm", "prio"])
+def test_cs_folder_conflicts_file(cs, use_prio):
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
     local_path1 = "/local/stuff1"
@@ -802,6 +803,15 @@ def test_cs_folder_conflicts_file(cs):
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    if use_prio:
+        def prio(side, path):
+            # for whatever reason, prioritize this
+            # it shouldn't mess anything up, esp with parent-conflict things
+            if path == "/remote/stuff1/under" or path == "/local/stuff1/under":
+                return -10
+            return 0
+        cs.prioritize = prio
 
     cs.providers[LOCAL].delete(linfo1.oid)
     cs.providers[REMOTE].delete(rinfo1.oid)
@@ -1703,8 +1713,7 @@ MERGE = 2
     (MERGE,  []),
     (MERGE,  [LOCAL, REMOTE]),
     ], ids = ["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
-@pytest.mark.parametrize("use_prio", [0, 1], ids=["norm", "prio"])
-def test_hash_mess(cs, side_locked, use_prio):
+def test_hash_mess(cs, side_locked):
     (side, locks) = side_locked
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
@@ -1732,13 +1741,7 @@ def test_hash_mess(cs, side_locked, use_prio):
     local.upload(local_oid, BytesIO(b"zzz1"))
     remote.upload(remote_oid, BytesIO(b"zzz2"))
 
-    if use_prio:
-        def prio(side, path):
-            # for whatever reason, prioritize this
-            # it shouldn't mess anything up
-            if path == "/remote/foo-r" or path == "/local/foo-r":
-                return -1
-            return 0
+
     f3 = BytesIO(b'merged')
 
     if side == LOCAL:
