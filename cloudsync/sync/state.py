@@ -51,18 +51,8 @@ TRASHED = Exists.TRASHED
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
 class SideState():
-    parent: 'SyncEntry'
-    side: int
-    otype: OType
     hash: Any
-    changed: float
-    last_gotten: float
     sync_hash: Any
-    sync_path: Any
-    path: str
-    oid: str
-    exists: Exists
-    temp_file: str
 
     def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
