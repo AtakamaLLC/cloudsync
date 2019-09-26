@@ -34,7 +34,7 @@ class CloudSync(Runnable):
         self.sleep = sleep
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
-        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False)
+        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False, prioritize=lambda *a: self.prioritize(*a))
         smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible
@@ -73,25 +73,6 @@ class CloudSync(Runnable):
     def aging(self, secs: float):
         self.smgr.aging = secs
 
-    def prioritize(self, side: int, path: str) -> None:
-        """Move path and all children of the path to be synchronized first
-
-        Args:
-            side (int): By convention 0 is local and 1 is remote
-            path (str): The full path to the file
-        """
-
-        paths: List[str] = [None, None]
-        paths[side] = path
-        paths[1 - side] = self.translate(1 - side, path)
-
-        # forge events and fill the state table with the latest info
-        # mark all events as "aged" by setting the times to low values
-        # to prevent parent folder punting, dfs is used as the time
-
-        for i, fp in enumerate(paths):
-            self.emgrs[i].prioritize(fp)
-
     def storage_label(self):
         """
         Returns:
@@ -115,7 +96,21 @@ class CloudSync(Runnable):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
-    def translate(self, side: int, path: str):
+    def prioritize(self, side: int, path: str):                     # pylint: disable=no-self-use, unused-arguments
+        """Override this method to change the sync priority
+
+        Default priority is 0
+        Negative values happen first
+        Positive values happen later
+
+        Args:
+            side: eitehr 0 (LOCAL) or 1 (REMOTE
+            path: a path value in the (side) provider
+
+        """
+        return 0
+
+    def translate(self, side: int, path: str):                      # pylint: disable=no-self-use, unused-arguments
         """Override this method to translate between local and remote paths
 
         By default uses `self.roots` to strip the path provided, and 

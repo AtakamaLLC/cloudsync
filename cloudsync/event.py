@@ -126,33 +126,6 @@ class EventManager(Runnable):
             self.state.update(self.side, otype, event.oid, path=path, hash=event.hash,
                               exists=exists, prior_oid=event.prior_oid)
 
-    def prioritize(self, path):
-        # depth first search index, so parent folder happen first
-        priority_order = 1
-
-        check_parent = path
-        while check_parent:
-            parent = self.provider.dirname(check_parent)
-            if path == parent or not parent:
-                break
-
-            ents = self.state.lookup_path(self.side, parent)
-            if not ents:
-                break
-
-            for e in ents:
-                if e[self.side].changed:
-                    e[self.side].changed = priority_order
-                    priority_order += 1
-            check_parent = parent
-
-        for event in self.provider.walk(path):
-            self.process_event(event)
-            ent = self.state.lookup_oid(self.side, event.oid)
-            # move up to process now...
-            ent[self.side].changed = priority_order
-            priority_order += 1
-
     def stop(self, forever=True):
         if forever:
             self.events.shutdown = True

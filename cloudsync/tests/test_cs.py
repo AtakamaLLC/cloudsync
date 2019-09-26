@@ -1652,6 +1652,15 @@ def test_cs_prioritize(cs):
     # aging 3 seconds... nothing should get processed
     cs.aging = 4
 
+    # this should also prioritize the remote, even though the local doesn't exist
+    def prio(side, path):
+        if path == local_path2 or path == remote_path2:
+            log.debug("PRIO RETURNING %s", path)
+            return -1
+        return 0
+
+    cs.prioritize = prio
+
     cs.emgrs[LOCAL].do()
     cs.emgrs[REMOTE].do()
 
@@ -1670,8 +1679,6 @@ def test_cs_prioritize(cs):
     # nothing is happening because aging is too long
     assert cs.state.changeset_len == prev_len
 
-    # this should also prioritize the remote, even though the local doesn't exist
-    cs.prioritize(LOCAL, local_path2)
 
     log.info("BEFORE TABLE\n%s", cs.state.pretty_print())
 
@@ -1695,10 +1702,9 @@ MERGE = 2
     (REMOTE, [REMOTE]),
     (MERGE,  []),
     (MERGE,  [LOCAL, REMOTE]),
-#    (MERGE, REMOTE),
-#    (MERGE, LOCAL),
-])
-def test_hash_mess(cs, side_locked):
+    ], ids = ["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
+@pytest.mark.parametrize("use_prio", [0, 1], ids=["norm", "prio"])
+def test_hash_mess(cs, side_locked, use_prio):
     (side, locks) = side_locked
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
@@ -1726,6 +1732,13 @@ def test_hash_mess(cs, side_locked):
     local.upload(local_oid, BytesIO(b"zzz1"))
     remote.upload(remote_oid, BytesIO(b"zzz2"))
 
+    if use_prio:
+        def prio(side, path):
+            # for whatever reason, prioritize this
+            # it shouldn't mess anything up
+            if path == "/remote/foo-r" or path == "/local/foo-r":
+                return -1
+            return 0
     f3 = BytesIO(b'merged')
 
     if side == LOCAL:
