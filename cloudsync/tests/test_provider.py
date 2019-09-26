@@ -75,7 +75,7 @@ class ProviderHelper(ProviderBase):
 
     def walk(self, path, since=None):
         path = self.__add_root(path)
-        log.debug("WALK %s", path)
+        log.debug("TEST WALK %s", path)
         for e in self.prov.walk(path):
             if self.__filter_root(e):
                 yield e
@@ -499,7 +499,7 @@ def test_walk(provider):
 
     got_event = False
     found = {}
-    for e in provider.walk(provider.test_root):
+    for e in provider.walk("/"):
         if e.otype == cloudsync.DIRECTORY:
             continue
         log.debug("WALK %s", e)
