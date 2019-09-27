@@ -12,6 +12,7 @@ from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudF
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
+from os import SEEK_SET, SEEK_CUR, SEEK_END
 # from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
@@ -82,6 +83,10 @@ class ProviderHelper(ProviderBase):
 
     def download(self, *args, **kwargs):
         return self.__strip_root(self.prov.download(*args, **kwargs))
+
+    def download_path(self, path: str, *args, **kwargs):
+        path = self.__add_root(path)
+        return self.__strip_root(self.prov.download_path(path, *args, **kwargs))
 
     def create(self, path, file_like, metadata=None):
         path = self.__add_root(path)
@@ -1312,6 +1317,67 @@ def test_quota_limit(mock_provider):
     with pytest.raises(CloudOutOfSpaceError):
         mock_provider.create("/bar", BytesIO(b'0' * 2))
     assert not mock_provider.info_path("/bar")
+
+
+class FakeFile:
+    def __init__(self, size, repeat=b'0'):
+        self.loc = 0
+        self.size = size
+        self.repeat = repeat
+        self.closed = False
+
+    def fileno(self):
+        raise OSError()
+
+    def write(self, data):
+        raise OSError()
+
+    def read(self, size=None):
+        if size is None:
+            size = self.size
+        end = min(self.loc + size, self.size)
+        size = end - self.loc
+        if size <= 0:
+            return b''
+        self.loc += size
+        return self.repeat * size
+
+    def seek(self, offset, whence=SEEK_SET):
+        if whence == SEEK_SET:
+            self.loc = offset
+        elif whence == SEEK_END:
+            self.loc = self.size - offset
+        elif whence == SEEK_CUR:
+            self.loc += offset
+        return
+
+    def seekable(self):
+        return True
+
+    def close(self):
+        self.closed = True
+
+    def tell(self):
+        return self.loc
+
+
+@pytest.mark.manual
+def test_large_file_support(provider):
+    target_size = 30 * 1000 * 1000
+    fh = FakeFile(target_size, repeat=b'0')
+    provider.create("/foo", fh)
+    info = provider.info_path("/foo")
+    assert info
+    log.debug("info=%s", info)
+    root_info = provider.info_path("/")
+    assert root_info
+    dir_list = list(provider.listdir(root_info.oid))
+    log.debug("dir_list=%s", dir_list)
+    new_fh = BytesIO()
+    provider.download_path("/foo", new_fh)
+    new_fh.seek(0, SEEK_END)
+    new_len = new_fh.tell()
+    assert new_len == target_size
 
 
 def test_special_characters(provider):
