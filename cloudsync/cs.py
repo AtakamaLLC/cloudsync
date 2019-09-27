@@ -10,6 +10,7 @@ from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 from .log import TRACE
+from .utils import debug_sig
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class CloudSync(Runnable):
             EventManager(smgr.providers[0], state, 0, _roots[0]),
             EventManager(smgr.providers[1], state, 1, _roots[1])
         )
-        log.info("initialized sync: %s", self.storage_label())
+        log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
         self.sthread = None
         self.ethreads = (None, None)

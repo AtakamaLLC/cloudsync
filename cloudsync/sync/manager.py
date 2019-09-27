@@ -1031,7 +1031,7 @@ class SyncManager(Runnable):
                     sync.ignore(IgnoreReason.IRRELEVANT)
 
         if sync.is_discarded:
-            log.log(TRACE, "Ignoring entry because %s:%s", sync.ignored.value, sync)
+            log.log(TRACE, "%s Ignoring entry because %s:%s", debug_sig(id(self)), sync.ignored.value, sync)
             return FINISHED
 
         log.debug("embrace %s, side:%s", sync, changed)
