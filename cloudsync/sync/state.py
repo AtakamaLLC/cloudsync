@@ -1,4 +1,4 @@
-# pylint: disable=attribute-defined-outside-init, protected-access
+# pylint: disable=attribute-defined-outside-init, protected-access, too-many-lines
 """
 SyncEntry[SideState, SideState] is a pair of entries, indexed by oid.  The SideState class makes
 extensive use of __getattr__ logic to keep indexes up to date.
@@ -11,6 +11,7 @@ import copy
 import json
 import logging
 import time
+import random
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -21,9 +22,8 @@ from pystrict import strict
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
 from cloudsync.types import OType
-from cloudsync.scramble import scramble
 from cloudsync.log import TRACE
-from cloudsync.utils import debug_sig
+from cloudsync.utils import debug_sig, disable_log_multiline
 if TYPE_CHECKING:
     from cloudsync import Provider
 
@@ -51,9 +51,12 @@ TRASHED = Exists.TRASHED
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
 class SideState():
+    hash: Any
+    sync_hash: Any
+
     def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
-        self._side: int = side                            # just for assertions
+        self._side: int = side                       
         self._otype: Optional[OType] = otype
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
@@ -65,8 +68,7 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-        self.hash: Optional[bytes]
-        self.sync_hash: Optional[bytes]
+
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -159,7 +161,7 @@ class Storage(ABC):
 
 
 # single entry in the syncs state collection
-@strict         # pylint: disable=too-many-instance-attributes
+@strict         # pylint: disable=too-many-instance-attributes, too-many-public-methods
 class SyncEntry:
     def __init__(self, parent: 'SyncState',
                  otype: Optional[OType],
@@ -171,7 +173,7 @@ class SyncEntry:
         self._ignored = ignore_reason
         self._storage_id: Any = None
         self._dirty: bool = True
-        self._punted: int = 0
+        self._priority: float = 0         # 0 == normal, > 0 == high, < 0 == low
         self._parent = parent
 
         if storage_init is not None:
@@ -180,6 +182,8 @@ class SyncEntry:
             self._dirty = False
         log.debug("new syncent %s", debug_sig(id(self)))
 
+        self.priority: float
+        
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
@@ -215,10 +219,11 @@ class SyncEntry:
             # storage_id does not get serialized, it always comes WITH a serialization when deserializing
             return ret
 
-        ser = dict()
+        ser: Dict[str, Any] = dict()
         ser['side0'] = side_state_to_dict(self.__states[0])
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
+        ser['priority'] = self._priority
         return json.dumps(ser).encode('utf-8')
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
@@ -242,19 +247,21 @@ class SyncEntry:
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
-        log.debug("here")
         if reason_string:
+            if reason_string == "trashed":
+                reason_string = "discarded"
             try:
                 reason = IgnoreReason(reason_string)
                 self._ignored = reason
             except ValueError:  # reason was specified, but had an unrecognized value?
                 log.warning("deserializing state, but ignored had bad value %s", reason_string)
-                reason = IgnoreReason.TRASHED  # is this the best thing to use here?
+                reason = IgnoreReason.DISCARDED
         elif ser.get('discarded', ""):
-            self._ignored = IgnoreReason.TRASHED
+            self._ignored = IgnoreReason.DISCARDED
         elif ser.get('conflicted', ""):
             self._ignored = IgnoreReason.CONFLICT
 
+        ser['priority'] = ser.get('priority', 0)
 
     def __getitem__(self, i):
         return self.__states[i]
@@ -316,19 +323,9 @@ class SyncEntry:
             return True
         return False
 
-    # @property
-    # def ignored(self):
-    #     return self._ignored != IgnoreReason.NONE
-    #
-    # @ignored.setter
-    # def ignored(self, val: Optional[IgnoreReason]):
-    #     if val is None:
-    #         val = IgnoreReason.NONE
-    #     self._ignored = val
-
     @property
-    def is_trashed(self):
-        return self.ignored in (IgnoreReason.TRASHED, IgnoreReason.IRRELEVANT)
+    def is_discarded(self):
+        return self.ignored in (IgnoreReason.DISCARDED, IgnoreReason.IRRELEVANT)
 
     @property
     def is_irrelevant(self):
@@ -341,14 +338,6 @@ class SyncEntry:
     @property
     def is_temp_rename(self):
         return self.ignored == IgnoreReason.TEMP_RENAME
-
-    # @property
-    # def is_temp_conflicted(self):
-    #     return self.ignored == IgnoreReason.TEMP_CONFLICT
-    #
-    # def discard(self):
-    #     raise NotImplementedError(                                                                                        )
-    #     self.discarded = ''.join(traceback.format_stack())
 
     def ignore(self, reason: IgnoreReason, previous_reasons: Union[Sequence[IgnoreReason], IgnoreReason] = (IgnoreReason.NONE,)):
         if isinstance(previous_reasons, IgnoreReason):
@@ -380,17 +369,12 @@ class SyncEntry:
             "Path",  # self[REMOTE].path,
             "OID",  # _sig(self[REMOTE].oid),
             "Last Sync Path    ",  # str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            "Punt",  # self.punted or ""
+            "Priority",  # self.priority or ""
             "Ignored",  # self.ignored or ""
         )
         return ret
 
-    def pretty(self, fixed=True, use_sigs=True):
-        ret = ""
-        if self.ignored != IgnoreReason.NONE:
-            # reason is printed at the end
-            ret = "# "
-
+    def pretty_summary(self, use_sigs=True):
         def secs(t):
             if t:
                 if t >= self.parent._pretty_time:
@@ -426,41 +410,52 @@ class SyncEntry:
         else:
             otype = local_otype
 
-        if not fixed:
-            return str((_sig(id(self)), otype,
-                        (secs(self[LOCAL].changed), self[LOCAL].path, _sig(
-                            self[LOCAL].oid), str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma),
-                        (secs(self[REMOTE].changed), self[REMOTE].path, _sig(
-                            self[REMOTE].oid), str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma),
-                        self._punted,
-                        self.ignored.value
-                        ))
-
-        ret += "%3s %3s %3s %6s %20s %6s %22s -- %6s %20s %6s %22s %s %s" % (
+        return (
             _sig(id(self)),
             _sig(self.storage_id),
             otype[:3],
+
             secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
-            str(self[LOCAL].sync_path) + ":" + lexv + ":" + lhma,
+            str(self[LOCAL].sync_path), lexv, lhma,
+
             secs(self[REMOTE].changed),
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
-            str(self[REMOTE].sync_path) + ":" + rexv + ":" + rhma,
-            self._punted or "",
-            self.ignored.value if self.ignored != IgnoreReason.NONE else "",
-        )
+            str(self[REMOTE].sync_path), rexv, rhma,
 
+            self._priority or "",
+            self.ignored.value if self.ignored.value != IgnoreReason.NONE else "",
+            )
+
+    def pretty_tuple(self, use_sigs=True):  # pretty(fixed=False) becomes pretty_tuple()
+        s = self.pretty_summary(use_sigs=use_sigs)
+        return (s[0], s[1], s[2],
+                (s[3], s[4], s[5], ":".join(s[6:9])),
+                (s[9], s[10], s[11], ":".join(s[12:15])),
+                s[15], s[16])
+
+    @staticmethod
+    def pretty_format(widths, sep="|"):
+        formats = ["%" + str(w) + "s" for w in widths]
+        format_str = sep.join(formats[0:9]) + sep + "--" + sep + sep.join(formats[9:17])
+        return format_str
+
+    def pretty(self, use_sigs=True, summary=None, widths=None):  # pretty() or pretty(fixed=True) becomes pretty()
+        summary = summary or self.pretty_summary(use_sigs=use_sigs)
+        if widths is None:
+            widths = (3, 3, 3, 6, 20, 6, 20, 1, 1, 6, 20, 6, 20, 1, 1, 0, 0)
+        format_string = SyncEntry.pretty_format(widths)
+        ret = ""  # if self.ignored == IgnoreReason.NONE else "# "
+        ret += format_string % tuple(summary)
         return ret
 
     def __str__(self):
-        return self.pretty(fixed=False)
+        return str(self.pretty_tuple())
 
     def __repr__(self):
-        d = self.__dict__.copy()
-        d.pop("_parent", None)
-        return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+        return str(self.pretty_tuple())
 
     def store(self, tag: str, storage: Storage):
         if not self.storage_id:
@@ -470,12 +465,7 @@ class SyncEntry:
 
     def punt(self):
         # do this one later
-        # TODO provide help for making sure that we don't punt too many times
-        self.punted += 1                    # pylint: disable=no-member
-        if self[LOCAL].changed:
-            self[LOCAL].changed += self._parent._punt_secs[LOCAL]
-        if self[REMOTE].changed:
-            self[REMOTE].changed = self._parent._punt_secs[REMOTE]
+        self.priority += 1
 
     def get_latest(self):
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
@@ -491,12 +481,33 @@ class SyncEntry:
         return True
 
 @strict
-class SyncState:  # pylint: disable=too-many-instance-attributes
+class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    headers = (
+        "EID",  # _sig(id(self)),
+        "SID",  # _sig(self.storage_id),
+        "Typ",  # otype,
+        "Change",  # secs(self[LOCAL].changed),
+        "Path",  # self[LOCAL].path,
+        "OID",  # _sig(self[LOCAL].oid),
+        "Sync Path",  # str(self[LOCAL].sync_path)
+        "E",  # lexv
+        "H",  # lhma
+        "Change",  # secs(self[REMOTE].changed),
+        "Path",  # self[REMOTE].path,
+        "OID",  # _sig(self[REMOTE].oid),
+        "Sync Path",  # str(self[REMOTE].sync_path)
+        "E",  # rexv
+        "H",  # rhma
+        "Prio",  # self.priority or ""
+        "Ignored",  # self.ignored or ""
+    )
+
     def __init__(self,
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
-                 shuffle: bool = False):
+                 shuffle: bool = False, 
+                 prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
@@ -526,8 +537,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                     if ent[side].changed:
                         self._changeset.add(ent)
             self._loading = False
+        self.prioritize = prioritize
+        if prioritize is None:
+            self.prioritize = lambda side, path: 0
 
-    def updated(self, ent, side, key, val):
+    def updated(self, ent, side, key, val):     # pylint: disable=too-many-branches
         if self._loading:
             return
 
@@ -538,7 +552,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         elif key == "oid":
             self._change_oid(side, ent, val)
         elif key == "ignored":
-            if val == IgnoreReason.TRASHED:
+            if val == IgnoreReason.DISCARDED:
                 ent[LOCAL]._changed = False
                 ent[REMOTE]._changed = False
                 self._changeset.discard(ent)
@@ -549,6 +563,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
+        elif key == "priority":
+            if val > ent.priority and val > 0:
+                # move to later on priority drop below zero
+                if ent[LOCAL].changed:
+                    ent[LOCAL].changed += ent._parent._punt_secs[LOCAL]
+                if ent[REMOTE].changed:
+                    ent[REMOTE].changed = ent._parent._punt_secs[REMOTE]
 
     @property
     def changes(self):
@@ -589,6 +610,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
             ent[side]._path = path
 
             self._update_kids(ent, side, prior_path, path, provider)
+
+            new_priority = self.prioritize(side, path)
+            if new_priority != ent.priority:
+                ent.priority = new_priority
 
     def _update_kids(self, ent, side, prior_path, path, provider):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
@@ -659,7 +684,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         try:
             ret: Sequence[SyncEntry] = list(self._paths[side][path].values())
             if ret:
-                return [e for e in ret if stale or (not e.is_trashed and not e.is_conflicted)]
+                return [e for e in ret if stale or (not e.is_discarded and not e.is_conflicted)]
             return []
         except KeyError:
             return []
@@ -688,7 +713,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         assert ent
 
         if oid is not None:
-            if ent.is_trashed:
+            if ent.is_discarded:
                 if self.providers[side].oid_is_path:
                     if path:
                         if otype:
@@ -786,14 +811,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
-            if prior_ent and not prior_ent.is_trashed:
+            if prior_ent and not prior_ent.is_discarded:
                 if not ent or not ent.is_conflicted:
                     ent = prior_ent
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:
                     ent = path_ent
-                    ent.unignore(IgnoreReason.TRASHED)
+                    ent.unignore(IgnoreReason.DISCARDED)
                     log.debug("matched existing entry %s:%s", debug_sig(oid), path)
 
         if not ent:
@@ -808,26 +833,20 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         if not self._changeset:
             return None
 
+        sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
-            changes = scramble(self._changeset, 10)
-        else:
-            changes = sorted(self._changeset, key=lambda a: max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
+            sort_key = lambda a: (a.priority, random.random())
+
+        changes = sorted(self._changeset, key=sort_key)
 
         earlier_than = time.time() - age
-        for puntlevel in range(3):
-            for e in changes:
-                if not e.is_trashed and e.punted == puntlevel:
-                    if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
-                            or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                        return e
+        for e in changes:
+            if (e[LOCAL].changed and (e[LOCAL].changed <= earlier_than)) \
+                    or (e[REMOTE].changed and (e[REMOTE].changed <= earlier_than)) \
+                    or e.priority < 0:
+                return e
 
-        ret = None
-        for e in self._changeset:
-            if (e[LOCAL].changed and e[LOCAL].changed <= earlier_than) \
-                    or (e[REMOTE].changed and e[REMOTE].changed <= earlier_than):
-                ret = e
-
-        return ret
+        return None
 
     def finished(self, ent):
         if ent[1].changed or ent[0].changed:
@@ -837,19 +856,55 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         self._changeset.discard(ent)
 
         for e in self._changeset:
-            e.punted = 0
+            if e.priority > 0:
+                # low priority items are brought back to normal any time something changes
+                e.priority = 0
+
+    @staticmethod
+    def pretty_headers(widths=None):
+        if not widths:
+            widths = (3, 3, 3, 6, 20, 6, 20, 1, 1, 6, 20, 6, 20, 1, 1, 0, 0)
+        format_string = SyncEntry.pretty_format(widths, sep=" ")
+        ret = format_string % SyncState.headers
+        return ret
+
+    @staticmethod
+    def pretty_sort_key(ent: SyncEntry):
+        if ent.ignored != IgnoreReason.NONE:
+            return 2
+        if ent[LOCAL].changed or ent[REMOTE].changed:
+            return 0
+        return 1
 
     def pretty_print(self, use_sigs=True):
-        ret = SyncEntry.prettyheaders() + "\n"
+        ents: List[SyncEntry] = list()
+        widths: List[int] = [len(x) for x in SyncState.headers]
+
         e: SyncEntry
-        for e in self.get_all(discarded=True):
-            # allow conflicted to be printed
-            ret += e.pretty(fixed=True, use_sigs=use_sigs) + "\n"
+        for e in self.get_all(discarded=True):  # allow conflicted to be printed
+            ents.append(e)
+            for i, val in enumerate(e.pretty_summary(use_sigs=use_sigs)):
+                width = len(str(val))
+                if width > widths[i]:
+                    widths[i] = width
+
+        for col, header in enumerate(SyncState.headers):
+            if "path" in header.lower():
+                widths[col] = 0 - widths[col]
+
+        ret = SyncState.pretty_headers(widths=widths) + "\n"
+        found_ignored = False
+        for e in sorted(ents, key=self.pretty_sort_key):
+            if e.ignored != IgnoreReason.NONE and not found_ignored:
+                ret += "------\n"
+                found_ignored = True
+            ret += e.pretty(widths=widths) + "\n"
+
         return ret
 
     def assert_index_is_correct(self):
         for ent in self._changeset:
-            if not ent.is_trashed and not ent.is_conflicted:
+            if not ent.is_discarded and not ent.is_conflicted:
                 assert ent in self.get_all(), ("%s in changeset, not in index" % ent)
 
         for ent in self.get_all():
@@ -872,13 +927,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            if (ent.is_trashed or ent.is_conflicted) and not discarded:
+            if (ent.is_discarded or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
 
         for ent in self._oids[REMOTE].values():
             assert ent
-            if (ent.is_trashed or ent.is_conflicted) and not discarded:
+            if (ent.is_discarded or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
 
@@ -925,7 +980,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        log.info("SPLIT\n%s", self.pretty_print())
+        with disable_log_multiline():
+            log.log(TRACE, "SPLIT\n%s", self.pretty_print())
 
         assert replace_ent[replace].oid
 

@@ -10,6 +10,7 @@ from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 from .log import TRACE
+from .utils import debug_sig
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +35,11 @@ class CloudSync(Runnable):
         self.sleep = sleep
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
-        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False)
+
+        # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through 
+        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
+                prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
+
         smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
 
         # for tests, make these accessible
@@ -52,7 +57,7 @@ class CloudSync(Runnable):
             EventManager(smgr.providers[0], state, 0, _roots[0]),
             EventManager(smgr.providers[1], state, 1, _roots[1])
         )
-        log.info("initialized sync: %s", self.storage_label())
+        log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
         self.sthread = None
         self.ethreads = (None, None)
@@ -72,25 +77,6 @@ class CloudSync(Runnable):
     @aging.setter
     def aging(self, secs: float):
         self.smgr.aging = secs
-
-    def prioritize(self, side: int, path: str) -> None:
-        """Move path and all children of the path to be synchronized first
-
-        Args:
-            side (int): By convention 0 is local and 1 is remote
-            path (str): The full path to the file
-        """
-
-        paths: List[str] = [None, None]
-        paths[side] = path
-        paths[1 - side] = self.translate(1 - side, path)
-
-        # forge events and fill the state table with the latest info
-        # mark all events as "aged" by setting the times to low values
-        # to prevent parent folder punting, dfs is used as the time
-
-        for i, fp in enumerate(paths):
-            self.emgrs[i].prioritize(fp)
 
     def storage_label(self):
         """
@@ -114,6 +100,20 @@ class CloudSync(Runnable):
         for index, provider in enumerate(self.providers):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
+
+    def prioritize(self, side: int, path: str):     # pylint: disable=unused-argument, no-self-use
+        """Override this method to change the sync priority
+
+        Default priority is 0
+        Negative values happen first
+        Positive values happen later
+
+        Args:
+            side: eitehr 0 (LOCAL) or 1 (REMOTE
+            path: a path value in the (side) provider
+
+        """
+        return 0
 
     def translate(self, side: int, path: str):
         """Override this method to translate between local and remote paths
@@ -188,7 +188,7 @@ class CloudSync(Runnable):
     # for tests, make this manually runnable
     def do(self):
         # imports are in the body of this test-only function
-        import random           # pylint: disable=import-outside-toplevel
+        import random  # pylint: disable=import-outside-toplevel
         mgrs = [*self.emgrs, self.smgr]
         random.shuffle(mgrs)
         for m in mgrs:

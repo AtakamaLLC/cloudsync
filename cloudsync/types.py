@@ -11,7 +11,7 @@ class OType(Enum):
 
 class IgnoreReason(Enum):
     NONE = "none"
-    TRASHED = "trashed"
+    DISCARDED = "discarded"
     CONFLICT = "conflict"
     TEMP_RENAME = "temp rename"
     IRRELEVANT = "irrelevant"

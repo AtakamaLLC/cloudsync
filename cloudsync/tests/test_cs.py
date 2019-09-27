@@ -791,7 +791,8 @@ def test_cs_rename_over(cs):
 
 
 @pytest.mark.repeat(10)
-def test_cs_folder_conflicts_file(cs):
+@pytest.mark.parametrize("use_prio", [0, 1], ids=["norm", "prio"])
+def test_cs_folder_conflicts_file(cs, use_prio):
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
     local_path1 = "/local/stuff1"
@@ -802,6 +803,15 @@ def test_cs_folder_conflicts_file(cs):
 
     linfo1 = cs.providers[LOCAL].info_path(local_path1)
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    if use_prio:
+        def prio(side, path):
+            # for whatever reason, prioritize this
+            # it shouldn't mess anything up, esp with parent-conflict things
+            if path == "/remote/stuff1/under" or path == "/local/stuff1/under":
+                return -10
+            return 0
+        cs.prioritize = prio
 
     cs.providers[LOCAL].delete(linfo1.oid)
     cs.providers[REMOTE].delete(rinfo1.oid)
@@ -1652,6 +1662,15 @@ def test_cs_prioritize(cs):
     # aging 3 seconds... nothing should get processed
     cs.aging = 4
 
+    # this should also prioritize the remote, even though the local doesn't exist
+    def prio(side, path):
+        if path == local_path2 or path == remote_path2:
+            log.debug("PRIO RETURNING %s", path)
+            return -1
+        return 0
+
+    cs.prioritize = prio
+
     cs.emgrs[LOCAL].do()
     cs.emgrs[REMOTE].do()
 
@@ -1670,8 +1689,6 @@ def test_cs_prioritize(cs):
     # nothing is happening because aging is too long
     assert cs.state.changeset_len == prev_len
 
-    # this should also prioritize the remote, even though the local doesn't exist
-    cs.prioritize(LOCAL, local_path2)
 
     log.info("BEFORE TABLE\n%s", cs.state.pretty_print())
 
@@ -1695,9 +1712,7 @@ MERGE = 2
     (REMOTE, [REMOTE]),
     (MERGE,  []),
     (MERGE,  [LOCAL, REMOTE]),
-#    (MERGE, REMOTE),
-#    (MERGE, LOCAL),
-])
+    ], ids = ["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
 def test_hash_mess(cs, side_locked):
     (side, locks) = side_locked
     local = cs.providers[LOCAL]
@@ -1725,6 +1740,7 @@ def test_hash_mess(cs, side_locked):
     remote_oid = remote.rename(rinfo.oid, "/remote/foo-r")
     local.upload(local_oid, BytesIO(b"zzz1"))
     remote.upload(remote_oid, BytesIO(b"zzz2"))
+
 
     f3 = BytesIO(b'merged')
 

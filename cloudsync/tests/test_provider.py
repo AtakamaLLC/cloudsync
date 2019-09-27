@@ -76,7 +76,7 @@ class ProviderHelper(ProviderBase):
 
     def walk(self, path, since=None):
         path = self.__add_root(path)
-        log.debug("WALK %s", path)
+        log.debug("TEST WALK %s", path)
         for e in self.prov.walk(path):
             if self.__filter_root(e):
                 yield e
@@ -1197,7 +1197,12 @@ def test_cursor(provider):
     current_csr2 = provider.current_cursor
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
 
-    assert current_csr1 != current_csr2
+    if (current_csr1 is None and current_csr2 is None):
+        # some providers don't support cursors... they will walk on start, always
+        return
+
+    assert current_csr1 != current_csr2 
+    
 
     # check that we can go backwards
     provider.current_cursor = current_csr1
