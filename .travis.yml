@@ -24,7 +24,7 @@ jobs:
         - ./test_providers.sh
       python:
         - '3.6'
-    - if: type = push AND branch = master
+    - if: type=push AND branch=master AND (tag =~ ^v)
       stage: deploy
       script:
         - ./deploy.sh

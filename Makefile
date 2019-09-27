@@ -15,7 +15,10 @@ _lint:
 	pylint cloudsync --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
 
 test:
-	pytest --durations=0 -n=8 cloudsync/tests
+	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests
+
+coverage:
+	pytest --cov-report html --cov-report annotate --cov=cloudsync -n=8 cloudsync/tests
 
 format:
 	autopep8 --in-place -r -j 8 cloudsync/
