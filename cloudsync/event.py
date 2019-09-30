@@ -72,9 +72,9 @@ class EventManager(Runnable):
 
     def forget(self):
         if self._walk_tag is not None:
-            storage_dict = self.state.storage_delete_tag(self._walk_tag)
+            self.state.storage_delete_tag(self._walk_tag)
         if self._cursor_tag is not None:
-            storage_dict = self.state.storage_delete_tag(self._cursor_tag)
+            self.state.storage_delete_tag(self._cursor_tag)
 
     def do(self):
         self.events.shutdown = False
