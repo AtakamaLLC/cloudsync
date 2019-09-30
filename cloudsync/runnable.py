@@ -17,35 +17,55 @@ def time_helper(timeout, sleep=None, multiply=1):
             sleep = sleep * multiply
     raise TimeoutError()
 
+
 class Runnable(ABC):
     stopped = False
     __shutdown = False
     wakeup = False
     thread = None
+    min_backoff = 0.01
+    max_backoff = 1.0
+    mult_backoff = 2.0
+    in_backoff = 0.0
+    interrupt = None
+
+    def __interruptable_sleep(self, secs):
+        if self.interrupt.wait(secs):
+            self.interrupt.clear()
 
     def run(self, *, timeout=None, until=None, sleep=0.01):
+        self.interrupt = threading.Event()
         self.stopped = False
-        self.wakeup = False
-        endtime = sleep + time.monotonic()
-        for _ in time_helper(timeout, sleep=.01):
-            while time.monotonic() < endtime and not self.stopped and not self.wakeup:
-                time.sleep(max(0, min(.01, endtime - time.monotonic())))
-            self.wakeup = False
+        for _ in time_helper(timeout):
+            self.__interruptable_sleep(sleep)
             if self.stopped:
                 break
+
             try:
                 self.do()
+                self.in_backoff = 0
             except Exception:
                 log.exception("unhandled exception in %s", self.__class__)
             if self.stopped or (until is not None and until()):
                 break
-            endtime = sleep + time.monotonic()
+
+            if self.in_backoff:
+                self.__interruptable_sleep(self.in_backoff)
+
+            if self.stopped:
+                break
 
         if self.__shutdown:
             self.done()
 
+    def backoff(self):
+        self.in_backoff = max(self.in_backoff * self.mult_backoff, self.min_backoff)
+
     def wake(self):
-        self.wakeup = True
+        if not self.interrupt:
+            log.warning("not running, wake ignored")
+            return
+        self.interrupt.set()
 
     def start(self, **kwargs):
         self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=True)
@@ -57,6 +77,7 @@ class Runnable(ABC):
 
     def stop(self, forever=True):
         self.stopped = True
+        self.wake()
         self.__shutdown = forever
         if self.thread:
             self.thread.join()

@@ -194,7 +194,6 @@ class MockProvider(Provider):
     def _api(self, *args, **kwargs):
         if not self.connected:
             raise CloudDisconnectedError()
-        pass
 
     @property
     def latest_cursor(self):
@@ -214,7 +213,6 @@ class MockProvider(Provider):
 
     def events(self) -> Generator[Event, None, None]:
         self._api()
-#        log.error("GETTING EVENTS : %s", self._cursor)
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
