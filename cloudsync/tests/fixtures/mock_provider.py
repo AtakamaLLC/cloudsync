@@ -193,9 +193,7 @@ class MockProvider(Provider):
 
     def _api(self, *args, **kwargs):
         if not self.connected:
-            log.info("DISCONN")
             raise CloudDisconnectedError()
-        log.info("HIT API")
 
     @property
     def latest_cursor(self):
