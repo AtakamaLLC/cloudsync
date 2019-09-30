@@ -930,6 +930,7 @@ def test_storage(storage):
     assert old_cursor != new_cursor
 
     before_forget = storage2.read_all()
+    log.info("tags = %s", before_forget.keys())
     log.debug("before = %s", len(before_forget))
     assert len(before_forget) > 0
     cs2.forget()

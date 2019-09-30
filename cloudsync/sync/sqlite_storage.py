@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 import logging
 import sqlite3
-from cloudsync import Storage
+from .state import Storage
 from cloudsync.log import TRACE
 
 log = logging.getLogger(__name__)
@@ -25,6 +25,8 @@ class SqliteStorage(Storage):
         # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
         self.db.execute('CREATE TABLE IF NOT EXISTS cloud (id INTEGER PRIMARY KEY, '
                         'tag TEXT NOT NULL, serialization BLOB)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS cloud_tag_ix on cloud(tag)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS cloud_id_ix on cloud(id)')
 
     def create(self, tag: str, serialization: bytes) -> Any:
         assert tag is not None
@@ -64,7 +66,9 @@ class SqliteStorage(Storage):
             if tag is not None:
                 ret[eid] = row_serialization
             else:
-                ret[(eid, row_tag)] = row_serialization
+                if row_tag not in ret:
+                    ret[row_tag] = {}
+                ret[row_tag][eid] = row_serialization
         return ret
 
     def read(self, tag: str, eid: Any) -> Optional[bytes]:
