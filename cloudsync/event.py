@@ -26,6 +26,7 @@ class Event:
     prior_oid: Optional[str] = None        # path basesd systems use this on renames
     new_cursor: Optional[str] = None
 
+
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
     def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: Optional[str] = None, reauth: Callable[[], None] = None):
@@ -36,10 +37,10 @@ class EventManager(Runnable):
         self.events = Muxer(provider.events, restart=True)
         self.state = state
         self.side = side
-        self._cursor_tag = self.label + "_cursor"
+        self._cursor_tag: str = self.label + "_cursor"
 
-        self.walk_root = None
-        self._walk_tag = None
+        self.walk_one_time = None
+        self._walk_tag: str = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         if self.cursor is not None:
@@ -53,7 +54,7 @@ class EventManager(Runnable):
         if walk_root:
             self._walk_tag = self.label + "_walked_" + walk_root
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                self.walk_root = walk_root
+                self.walk_one_time = walk_root
 
         if self.cursor is None:
             self.cursor = provider.current_cursor
@@ -68,6 +69,12 @@ class EventManager(Runnable):
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
+
+    def forget(self):
+        if self._walk_tag is not None:
+            self.state.storage_delete_tag(self._walk_tag)
+        if self._cursor_tag is not None:
+            self.state.storage_delete_tag(self._cursor_tag)
 
     def do(self):
         self.events.shutdown = False
@@ -94,13 +101,13 @@ class EventManager(Runnable):
             self.reauthenticate()
 
     def _do_unsafe(self):
-        if self.walk_root:
+        if self.walk_one_time:
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_root)
-            for event in self.provider.walk(self.walk_root):
+                      self.provider.name, self.walk_one_time)
+            for event in self.provider.walk(self.walk_one_time):
                 self.process_event(event)
             self.state.storage_update_data(self._walk_tag, time.time())
-            self.walk_root = None
+            self.walk_one_time = None
 
         for event in self.events:
             if not event:

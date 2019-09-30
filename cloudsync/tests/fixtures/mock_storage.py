@@ -44,10 +44,20 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
                 return
             del storage[eid]
 
-    def read_all(self, tag: str) -> Dict[Any, bytes]:
-        lock, storage = self._get_internal_storage(tag)
-        with lock:
-            ret: Dict[Any, bytes] = storage.copy()
+    def read_all(self, tag: str = None) -> Dict[Any, bytes]:
+        if tag is not None:
+            lock, storage = self._get_internal_storage(tag)
+            with lock:
+                ret: Dict[Any, bytes] = storage.copy()
+                return ret
+        else:
+            ret = {}
+            with self.top_lock:
+                tags = self.storage_dict.keys()
+            for tag in tags:
+                assert tag is not None
+                tag_dict = self.read_all(tag)
+                ret.update(tag_dict)
             return ret
 
     def read(self, tag: str, eid: Any) -> Optional[bytes]:
