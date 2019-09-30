@@ -73,25 +73,7 @@ class EventManager(Runnable):
         self.events.shutdown = False
         try:
             try:
-                if self.walk_root:
-                    log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                              self.provider.name, self.walk_root)
-                    for event in self.provider.walk(self.walk_root):
-                        self.process_event(event)
-                    self.state.storage_update_data(self._walk_tag, time.time())
-                    self.walk_root = None
-
-                for event in self.events:
-                    if not event:
-                        log.error("%s got BAD event %s", self.label, event)
-                        continue
-                    self.process_event(event)
-
-                current_cursor = self.provider.current_cursor
-
-                if current_cursor != self.cursor:
-                    self.state.storage_update_data(self._cursor_tag, current_cursor)
-                    self.cursor = current_cursor
+                self._do_unsafe()
             except CloudTemporaryError as e:
                 log.warning("temporary error %s[%s] in event watcher", type(e), e)
                 self.backoff()
@@ -99,12 +81,34 @@ class EventManager(Runnable):
                 self.backoff()
                 try:
                     log.info("reconnect to %s", self.provider.name)
-                    # a CloudTokenError can be raised here
                     self.provider.reconnect()
                 except CloudDisconnectedError as e:
                     log.info("can't reconnect to %s: %s", self.provider.name, e)
         except CloudTokenError:
+            # this is separated from the main block because
+            # it can be raised during reconnect in the exception handler and in do_unsafe
             self.reauthenticate()
+
+    def _do_unsafe(self):
+        if self.walk_root:
+            log.debug("walking all %s/%s files as events, because no working cursor on startup",
+                      self.provider.name, self.walk_root)
+            for event in self.provider.walk(self.walk_root):
+                self.process_event(event)
+            self.state.storage_update_data(self._walk_tag, time.time())
+            self.walk_root = None
+
+        for event in self.events:
+            if not event:
+                log.error("%s got BAD event %s", self.label, event)
+                continue
+            self.process_event(event)
+
+        current_cursor = self.provider.current_cursor
+
+        if current_cursor != self.cursor:
+            self.state.storage_update_data(self._cursor_tag, current_cursor)
+            self.cursor = current_cursor
 
     def _drain(self):
         # for tests, delete events
