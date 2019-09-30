@@ -54,8 +54,8 @@ class CloudSync(Runnable):
             _roots = roots
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, _roots[0]),
-            EventManager(smgr.providers[1], state, 1, _roots[1])
+            EventManager(smgr.providers[0], state, 0, _roots[0], reauth=lambda: self.authenticate(0)),
+            EventManager(smgr.providers[1], state, 1, _roots[1], reauth=lambda: self.authenticate(1))
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -101,6 +101,17 @@ class CloudSync(Runnable):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
+    def authenticate(self, side: int):     # pylint: disable=unused-argument, no-self-use
+        """Override this method to change (re)authentication
+
+        Default is to call provider[side].authenticate()
+
+        Args:
+            side: either 0 (LOCAL) or 1 (REMOTE
+
+        """
+        self.providers[side].connect(self.providers[side].authenticate())
+
     def prioritize(self, side: int, path: str):     # pylint: disable=unused-argument, no-self-use
         """Override this method to change the sync priority
 
@@ -109,7 +120,7 @@ class CloudSync(Runnable):
         Positive values happen later
 
         Args:
-            side: eitehr 0 (LOCAL) or 1 (REMOTE
+            side: either 0 (LOCAL) or 1 (REMOTE
             path: a path value in the (side) provider
 
         """

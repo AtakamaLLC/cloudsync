@@ -12,7 +12,7 @@ __all__ = ['SyncManager']
 
 from pystrict import strict
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudException
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudException, CloudTokenError
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -108,29 +108,19 @@ class SyncManager(Runnable):
 
         self.sleep = sleep
 
-        # TODO: we need sync_aging, backoff_min, backoff_max, backoff_mult documented with an interface and tests!
-
         ####
-        self.min_backoff = 0.0
-        self.max_backoff = 0.0
-        self.backoff = 0.0
 
         max_sleep = max(sleep)                    # on sync fail, use the worst time for backoff
 
         self.aging = max_sleep / 5                # how long before even trying to sync
-
         self.min_backoff = max_sleep / 10.0       # event sleep of 15 seconds == 1.5 second backoff on failures
         self.max_backoff = max_sleep * 4.0        # escalating up to a 1 minute wait time
-        self.backoff = self.min_backoff
         self.mult_backoff = 2
 
         assert len(self.providers) == 2
 
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
-
-    def in_backoff(self):
-        return self.backoff > self.min_backoff
 
     def do(self):
         with self.state.lock:
@@ -140,18 +130,15 @@ class SyncManager(Runnable):
                 try:
                     self.sync(sync)
                     self.state.storage_update(sync)
-                    self.backoff = self.min_backoff
-                except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError) as e:
+                except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError) as e:
                     log.warning(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-                    time.sleep(self.backoff)
-                    self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
+                        "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
+                    self.backoff()
                 except Exception as e:
                     log.exception(
                         "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority, stack_info=True)
                     sync.punt()
-                    time.sleep(self.backoff)
-                    self.backoff = min(self.backoff * self.mult_backoff, self.max_backoff)
+                    self.backoff()
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
