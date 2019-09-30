@@ -938,7 +938,6 @@ def test_storage(storage):
     assert len(after_forget) == 0
 
 
-
 @pytest.mark.parametrize("drain", [None, LOCAL, REMOTE])
 def test_cs_already_there(cs, drain: int):
     local_parent = "/local"
