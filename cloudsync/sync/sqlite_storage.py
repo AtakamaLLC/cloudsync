@@ -63,7 +63,7 @@ class SqliteStorage(Storage):
             if tag is not None:
                 ret[eid] = row_serialization
             else:
-                ret[(eid, tag)] = row_serialization
+                ret[(eid, row_tag)] = row_serialization
         return ret
 
     def read(self, tag: str, eid: Any) -> Optional[bytes]:
