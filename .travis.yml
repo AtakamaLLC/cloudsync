@@ -9,7 +9,6 @@ jobs:
       script:
         - pylint cloudsync --ignore tests
         - mypy cloudsync
-        - ./check_version.sh
     - name: unit
       script:
         # tempoarily skip the path tests
