@@ -49,12 +49,21 @@ class SqliteStorage(Storage):
             log.debug("ignoring delete: id %s doesn't exist", eid)
             return
 
-    def read_all(self, tag: str) -> Dict[Any, bytes]:
+    def read_all(self, tag: str = None) -> Dict[Any, bytes]:
         ret = {}
-        db_cursor = self.db.execute('SELECT id, serialization FROM cloud WHERE tag = ?', [tag])
+        if tag is not None:
+            query = 'SELECT id, tag FROM cloud WHERE tag = ?'
+            db_cursor = self.db.execute(query, [tag])
+        else:
+            query = 'SELECT id, tag, serialization FROM cloud'
+            db_cursor = self.db.execute(query)
+
         for row in db_cursor.fetchall():
-            eid, serialization = row
-            ret[eid] = serialization
+            eid, row_tag, row_serialization = row
+            if tag is not None:
+                ret[eid] = row_serialization
+            else:
+                ret[(eid, tag)] = row_serialization
         return ret
 
     def read(self, tag: str, eid: Any) -> Optional[bytes]:

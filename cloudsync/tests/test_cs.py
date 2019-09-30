@@ -929,6 +929,15 @@ def test_storage(storage):
     assert new_cursor is not None
     assert old_cursor != new_cursor
 
+    before_forget = storage2.read_all()
+    log.debug("before = %s", len(before_forget))
+    assert len(before_forget) > 0
+    cs2.forget()
+    after_forget = storage2.read_all()
+    log.debug("after = %s\n%s", len(after_forget), after_forget)
+    assert len(after_forget) == 0
+
+
 
 @pytest.mark.parametrize("drain", [None, LOCAL, REMOTE])
 def test_cs_already_there(cs, drain: int):

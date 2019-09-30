@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 from dataclasses import dataclass
 from pystrict import strict
 from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError
@@ -38,7 +38,7 @@ class EventManager(Runnable):
         self.side = side
         self._cursor_tag = self.label + "_cursor"
 
-        self.walk_root = None
+        self.walk_one_time = None
         self._walk_tag = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
@@ -53,7 +53,7 @@ class EventManager(Runnable):
         if walk_root:
             self._walk_tag = self.label + "_walked_" + walk_root
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                self.walk_root = walk_root
+                self.walk_one_time = walk_root
 
         if self.cursor is None:
             self.cursor = provider.current_cursor
@@ -65,16 +65,22 @@ class EventManager(Runnable):
         self.mult_backoff = 2
         self.backoff = self.min_backoff
 
+    def forget(self):
+        if self._walk_tag is not None:
+            storage_dict = self.state._storage.read_all(cast(str, self._walk_tag))
+            for eid, _ in storage_dict.items():
+                self.state._storage.delete(self._walk_tag, eid)
+
     def do(self):
         self.events.shutdown = False
         try:
-            if self.walk_root:
+            if self.walk_one_time:
                 log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                          self.provider.name, self.walk_root)
-                for event in self.provider.walk(self.walk_root):
+                          self.provider.name, self.walk_one_time)
+                for event in self.provider.walk(self.walk_one_time):
                     self.process_event(event)
                 self.state.storage_update_data(self._walk_tag, time.time())
-                self.walk_root = None
+                self.walk_one_time = None
                 self.backoff = self.min_backoff
 
             for event in self.events:

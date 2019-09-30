@@ -64,6 +64,11 @@ class CloudSync(Runnable):
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
 
+    def forget(self):
+        self.state.forget()
+        self.emgrs[0].forget()
+        self.emgrs[1].forget()
+
     @property
     def aging(self) -> float:
         """float: The number of seconds to wait before syncing a file.   
