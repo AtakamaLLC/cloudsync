@@ -2,7 +2,7 @@
 
 pip install flit
 
-VERSION=$(./verok.py "$(git tag)")
+VERSION=$(./verok.py "$(git describe --abbrev=0 --tags)")
 
 echo ver $VERSION
 
