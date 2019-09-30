@@ -1635,6 +1635,7 @@ def test_replace_dir(cs):
     bad_linfo_file = local.info_path("/local/Test2/Excel.xlsx")
     assert bad_linfo_file is None
 
+
 def test_out_of_space(cs):
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
@@ -1646,13 +1647,44 @@ def test_out_of_space(cs):
 
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
-    with pytest.raises(TimeoutError):
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
+    cs.run(until=lambda: cs.smgr.in_backoff, timeout=0.25)
 
     log.info("END TABLE\n%s", cs.state.pretty_print())
 
-    assert cs.smgr.in_backoff()
+    assert cs.smgr.in_backoff
     assert cs.state.changeset_len
+
+
+@pytest.mark.parametrize("recover", [True, False])
+def test_backoff(cs, recover):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    local.create("/local/foo", BytesIO(b'0' * 1025))
+
+    if not recover:
+        # prevent reconnection
+        remote.creds = None
+    remote.disconnect()
+
+    log.info("DISCONNECTED")
+
+    if recover:
+        cs.run(until=lambda: not cs.smgr.state.changeset_len, timeout=0.25)
+    else:
+        cs.run(until=lambda: cs.smgr.in_backoff, timeout=0.25)
+
+    log.info("END TABLE\n%s", cs.state.pretty_print())
+
+    if recover:
+        assert not cs.smgr.in_backoff
+    else:
+        assert cs.smgr.in_backoff
+        assert cs.state.changeset_len
+
 
 def test_cs_prioritize(cs):
     remote_parent = "/remote"

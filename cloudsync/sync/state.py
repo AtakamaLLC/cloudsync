@@ -771,6 +771,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         log.debug("storage_get_data id=%s data=%s", data_tag, str(retval))
         return retval
 
+    def storage_delete_tag(self, data_tag):
+        storage_dict = self._storage.read_all(data_tag)
+        for eid, _ in storage_dict.items():
+            self._storage.delete(data_tag, eid)
+
     def storage_update_data(self, data_tag, data):
         if data_tag is None:
             return
