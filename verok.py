@@ -37,6 +37,9 @@ def verok(ver):
         except ValueError:
             raise ValueError("Component '%s' invalid" % e)
 
+        if str(ie) != e:
+            raise ValueError("Component '%s' is not a simple integer" % e)
+
         if ie == 0 and i != 0:
             raise ValueError("Component '%s' out of range" % ie)
 
