@@ -70,6 +70,11 @@ class EventManager(Runnable):
             storage_dict = self.state._storage.read_all(cast(str, self._walk_tag))
             for eid, _ in storage_dict.items():
                 self.state._storage.delete(self._walk_tag, eid)
+        if self._cursor_tag is not None:
+            storage_dict = self.state._storage.read_all(cast(str, self._cursor_tag))
+            for eid, _ in storage_dict.items():
+                self.state._storage.delete(self._cursor_tag, eid)
+
 
     def do(self):
         self.events.shutdown = False

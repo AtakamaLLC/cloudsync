@@ -27,6 +27,7 @@ class SqliteStorage(Storage):
                         'tag TEXT NOT NULL, serialization BLOB)')
 
     def create(self, tag: str, serialization: bytes) -> Any:
+        assert tag is not None
         db_cursor = self.db.execute('INSERT INTO cloud (tag, serialization) VALUES (?, ?)',
                                     [tag, serialization])
         eid = db_cursor.lastrowid
@@ -52,7 +53,7 @@ class SqliteStorage(Storage):
     def read_all(self, tag: str = None) -> Dict[Any, bytes]:
         ret = {}
         if tag is not None:
-            query = 'SELECT id, tag FROM cloud WHERE tag = ?'
+            query = 'SELECT id, tag, serialization FROM cloud WHERE tag = ?'
             db_cursor = self.db.execute(query, [tag])
         else:
             query = 'SELECT id, tag, serialization FROM cloud'
