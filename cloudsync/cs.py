@@ -67,7 +67,7 @@ class CloudSync(Runnable):
     @property
     def aging(self) -> float:
         """float: The number of seconds to wait before syncing a file.   
-        
+
         Reduces storage provider traffic at the expense of increased conflict risk.  
 
         Default is based on the max(provider.default_sleep) value
@@ -107,7 +107,7 @@ class CloudSync(Runnable):
         Default is to call provider[side].authenticate()
 
         Args:
-            side: either 0 (LOCAL) or 1 (REMOTE
+            side: either 0 (LOCAL) or 1 (REMOTE)
 
         """
         self.providers[side].connect(self.providers[side].authenticate())
@@ -120,7 +120,7 @@ class CloudSync(Runnable):
         Positive values happen later
 
         Args:
-            side: either 0 (LOCAL) or 1 (REMOTE
+            side: either 0 (LOCAL) or 1 (REMOTE)
             path: a path value in the (side) provider
 
         """
@@ -140,7 +140,7 @@ class CloudSync(Runnable):
         Args:
             side: either 0 (LOCAL) or 1 (REMOTE)
             path: a path valid in the (1-side) provider
-            
+
         Returns:
              The path, valid for the provider[side], or None to mean "don't sync"
         """
@@ -160,7 +160,7 @@ class CloudSync(Runnable):
          - f1 and f2 are file-likes that will block on read, and can possibly pull data from the network, internet, etc
          - f1 and f2 also support the .path property to get a relative path to the file
          - f1 and f2 also support the .side property
-        
+
         Returns:
              A tuple of (result, keep) or None, meaning there is no good resolution
              result is one of:

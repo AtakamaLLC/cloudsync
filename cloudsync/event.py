@@ -99,9 +99,9 @@ class EventManager(Runnable):
                 self.backoff()
                 try:
                     log.info("reconnect to %s", self.provider.name)
+                    # a CloudTokenError can be raised here
                     self.provider.reconnect()
                 except CloudDisconnectedError as e:
-                    # a CloudTokenError can be raised here
                     log.info("can't reconnect to %s: %s", self.provider.name, e)
         except CloudTokenError:
             self.reauthenticate()

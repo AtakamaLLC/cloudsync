@@ -29,17 +29,18 @@ class Runnable(ABC):
     in_backoff = 0.0
     interrupt = None
 
-    def interruptable_sleep(self, secs):
-        self.interrupt.clear()
-        self.interrupt.wait(secs)
+    def __interruptable_sleep(self, secs):
+        if self.interrupt.wait(secs):
+            self.interrupt.clear()
 
     def run(self, *, timeout=None, until=None, sleep=0.01):
         self.interrupt = threading.Event()
         self.stopped = False
-        for _ in time_helper(timeout, sleep=.01):
-            self.interruptable_sleep(sleep)
+        for _ in time_helper(timeout):
+            self.__interruptable_sleep(sleep)
             if self.stopped:
                 break
+
             try:
                 self.do()
                 self.in_backoff = 0
@@ -49,7 +50,10 @@ class Runnable(ABC):
                 break
 
             if self.in_backoff:
-                self.interruptable_sleep(self.in_backoff)
+                self.__interruptable_sleep(self.in_backoff)
+
+            if self.stopped:
+                break
 
         if self.__shutdown:
             self.done()
@@ -58,6 +62,9 @@ class Runnable(ABC):
         self.in_backoff = max(self.in_backoff * self.mult_backoff, self.min_backoff)
 
     def wake(self):
+        if not self.interrupt:
+            log.warning("not running, wake ignored")
+            return
         self.interrupt.set()
 
     def start(self, **kwargs):
@@ -70,7 +77,7 @@ class Runnable(ABC):
 
     def stop(self, forever=True):
         self.stopped = True
-        self.interrupt.set()
+        self.wake()
         self.__shutdown = forever
         if self.thread:
             self.thread.join()
