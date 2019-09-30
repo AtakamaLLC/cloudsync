@@ -47,7 +47,7 @@ class EventManager(Runnable):
             try:
                 self.provider.current_cursor = self.cursor
             except CloudCursorError as e:
-                log.exception(e)
+                log.exception("Cursor error... resetting cursor. %s", e)
                 self.cursor = None
 
         if walk_root:
@@ -84,6 +84,10 @@ class EventManager(Runnable):
                     self.provider.reconnect()
                 except CloudDisconnectedError as e:
                     log.info("can't reconnect to %s: %s", self.provider.name, e)
+            except CloudCursorError as e:
+                log.exception("Cursor error... resetting cursor. %s", e)
+                self.provider.current_cursor = self.provider.latest_cursor
+                self._save_current_cursor()
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
@@ -104,6 +108,9 @@ class EventManager(Runnable):
                 continue
             self.process_event(event)
 
+        self._save_current_cursor()
+
+    def _save_current_cursor(self):
         current_cursor = self.provider.current_cursor
 
         if current_cursor != self.cursor:
