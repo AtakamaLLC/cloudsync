@@ -7,8 +7,22 @@ COMPONENT_MIN = 3
 COMPONENT_MAX = 3                           # not including allowed label
 COMPONENT_INT_MAX = 65535
 ALLOWED_LABELS = ('a', 'b', 'dev')          # see pep, don't modify
+PRERELEASE_USES_DASH = False                # 1.2.3-b5 or 1.2.3b5, pick one
+
 
 def verok(ver):
+    try:
+        return _verok(ver)
+    except AssertionError as e:
+        raise ValueError(str(e))
+
+
+def _verok(ver):
+    # cannot use packaging.version
+    # because it allows malleable versions:
+    #     ie: 1.2.3b6 == 1.2.3-beta6, 1.02 == 1.2
+    # which is not ok here
+
     ver = ver.strip()
 
     if ver[0] == "v":
@@ -23,13 +37,23 @@ def verok(ver):
 
     if re.search('[a-z]', last, re.I):
         label = None
-        for l in sorted(ALLOWED_LABELS, key=lambda x: -len(x)):
-            if l in last:
-                label = l
+        if PRERELEASE_USES_DASH and "-" not in last:
+            assert False, "Dash required for release tag"
+
+        if (not PRERELEASE_USES_DASH) and "-" in last:
+            assert False, "No dash between version and release tag"
+
+        for lab in sorted(ALLOWED_LABELS, key=lambda x: -len(x)):
+            if PRERELEASE_USES_DASH:
+                lab = "-" + lab
+
+            if lab in last:
+                label = lab
                 v, relnum = last.split(label)
                 tup = tup[:-1] + [v, relnum]
                 break
-        assert label, "Invalid letter in component '%s'" % last
+
+        assert label, "Invalid release tag in last component '%s'" % last
 
     for i, e in enumerate(tup):
         try:
@@ -48,11 +72,12 @@ def verok(ver):
 
     return ver
 
+
 if __name__ == "__main__":
     try:
         ver = sys.argv[1]
         print(verok(ver))
-    except (AssertionError, ValueError) as e:
+    except ValueError as e:
         print(e, file=sys.stderr)
         sys.exit(1)
 

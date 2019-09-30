@@ -9,7 +9,6 @@ requirements: env
 
 lint: _lint
 	git fetch origin master
-	./check_version.sh
 
 _lint:
 	pylint cloudsync --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
