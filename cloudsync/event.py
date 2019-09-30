@@ -47,7 +47,7 @@ class EventManager(Runnable):
             try:
                 self.provider.current_cursor = self.cursor
             except CloudCursorError as e:
-                log.exception(e)
+                log.exception("Cursor error... resetting cursor. %s", e)
                 self.cursor = None
 
         if walk_root:

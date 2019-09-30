@@ -278,7 +278,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
                 if isinstance(e.error, files.ListFolderContinueError):
                     if e.error.is_reset():
-                        raise CloudTokenError("Cursor reset request")
+                        raise CloudCursorError("Cursor reset request")
 
                 log.exception("Unknown exception %s/%s", e, repr(e))
                 raise CloudException("Unknown exception when executing %s(%s,%s): %s" % (method, args, kwargs, e))
