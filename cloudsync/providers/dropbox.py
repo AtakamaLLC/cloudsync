@@ -20,7 +20,7 @@ from cloudsync.oauth import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
-    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError
+    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError, CloudException
 
 log = logging.getLogger(__name__)
 logging.getLogger('dropbox').setLevel(logging.INFO)
@@ -275,6 +275,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
                                 'File already exists when executing %s(%s)' % (method, kwargs))
+
+                if isinstance(e.error, files.ListFolderContinueError):
+                    if e.error.is_reset():
+                        raise CloudTokenError("Cursor reset request")
+
+                log.exception("Unknown exception %s/%s", e, repr(e))
+                raise CloudException("Unknown exception when executing %s(%s,%s): %s" % (method, args, kwargs, e))
             except (exceptions.InternalServerError, exceptions.RateLimitError, requests.exceptions.ReadTimeout):
                 raise CloudTemporaryError()
             except dropbox.stone_validators.ValidationError as e:
