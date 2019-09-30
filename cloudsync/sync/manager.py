@@ -12,7 +12,8 @@ __all__ = ['SyncManager']
 
 from pystrict import strict
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudException, CloudTokenError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
+        CloudOutOfSpaceError, CloudException, CloudTokenError
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE

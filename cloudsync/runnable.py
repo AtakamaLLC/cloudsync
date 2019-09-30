@@ -24,9 +24,9 @@ class Runnable(ABC):
     wakeup = False
     thread = None
     min_backoff = 0.01
-    max_backoff = 1
-    mult_backoff = 2
-    in_backoff = 0
+    max_backoff = 1.0
+    mult_backoff = 2.0
+    in_backoff = 0.0
     interrupt = None
 
     def interruptable_sleep(self, secs):
