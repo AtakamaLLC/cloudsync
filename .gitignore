@@ -1,3 +1,9 @@
+# coverage annotations
+*,cover
+
+# backup file from sed in the deploy.sh script
+*.bak
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

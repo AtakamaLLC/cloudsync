@@ -9,7 +9,6 @@ jobs:
       script:
         - pylint cloudsync --ignore tests
         - mypy cloudsync
-        - ./check_version.sh
     - name: unit
       script:
         # tempoarily skip the path tests
@@ -24,15 +23,17 @@ jobs:
         - ./test_providers.sh
       python:
         - '3.6'
-    - if: type = push AND branch = master
-      stage: deploy
-      script:
+    - stage: deploy
+      if: type = push and tag =~ ^v
+      python: 
+        - '3.6'
+      script: 
         - ./deploy.sh
 
-# all pull reqs are built, but only master branch is build/deployed for now
 branches:
-  only:
-  - master
+    only:
+    - master
+    - /^v/
 
 install:
 - pip install -r requirements-dev.txt
