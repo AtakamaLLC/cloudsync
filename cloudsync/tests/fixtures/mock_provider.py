@@ -115,7 +115,7 @@ class MockProvider(Provider):
         self.event_timeout = 1
         self.event_sleep = 0.001
         self.creds = {"key": "val"}
-        self.connection_id = os.urandom(2).hex()
+        self.connect(self.creds)
 
     def disconnect(self):
         self.connected = False

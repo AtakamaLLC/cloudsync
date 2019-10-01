@@ -10,14 +10,15 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+
 class Provider(ABC):                        # pylint: disable=too-many-public-methods
     sep: str = '/'                          # path delimiter
     alt_sep: str = '\\'                     # alternate path delimiter
     oid_is_path: bool = False
     case_sensitive: bool = True
     win_paths: bool = False
-    connection_id: Optional[str] = None     # provider-specific connection id, often just the login name, if it's guaranteed to be unique
     default_sleep: float = 0.01
+    connection_id: None
     __creds: None
 
     @abstractmethod

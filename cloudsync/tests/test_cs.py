@@ -44,7 +44,8 @@ def make_cs(mock_provider_creator, left, right, storage=None):
 
     class CloudSyncMixin(CloudSync, RunUntilHelper):
         pass
-    return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
+    cs = CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
+    return cs
 
 
 # multi local test has two local providers, each syncing up to the same folder on one remote provider.
