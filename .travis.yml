@@ -24,7 +24,7 @@ jobs:
       python:
         - '3.6'
     - stage: deploy
-      if: tag ~ ^v
+      if: tag ~ /^v/
       script: 
         - ./deploy.sh
         python: '3.6'
@@ -32,6 +32,8 @@ jobs:
 # all pull reqs are built, but only master branch is build/deployed for now
 branches:
   only:
+  - test-master
+  - master
   - /^v/
 
 install:
