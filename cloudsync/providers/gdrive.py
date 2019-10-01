@@ -6,7 +6,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional, List, Dict, Any
+from typing import Generator, Optional, List, Dict, Any, cast
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -549,8 +549,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         remove_pids = info.pids
         old_path = info.path
 
-        _, name = self.split(path)
-        body = {'name': name}
+        body = {'name': info.name}
 
         if self.exists_path(path):
             possible_conflict = self.info_path(path)
@@ -652,7 +651,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return fileid
 
     def delete(self, oid):
-        info = self.info_oid(oid)
+        info = self._info_oid(oid)
+        info.path = self._path_oid(oid, info)
         if not info:
             log.debug("deleted non-existing oid %s", oid)
             return  # file doesn't exist already...
@@ -663,12 +663,22 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             except StopIteration:
                 pass  # Folder is empty, delete it no problem
         try:
+            log.debug("about to delete %s", info.path)
             self._api('files', 'delete', fileId=oid)
+            log.debug("deleted %s", info.path)
         except CloudFileNotFoundError:
             log.debug("deleted non-existing oid %s", oid)
         except PermissionError:
             try:
-                self._api('files', 'trash', fileId=oid)
+                # log.debug("about to trash %s", info.path)
+                # self._api('files', 'trash', fileId=oid)
+                # self._api('files', 'update', fileId=oid, body={'trashed': True})
+                log.debug("about to unfile %s", info.path)
+                remove_pids_str = ",".join(info.pids)
+                body = {'name': info.name}
+                self._api('files', 'update', body=body, fileId=oid, addParents="",
+                          removeParents=remove_pids_str, fields='id')
+                log.debug("unfiled %s", info.path)
             except PermissionError:
                 log.warning("Unable to delete oid %s.", oid)
 
