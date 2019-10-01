@@ -188,7 +188,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             self.__used = used
             self.__limit = allocated
             self.__login = account.email
-            self.__uid = account.uid[len('dbid:'):]
+            self.__uid = account.account_id[len('dbid:'):]
 
         res = {
             'used': self.__used,
