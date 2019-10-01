@@ -28,6 +28,7 @@ class OInfo:
     oid: str                               # fsobject id
     hash: Optional[bytes]                  # fsobject hash     (better name: ohash)
     path: Optional[str]                    # path
+    size: int = 0                          # size of object in bytes
 
 
 @dataclass

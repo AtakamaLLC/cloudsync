@@ -168,6 +168,13 @@ class MockProvider(Provider):
     def set_quota(self, quota: int):
         self._quota = quota
 
+    def get_quota(self):
+        return {
+            "used": self._total_size,
+            "limit": self._quota or self._total_size,
+            "login": "n/a"
+        }
+
     def _unstore_object(self, fo: MockFSObject):
         # TODO: do I need to check if the path and ID exist before del to avoid a key error,
         #  or perhaps just catch and swallow that exception?

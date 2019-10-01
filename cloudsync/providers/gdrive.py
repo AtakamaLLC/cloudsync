@@ -24,6 +24,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
 from cloudsync.oauth import OAuthConfig
 
+CACHE_QUOTA_TIME = 120
 
 class GDriveFileDoneError(Exception):
     pass
@@ -40,8 +41,9 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     hash: Any
     otype: OType
     path: str
+    size: int
 
-    def __init__(self, *a, pids=None, **kws):
+    def __init__(self, *a, pids=None, size=None, **kws):
         super().__init__(*a, **kws)
         if pids is None:
             pids = []
@@ -77,6 +79,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._flow = None
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
+        self.__quota_last_time: float = 0
+        self.__used: int = 0
+        self.__limit: int = 0
+        self.__login: str = None
+        self.__maxup: int = 0
 
     @property
     def connected(self):
@@ -146,26 +153,30 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
-        res = self._api('about', 'get', fields='storageQuota,user')
 
-        quota = res['storageQuota']
-        user = res['user']
+        if (time.monotonic() + CACHE_QUOTA_TIME) > self.__quota_last_time:
+            res = self._api('about', 'get', fields='storageQuota, user')
 
-        usage = int(quota['usage'])
-        if 'limit' in quota and quota['limit']:
-            limit = int(quota['limit'])
-        else:
-            # It is possible for an account to have unlimited space - pretend it's 1TB
-            limit = 1024 * 1024 * 1024 * 1024
+            quota = res['storageQuota']
+            self.__user = res['user']
+            self.__login = self.__user['emailAddress']
 
-        res = {
-            'used': usage,
-            'total': limit,
-            'login': user['emailAddress'],
-            'uid': user['permissionId']
+            used = int(quota['usage'])
+            if 'limit' in quota and quota['limit']:
+                limit = int(quota['limit'])
+            else:
+                # It is possible for an account to have unlimited space - pretend it's 1TB
+                limit = 1024 * 1024 * 1024 * 1024
+            self.__limit = limit
+            self.__used = used
+            self.__maxup = int(quota.get('maxUploadSize', 0))
+
+        return {
+            "used": self.__used,
+            "limit": self.__limit,
+            "login": self.__login,
+            "maxUpload": self.__maxup
         }
-
-        return res
 
     def reconnect(self):
         self.connect(self.__creds)
@@ -206,7 +217,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.refresh_token = refresh_token
                 self.api_key = api_key
 
-                quota = None
                 try:
                     quota = self.get_quota()
                 except SSLError:  # pragma: no cover
@@ -457,18 +467,20 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return gdrive_info
 
-    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
-        if not metadata:
-            metadata = {}
-        gdrive_info = self.__prep_upload(None, metadata)
-
+    def __media_io(self, file_like) -> MediaIoBaseUpload:
         file_like.seek(0, io.SEEK_END)
         file_size = file_like.tell()
         file_like.seek(0, io.SEEK_SET)
 
         chunksize = 4 * 1024 * 1024
         resumable = file_size > chunksize
-        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable)
+        return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable)
+
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
+        if not metadata:
+            metadata = {}
+        gdrive_info = self.__prep_upload(None, metadata)
+        ul = self.__media_io(file_like)
 
         fields = 'id, md5Checksum'
 
@@ -498,9 +510,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if self.exists_path(path):
             raise CloudFileExistsError()
 
-        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=4 * 1024 * 1024)
+        ul = self.__media_io(file_like)
 
-        fields = 'id, md5Checksum'
+        fields = 'id, md5Checksum, size'
 
         parent_oid = self.get_parent_id(path)
 
@@ -519,6 +531,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids[path] = res['id']
 
         log.debug("path cache %s", self._ids)
+
+    #    self.__used += int(res.get("size", 0))
 
         return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path)
 
@@ -567,7 +581,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             for cpath, coid in list(self._ids.items()):
                 if coid == oid:
                     old_path = cpath
-
 
         if add_pids == remove_pids:
             add_pids_str = ""
@@ -791,7 +804,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _info_oid(self, oid) -> Optional[GDriveInfo]:
         try:
             res = self._api('files', 'get', fileId=oid,
-                            fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities',
+                            fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities, size',
                             )
         except CloudFileNotFoundError:
             return None
@@ -804,10 +817,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         fhash = res.get('md5Checksum')
         name = res.get('name')
         shared = res['shared']
+        size = res.get('size', 0)
         readonly = not res['capabilities']['canEdit']
         if res.get('mimeType') == self._folder_mime_type:
             otype = DIRECTORY
         else:
             otype = FILE
 
-        return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
+        return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name, size=size)

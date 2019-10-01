@@ -25,9 +25,14 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudO
 log = logging.getLogger(__name__)
 logging.getLogger('dropbox').setLevel(logging.INFO)
 
+
+CACHE_QUOTA_TIME = 120
+
+
 # internal use errors
 class NotAFileError(Exception):
     pass
+
 
 class _FolderIterator:
     def __init__(self, api, path, *, recursive, cursor=None):
@@ -88,6 +93,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
 
+        self.__quota_last: int = 0
+        self.__used: int = None
+        self.__limit: int = None
+        self.__login: str = None
+
     @property
     def connected(self):
         return self.client is not None
@@ -122,12 +132,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             if not key and secret:
                 raise ValueError("require app key and secret")
             self._flow = DropboxOAuth2Flow(consumer_key=key,
-                                          consumer_secret=secret,
-                                          redirect_uri=self._redir,
-                                          session=self._session,
-                                          csrf_token_session_key=self._csrf,
-                                          locale=None)
-        url = self._flow.start()
+                                           consumer_secret=secret,
+                                           redirect_uri=self._redir,
+                                           session=self._session,
+                                           csrf_token_session_key=self._csrf,
+                                           locale=None)
+            url = self._flow.start()
         self._oauth_done.clear()
         webbrowser.open(url)
 
@@ -164,20 +174,24 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
-        space_usage = self._api('users_get_space_usage')
-        account = self._api('users_get_current_account')
-        if space_usage.allocation.is_individual():
-            used = space_usage.used
-            allocated = space_usage.allocation.get_individual().allocated
-        else:
-            team_allocation = space_usage.allocation.get_team()
-            used, allocated = team_allocation.used, team_allocation.allocated
+        if time.monotonic() > (self.__quota_last + CACHE_QUOTA_TIME):
+            space_usage = self._api('users_get_space_usage')
+            account = self._api('users_get_current_account')
+            if space_usage.allocation.is_individual():
+                used = space_usage.used
+                allocated = space_usage.allocation.get_individual().allocated
+            else:
+                team_allocation = space_usage.allocation.get_team()
+                used, allocated = team_allocation.used, team_allocation.allocated
+
+            self.__used = used
+            self.__limit = allocated
+            self.__login = account.email
 
         res = {
-            'used': used,
-            'total': allocated,
-            'login': account.email,
-            'uid': account.account_id[len('dbid:'):]
+            'used': self.__used,
+            'limit': self.__limit,
+            'login': self.__login,
         }
 
         return res
@@ -449,7 +463,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._verify_parent_folder_exists(path)
         if self.exists_path(path):
             raise CloudFileExistsError(path)
-        return self._upload(path, file_like, metadata)
+        ret = self._upload(path, file_like, metadata)
+        self.__used += ret.size
+        return ret
 
     def upload(self, oid: str, file_like, metadata=None) -> OInfo:
         if oid.startswith(self.sep):
@@ -499,7 +515,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         if res is None:
             raise CloudFileExistsError()
 
-        ret = OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display)
+        ret = OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display, size=size)
         log.debug('upload result is %s', ret)
         return ret
 

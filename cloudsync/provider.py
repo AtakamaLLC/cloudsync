@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any
+from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any, NamedTuple
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -11,14 +11,13 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-
-class Provider(ABC):                    # pylint: disable=too-many-public-methods
-    sep: str = '/'                      # path delimiter
-    alt_sep: str = '\\'                 # alternate path delimiter
+class Provider(ABC):                        # pylint: disable=too-many-public-methods
+    sep: str = '/'                          # path delimiter
+    alt_sep: str = '\\'                     # alternate path delimiter
     oid_is_path: bool = False
     case_sensitive: bool = True
     win_paths: bool = False
-    connection_id: Optional[str] = None
+    connection_id: Optional[str] = None     # provider-specific connection id, often just the login name, if it's guaranteed to be unique
     default_sleep: float = 0.01
     __creds: None
 
@@ -26,13 +25,18 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def _api(self, *args, **kwargs):
         ...
 
+    def get_quota(self) -> dict:
+        """Returns a dict with of used (bytes), limit (bytes), login, and possibly other provider-specific info
+        """
+        return {"used": 0.0, "limit": 0.0, "login": None}
+
     def connect(self, creds):
         # some providers don't need connections, so just don't implement/overload this method
         # providers who implement connections need to set the connection_id to a value
-        #   that is unique to each connection, so that connecting to this provider
+        #   that is unique to each login, so that connecting to this provider
         #   under multiple userid's will produce different connection_id's. One
         #   suggestion is to just set the connection_id to the user's login_id
-        self.connection_id = os.urandom(16).hex()
+        self.connection_id = "connected"
         self.__creds = creds
 
     def reconnect(self):
