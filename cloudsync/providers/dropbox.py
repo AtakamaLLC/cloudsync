@@ -97,6 +97,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.__used: int = None
         self.__limit: int = None
         self.__login: str = None
+        self.__uid: str = None
 
     @property
     def connected(self):
@@ -187,11 +188,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             self.__used = used
             self.__limit = allocated
             self.__login = account.email
+            self.__uid = account.uid[len('dbid:'):]
 
         res = {
             'used': self.__used,
             'limit': self.__limit,
             'login': self.__login,
+            'uid': self.__uid
         }
 
         return res
@@ -212,8 +215,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 self.client = Dropbox(api_key)
 
             try:
-                quota = self.get_quota()
-                self.connection_id = quota['login']
+                info = self.get_quota()
+                self.connection_id = info['uid']
             except Exception as e:
                 self.disconnect()
                 if isinstance(e, exceptions.AuthError):

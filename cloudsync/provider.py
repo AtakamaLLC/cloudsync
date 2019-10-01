@@ -25,7 +25,7 @@ class Provider(ABC):                        # pylint: disable=too-many-public-me
         ...
 
     def get_quota(self) -> dict:    # pylint: disable=no-self-use
-        """Returns a dict with of used (bytes), limit (bytes), login, and possibly other provider-specific info
+        """Returns a dict with of used (bytes), limit (bytes), optional login, and possibly other provider-specific info
         """
         return {"used": 0.0, "limit": 0.0, "login": None}
 
