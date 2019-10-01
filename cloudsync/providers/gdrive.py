@@ -6,7 +6,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional, List, Dict, Any
+from typing import Generator, Optional, List, Dict, Any, Tuple
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -467,7 +467,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return gdrive_info
 
-    def __media_io(self, file_like) -> MediaIoBaseUpload:
+    def __media_io(self, file_like) -> Tuple[MediaIoBaseUpload, int]:
         file_like.seek(0, io.SEEK_END)
         file_size = file_like.tell()
         file_like.seek(0, io.SEEK_SET)
