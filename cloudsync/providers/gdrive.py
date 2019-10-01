@@ -294,6 +294,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
 
+                if str(e.resp.status) == '403' and str(reason) == 'insufficientFilePermissions':
+                    raise PermissionError("PermissionError")
+
                 if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', 'dailyLimitExceeded')) \
                         or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
@@ -663,6 +666,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self._api('files', 'delete', fileId=oid)
         except CloudFileNotFoundError:
             log.debug("deleted non-existing oid %s", oid)
+        except PermissionError:
+            try:
+                self._api('files', 'trash', fileId=oid)
+            except PermissionError:
+                log.warning("Unable to delete oid %s.", oid)
+
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
                 self._trashed_ids[currpath] = self._ids[currpath]
