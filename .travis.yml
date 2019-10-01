@@ -27,7 +27,7 @@ jobs:
       python:
         - '3.6'
     - stage: deploy
-      if: type = push and tag ~ /^v/
+      if: type = push and tag =~ ^v
       python: 
         - '3.6'
       script: 
