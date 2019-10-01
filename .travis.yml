@@ -29,15 +29,15 @@ deploy:
       script:
         - ./deploy.sh
       on:
-        branch: test-master
         python: '3.6'
         tags: true
 
 # all pull reqs are built, but only master branch is build/deployed for now
 branches:
   only:
-  - ^v
   - test-master
+  - master
+  - /^v/
 
 install:
 - pip install -r requirements-dev.txt
