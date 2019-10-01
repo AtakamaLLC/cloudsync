@@ -23,10 +23,15 @@ jobs:
         - ./test_providers.sh
       python:
         - '3.6'
-    - if: type=push AND (branch=~^v) AND (tag =~ ^v)
-      stage: deploy
+
+deploy:      
+      provider: script
       script:
         - ./deploy.sh
+      on:
+        branch: test-master
+        python: '3.6'
+        tags: true
 
 # all pull reqs are built, but only master branch is build/deployed for now
 branches:
