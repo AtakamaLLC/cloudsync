@@ -36,7 +36,8 @@ deploy:
 # all pull reqs are built, but only master branch is build/deployed for now
 branches:
   only:
-  - master
+  - ^v
+  - test-master
 
 install:
 - pip install -r requirements-dev.txt
