@@ -286,8 +286,10 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                                 'File already exists when executing %s(%s)' % (method, kwargs))
 
                 if isinstance(e.error, files.ListFolderContinueError):
-                    if e.error.is_reset() and isinstance(e.error.get_path(), files.LookupError):
-                        raise CloudCursorError("Cursor reset request")
+                    # all list-folder-continue errors should cause a cursor reset
+                    # these include the actual "is_reset" and, of course a is_path (fnf)
+                    # and also is_other which can secretly contain a reset as well
+                    raise CloudCursorError("Cursor reset request")
 
                 if isinstance(e.error, files.ListRevisionsError):
                     if e.error.is_path():
