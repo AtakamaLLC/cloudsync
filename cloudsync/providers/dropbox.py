@@ -20,11 +20,14 @@ from cloudsync.oauth import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
-    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError
+    CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError, CloudException
 
 log = logging.getLogger(__name__)
 logging.getLogger('dropbox').setLevel(logging.INFO)
 
+# internal use errors
+class NotAFileError(Exception):
+    pass
 
 class _FolderIterator:
     def __init__(self, api, path, *, recursive, cursor=None):
@@ -245,6 +248,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                             raise CloudFileExistsError(
                                 'Conflict when executing %s(%s)' % (method, kwargs))
 
+                if isinstance(e.error, files.DownloadError):
+                    if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
+                        inside_error = e.error.get_path()
+                        if inside_error.is_not_found():
+                            raise CloudFileNotFoundError("Not found when executing %s(%s)" % (method, kwargs))
+
                 if isinstance(e.error, files.DeleteError):
                     if e.error.is_path_lookup():
                         inside_error = e.error.get_path_lookup()
@@ -275,6 +284,19 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
                                 'File already exists when executing %s(%s)' % (method, kwargs))
+
+                if isinstance(e.error, files.ListFolderContinueError):
+                    if e.error.is_reset() and isinstance(e.error.get_path(), files.LookupError):
+                        raise CloudCursorError("Cursor reset request")
+
+                if isinstance(e.error, files.ListRevisionsError):
+                    if e.error.is_path():
+                        inside_error = e.error.get_path()
+                        if inside_error.is_not_file():
+                            raise NotAFileError(str(e))
+
+                log.exception("Unknown exception %s/%s", e, repr(e))
+                raise CloudException("Unknown exception when executing %s(%s,%s): %s" % (method, args, kwargs, e))
             except (exceptions.InternalServerError, exceptions.RateLimitError, requests.exceptions.ReadTimeout):
                 raise CloudTemporaryError()
             except dropbox.stone_validators.ValidationError as e:
@@ -341,8 +363,21 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 # then find out which one was the latest before the deletion time
                 # then get the oid for that
 
-                revs = self._api('files_list_revisions',
-                                 res.path_lower, limit=10)
+                try:
+                    revs = self._api('files_list_revisions',
+                                     res.path_lower, limit=10)
+                except NotAFileError as e:
+                    # todo: we need to actually handle this
+                    # this bug was exposed when we started raising errors during the fix of 409's
+                    # right now, we have no good solution for events without oids
+                    # the event manager needs to be modified to deal with this
+                    # otype = DIRECTORY
+                    # ohash = None
+                    # oid = None
+                    # yield ...
+                    log.error("deleted folder ignored %s", e)
+                    continue
+
                 if revs is None:
                     # dropbox will give a 409 conflict if the revision history was deleted
                     # instead of raising an error, this gets converted to revs==None

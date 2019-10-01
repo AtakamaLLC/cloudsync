@@ -1,8 +1,7 @@
 from typing import Dict, Any, Optional
 import logging
 import sqlite3
-from cloudsync import Storage
-from cloudsync.log import TRACE
+from .state import Storage
 
 log = logging.getLogger(__name__)
 
@@ -25,15 +24,17 @@ class SqliteStorage(Storage):
         # Not using AUTOINCREMENT: http://www.sqlitetutorial.net/sqlite-autoincrement/
         self.db.execute('CREATE TABLE IF NOT EXISTS cloud (id INTEGER PRIMARY KEY, '
                         'tag TEXT NOT NULL, serialization BLOB)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS cloud_tag_ix on cloud(tag)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS cloud_id_ix on cloud(id)')
 
     def create(self, tag: str, serialization: bytes) -> Any:
+        assert tag is not None
         db_cursor = self.db.execute('INSERT INTO cloud (tag, serialization) VALUES (?, ?)',
                                     [tag, serialization])
         eid = db_cursor.lastrowid
         return eid
 
     def update(self, tag: str, serialization: bytes, eid: Any) -> int:
-        log.log(TRACE, "updating eid%s", eid)
         db_cursor = self.db.execute('UPDATE cloud SET serialization = ? WHERE id = ? AND tag = ?',
                                     [serialization, eid, tag])
         ret = db_cursor.rowcount
@@ -42,19 +43,29 @@ class SqliteStorage(Storage):
         return ret
 
     def delete(self, tag: str, eid: Any):
-        log.log(TRACE, "deleting eid%s", eid)
         db_cursor = self.db.execute('DELETE FROM cloud WHERE id = ? AND tag = ?',
                                     [eid, tag])
         if db_cursor.rowcount == 0:
             log.debug("ignoring delete: id %s doesn't exist", eid)
             return
 
-    def read_all(self, tag: str) -> Dict[Any, bytes]:
+    def read_all(self, tag: str = None) -> Dict[Any, bytes]:
         ret = {}
-        db_cursor = self.db.execute('SELECT id, serialization FROM cloud WHERE tag = ?', [tag])
+        if tag is not None:
+            query = 'SELECT id, tag, serialization FROM cloud WHERE tag = ?'
+            db_cursor = self.db.execute(query, [tag])
+        else:
+            query = 'SELECT id, tag, serialization FROM cloud'
+            db_cursor = self.db.execute(query)
+
         for row in db_cursor.fetchall():
-            eid, serialization = row
-            ret[eid] = serialization
+            eid, row_tag, row_serialization = row
+            if tag is not None:
+                ret[eid] = row_serialization
+            else:
+                if row_tag not in ret:
+                    ret[row_tag] = {}
+                ret[row_tag][eid] = row_serialization
         return ret
 
     def read(self, tag: str, eid: Any) -> Optional[bytes]:

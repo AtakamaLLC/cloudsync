@@ -541,6 +541,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if prioritize is None:
             self.prioritize = lambda side, path: 0
 
+    def forget(self):
+        storage_dict = self._storage.read_all(cast(str, self._tag))
+        for eid, _ in storage_dict.items():
+            self._storage.delete(self._tag, eid)
+
     def updated(self, ent, side, key, val):     # pylint: disable=too-many-branches
         if self._loading:
             return
@@ -765,6 +770,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     assert False
         log.debug("storage_get_data id=%s data=%s", data_tag, str(retval))
         return retval
+
+    def storage_delete_tag(self, data_tag):
+        storage_dict = self._storage.read_all(data_tag)
+        for eid, _ in storage_dict.items():
+            self._storage.delete(data_tag, eid)
 
     def storage_update_data(self, data_tag, data):
         if data_tag is None:
