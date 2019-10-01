@@ -43,7 +43,7 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     path: str
     size: int
 
-    def __init__(self, *a, pids=None, size=None, **kws):
+    def __init__(self, *a, pids=None, **kws):
         super().__init__(*a, **kws)
         if pids is None:
             pids = []
@@ -158,8 +158,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             res = self._api('about', 'get', fields='storageQuota, user')
 
             quota = res['storageQuota']
-            self.__user = res['user']
-            self.__login = self.__user['emailAddress']
+            user = res['user']
+            self.__login = user['emailAddress']
 
             used = int(quota['usage'])
             if 'limit' in quota and quota['limit']:
@@ -175,7 +175,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             "used": self.__used,
             "limit": self.__limit,
             "login": self.__login,
-            "maxUpload": self.__maxup
+            "max_upload": self.__maxup
         }
 
     def reconnect(self):
@@ -474,13 +474,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         chunksize = 4 * 1024 * 1024
         resumable = file_size > chunksize
-        return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable)
+        return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable), file_size
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         if not metadata:
             metadata = {}
         gdrive_info = self.__prep_upload(None, metadata)
-        ul = self.__media_io(file_like)
+        ul, size = self.__media_io(file_like)
 
         fields = 'id, md5Checksum'
 
@@ -500,7 +500,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             possible_conflict = self._info_oid(oid)
             if possible_conflict and possible_conflict.otype == DIRECTORY:
                 raise CloudFileExistsError("Can only upload to a file: %s" % possible_conflict.path)
-        return OInfo(otype=FILE, oid=res['id'], hash=md5, path=None)
+        return OInfo(otype=FILE, oid=res['id'], hash=md5, path=None, size=size)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
@@ -510,7 +510,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if self.exists_path(path):
             raise CloudFileExistsError()
 
-        ul = self.__media_io(file_like)
+        ul, size = self.__media_io(file_like)
 
         fields = 'id, md5Checksum, size'
 
@@ -532,9 +532,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         log.debug("path cache %s", self._ids)
 
-    #    self.__used += int(res.get("size", 0))
+        size = int(res.get("size", 0))
 
-        return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path)
+        self.__used += size
+
+        return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path, size=size)
 
     def download(self, oid, file_like):
         req = self._api('files', 'get_media', fileId=oid)

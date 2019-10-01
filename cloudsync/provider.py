@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any, NamedTuple
+from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -25,7 +24,7 @@ class Provider(ABC):                        # pylint: disable=too-many-public-me
     def _api(self, *args, **kwargs):
         ...
 
-    def get_quota(self) -> dict:
+    def get_quota(self) -> dict:    # pylint: disable=no-self-use
         """Returns a dict with of used (bytes), limit (bytes), login, and possibly other provider-specific info
         """
         return {"used": 0.0, "limit": 0.0, "login": None}
