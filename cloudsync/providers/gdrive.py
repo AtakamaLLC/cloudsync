@@ -154,7 +154,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
 
-        if not self.__limit or (time.monotonic() > (self.__quota_last_time + CACHE_QUOTA_TIME)):
+        if not self.__quota_last_time or (time.monotonic() > (self.__quota_last_time + CACHE_QUOTA_TIME)):
             res = self._api('about', 'get', fields='storageQuota, user')
 
             quota = res['storageQuota']
@@ -337,6 +337,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def disconnect(self):
         self.client = None
+        # clear cached session info!
+        self.__quota_last_time = 0
 
     @property
     def latest_cursor(self):

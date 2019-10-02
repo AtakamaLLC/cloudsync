@@ -96,7 +96,7 @@ class DropboxProvider(Provider):
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
 
-        self.__quota_last: int = 0
+        self.__quota_last: float = 0.0
         self.__used: int = None
         self.__limit: int = None
         self.__login: str = None
@@ -179,7 +179,7 @@ class DropboxProvider(Provider):
                 self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
-        if not self.__uid or (time.monotonic() > (self.__quota_last + CACHE_QUOTA_TIME)):
+        if not self.__quota_last or (time.monotonic() > (self.__quota_last + CACHE_QUOTA_TIME)):
             space_usage = self._api('users_get_space_usage')
             account = self._api('users_get_current_account')
             if space_usage.allocation.is_individual():
@@ -346,6 +346,7 @@ class DropboxProvider(Provider):
 
     def disconnect(self):
         self.client = None
+        self.__quota_last = 0.0
 
     @property
     def latest_cursor(self):
