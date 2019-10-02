@@ -11,20 +11,16 @@ import sys
 import re
 import subprocess
 import argparse
-import toml
-
+from cmd import Cmd
 from packaging.version import Version
 
-from cmd import Cmd
+import toml
 
 MAJOR = 0
 MINOR = 1
 PATCH = 2
 
 assert sys.version_info > (3, 0), "Python interpreter version 3 or greater"
-
-def quit(code=1):
-    sys.exit(code)
 
 
 def run(cmd, dry=False):
@@ -86,7 +82,7 @@ def collect_info(args):
             versions = match[1]
             version_list = versions.split(",")
             latest_pub = version_list[-1].strip()
-            latest = str(max(Version(latest_pub),Version(latest_git)))
+            latest = str(max(Version(latest_pub), Version(latest_git)))
             print("Latest version is '%s'" % latest)
     else:
         print("WARNING: Unable to find package name, not searching public versions")
@@ -105,7 +101,7 @@ def collect_info(args):
 
     if diff and not args.unsafe:
         print("Current branch has differences from remote, aborting.")
-        quit()
+        sys.exit(1)
 
     return (package, branch, vorig)
 
@@ -155,7 +151,7 @@ def apply_version(branch, vorig, v2, *, dry, msg=None):
 
         print(run(["git", "tag", "-a", "v" + str(v2), "-m", msg], dry=dry))
         print(run("git push --tags", dry=dry))
-        quit(0)
+        sys.exit(0)
 
 
 class MyPrompt(Cmd):
@@ -168,10 +164,10 @@ class MyPrompt(Cmd):
         super().__init__(**kws)
         self.onecmd("help")
 
-    def cmdloop(self):
+    def cmdloop(self, intro=None):
         while True:
             try:
-                return super().cmdloop()
+                return super().cmdloop(intro)
             except Exception as e:
                 print("# error #", e)
 
@@ -179,7 +175,7 @@ class MyPrompt(Cmd):
         self._prompt()
         return stop
 
-    def do_major(self, inp):
+    def do_major(self, unused_inp):
         """Bump major version"""
         self.vinfo = bump(self.vinfo, 0)
 
@@ -187,19 +183,19 @@ class MyPrompt(Cmd):
         """Set to specified version"""
         self.vinfo = Version(inp.strip())
 
-    def do_minor(self, inp):
+    def do_minor(self, unused_inp):
         """Bump minor version"""
         self.vinfo = bump(self.vinfo, 1)
 
-    def do_patch(self, inp):
+    def do_patch(self, unused_inp):
         """Bump patch (mini) version"""
         self.vinfo = bump(self.vinfo, 2)
 
-    def do_beta(self, inp):
+    def do_beta(self, unused_inp):
         """Beta prelease, starting from current"""
         self.vinfo = bump(self.vinfo, "b")
 
-    def do_alpha(self, inp):
+    def do_alpha(self, unused_inp):
         """Alpha prelease, starting from current"""
         self.vinfo = bump(self.vinfo, "a")
 
@@ -210,22 +206,21 @@ class MyPrompt(Cmd):
         if inp:
             self.vinfo = bump(self.vinfo, inp)
 
-    def do_apply(self, inp):
-        """Apply changes and push version label to github
-        "apply dry' will print without doing.
+    def do_dry(self, unused_inp):
+        """Pretend to apply changes and push version label to github
         """
+        apply_version(self.branch, self.vorig, self.vinfo, dry=True)
 
-        dry = False
-        if inp[0:3].lower() == "dry":
-            print("Dry run")
-            dry = True
-
-        apply_version(self.branch, self.vorig, self.vinfo, dry=dry)
+    def do_apply(self, unused_inp):
+        """Apply changes, push version label to github, and exit
+        """
+        apply_version(self.branch, self.vorig, self.vinfo, dry=False)
 
     def _prompt(self):
         self.prompt = "(" + str(self.vinfo) + ") # "
 
-    def do_quit(self, inp):
+    @staticmethod
+    def do_quit(unused_inp):
         """Exit without applying changes"""
         return True
 
@@ -250,10 +245,10 @@ def main():
     if args.major or args.minor or args.apply or args.patch:
         if not args.message:
             print("-m or --message is required")
-            quit()
+            sys.exit(1)
         if not args.apply:
             print("#dry run#")
-        (package, branch, vorig) = collect_info(args)
+        (_package, branch, vorig) = collect_info(args)
         vinfo = vorig
         if args.major:
             vinfo = bump(vinfo, MAJOR)
@@ -264,7 +259,7 @@ def main():
         msg = args.message
         apply_version(branch, vorig, vinfo, dry=not args.apply, msg=msg)
     else:
-        (package, branch, vorig) = collect_info(args)
+        (_package, branch, vorig) = collect_info(args)
         MyPrompt(branch, vorig, args).cmdloop()
 
 
