@@ -193,6 +193,7 @@ class DropboxProvider(Provider):
             self.__limit = allocated
             self.__login = account.email
             self.__uid = account.account_id[len('dbid:'):]
+            self.__quota_last = time.monotonic()
 
         assert self.__uid
 
