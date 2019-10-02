@@ -72,60 +72,76 @@ class disable_log_multiline:
 
 
 class memoize():
-    """ very simple memoize wrapper
-    when used as a decorator... the memo lives globally
-    for instance methods, use x.method = memoize(x.method)
+    """ Very simple memoize wrapper
+
+    function decorator: cache lives globally
+    method decorator: cache lives inside `obj_instance.__memoize_cache`
     """
 
-    def __init__(self, func: Callable[..., Any] = None, expire_secs: float = 0):
+    def __init__(self, func: Callable[..., Any] = None, expire_secs: float = 0, obj=None, cache=None):
         self.func = func
         self.expire_secs = expire_secs
-        self.cached_results: Dict[Any, Any] = {}
-        self.last_time: float = 0
-        self._inst = None
+        self.cache: Dict[Any, Any] = cache
+        if cache is None:
+            self.cache = {}
         if self.func is not None:
             functools.update_wrapper(self, func)
+        self.obj = obj
 
     def __get__(self, obj, objtype=None):
-        # called when memoize is on a class
-        self._inst = obj
         if obj is None:
+            # does this ever happen?
             return self.func
-        return self
+
+        # inject cache into the instance, so it doesn't live beyond the scope of the instance
+        # without this, memoizing can cause serious unexpected memory leaks
+        try:
+            cache = obj.__memoize_cache          # pylint: disable=protected-access
+        except AttributeError:
+            cache = obj.__memoize_cache = {}
+
+        return memoize(self.func, expire_secs=self.expire_secs, cache=cache, obj=obj)
 
     def __call__(self, *args, **kwargs):
         if self.func is None:
-            # this allows function style decorators
+            # this was used as a function style decorator
+            # there should be no kwargs
+            assert not kwargs
             func = args[0]
-            return memoize(func, *args[1:], *kwargs)
+            return memoize(func, expire_secs=self.expire_secs, cache=self.cache)
 
-        if self._inst:
-            # this was used as a method wrapper
-            args = (self._inst, *args)
+        if self.obj is not None:
+            args = (self.obj, *args)
 
         key = (args, tuple(sorted(kwargs.items())))
         cur_time = time.monotonic()
 
-        if key in self.cached_results:
-            (cresult, ctime) = self.cached_results[key]
+        if key in self.cache:
+            (cresult, ctime) = self.cache[key]
             if not self.expire_secs or cur_time < (ctime + self.expire_secs):
                 return cresult
 
         result = self.func(*args, **kwargs)
-        self.cached_results[key] = (result, cur_time)
+        self.cache[key] = (result, cur_time)
         return result
 
     def clear(self, *args, **kwargs):
+        if self.obj is not None:
+            args = (self.obj, *args)
         key = (args, tuple(sorted(kwargs.items())))
-        self.cached_results.pop(key, None)
+        self.cache.pop(key, None)
 
     def get(self, *args, **kwargs):
+        if self.obj is not None:
+            args = (self.obj, *args)
         key = (args, tuple(sorted(kwargs.items())))
-        if key in self.cached_results:
-            return self.cached_results[key][0]
+        if key in self.cache:
+            return self.cache[key][0]
         return None
 
     def set(self, *args, _value, **kwargs):
+        if self.obj is not None:
+            args = (self.obj, *args)
         key = (args, tuple(sorted(kwargs.items())))
-        self.cached_results[key] = (_value, time.monotonic())
+        self.cache[key] = (_value, time.monotonic())
 

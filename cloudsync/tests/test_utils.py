@@ -29,6 +29,7 @@ def test_memoize1():
     cached = memoize(func, 60)
 
     a = cached()
+    assert cached.get() == a
     b = cached()
     # same vals
     assert a == b
@@ -97,6 +98,10 @@ def test_memoize3():
         def fun(self, a):
             return (a, os.urandom(32))
 
+        @memoize
+        def fun2(self):
+            return os.urandom(32)
+
     # different self's
     x = Cls().fun(1)
     y = Cls().fun(1)
@@ -104,8 +109,15 @@ def test_memoize3():
 
     c = Cls()
     x = c.fun(1)
+    assert c.fun.get(1) == x
+    assert c.fun.get(1)
     y = c.fun(1)
     assert x == y
     z = c.fun(2)
     assert z != x
+
+    log.debug("no args test")
+    m = c.fun2()
+    assert m
+    assert c.fun2.get() == m
 
