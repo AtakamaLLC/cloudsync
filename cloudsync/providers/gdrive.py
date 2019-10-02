@@ -219,6 +219,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.api_key = api_key
 
                 try:
+                    self.__quota_last_time = 0.0
                     quota = self.get_quota()
                 except SSLError:  # pragma: no cover
                     # Seeing some intermittent SSL failures that resolve on retry

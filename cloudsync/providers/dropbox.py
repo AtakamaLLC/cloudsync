@@ -223,6 +223,7 @@ class DropboxProvider(Provider):
                 self.client = Dropbox(api_key)
 
             try:
+                self.__quota_last = 0.0
                 info = self.get_quota()
                 self.connection_id = info['uid']
                 assert self.connection_id
