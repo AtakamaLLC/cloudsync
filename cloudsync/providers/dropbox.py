@@ -223,9 +223,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 if isinstance(e, exceptions.AuthError):
                     log.debug("auth error connecting %s", e)
                     raise CloudTokenError()
-                else:
-                    log.exception("error connecting %s", e)
-                    raise CloudDisconnectedError()
+                log.exception("error connecting %s", e)
+                raise CloudDisconnectedError()
         assert self.connection_id
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
