@@ -6,7 +6,7 @@ import webbrowser
 import hashlib
 from ssl import SSLError
 import json
-from typing import Generator, Optional, List, Dict, Any, cast
+from typing import Generator, Optional, List, Dict, Any
 
 import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -36,6 +36,8 @@ logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids: List[str] = []
+    # oid, hash, otype and path are included here to satisfy a bug in mypy,
+    # which does not recognize that they are already inherited from the grandparent class
     oid: str
     hash: Any
     otype: OType
@@ -549,7 +551,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         remove_pids = info.pids
         old_path = info.path
 
-        body = {'name': info.name}
+        _, name = self.split(path)
+        body = {'name': name}
 
         if self.exists_path(path):
             possible_conflict = self.info_path(path)
@@ -652,10 +655,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def delete(self, oid):
         info = self._info_oid(oid)
-        info.path = self._path_oid(oid, info)
         if not info:
             log.debug("deleted non-existing oid %s", oid)
             return  # file doesn't exist already...
+        info.path = self._path_oid(oid, info)
         if info.otype == DIRECTORY:
             try:
                 next(self.listdir(oid))
@@ -670,14 +673,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             log.debug("deleted non-existing oid %s", oid)
         except PermissionError:
             try:
-                # log.debug("about to trash %s", info.path)
-                # self._api('files', 'trash', fileId=oid)
-                # self._api('files', 'update', fileId=oid, body={'trashed': True})
                 log.debug("about to unfile %s", info.path)
-                remove_pids_str = ",".join(info.pids)
-                body = {'name': info.name}
-                self._api('files', 'update', body=body, fileId=oid, addParents="",
-                          removeParents=remove_pids_str, fields='id')
+                remove_str = ",".join(info.pids)
+                self._api('files', 'update', fileId=oid, removeParents=remove_str, fields='id')
                 log.debug("unfiled %s", info.path)
             except PermissionError:
                 log.warning("Unable to delete oid %s.", oid)
@@ -789,15 +787,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[GDriveInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None
         # expensive
-        path = self._path_oid(oid, info, use_cache=use_cache)
-        ret = OInfo(info.otype, info.oid, info.hash, path)
-        log.debug("info oid ret: %s", ret)
-        return ret
+        info.path = self._path_oid(oid, info, use_cache=use_cache)
+        log.debug("info oid ret: %s", info)
+        return info
 
     @staticmethod
     def hash_data(file_like) -> str:
