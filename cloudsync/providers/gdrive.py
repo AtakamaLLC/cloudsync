@@ -154,7 +154,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_quota(self):
         # https://developers.google.com/drive/api/v3/reference/about
 
-        if (time.monotonic() + CACHE_QUOTA_TIME) > self.__quota_last_time:
+        if not self.__limit or ((time.monotonic() + CACHE_QUOTA_TIME) > self.__quota_last_time):
             res = self._api('about', 'get', fields='storageQuota, user')
 
             quota = res['storageQuota']
