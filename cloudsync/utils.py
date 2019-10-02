@@ -1,5 +1,6 @@
 import logging
 import time
+import functools
 
 from hashlib import md5
 from base64 import b64encode
@@ -70,27 +71,61 @@ class disable_log_multiline:
         self.patch_object.__exit__(*args, **kwargs)
 
 
-class TimeCache():
-    def __init__(self, cache_func: Callable[..., Any], cache_secs: float):
-        self.cache_func = cache_func
-        self.cache_secs = cache_secs
+class memoize():
+    """ very simple memoize wrapper
+    when used as a decorator... the memo lives globally
+    for instance methods, use x.method = memoize(x.method)
+    """
+
+    def __init__(self, func: Callable[..., Any] = None, expire_secs: float = 0):
+        self.func = func
+        self.expire_secs = expire_secs
         self.cached_results: Dict[Any, Any] = {}
         self.last_time: float = 0
+        self._inst = None
+        if self.func is not None:
+            functools.update_wrapper(self, func)
+
+    def __get__(self, obj, objtype=None):
+        # called when memoize is on a class
+        self._inst = obj
+        if obj is None:
+            return self.func
+        return self
 
     def __call__(self, *args, **kwargs):
+        if self.func is None:
+            # this allows function style decorators
+            func = args[0]
+            return memoize(func, *args[1:], *kwargs)
+
+        if self._inst:
+            # this was used as a method wrapper
+            args = (self._inst, *args)
+
         key = (args, tuple(sorted(kwargs.items())))
         cur_time = time.monotonic()
 
         if key in self.cached_results:
             (cresult, ctime) = self.cached_results[key]
-            if cur_time < (ctime + self.cache_secs):
+            if not self.expire_secs or cur_time < (ctime + self.expire_secs):
                 return cresult
 
-        result = self.cache_func(*args, **kwargs)
+        result = self.func(*args, **kwargs)
         self.cached_results[key] = (result, cur_time)
         return result
 
     def clear(self, *args, **kwargs):
         key = (args, tuple(sorted(kwargs.items())))
         self.cached_results.pop(key, None)
+
+    def get(self, *args, **kwargs):
+        key = (args, tuple(sorted(kwargs.items())))
+        if key in self.cached_results:
+            return self.cached_results[key][0]
+        return None
+
+    def set(self, *args, _value, **kwargs):
+        key = (args, tuple(sorted(kwargs.items())))
+        self.cached_results[key] = (_value, time.monotonic())
 

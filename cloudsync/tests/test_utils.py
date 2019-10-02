@@ -2,7 +2,7 @@ import os
 import pytest
 import logging
 
-from cloudsync.utils import debug_args, TimeCache
+from cloudsync.utils import debug_args, memoize
 
 log = logging.getLogger(__name__)
 
@@ -24,9 +24,9 @@ def test_multiline():
         log.error("not indented line1\n<--- right up against the edge of the terminal")
 
 
-def test_time_cache():
+def test_memoize1():
     func = lambda *a: (a, os.urandom(32))
-    cached = TimeCache(func, 60)
+    cached = memoize(func, 60)
 
     a = cached()
     b = cached()
@@ -58,4 +58,54 @@ def test_time_cache():
     # zero param is still ok
     a = cached()
     assert a == b
+
+    b = cached.get()
+    assert a == b
+
+    cached.clear()
+    assert cached.get() is None
+
+    cached.set(3, b=4, _value=44)
+    assert cached.get(3, b=4) == 44
+    assert cached(3, b=4) == 44
+
+def test_memoize2():
+    @memoize
+    def fun(a):
+        return (a, os.urandom(32))
+
+    x = fun(1)
+    y = fun(1)
+    assert x == y
+    z = fun(2)
+    assert z != x
+
+    @memoize(expire_secs=3)
+    def fun2(a):
+        return (a, os.urandom(32))
+
+    x = fun2(1)
+    y = fun2(1)
+    assert x == y
+    z = fun2(2)
+    assert z != x
+
+
+def test_memoize3():
+    class Cls:
+        @memoize
+        def fun(self, a):
+            return (a, os.urandom(32))
+
+    # different self's
+    x = Cls().fun(1)
+    y = Cls().fun(1)
+    assert x != y
+
+    c = Cls()
+    x = c.fun(1)
+    y = c.fun(1)
+    assert x == y
+    z = c.fun(2)
+    assert z != x
 
