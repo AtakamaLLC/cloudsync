@@ -150,7 +150,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
-        log.warning("HERE!!!!!!!!!!")
         res = self._api('about', 'get', fields='storageQuota, user')
 
         quota = res['storageQuota']
@@ -335,7 +334,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def disconnect(self):
         self.client = None
         # clear cached session info!
-        log.warning("CLEAR CACHE")
         self.get_quota.clear()          # pylint: disable=no-member
 
     @property
@@ -536,11 +534,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         size = int(res.get("size", 0))
 
         cache_ent = self.get_quota.get()            # pylint: disable=no-member
-        log.warning("HERE1!!!!!!!!!! %s", cache_ent)
         if cache_ent:
             cache_ent["used"] += size
         cache_ent = self.get_quota.get()            # pylint: disable=no-member
-        log.warning("HERE2!!!!!!!!!! %s", cache_ent)
 
         return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path, size=size)
 

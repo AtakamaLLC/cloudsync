@@ -97,6 +97,7 @@ class DropboxProvider(Provider):
         self._oauth_done = threading.Event()
 
         self.connection_id: str = None
+        self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
 
     @property
     def connected(self):
@@ -173,8 +174,10 @@ class DropboxProvider(Provider):
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()
 
-    @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
+        return self.__memoize_quota()
+
+    def __get_quota(self):
         space_usage = self._api('users_get_space_usage')
         account = self._api('users_get_current_account')
         if space_usage.allocation.is_individual():
@@ -215,8 +218,8 @@ class DropboxProvider(Provider):
                 self.client = Dropbox(api_key)
 
             try:
-                self.get_quota.clear()          # pylint: disable=no-member
-                info = self.get_quota()
+                self.__memoize_quota.clear()
+                info = self.__memoize_quota()
                 self.connection_id = info['uid']
                 assert self.connection_id
             except Exception as e:
@@ -339,7 +342,7 @@ class DropboxProvider(Provider):
 
     def disconnect(self):
         self.client = None
-        self.get_quota.clear()      # pylint: disable=no-member
+        self.__memoize_quota.clear()      # pylint: disable=no-member
 
     @property
     def latest_cursor(self):
@@ -471,7 +474,7 @@ class DropboxProvider(Provider):
         if self.exists_path(path):
             raise CloudFileExistsError(path)
         ret = self._upload(path, file_like, metadata)
-        cache_ent = self.get_quota.get()        # pylint: disable=no-member
+        cache_ent = self.__memoize_quota.get()        # pylint: disable=no-member
         if cache_ent:
             cache_ent["used"] += ret.size
         return ret

@@ -98,7 +98,11 @@ class memoize():
         try:
             cache = obj.__memoize_cache          # pylint: disable=protected-access
         except AttributeError:
-            cache = obj.__memoize_cache = {}
+            try:
+                cache = obj.__memoize_cache = {}
+            except Exception as e:
+                log.warning("cannot inject cache: '%s', ensure object is a singleton, or pass a cache in!", e)
+                cache = self.cache
 
         return memoize(self.func, expire_secs=self.expire_secs, cache=cache, obj=obj)
 
