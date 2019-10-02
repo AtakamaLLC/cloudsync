@@ -11,6 +11,7 @@ import sys
 import re
 import subprocess
 import argparse
+import toml
 
 from packaging.version import Version
 
@@ -29,7 +30,7 @@ def quit(code=1):
 def run(cmd, dry=False):
     if type(cmd) is str:
         cmd = cmd.split(" ")
-    print("#run#", "'" + ("' '".join(cmd)) + "'")
+    print("#%srun#" % ("dry " if dry else ""), " ".join(["'"+c+"'" if ' ' in c else c for c in cmd]))
     if dry:
         return "<dry run>"
     return subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode().strip()
@@ -38,33 +39,75 @@ def run(cmd, dry=False):
 def pip_install(package):
     return run([sys.executable, "-m", "pip", "install", package])
 
-# todo... figure out the package info either from setup.py or pyproject.toml or from command-line arg
-package = "cloudsync"
 
-try:
-    pip_install("%s==" % package)
-except subprocess.CalledProcessError as e:
-    x = e.output.decode("utf8")
+def collect_info(args):
+    latest_git = run("git describe --abbrev=0")
 
-branch = run("git rev-parse --abbrev-ref HEAD")
+    # todo... figure out the package info either from setup.py or pyproject.toml or from command-line arg
+    package = args.package
 
-run("git fetch")
-diff = run("git diff origin/%s" % branch)
+    # support flit
+    if not package:
+        try:
+            with open("pyproject.toml") as f:
+                res = toml.load(f)
+                try:
+                    package = res["tool"]["bumpver"]["module"]
+                except KeyError:
+                    pass
+                if not package:
+                    try:
+                        package = res["tool"]["flit"]["metadata"]["module"]
+                    except KeyError:
+                        pass
+                if not package:
+                    try:
+                        package = res["tool"]["poetry"]["name"]
+                    except KeyError:
+                        pass
+        except FileNotFoundError:
+            pass
 
-if diff:
-    print("Current branch has differences from remote, aborting.")
-    quit()
+    if not package:
+        try:
+            run([sys.executable, "setup.py", "--name"])
+        except subprocess.CalledProcessError:
+            pass
 
-match = re.search(r"(\d[a-z0-9. ,]+)\)", x)
+    latest = latest_git
 
-versions = match[1]
-version_list = versions.split(",")
-latest = version_list[-1].strip()
+    if package:
+        print("Searching pip for public versions of '%s'" % package)
+        try:
+            pip_install("%s==" % package)
+        except subprocess.CalledProcessError as e:
+            x = e.output.decode("utf8")
+            match = re.search(r"(\d[a-z0-9. ,]+)\)", x)
+            versions = match[1]
+            version_list = versions.split(",")
+            latest_pub = version_list[-1].strip()
+            latest = str(max(Version(latest_pub),Version(latest_git)))
+            print("Latest version is '%s'" % latest)
+    else:
+        print("WARNING: Unable to find package name, not searching public versions")
 
-vorig = Version(latest)
+    print("Collecting branch information")
 
-print("Current branch is %s" % branch)
-print("Latest public version is %s" % vorig)
+    branch = run("git rev-parse --abbrev-ref HEAD")
+
+    run("git fetch")
+    diff = run("git diff origin/%s" % branch)
+
+    vorig = Version(latest)
+
+    print("Current branch is %s" % branch)
+    print("Latest public version is %s" % vorig)
+
+    if diff and not args.unsafe:
+        print("Current branch has differences from remote, aborting.")
+        quit()
+
+    return (package, branch, vorig)
 
 def bump(v, part):
     if type(v) is str:
@@ -96,7 +139,7 @@ def bump(v, part):
     return Version(vnew + vsuffix)
 
 
-def apply_version(vorig, v2, *, dry, msg=None):
+def apply_version(branch, vorig, v2, *, dry, msg=None):
     if v2 <= vorig:
         print("No changes to apply")
     else:
@@ -116,8 +159,11 @@ def apply_version(vorig, v2, *, dry, msg=None):
 
 
 class MyPrompt(Cmd):
-    def __init__(self, vinfo, **kws):
+    def __init__(self, branch, vinfo, args, **kws):
+        self.branch = branch
+        self.vorig = vinfo
         self.vinfo = vinfo
+        self.args = args
         self._prompt()
         super().__init__(**kws)
         self.onecmd("help")
@@ -138,6 +184,7 @@ class MyPrompt(Cmd):
         self.vinfo = bump(self.vinfo, 0)
 
     def do_set(self, inp):
+        """Set to specified version"""
         self.vinfo = Version(inp.strip())
 
     def do_minor(self, inp):
@@ -173,7 +220,7 @@ class MyPrompt(Cmd):
             print("Dry run")
             dry = True
 
-        apply_version(vorig, self.vinfo, dry=dry)
+        apply_version(self.branch, self.vorig, self.vinfo, dry=dry)
 
     def _prompt(self):
         self.prompt = "(" + str(self.vinfo) + ") # "
@@ -190,18 +237,23 @@ class MyPrompt(Cmd):
 def main():
     parser = argparse.ArgumentParser(description='Bump version')
 
-
+    parser.add_argument('--unsafe', action="store_true")
     parser.add_argument('--major', action="store_true")
     parser.add_argument('--minor', action="store_true")
+    parser.add_argument('--patch', action="store_true")
     parser.add_argument('--apply', action="store_true")
-    parser.add_argument('-m', '--message', action="store", required=True)
-    parser.add_argument('-p', '--patch', action="store_true")
+    parser.add_argument('-m', '--message', action="store")
+    parser.add_argument('--package', action="store")
 
     args = parser.parse_args()
 
     if args.major or args.minor or args.apply or args.patch:
+        if not args.message:
+            print("-m or --message is required")
+            quit()
         if not args.apply:
-            print("# dry run #")
+            print("#dry run#")
+        (package, branch, vorig) = collect_info(args)
         vinfo = vorig
         if args.major:
             vinfo = bump(vinfo, MAJOR)
@@ -210,9 +262,10 @@ def main():
         if args.patch:
             vinfo = bump(vinfo, PATCH)
         msg = args.message
-        apply_version(vorig, vinfo, dry=not args.apply, msg=msg)
+        apply_version(branch, vorig, vinfo, dry=not args.apply, msg=msg)
     else:
-        MyPrompt(vorig).cmdloop()
+        (package, branch, vorig) = collect_info(args)
+        MyPrompt(branch, vorig, args).cmdloop()
 
 
 if __name__ == "__main__":
