@@ -18,8 +18,8 @@ class Provider(ABC):                        # pylint: disable=too-many-public-me
     case_sensitive: bool = True
     win_paths: bool = False
     default_sleep: float = 0.01
-    connection_id: None
-    __creds: None
+    connection_id: str = None
+    __creds: str = None
 
     @abstractmethod
     def _api(self, *args, **kwargs):

@@ -5,11 +5,13 @@ import logging
 import threading
 from hashlib import sha256
 import webbrowser
-from typing import Generator, Optional, Dict, Any, Union
+from typing import Generator, Optional, Dict, Any, Union, Callable
 from os import urandom
 from base64 import urlsafe_b64encode as u_b64enc
 import requests
 import arrow
+
+from pystrict import strict
 
 import dropbox
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
@@ -34,8 +36,9 @@ class NotAFileError(Exception):
     pass
 
 
+@strict
 class _FolderIterator:
-    def __init__(self, api, path, *, recursive, cursor=None):
+    def __init__(self, api: Callable[..., Any], path: str, *, recursive: bool, cursor: str = None):
         self.api = api
         self.path = path
         self.ls_res = None
@@ -69,7 +72,8 @@ class _FolderIterator:
         return self.ls_res and self.ls_res.cursor
 
 
-class DropboxProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
+@strict                                     # pylint: disable=too-many-public-methods, too-many-instance-attributes
+class DropboxProvider(Provider):
     case_sensitive = False
     default_sleep = 15
 
@@ -78,13 +82,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id=None, app_secret=None):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id: str = None, app_secret: str = None):
         super().__init__()
         self.__root_id = None
         self.__cursor = None
         self.__creds = None
         self.client = None
-        self.api_key = None
         self._csrf = None
         self._flow = None
         self.user_agent = 'cloudsync/1.0'
@@ -98,6 +101,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.__limit: int = None
         self.__login: str = None
         self.__uid: str = None
+        self.connection_id: str = None
 
     @property
     def connected(self):
@@ -155,7 +159,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             auth_dict['state'] = auth_dict['state'][0]
         try:
             res: OAuth2FlowResult = self._flow.finish(auth_dict)
-            self.api_key = res.access_token
+            self.__creds = {"key": res.access_token}
             self._oauth_done.set()
         except Exception:
             log.exception('Authentication failed')
@@ -169,13 +173,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         try:
             self.initialize()
             self._oauth_done.wait()
-            return {"key": self.api_key, }
+            return self.creds
         finally:
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
-        if time.monotonic() > (self.__quota_last + CACHE_QUOTA_TIME):
+        if (self.__uid is None) or (time.monotonic() > (self.__quota_last + CACHE_QUOTA_TIME)):
             space_usage = self._api('users_get_space_usage')
             account = self._api('users_get_current_account')
             if space_usage.allocation.is_individual():
@@ -189,6 +193,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             self.__limit = allocated
             self.__login = account.email
             self.__uid = account.account_id[len('dbid:'):]
+
+        assert self.__uid
 
         res = {
             'used': self.__used,
@@ -205,8 +211,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def connect(self, creds):
         log.debug('Connecting to dropbox')
         if not self.client:
-            self.__creds = creds
-            api_key = creds.get('key', self.api_key)
+            if creds:
+                self.__creds = creds
+            api_key = self.__creds.get('key', None)
 
             if not api_key:
                 raise CloudTokenError()
@@ -217,7 +224,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
             try:
                 info = self.get_quota()
                 self.connection_id = info['uid']
-                self.api_key = api_key
+                assert self.connection_id
             except Exception as e:
                 self.disconnect()
                 if isinstance(e, exceptions.AuthError):
@@ -225,7 +232,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     raise CloudTokenError()
                 log.exception("error connecting %s", e)
                 raise CloudDisconnectedError()
-        assert self.connection_id
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self.client:
