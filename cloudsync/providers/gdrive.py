@@ -658,25 +658,21 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         if not info:
             log.debug("deleted non-existing oid %s", oid)
             return  # file doesn't exist already...
-        info.path = self._path_oid(oid, info)
         if info.otype == DIRECTORY:
             try:
                 next(self.listdir(oid))
-                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.path))
+                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
             except StopIteration:
                 pass  # Folder is empty, delete it no problem
         try:
-            log.debug("about to delete %s", info.path)
             self._api('files', 'delete', fileId=oid)
-            log.debug("deleted %s", info.path)
         except CloudFileNotFoundError:
             log.debug("deleted non-existing oid %s", oid)
         except PermissionError:
             try:
-                log.debug("about to unfile %s", info.path)
+                log.debug("permission denied deleting %s:%s, unfile instead", oid, info.name)
                 remove_str = ",".join(info.pids)
                 self._api('files', 'update', fileId=oid, removeParents=remove_str, fields='id')
-                log.debug("unfiled %s", info.path)
             except PermissionError:
                 log.warning("Unable to delete oid %s.", oid)
 
