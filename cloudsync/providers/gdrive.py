@@ -18,7 +18,7 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
 
-from cloudsync.utils import debug_args
+from cloudsync.utils import debug_args, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
@@ -36,6 +36,8 @@ logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids: List[str] = []
+    # oid, hash, otype and path are included here to satisfy a bug in mypy,
+    # which does not recognize that they are already inherited from the grandparent class
     oid: str
     hash: Any
     otype: OType
@@ -294,6 +296,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
 
+                if str(e.resp.status) == '403' and str(reason) == 'insufficientFilePermissions':
+                    raise PermissionError("PermissionError")
+
                 if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', 'dailyLimitExceeded')) \
                         or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
@@ -541,7 +546,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         info = self._info_oid(oid)
         if info is None:
-            log.debug("can't rename, oid doesn't exist %s", oid)
+            log.debug("can't rename, oid doesn't exist %s", debug_sig(oid))
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
         old_path = info.path
@@ -586,7 +591,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     self._ids.pop(cpath)
                     self._ids[new_cpath] = coid
 
-        log.debug("renamed %s -> %s", oid, body)
+        log.debug("renamed %s -> %s", debug_sig(oid), body)
 
         return oid
 
@@ -649,20 +654,28 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return fileid
 
     def delete(self, oid):
-        info = self.info_oid(oid)
+        info = self._info_oid(oid)
         if not info:
-            log.debug("deleted non-existing oid %s", oid)
+            log.debug("deleted non-existing oid %s", debug_sig(oid))
             return  # file doesn't exist already...
         if info.otype == DIRECTORY:
             try:
                 next(self.listdir(oid))
-                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.path))
+                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
             except StopIteration:
                 pass  # Folder is empty, delete it no problem
         try:
             self._api('files', 'delete', fileId=oid)
         except CloudFileNotFoundError:
-            log.debug("deleted non-existing oid %s", oid)
+            log.debug("deleted non-existing oid %s", debug_sig(oid))
+        except PermissionError:
+            try:
+                log.debug("permission denied deleting %s:%s, unfile instead", debug_sig(oid), info.name)
+                remove_str = ",".join(info.pids)
+                self._api('files', 'update', fileId=oid, removeParents=remove_str, fields='id')
+            except PermissionError:
+                log.warning("Unable to delete oid %s.", debug_sig(oid))
+
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
                 self._trashed_ids[currpath] = self._ids[currpath]
@@ -770,15 +783,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid, use_cache=True) -> Optional[GDriveInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None
         # expensive
-        path = self._path_oid(oid, info, use_cache=use_cache)
-        ret = OInfo(info.otype, info.oid, info.hash, path)
-        log.debug("info oid ret: %s", ret)
-        return ret
+        info.path = self._path_oid(oid, info, use_cache=use_cache)
+        log.debug("info oid ret: %s", info)
+        return info
 
     @staticmethod
     def hash_data(file_like) -> str:
