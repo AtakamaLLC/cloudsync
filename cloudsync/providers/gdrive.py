@@ -18,7 +18,7 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
 
-from cloudsync.utils import debug_args
+from cloudsync.utils import debug_args, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
@@ -546,7 +546,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         info = self._info_oid(oid)
         if info is None:
-            log.debug("can't rename, oid doesn't exist %s", oid)
+            log.debug("can't rename, oid doesn't exist %s", debug_sig(oid))
             raise CloudFileNotFoundError(oid)
         remove_pids = info.pids
         old_path = info.path
@@ -591,7 +591,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     self._ids.pop(cpath)
                     self._ids[new_cpath] = coid
 
-        log.debug("renamed %s -> %s", oid, body)
+        log.debug("renamed %s -> %s", debug_sig(oid), body)
 
         return oid
 
@@ -656,7 +656,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def delete(self, oid):
         info = self._info_oid(oid)
         if not info:
-            log.debug("deleted non-existing oid %s", oid)
+            log.debug("deleted non-existing oid %s", debug_sig(oid))
             return  # file doesn't exist already...
         if info.otype == DIRECTORY:
             try:
@@ -667,14 +667,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         try:
             self._api('files', 'delete', fileId=oid)
         except CloudFileNotFoundError:
-            log.debug("deleted non-existing oid %s", oid)
+            log.debug("deleted non-existing oid %s", debug_sig(oid))
         except PermissionError:
             try:
-                log.debug("permission denied deleting %s:%s, unfile instead", oid, info.name)
+                log.debug("permission denied deleting %s:%s, unfile instead", debug_sig(oid), info.name)
                 remove_str = ",".join(info.pids)
                 self._api('files', 'update', fileId=oid, removeParents=remove_str, fields='id')
             except PermissionError:
-                log.warning("Unable to delete oid %s.", oid)
+                log.warning("Unable to delete oid %s.", debug_sig(oid))
 
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
