@@ -18,7 +18,7 @@ from googleapiclient.http import _should_retry_response  # This is necessary bec
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
 
-from cloudsync.utils import debug_args
+from cloudsync.utils import debug_args, TimeCache
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
@@ -79,11 +79,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._flow = None
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
-        self.__quota_last_time: float = 0
         self.__used: int = 0
         self.__limit: int = 0
         self.__login: str = None
         self.__maxup: int = 0
+        self.__quota_cache = TimeCache(self.__get_quota, CACHE_QUOTA_TIME)
 
     @property
     def connected(self):
@@ -152,25 +152,24 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
-        # https://developers.google.com/drive/api/v3/reference/about
+        return self.__quota_cache()
 
-        if not self.__quota_last_time or (time.monotonic() > (self.__quota_last_time + CACHE_QUOTA_TIME)):
-            res = self._api('about', 'get', fields='storageQuota, user')
+    def __get_quota(self):
+        res = self._api('about', 'get', fields='storageQuota, user')
 
-            quota = res['storageQuota']
-            user = res['user']
-            self.__login = user['emailAddress']
+        quota = res['storageQuota']
+        user = res['user']
+        self.__login = user['emailAddress']
 
-            used = int(quota['usage'])
-            if 'limit' in quota and quota['limit']:
-                limit = int(quota['limit'])
-            else:
-                # It is possible for an account to have unlimited space - pretend it's 1TB
-                limit = 1024 * 1024 * 1024 * 1024
-            self.__limit = limit
-            self.__used = used
-            self.__maxup = int(quota.get('maxUploadSize', 0))
-            self.__quota_last_time = time.monotonic()
+        used = int(quota['usage'])
+        if 'limit' in quota and quota['limit']:
+            limit = int(quota['limit'])
+        else:
+            # It is possible for an account to have unlimited space - pretend it's 1TB
+            limit = 1024 * 1024 * 1024 * 1024
+        self.__limit = limit
+        self.__used = used
+        self.__maxup = int(quota.get('maxUploadSize', 0))
 
         return {
             "used": self.__used,
@@ -219,7 +218,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.api_key = api_key
 
                 try:
-                    self.__quota_last_time = 0.0
+                    self.__quota_cache.clear()
                     quota = self.get_quota()
                 except SSLError:  # pragma: no cover
                     # Seeing some intermittent SSL failures that resolve on retry
@@ -339,7 +338,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def disconnect(self):
         self.client = None
         # clear cached session info!
-        self.__quota_last_time = 0
+        self.__quota_cache.clear()
 
     @property
     def latest_cursor(self):

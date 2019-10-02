@@ -1,7 +1,9 @@
 import logging
+import time
+
 from hashlib import md5
 from base64 import b64encode
-from typing import Any, Union, List, Dict
+from typing import Any, Union, List, Dict, Callable
 from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
 
@@ -9,6 +11,7 @@ log = logging.getLogger(__name__)
 
 
 MAX_DEBUG_STR = 64
+
 
 def _debug_arg(val: Any):
     ret: Any = val
@@ -33,6 +36,7 @@ def _debug_arg(val: Any):
             pass
     return ret
 
+
 # prevents very long arguments from getting logged
 def debug_args(*stuff: Any):
     if log.isEnabledFor(logging.DEBUG):
@@ -41,6 +45,7 @@ def debug_args(*stuff: Any):
             r = r[0]
         return r
     return "N/A"
+
 
 # useful for converting oids and pointer nubmers into digestible nonces
 def debug_sig(t: Any, size: int = 3) -> Union[str, int]:
@@ -63,3 +68,29 @@ class disable_log_multiline:
 
     def __exit__(self, *args, **kwargs):
         self.patch_object.__exit__(*args, **kwargs)
+
+
+class TimeCache():
+    def __init__(self, cache_func: Callable[..., Any], cache_secs: float):
+        self.cache_func = cache_func
+        self.cache_secs = cache_secs
+        self.cached_results: Dict[Any, Any] = {}
+        self.last_time: float = 0
+
+    def __call__(self, *args, **kwargs):
+        key = (args, tuple(sorted(kwargs.items())))
+        cur_time = time.monotonic()
+
+        if key in self.cached_results:
+            (cresult, ctime) = self.cached_results[key]
+            if cur_time < (ctime + self.cache_secs):
+                return cresult
+
+        result = self.cache_func(*args, **kwargs)
+        self.cached_results[key] = (result, cur_time)
+        return result
+
+    def clear(self, *args, **kwargs):
+        key = (args, tuple(sorted(kwargs.items())))
+        self.cached_results.pop(key, None)
+

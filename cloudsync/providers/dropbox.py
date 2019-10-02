@@ -17,7 +17,7 @@ import dropbox
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
 
-from cloudsync.utils import debug_args
+from cloudsync.utils import debug_args, TimeCache
 from cloudsync.oauth import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 
@@ -96,7 +96,7 @@ class DropboxProvider(Provider):
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
 
-        self.__quota_last: float = 0.0
+        self.__quota_cache: Callable[[], Any] = TimeCache(self.__get_quota, CACHE_QUOTA_TIME)
         self.__used: int = None
         self.__limit: int = None
         self.__login: str = None
@@ -179,21 +179,22 @@ class DropboxProvider(Provider):
                 self._oauth_config.oauth_redir_server.shutdown()
 
     def get_quota(self):
-        if not self.__quota_last or (time.monotonic() > (self.__quota_last + CACHE_QUOTA_TIME)):
-            space_usage = self._api('users_get_space_usage')
-            account = self._api('users_get_current_account')
-            if space_usage.allocation.is_individual():
-                used = space_usage.used
-                allocated = space_usage.allocation.get_individual().allocated
-            else:
-                team_allocation = space_usage.allocation.get_team()
-                used, allocated = team_allocation.used, team_allocation.allocated
+        return self.__quota_cache()
 
-            self.__used = used
-            self.__limit = allocated
-            self.__login = account.email
-            self.__uid = account.account_id[len('dbid:'):]
-            self.__quota_last = time.monotonic()
+    def __get_quota(self):
+        space_usage = self._api('users_get_space_usage')
+        account = self._api('users_get_current_account')
+        if space_usage.allocation.is_individual():
+            used = space_usage.used
+            allocated = space_usage.allocation.get_individual().allocated
+        else:
+            team_allocation = space_usage.allocation.get_team()
+            used, allocated = team_allocation.used, team_allocation.allocated
+
+        self.__used = used
+        self.__limit = allocated
+        self.__login = account.email
+        self.__uid = account.account_id[len('dbid:'):]
 
         assert self.__uid
 
@@ -223,7 +224,7 @@ class DropboxProvider(Provider):
                 self.client = Dropbox(api_key)
 
             try:
-                self.__quota_last = 0.0
+                self.__quota_cache.clear()
                 info = self.get_quota()
                 self.connection_id = info['uid']
                 assert self.connection_id
@@ -347,7 +348,7 @@ class DropboxProvider(Provider):
 
     def disconnect(self):
         self.client = None
-        self.__quota_last = 0.0
+        self.__quota_cache.clear()
 
     @property
     def latest_cursor(self):
