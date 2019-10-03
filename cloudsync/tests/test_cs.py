@@ -1822,3 +1822,42 @@ def test_hash_mess(cs, side_locked):
     assert bool(l_r) == bool(r_r)
     assert bool(r_l) == bool(l_l)
 
+
+
+def test_temp_dropped(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+
+    orig_changed = cs.smgr.download_changed
+
+    hit = False
+
+    def new_changed(changed, sync):
+        nonlocal hit
+        orig_changed(changed, sync)
+        hit = True
+        return False
+
+    cs.smgr.download_changed = new_changed
+
+    log.debug("run until hit")
+
+    cs.run(until=lambda: hit)
+
+    log.info("TABLE\n%s", cs.state.pretty_print())
+
+    import shutil
+    shutil.rmtree(cs.smgr.tempdir)
+
+    cs.smgr.download_changed = orig_changed
+
+    cs.run_until_found(
+        (REMOTE, remote_path1),
+        timeout=2)
+
