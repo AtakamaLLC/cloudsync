@@ -1,5 +1,6 @@
 import logging
 from io import BytesIO
+from typing import Dict, Any
 
 from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
 from .fixtures import MockStorage
@@ -190,7 +191,7 @@ def state_diff(st1, st2):
 
 def test_state_storage(mock_provider):
     providers = (mock_provider, mock_provider)
-    backend = {}
+    backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
     state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
@@ -202,7 +203,7 @@ def test_state_storage(mock_provider):
 
 def test_state_storage2(mock_provider):
     providers = (mock_provider, mock_provider)
-    backend = {}
+    backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
@@ -219,7 +220,7 @@ def test_state_storage2(mock_provider):
 
 def test_state_storage3(mock_provider):
     providers = (mock_provider, mock_provider)
-    backend = {}
+    backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
@@ -238,7 +239,7 @@ def test_state_storage3(mock_provider):
 
 def test_state_storage4(mock_provider):
     providers = (mock_provider, mock_provider)
-    backend = {}
+    backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
