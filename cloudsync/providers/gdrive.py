@@ -536,7 +536,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         cache_ent = self.get_quota.get()            # pylint: disable=no-member
         if cache_ent:
             cache_ent["used"] += size
-        cache_ent = self.get_quota.get()            # pylint: disable=no-member
 
         return OInfo(otype=FILE, oid=res['id'], hash=res['md5Checksum'], path=path, size=size)
 

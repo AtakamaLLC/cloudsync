@@ -93,16 +93,21 @@ class memoize():
             # does this ever happen?
             return self.func
 
-        # inject cache into the instance, so it doesn't live beyond the scope of the instance
-        # without this, memoizing can cause serious unexpected memory leaks
-        try:
-            cache = obj.__memoize_cache          # pylint: disable=protected-access
-        except AttributeError:
+        if type(self.cache) is str:
+            # user specified name of a property that contains the cache dictionary
+            cache = getattr(obj, self.cache)
+        else:
+            # inject cache into the instance, so it doesn't live beyond the scope of the instance
+            # without this, memoizing can cause serious unexpected memory leaks
             try:
-                cache = obj.__memoize_cache = {}
-            except Exception as e:
-                log.warning("cannot inject cache: '%s', ensure object is a singleton, or pass a cache in!", e)
-                cache = self.cache
+                cache = obj.__memoize_cache          # pylint: disable=protected-access
+            except AttributeError:
+                try:
+                    cache = obj.__memoize_cache = {}
+                except Exception as e:
+                    # some objects don't work with injection
+                    log.warning("cannot inject cache: '%s', ensure object is a singleton, or pass a cache in!", e)
+                    cache = self.cache
 
         return memoize(self.func, expire_secs=self.expire_secs, cache=cache, obj=obj)
 
