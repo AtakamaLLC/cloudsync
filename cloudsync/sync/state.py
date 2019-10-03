@@ -172,14 +172,12 @@ class SyncEntry:
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._ignored = ignore_reason
         self._storage_id: Any = None
-        self._dirty: bool = True
         self._priority: float = 0         # 0 == normal, > 0 == high, < 0 == low
         self._parent = parent
 
         if storage_init is not None:
             self._storage_id = storage_init[0]
             self.deserialize(storage_init)
-            self._dirty = False
         log.debug("new syncent %s", debug_sig(id(self)))
 
         self.priority: float
@@ -199,7 +197,6 @@ class SyncEntry:
             object.__setattr__(self, "_" + k, v)
 
     def updated(self, side, key, val):
-        self._dirty = True
         self._parent.updated(self, side, key, val)
 
     def serialize(self) -> bytes:
@@ -334,6 +331,10 @@ class SyncEntry:
     @property
     def is_conflicted(self):
         return self.ignored == IgnoreReason.CONFLICT
+
+    @property
+    def is_trash(self):
+        return self[LOCAL].oid is None and self[REMOTE].oid is None
 
     @property
     def is_temp_rename(self):
@@ -511,6 +512,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
+        self._dirtyset: Set[SyncEntry] = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
@@ -561,8 +563,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[LOCAL]._changed = False
                 ent[REMOTE]._changed = False
                 self._changeset.discard(ent)
-            ent._ignored = val  # TODO: remove this when storage_update is refactored
-            self.storage_update(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
                 self._changeset.add(ent)
@@ -575,6 +575,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     ent[LOCAL].changed += ent._parent._punt_secs[LOCAL]
                 if ent[REMOTE].changed:
                     ent[REMOTE].changed = ent._parent._punt_secs[REMOTE]
+
+        self._dirtyset.add(ent)
 
     @property
     def changes(self):
@@ -795,19 +797,29 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self.data_id[data_tag] = self._storage.create(data_tag, data)
                 log.log(TRACE, "storage_update_data data CREATE %s %s", data_tag, data)
 
-    def storage_update(self, ent: SyncEntry):
+    def storage_commit(self):
+        for ent in self._dirtyset:
+            self._storage_update(ent)
+        self._dirtyset.clear()
+
+    def _storage_update(self, ent: SyncEntry):
         if self._tag is None:
             return
+        tag = cast(str, self._tag)
 
         log.log(TRACE, "storage_update eid%s", ent.storage_id)
         if self._storage is not None:
             if ent.storage_id is not None:
-                self._storage.update(cast(str, self._tag), ent.serialize(), ent.storage_id)
+                if ent.is_trash:
+                    self._storage.delete(tag, ent.storage_id)
+                else:
+                    self._storage.update(tag, ent.serialize(), ent.storage_id)
             else:
-                new_id = self._storage.create(cast(str, self._tag), ent.serialize())
+                if ent.is_trash:
+                    return
+                new_id = self._storage.create(tag, ent.serialize())
                 ent.storage_id = new_id
                 log.debug("storage_update creating eid%s", ent.storage_id)
-            ent.dirty = False
 
     def __len__(self):
         return len(self.get_all())
@@ -836,8 +848,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent = SyncEntry(self, otype)
 
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
-
-        self.storage_update(ent)
 
     def change(self, age):
         if not self._changeset:
@@ -994,9 +1004,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.log(TRACE, "SPLIT\n%s", self.pretty_print())
 
         assert replace_ent[replace].oid
-
-        self.storage_update(defer_ent)
-        self.storage_update(replace_ent)
 
         return defer_ent, defer, replace_ent, replace
 

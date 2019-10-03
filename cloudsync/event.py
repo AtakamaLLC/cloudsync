@@ -150,6 +150,7 @@ class EventManager(Runnable):
 
             self.state.update(self.side, otype, event.oid, path=path, hash=event.hash,
                               exists=exists, prior_oid=event.prior_oid)
+            self.state.storage_commit()
 
     def stop(self, forever=True):
         if forever:

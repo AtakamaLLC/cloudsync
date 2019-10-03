@@ -130,7 +130,7 @@ class SyncManager(Runnable):
             if sync:
                 try:
                     self.sync(sync)
-                    self.state.storage_update(sync)
+                    self.state.storage_commit()
                 except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError) as e:
                     log.warning(
                         "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
@@ -139,6 +139,7 @@ class SyncManager(Runnable):
                     log.exception(
                         "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority, stack_info=True)
                     sync.punt()
+                    self.state.storage_commit()
                     self.backoff()
 
     def done(self):
