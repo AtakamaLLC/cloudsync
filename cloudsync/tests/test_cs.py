@@ -891,9 +891,7 @@ def test_storage(storage):
     log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
 
     def not_dirty(s: SyncState):
-        se: SyncEntry
-        for se in s.get_all():
-            assert not se.dirty
+        return not s._dirtyset
 
     def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
         ret = []

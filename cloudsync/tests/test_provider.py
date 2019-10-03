@@ -212,11 +212,7 @@ class ProviderHelper(ProviderBase):
                 pass
 
     def prime_events(self):
-        try:
-            for e in self.events_poll(timeout=1):
-                log.debug("ignored event %s", e)
-        except TimeoutError:
-            pass
+        self.current_cursor = self.latest_cursor
 
     @property
     def current_cursor(self):
@@ -565,14 +561,6 @@ def test_event_basic(provider):
                 received_event = e
                 event_count += 1
                 done = True
-
-    for e in provider.events():
-        if not e.path:
-            info = provider.info_oid(e.oid)
-            if info:
-                e.path = info.path
-        if e.path == dest:
-            event_count += 1
 
     assert event_count == 1
     assert received_event is not None

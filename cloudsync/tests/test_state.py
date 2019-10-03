@@ -1,7 +1,9 @@
 import logging
 from io import BytesIO
+from typing import Dict, Any
 
-from cloudsync import SyncState, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from .fixtures import MockStorage
 
 log = logging.getLogger(__name__)
 
@@ -158,3 +160,99 @@ def test_state_alter_oid(mock_provider):
     ent2[LOCAL].oid = "123"
     assert state.lookup_oid(LOCAL, "123") is ent2
     assert ent2 in state.changes
+
+
+def entries_equal(e1, e2):
+    return e1.serialize() == e2.serialize()
+
+
+def state_diff(st1, st2):
+    log.debug("TABLE 1:\n%s", st1.pretty_print(use_sigs=False))
+    log.debug("TABLE 2:\n%s", st2.pretty_print(use_sigs=False))
+    sd = []
+    for name, func in [("all", lambda a: a.get_all()), ("changes", lambda a: a.changes)]:
+        found2 = set()
+        for e1 in func(st1):
+            found = False
+            for e2 in func(st2):
+                if entries_equal(e1, e2):
+                    found = True
+                    found2.add(e2)
+                    break
+            if not found:
+                if not e1.is_trash:
+                    sd.append([name, str(e1)])
+        for e2 in func(st2):
+            if e2 not in found2:
+                if not e2.is_trash:
+                    sd.append([name, e2])
+    return sd
+
+
+def test_state_storage(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.storage_commit()
+
+    state2 = SyncState(providers, storage, tag="whatever")
+    assert not state_diff(state, state2)
+
+
+def test_state_storage2(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.storage_commit()
+
+    ent1 = state.lookup_oid(LOCAL, "123")
+    ent1[LOCAL].oid = "456"
+    state.storage_commit()
+
+    state2 = SyncState(providers, storage, tag="whatever")
+    assert not state_diff(state, state2)
+
+
+def test_state_storage3(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    ent1 = state.lookup_oid(LOCAL, "123")
+    ent1[REMOTE].oid = "456"
+    ent1[REMOTE].path = "456"
+    ent1[REMOTE].hash = b"456"
+    ent1[REMOTE].changed = -1
+    (defer, _ds, repl, _rs) = state.split(ent1)
+    state.storage_commit()
+
+    state2 = SyncState(providers, storage, tag="whatever")
+    assert not state_diff(state, state2)
+
+
+def test_state_storage4(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    ent1 = state.lookup_oid(LOCAL, "123")
+
+    entx = SyncEntry(state, FILE)
+    entx[LOCAL].oid = "123"
+    entx[LOCAL].path = "new"
+    state.storage_commit()
+
+    assert ent1[LOCAL].oid is None
+
+    state2 = SyncState(providers, storage, tag="whatever")
+    assert not state_diff(state, state2)
+
