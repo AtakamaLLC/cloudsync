@@ -21,3 +21,6 @@ coverage:
 
 format:
 	autopep8 --in-place -r -j 8 cloudsync/
+
+bumpver:
+	./bumpver.py

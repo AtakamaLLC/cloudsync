@@ -9,8 +9,6 @@ echo ver $VERSION
 # if this is changed, also change the .gitignore script
 sed -i.bak "s/%VERSION%/$VERSION/" cloudsync/__init__.py
 
-cat cloudsync/__init__.py
-
 flit publish
 
 # it's nice to put things back, because reasons
