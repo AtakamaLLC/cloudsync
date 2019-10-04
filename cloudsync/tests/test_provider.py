@@ -1,5 +1,4 @@
 import os
-import time
 import logging
 from io import BytesIO
 from unittest.mock import patch
@@ -8,7 +7,7 @@ from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, 
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -1403,3 +1402,41 @@ def test_special_characters(provider):
     new_oid2 = provider.rename(new_oid, newfname2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
+
+
+def test_cursor_error_during_listdir(provider):
+    # this test is only for dropbox
+    # todo: we need a better way to do this
+    # todo: we should probably have a factory for providers that produces wrapped or mixin
+    #       objects that contain higher level interfaces that handle things like this
+    if provider.name != "dropbox":
+        return
+
+    provider.current_cursor = provider.latest_cursor
+
+    orig_ld = provider.listdir
+
+    should_raise = False
+
+    def new_ld(oid):
+        for e in orig_ld(oid):
+            if should_raise:
+                raise CloudCursorError("cursor error")
+            yield e
+
+    provider.new_ld()
+
+    dir_name = provider.temp_name()
+    dir_oid = provider.mkdir(dir_name)
+    provider.create(dir_name + "/file1", BytesIO(b"hello"))
+    provider.create(dir_name + "/file2", BytesIO(b"there"))
+
+    it = iter(provider.listdir(dir_oid))
+
+    _ = next(it)
+    should_raise = True
+
+    # listdir should not accidentally raise a cursor error (dropbox uses cursors for listing folders)
+    with pytest.raises(CloudTemporaryError):
+        _ = next(it)
+
