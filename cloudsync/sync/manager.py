@@ -137,7 +137,7 @@ class SyncManager(Runnable):
                     self.backoff()
                 except Exception as e:
                     log.exception(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority, stack_info=True)
+                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
                     sync.punt()
                     self.state.storage_commit()
                     self.backoff()
@@ -310,6 +310,8 @@ class SyncManager(Runnable):
                 self.providers[changed].download(sync[changed].oid, f)
             os.rename(partial_temp, sync[changed].temp_file)
             return True
+        except FileNotFoundError:
+            sync[changed].temp_file = self.temp_file(temp_for=sync[changed].path)
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
 
@@ -850,8 +852,12 @@ class SyncManager(Runnable):
             sync.punt()
             return True
 
-        return self.handle_split_conflict(
+        self.handle_split_conflict(
             found, synced, sync, changed)
+
+        # returns true since we're answering "is-disjoint"
+        # todo: change this?
+        return True
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
         if not sync[changed].path:
