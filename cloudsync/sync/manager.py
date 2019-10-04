@@ -99,7 +99,7 @@ class SyncManager(Runnable):
                  sleep: Optional[Tuple[float, float]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
-        self.translate = translate
+        self.__translate = translate
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
 
@@ -148,6 +148,12 @@ class SyncManager(Runnable):
             shutil.rmtree(self.tempdir)
         except FileNotFoundError:
             pass
+
+    def translate(self, side, path):
+        if path:
+            return self.__translate(side, path)
+        else:
+            return None
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
@@ -714,6 +720,8 @@ class SyncManager(Runnable):
                     replace_ent[replace_side].sync_hash = replace_ent[replace_side].hash
                     replace_ent[defer].sync_path = self.translate(defer, replace_ent[replace_side].path)
                     replace_ent[defer].sync_hash = replace_ent[defer].hash
+                    if not replace_ent[defer].sync_path:
+                        log.warning("sync path irrelevant during merge")
             else:
                 # both sides were modified, because the fh returned was some third thing that should replace both
                 log.debug("resolver merge upload to both sides: %s", keep)
@@ -1014,8 +1022,8 @@ class SyncManager(Runnable):
         log.debug("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements, too-many-branches
-        if sync[changed].path:
+    def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
+        if sync[changed].path or (sync[changed].exists == EXISTS):
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
@@ -1174,6 +1182,8 @@ class SyncManager(Runnable):
             return
 
         other_info = self.providers[other.side].info_oid(other.oid)
+        if other_info is None:
+            return
 
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)

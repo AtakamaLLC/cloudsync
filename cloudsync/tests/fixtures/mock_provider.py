@@ -222,7 +222,7 @@ class MockProvider(Provider):
         # TODO: implement "since" parameter
         self._api()
         for obj in list(self._fs_by_oid.values()):
-            if self.is_subpath(path, obj.path, strict=False):
+            if obj.path and self.is_subpath(path, obj.path, strict=False):
                 yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:
@@ -364,6 +364,16 @@ class MockProvider(Provider):
 
     def delete(self, oid):
         return self._delete(oid)
+
+    def _unfile(self, oid):
+        file = self._fs_by_oid.get(oid, None)
+        if file is None or not file.exists:
+            raise CloudFileNotFoundError(oid)
+        prior_oid = file.oid if self.oid_is_path else None
+        del self._fs_by_path[self.normalize(file.path)]
+        file.path = None
+        self._register_event(MockEvent.ACTION_RENAME, file, prior_oid)
+        return None
 
     def _delete(self, oid, without_event=False):
         log.debug("delete %s", debug_sig(oid))

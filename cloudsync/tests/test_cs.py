@@ -8,6 +8,7 @@ from unittest.mock import patch
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
+from cloudsync.types import IgnoreReason
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -1859,3 +1860,36 @@ def test_temp_dropped(cs):
         (REMOTE, remote_path1),
         timeout=2)
 
+
+def test_unfile(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+    remote_path1 = "/remote/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.run_until_found(
+        (REMOTE, remote_parent),
+        timeout=1)
+
+    # test 1
+    log.debug("CREATE")
+    info = cs.providers[REMOTE].create(remote_path1, BytesIO(b"hello"), None)
+    log.debug("UNFILE")
+    cs.providers[REMOTE]._unfile(info.oid)
+    cs.run(until=lambda: cs.state.lookup_oid(REMOTE, info.oid).ignored != IgnoreReason.NONE, timeout=1)
+
+    # test 2
+
+    log.debug("CREATE")
+    info = cs.providers[REMOTE].create(remote_path1, BytesIO(b"hello"), None)
+    cs.run_until_found(
+        (LOCAL, local_path1),
+        timeout=2)
+
+    log.info("START TABLE\n%s", cs.state.pretty_print())
+    log.debug("UNFILE")
+    cs.providers[REMOTE]._unfile(info.oid)
+    cs.run_until_found(
+        WaitFor(LOCAL, local_path1, exists=False),
+        timeout=2)
