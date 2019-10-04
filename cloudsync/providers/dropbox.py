@@ -444,20 +444,23 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
         info = self.info_oid(oid)
-        for res in _FolderIterator(self._api, oid, recursive=recursive):
-            if isinstance(res, files.DeletedMetadata):
-                continue
-            if isinstance(res, files.FolderMetadata):
-                otype = DIRECTORY
-                ohash = None
-            else:
-                otype = FILE
-                ohash = res.content_hash
-            path = res.path_display
-            oid = res.id
-            relative = self.is_subpath(info.path, path).lstrip("/")
-            if relative:
-                yield DirInfo(otype, oid, ohash, path, name=relative)
+        try:
+            for res in _FolderIterator(self._api, oid, recursive=recursive):
+                if isinstance(res, files.DeletedMetadata):
+                    continue
+                if isinstance(res, files.FolderMetadata):
+                    otype = DIRECTORY
+                    ohash = None
+                else:
+                    otype = FILE
+                    ohash = res.content_hash
+                path = res.path_display
+                oid = res.id
+                relative = self.is_subpath(info.path, path).lstrip("/")
+                if relative:
+                    yield DirInfo(otype, oid, ohash, path, name=relative)
+        except CloudCursorError as e:
+            raise CloudTemporaryError("Cursor error %s during listdir" % e)
 
     def create(self, path: str, file_like, metadata=None) -> OInfo:
         self._verify_parent_folder_exists(path)
