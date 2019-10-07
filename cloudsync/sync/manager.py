@@ -13,7 +13,7 @@ __all__ = ['SyncManager']
 from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
-        CloudOutOfSpaceError, CloudException, CloudTokenError
+        CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -415,6 +415,9 @@ class SyncManager(Runnable):
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
+        except CloudFileNameError:
+            self.handle_file_name_error(sync, synced, translated_path)
+            return FINISHED
 
     def upload_synced(self, changed, sync):
         assert sync[changed].temp_file
@@ -531,7 +534,6 @@ class SyncManager(Runnable):
                     log.debug("updated entry %s", parent)
 
             sync.punt()
-            return REQUEUE
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -540,20 +542,29 @@ class SyncManager(Runnable):
                 info = self.providers[synced].info_path(translated_path)
                 if not info:
                     log.debug("got a file exists, and then it didn't exist %s", sync)
-                    sync.punt()
-                    return REQUEUE
-
-                sync[synced].oid = info.oid
-                sync[synced].hash = info.hash
-                sync[synced].path = translated_path
-                self.update_entry(sync, synced, info.oid, path=translated_path)
-                # maybe it's a hash conflict
+                    if sync.priority > 1:
+                        log.debug("repeated errors here, converting to pathname error %s", sync)
+                        self.handle_file_name_error(sync, synced, translated_path)
+                        return FINISHED
+                else:
+                    sync[synced].oid = info.oid
+                    sync[synced].hash = info.hash
+                    sync[synced].path = translated_path
+                    self.update_entry(sync, synced, info.oid, path=translated_path)
+                    # maybe it's a hash conflict
                 sync.punt()
-                return REQUEUE
             else:
                 # maybe it's a name conflict
                 sync.punt()
-            return REQUEUE
+        except CloudFileNameError:
+            self.handle_file_name_error(sync, synced, translated_path)
+            return FINISHED
+        return REQUEUE
+
+    def handle_file_name_error(self, sync, synced, translated_path):
+        # pretend this sync translated as "None"
+        log.warning("File name error: not creating '%s' on %s", translated_path, self.providers[synced].name)
+        sync.ignore(IgnoreReason.IRRELEVANT)
 
     def __resolve_file_likes(self, side_states):
         class Guard:
@@ -959,6 +970,8 @@ class SyncManager(Runnable):
         sync[synced].sync_path = translated_path
         sync[changed].sync_path = sync[changed].path
         self.update_entry(sync, synced, path=translated_path, oid=new_oid)
+        if sync[changed].hash != sync[changed].sync_hash:
+            return REQUEUE
         return FINISHED
 
     def _resolve_rename(self, replace):
@@ -1063,8 +1076,12 @@ class SyncManager(Runnable):
         if sync.is_path_change(changed) or sync.is_creation(changed):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
             if ret == REQUEUE:
-                log.debug("requeue, not handled")
                 return ret
+
+            if sync.is_discarded:
+                return FINISHED
+
+            # fall through in case of hash change
 
         if sync[changed].hash != sync[changed].sync_hash:
             return self.handle_hash_diff(sync, changed, synced)
