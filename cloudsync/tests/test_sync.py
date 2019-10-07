@@ -2,13 +2,14 @@ import logging
 from io import BytesIO
 import pytest
 from typing import NamedTuple, List
+from unittest.mock import patch
+
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY
 from cloudsync.provider import Provider
-from cloudsync.types import OInfo
+from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.sync.state import SideState
-
 
 log = logging.getLogger(__name__)
 
@@ -730,6 +731,38 @@ def test_dir_rm(sync):
     assert len(list(sync.providers[LOCAL].listdir(lparent))) == 0
 
     sync.state.assert_index_is_correct()
+
+
+def test_file_name_error(sync):
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+
+    _create = sync.providers[REMOTE].create
+
+    throws = True
+    called = False
+
+    def _called(name, data):
+        nonlocal called
+        called = True
+        if throws:
+            raise CloudFileNameError("file name error")
+        return _create(name, data)
+
+    with patch.object(sync.providers[REMOTE], "create", new=_called):
+        sync.run(until=lambda: called, timeout=1)
+
+    sync.do()
+
+    assert not sync.providers[REMOTE].info_path(remote_file1)
+
+    assert sync.state.lookup_oid(LOCAL, linfo1.oid).ignored == IgnoreReason.IRRELEVANT
 
 
 
