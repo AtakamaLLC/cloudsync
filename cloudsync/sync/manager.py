@@ -1074,6 +1074,7 @@ class SyncManager(Runnable):
         if sync.is_path_change(changed) or sync.is_creation(changed):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
             if ret == REQUEUE:
+                log.debug("requeue, not handled")
                 return ret
 
             if sync.is_discarded:
