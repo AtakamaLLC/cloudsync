@@ -970,8 +970,6 @@ class SyncManager(Runnable):
         sync[synced].sync_path = translated_path
         sync[changed].sync_path = sync[changed].path
         self.update_entry(sync, synced, path=translated_path, oid=new_oid)
-        if sync[changed].hash != sync[changed].sync_hash:
-            return REQUEUE
         return FINISHED
 
     def _resolve_rename(self, replace):
