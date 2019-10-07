@@ -552,10 +552,10 @@ class SyncManager(Runnable):
                     sync[synced].path = translated_path
                     self.update_entry(sync, synced, info.oid, path=translated_path)
                     # maybe it's a hash conflict
-                sync.punt()
             else:
                 # maybe it's a name conflict
-                sync.punt()
+                pass
+            sync.punt()
         except CloudFileNameError:
             self.handle_file_name_error(sync, synced, translated_path)
             return FINISHED
