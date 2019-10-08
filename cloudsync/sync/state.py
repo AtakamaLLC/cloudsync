@@ -1000,13 +1000,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        with disable_log_multiline():
-            log.log(TRACE, "SPLIT\n%s", self.pretty_print())
+        if log.isEnabledFor(TRACE):
+            with disable_log_multiline():
+                log.log(TRACE, "SPLIT\n%s", self.pretty_print())
 
         assert replace_ent[replace].oid
 
         return defer_ent, defer, replace_ent, replace
-
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:
@@ -1035,3 +1035,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if ent[i].path != info.path:
             ent[i].path = info.path
             self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
+
+        if ent[i].hash != ent[i].sync_hash and not ent[i].changed:
+            log.debug("detected hash diff before event %s", ent[i].path)
+            ent[i].changed = time.time()

@@ -240,8 +240,9 @@ class SyncManager(Runnable):
             self.handle_path_conflict(sync)
             return
 
-        with disable_log_multiline():
-            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+        if log.isEnabledFor(TRACE):
+            with disable_log_multiline():
+                log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         for i in (LOCAL, REMOTE):
             if sync[i].changed:
@@ -258,12 +259,17 @@ class SyncManager(Runnable):
 
                 # if the other side changed hash, handle it first
                 if sync[i].hash == sync[i].sync_hash:
-                    other = other_side(i)  
+                    other = other_side(i)
                     if sync[other].changed and sync[other].hash != sync[other].sync_hash:
                         continue
 
                 response = self.embrace_change(sync, i, other_side(i))
-                if response == FINISHED:
+
+                # never let a sync be marked not changed if the hash is changed
+                if sync[i].hash != sync[i].sync_hash and not sync[i].changed:
+                    log.warning("recovering from incorrect change state: %s", sync[i])
+                    sync[i].changed = time.time()
+                elif response == FINISHED:
                     self.finished(i, sync)
                 break
 

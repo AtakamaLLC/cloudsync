@@ -15,7 +15,7 @@ from .utils import debug_sig
 log = logging.getLogger(__name__)
 
 
-@strict # pylint: disable=too-many-instance-attributes
+@strict     # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
     def __init__(self,
                  providers: Tuple[Provider, Provider],
