@@ -4,6 +4,7 @@ from io import BytesIO
 from unittest.mock import patch
 from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, cast
 
+import json
 import pytest
 import cloudsync
 
@@ -372,6 +373,7 @@ def test_connect(provider):
     provider.reconnect()
     assert provider.connected
 
+
 def test_create_upload_download(provider):
     dat = os.urandom(32)
 
@@ -386,6 +388,9 @@ def test_create_upload_download(provider):
 
     assert info1.hash
     assert info2.hash
+
+    # hash stuff must be jsonable... it can be complex, but must be comparable
+    assert json.loads(json.dumps(info1.hash)) == info1.hash
 
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash

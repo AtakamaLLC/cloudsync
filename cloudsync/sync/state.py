@@ -206,9 +206,9 @@ class SyncEntry:
             ret = dict()
             ret['otype'] = side_state.otype.value
             ret['side'] = side_state.side
-            ret['hash'] = side_state.hash.hex() if isinstance(side_state.hash, bytes) else None
+            ret['hash'] = side_state.hash
             ret['changed'] = side_state.changed
-            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(side_state.sync_hash, bytes) else None
+            ret['sync_hash'] = side_state.sync_hash
             ret['path'] = side_state.path
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
@@ -230,9 +230,9 @@ class SyncEntry:
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
             side_state.side = side_dict['side']
-            side_state.hash = bytes.fromhex(side_dict['hash']) if side_dict['hash'] else None
+            side_state.hash = side_dict['hash']
             side_state.changed = side_dict['changed']
-            side_state.sync_hash = bytes.fromhex(side_dict['sync_hash']) if side_dict['sync_hash'] else None
+            side_state.sync_hash = side_dict['sync_hash']
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
@@ -404,6 +404,12 @@ class SyncEntry:
         else:
             _sig = lambda a: a
 
+        if use_sigs:
+            _secs = secs
+        else:
+            _secs = lambda a: a
+
+
         local_otype = self[LOCAL].otype.value if self[LOCAL].otype else '?'
         remote_otype = self[REMOTE].otype.value if self[REMOTE].otype else '?'
 
@@ -417,12 +423,12 @@ class SyncEntry:
             _sig(self.storage_id),
             otype[:3],
 
-            secs(self[LOCAL].changed),
+            _secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
             str(self[LOCAL].sync_path), lexv, lhma,
 
-            secs(self[REMOTE].changed),
+            _secs(self[REMOTE].changed),
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path), rexv, rhma,
@@ -919,7 +925,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if e.ignored != IgnoreReason.NONE and not found_ignored:
                 ret += "------\n"
                 found_ignored = True
-            ret += e.pretty(widths=widths) + "\n"
+            ret += e.pretty(widths=widths, use_sigs=use_sigs) + "\n"
 
         return ret
 
@@ -1004,7 +1010,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         assert replace_ent[replace].oid
 
         return defer_ent, defer, replace_ent, replace
-
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:

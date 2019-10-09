@@ -21,7 +21,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
     DIR = 'mock dir'
 
-    def __init__(self, path, object_type, oid_is_path, contents=None, mtime=None, hash_func=None):
+    def __init__(self, path, object_type, oid_is_path, hash_func, contents=None, mtime=None):
         # self.display_path = path  # TODO: used for case insensitive file systems
         if contents is None and type == MockFSObject.FILE:
             contents = b""
@@ -38,10 +38,8 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
         self.mtime = mtime or time.time()
 
-        if hash_func is None:
-            self.hash_func = lambda a: md5(a).digest()
-        else:
-            self.hash_func = hash_func
+        self.hash_func = hash_func
+        assert self.hash_func
 
     @property
     def otype(self):
@@ -50,7 +48,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         else:
             return OType.DIRECTORY
 
-    def hash(self) -> Optional[bytes]:
+    def hash(self) -> Optional[str]:
         if self.type == self.DIR:
             return None
         return self.hash_func(self.contents)
@@ -122,6 +120,8 @@ class MockProvider(Provider):
         self.creds = {"key": "val"}
         self.connection_id = os.urandom(2).hex()
         self.hash_func = hash_func
+        if hash_func is None:
+            self.hash_func = lambda a: md5(a).digest().hex()
 
     def disconnect(self):
         self.connected = False
@@ -422,9 +422,8 @@ class MockProvider(Provider):
         else:
             return None
 
-    @staticmethod
-    def hash_data(file_like) -> bytes:
-        return md5(file_like.read()).digest()
+    def hash_data(self, file_like) -> Any:
+        return self.hash_func(file_like.read())
 
     def info_path(self, path: str) -> Optional[OInfo]:
         file: MockFSObject = self._get_by_path(path)

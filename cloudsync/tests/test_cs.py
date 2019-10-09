@@ -1893,7 +1893,7 @@ def test_multihash_one_side_equiv(mock_provider_creator):
 
     def segment_hash(data):
         # two hashes.... one is mutable (notion of equivalence) the other causes conflicts (data change)
-        return (hash(data[0:1]), hash(data[1:]))
+        return [hash(data[0:1]), hash(data[1:])]
 
     provs = (
         mock_provider_creator(oid_is_path=True, case_sensitive=False, hash_func=segment_hash),

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any
+from typing import TYPE_CHECKING, Generator, Optional, List, Any
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -128,13 +128,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         ...
 
-    def hash_oid(self, oid) -> Optional[bytes]:  # TODO add a test to FNFE
+    def hash_oid(self, oid) -> Any:
         info = self.info_oid(oid)
         return info.hash if info else None
 
-    @staticmethod
     @abstractmethod
-    def hash_data(file_like) -> Union[str, bytes]:
+    def hash_data(self, file_like) -> Any:
         ...
 
     @abstractmethod

@@ -2,6 +2,8 @@ import logging
 from io import BytesIO
 from typing import Dict, Any
 
+import pytest
+
 from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
 from .fixtures import MockStorage
 
@@ -146,10 +148,10 @@ def test_state_split(mock_provider):
 def test_state_alter_oid(mock_provider):
     providers = (mock_provider, mock_provider)
     state = SyncState(providers, shuffle=True)
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash="123")
     ent1 = state.lookup_oid(LOCAL, "123")
     assert ent1 in state.changes
-    state.update(LOCAL, FILE, path="456", oid="456", hash=b"456")
+    state.update(LOCAL, FILE, path="456", oid="456", hash="456")
     ent2 = state.lookup_oid(LOCAL, "456")
     assert ent2 in state.changes
     ent1[LOCAL].oid = "456"
@@ -163,7 +165,15 @@ def test_state_alter_oid(mock_provider):
 
 
 def entries_equal(e1, e2):
-    return e1.serialize() == e2.serialize()
+    if e1.serialize() != e2.serialize():
+        log.debug("serialize diff %s != %s", e1.serialize(), e2.serialize())
+        return False
+    for side in (LOCAL, REMOTE):
+        for fd in ("hash", "sync_hash"):
+            if getattr(e1[side], fd) != getattr(e2[side], fd):
+                log.debug("side %s, %s diff %s!=%s", side, fd, getattr(e1[side], fd), getattr(e2[side], fd))
+                return False
+    return True
 
 
 def state_diff(st1, st2):
@@ -194,7 +204,7 @@ def test_state_storage(mock_provider):
     backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash="123")
     state.storage_commit()
 
     state2 = SyncState(providers, storage, tag="whatever")
@@ -207,7 +217,7 @@ def test_state_storage2(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=["123"])
     state.storage_commit()
 
     ent1 = state.lookup_oid(LOCAL, "123")
@@ -224,11 +234,11 @@ def test_state_storage3(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=["123"])
     ent1 = state.lookup_oid(LOCAL, "123")
     ent1[REMOTE].oid = "456"
     ent1[REMOTE].path = "456"
-    ent1[REMOTE].hash = b"456"
+    ent1[REMOTE].hash = "456"
     ent1[REMOTE].changed = -1
     (defer, _ds, repl, _rs) = state.split(ent1)
     state.storage_commit()
@@ -243,7 +253,7 @@ def test_state_storage4(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash="123")
     ent1 = state.lookup_oid(LOCAL, "123")
 
     entx = SyncEntry(state, FILE)
@@ -256,3 +266,18 @@ def test_state_storage4(mock_provider):
     state2 = SyncState(providers, storage, tag="whatever")
     assert not state_diff(state, state2)
 
+
+def test_state_storage_bad_hash(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+
+    state.update(LOCAL, FILE, path="123", oid="123", hash=("123",))
+    state.storage_commit()
+    state2 = SyncState(providers, storage, tag="whatever")
+    assert state_diff(state, state2), "tuples dont work for json....too mutable"
+
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    with pytest.raises(TypeError):
+        state.storage_commit()
