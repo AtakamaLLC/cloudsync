@@ -42,6 +42,7 @@ class ResolveFile():
         self.provider = provider
         self.path = info.path
         self.side = info.side
+        self.sync_hash = info.sync_hash
         self.otype = info.otype
         self.__temp_file = info.temp_file
         if self.otype == FILE:
@@ -1143,7 +1144,7 @@ class SyncManager(Runnable):
             sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
-        log.debug("splitting hash conflict %s", sync)
+        log.debug("splitting hash conflict %s %s %s", sync, sync[LOCAL].sync_hash, sync[REMOTE].sync_hash)
 
         try:
             save: Tuple[Dict[str, Any], Dict[str, Any]] = ({}, {})

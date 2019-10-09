@@ -989,13 +989,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
+
         # we aren't synced
         replace_ent[replace].sync_path = None
-        replace_ent[replace].sync_hash = None
-
-        # never synced
         defer_ent[defer].sync_path = None
-        defer_ent[defer].sync_hash = None
 
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
