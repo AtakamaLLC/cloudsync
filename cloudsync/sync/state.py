@@ -295,7 +295,7 @@ class SyncEntry:
         self.__states[side] = copy.copy(val)
 
     def hash_conflict(self):
-        if self[0].hash and self[1].hash:
+        if self[0].hash and self[1].hash and self[0].path and self[1].path:
             return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash
         return False
 
