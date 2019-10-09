@@ -34,6 +34,7 @@ __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRE
 
 # safe ternary, don't allow traditional comparisons
 
+
 class Exists(Enum):
     UNKNOWN = None
     EXISTS = True
@@ -68,7 +69,6 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -122,6 +122,7 @@ class SideState():
         d = self.__dict__.copy()
         d.pop("_parent", None)
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -181,7 +182,7 @@ class SyncEntry:
         log.debug("new syncent %s", debug_sig(id(self)))
 
         self.priority: float
-        
+
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
