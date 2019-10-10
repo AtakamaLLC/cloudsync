@@ -1,7 +1,6 @@
 import re
 import json
 import traceback
-import time
 import socket
 
 import urllib.parse as urlparse
@@ -9,10 +8,10 @@ import threading
 import logging
 from enum import Enum
 from typing import Callable, Dict
+from wsgiref.simple_server import make_server
 
 import unittest
 import requests
-from wsgiref.simple_server import make_server
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +127,7 @@ class ApiServer:
                 with self.__shutdown_lock:
                     if not self.__shutting_down:
                         self.__shutting_down = True
+                        self.__server.shutdown()
                         self.__server.server_close()
         except Exception:
             log.exception("exception during shutdown")
