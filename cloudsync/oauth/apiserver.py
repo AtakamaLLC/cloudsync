@@ -1,22 +1,17 @@
 import re
 import json
 import traceback
-import time
+import socket
 
 import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
 from typing import Callable, Dict
+from wsgiref.simple_server import make_server
 
 import unittest
 import requests
-
-# TODO: this is an inappropriate default server, default should be wsgiref builtin
-import waitress
-
-# TODO: caller should specify the mechanism for channel empty detection
-from waitress.channel import HTTPChannel
 
 log = logging.getLogger(__name__)
 
@@ -83,12 +78,14 @@ class ApiServer:
         self.__headers = headers if headers else []
         self.__log_level = log_level
 
-        self.__server = waitress.server.create_server(self, host=self.__addr, port=self.__port, clear_untrusted_proxy_headers=False)
+
 
         self.__started = False
+        self.__server = make_server(app=self, host=self.__addr, port=self.__port)
         self.__routes: Dict[str, Callable] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
+        self.__server.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 
         # routed methods map into handler
         for meth in type(self).__dict__.values():
@@ -101,13 +98,11 @@ class ApiServer:
 
     def port(self):
         """Get my port"""
-        sa = self.__server.socket.getsockname()
-        return sa[1]
+        return self.__server.server_port
 
     def address(self):
         """Get my ip address"""
-        sa = self.__server.socket.getsockname()
-        return sa[0]
+        return self.__server.server_name
 
     def uri(self, path):
         """Make a URI pointing at myself"""
@@ -119,7 +114,7 @@ class ApiServer:
     def serve_forever(self):
         self.__started = True
         try:
-            self.__server.run()
+            self.__server.serve_forever()
         except OSError:
             pass
 
@@ -132,13 +127,8 @@ class ApiServer:
                 with self.__shutdown_lock:
                     if not self.__shutting_down:
                         self.__shutting_down = True
-                        timeout = time.time() + 2
-                        channel: HTTPChannel
-                        for channel in list(self.__server.active_channels.values()):  # Convert to a list to make a copy
-                            while channel.total_outbufs_len > 0 and time.time() < timeout:
-                                time.sleep(.01)  # give any connections with a non-empty output buffer a chance to drain
-                        self.__server.socket.close()
-                        self.__server.asyncore.close_all()
+                        self.__server.shutdown()
+                        self.__server.server_close()
         except Exception:
             log.exception("exception during shutdown")
 
@@ -245,13 +235,13 @@ class TestApiServer(unittest.TestCase):
 
             threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-            response = requests.post(httpd.uri("/popup"), data='{}')
+            response = requests.post(httpd.uri("/popup"), data='{}', timeout=1)
             self.assertEqual(response.text, "HERE{}")
 
-            response = requests.post(httpd.uri("/notfound"), data='{}')
+            response = requests.post(httpd.uri("/notfound"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 404)
 
-            response = requests.get(httpd.uri("/foo?x=4"))
+            response = requests.get(httpd.uri("/foo?x=4"), timeout=1)
             self.assertEqual(response.text, "FOO4")
         finally:
             httpd.shutdown()
@@ -270,7 +260,7 @@ class TestApiServer(unittest.TestCase):
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
             thread.start()
 
-            response = requests.post(httpd.uri("/popup"), data='{}')
+            response = requests.post(httpd.uri("/popup"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 501)
         finally:
             httpd.shutdown()
