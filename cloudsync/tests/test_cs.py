@@ -14,6 +14,9 @@ from .fixtures import WaitFor, RunUntilHelper
 log = logging.getLogger(__name__)
 
 
+class CloudSyncMixin(CloudSync, RunUntilHelper):
+    pass
+
 @pytest.fixture(name="cs_storage")
 def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
     storage_dict: Dict[Any, Any] = dict()
@@ -30,9 +33,6 @@ def fixture_cs(mock_provider_generator, mock_provider_creator):
 def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
     roots = ("/local", "/remote")
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
     cs = CloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
 
     yield cs
@@ -43,8 +43,6 @@ def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
 def make_cs(mock_provider_creator, left, right, storage=None):
     roots = ("/local", "/remote")
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
@@ -55,8 +53,6 @@ def fixture_multi_local_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
 
     p1 = mock_provider_generator()  # local
     p2 = mock_provider_generator()  # local
@@ -83,9 +79,6 @@ def fixture_multi_local_cs(mock_provider_generator):
 def fixture_multi_remote_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
-
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
 
     p1 = mock_provider_generator()
     p2 = mock_provider_generator()
@@ -1893,3 +1886,80 @@ def test_unfile(cs):
     cs.run_until_found(
         WaitFor(LOCAL, local_path1, exists=False),
         timeout=2)
+
+
+def test_multihash_one_side_equiv(mock_provider_creator):
+    roots = ("/local", "/remote")
+
+    def segment_hash(data):
+        # two hashes.... one is mutable (notion of equivalence) the other causes conflicts (data change)
+        return [hash(data[0:1]), hash(data[1:])]
+
+    provs = (
+        mock_provider_creator(oid_is_path=True, case_sensitive=False, hash_func=segment_hash),
+        mock_provider_creator(oid_is_path=False, case_sensitive=False)
+    )
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        def resolve_conflict(self, f1, f2):
+            fhs = sorted((f1, f2), key=lambda a: a.side)
+
+            log.info("custom resolver sides:%s/%s, sh:%s, sh:%s", f1.side, f2.side, f1.sync_hash, f2.sync_hash)
+
+            if fhs[0].sync_hash:
+                # last time i synced fh0 same as fh1
+                other_sh = segment_hash(fhs[1].read())
+                log.info("%s == %s", fhs[0].sync_hash, other_sh)
+                if fhs[0].sync_hash[1] == other_sh[1]:
+                    log.info("remote was equivalent to last sync... local wins")
+                    return (fhs[0], False)
+
+            return None
+
+    cs = CloudSyncMixin(provs, roots, storage=None, sleep=None)
+
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    setup_remote_local(cs, "stuff1")
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    cs.providers[LOCAL].delete(linfo1.oid)
+    cs.providers[REMOTE].delete(rinfo1.oid)
+
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"a-same"))
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+    linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"b-diff"))
+
+    rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"c-same"))
+
+    # run event managers only... not sync
+    cs.emgrs[LOCAL].do()
+    cs.emgrs[REMOTE].do()
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    # conflicted files are discarded, not in table
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    assert(len(cs.state) == 2)
+
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted") \
+        and not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+    b1 = BytesIO()
+
+    cs.providers[LOCAL].download_path(local_path1, b1)
+
+    assert b1.getvalue() == b'b-diff'
+
+

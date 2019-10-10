@@ -21,7 +21,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
     DIR = 'mock dir'
 
-    def __init__(self, path, object_type, oid_is_path, contents=None, mtime=None):
+    def __init__(self, path, object_type, oid_is_path, hash_func, contents=None, mtime=None):
         # self.display_path = path  # TODO: used for case insensitive file systems
         if contents is None and type == MockFSObject.FILE:
             contents = b""
@@ -38,6 +38,9 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
         self.mtime = mtime or time.time()
 
+        self.hash_func = hash_func
+        assert self.hash_func
+
     @property
     def otype(self):
         if self.type == self.FILE:
@@ -45,10 +48,10 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         else:
             return OType.DIRECTORY
 
-    def hash(self) -> Optional[bytes]:
+    def hash(self) -> Optional[str]:
         if self.type == self.DIR:
             return None
-        return md5(self.contents).digest()
+        return self.hash_func(self.contents)
 
     def update(self):
         self.mtime = time.time()
@@ -90,7 +93,7 @@ class MockProvider(Provider):
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None, hash_func=None):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -116,6 +119,9 @@ class MockProvider(Provider):
         self.event_sleep = 0.001
         self.creds = {"key": "val"}
         self.connection_id = os.urandom(2).hex()
+        self.hash_func = hash_func
+        if hash_func is None:
+            self.hash_func = lambda a: md5(a).digest()
 
     def disconnect(self):
         self.connected = False
@@ -259,7 +265,7 @@ class MockProvider(Provider):
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         self._verify_parent_folder_exists(path)
         if file is None or not file.exists:
-            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path)
+            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self.hash_func)
         file.contents = file_like.read()
         file.exists = True
         self._store_object(file)
@@ -357,7 +363,7 @@ class MockProvider(Provider):
             else:
                 log.debug("Skipped creating already existing folder: %s", path)
                 return file.oid
-        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path)
+        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self.hash_func)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
         return new_fs_object.oid
@@ -416,9 +422,8 @@ class MockProvider(Provider):
         else:
             return None
 
-    @staticmethod
-    def hash_data(file_like) -> bytes:
-        return md5(file_like.read()).digest()
+    def hash_data(self, file_like) -> Any:
+        return self.hash_func(file_like.read())
 
     def info_path(self, path: str) -> Optional[OInfo]:
         file: MockFSObject = self._get_by_path(path)
@@ -450,8 +455,8 @@ class MockProvider(Provider):
 ###################
 
 
-def mock_provider_instance(oid_is_path, case_sensitive):
-    prov = MockProvider(oid_is_path, case_sensitive)
+def mock_provider_instance(*args, **kws):
+    prov = MockProvider(*args, **kws)
     prov.event_timeout = 1
     prov.event_sleep = 0.001
     return prov

@@ -8,7 +8,6 @@ altered to independent, and not paired at all.
 """
 
 import copy
-import json
 import logging
 import time
 import random
@@ -18,6 +17,7 @@ from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
 
 from typing import Union, Sequence
+import msgpack
 from pystrict import strict
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 # safe ternary, don't allow traditional comparisons
+
 
 class Exists(Enum):
     UNKNOWN = None
@@ -68,7 +69,6 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -122,6 +122,7 @@ class SideState():
         d = self.__dict__.copy()
         d.pop("_parent", None)
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -181,7 +182,7 @@ class SyncEntry:
         log.debug("new syncent %s", debug_sig(id(self)))
 
         self.priority: float
-        
+
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
@@ -205,9 +206,9 @@ class SyncEntry:
             ret = dict()
             ret['otype'] = side_state.otype.value
             ret['side'] = side_state.side
-            ret['hash'] = side_state.hash.hex() if isinstance(side_state.hash, bytes) else None
+            ret['hash'] = side_state.hash
             ret['changed'] = side_state.changed
-            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(side_state.sync_hash, bytes) else None
+            ret['sync_hash'] = side_state.sync_hash
             ret['path'] = side_state.path
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
@@ -221,7 +222,7 @@ class SyncEntry:
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
-        return json.dumps(ser).encode('utf-8')
+        return msgpack.dumps(ser, use_bin_type=True)
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
@@ -229,9 +230,9 @@ class SyncEntry:
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
             side_state.side = side_dict['side']
-            side_state.hash = bytes.fromhex(side_dict['hash']) if side_dict['hash'] else None
+            side_state.hash = side_dict['hash']
             side_state.changed = side_dict['changed']
-            side_state.sync_hash = bytes.fromhex(side_dict['sync_hash']) if side_dict['sync_hash'] else None
+            side_state.sync_hash = side_dict['sync_hash']
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
@@ -240,7 +241,7 @@ class SyncEntry:
             return side_state
 
         self.storage_id = storage_init[0]
-        ser: dict = json.loads(storage_init[1].decode('utf-8'))
+        ser: dict = msgpack.loads(storage_init[1], use_list=False, raw=False)
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
@@ -294,7 +295,7 @@ class SyncEntry:
         self.__states[side] = copy.copy(val)
 
     def hash_conflict(self):
-        if self[0].hash and self[1].hash:
+        if self[0].hash and self[1].hash and self[0].path and self[1].path:
             return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash
         return False
 
@@ -403,6 +404,12 @@ class SyncEntry:
         else:
             _sig = lambda a: a
 
+        if use_sigs:
+            _secs = secs
+        else:
+            _secs = lambda a: a
+
+
         local_otype = self[LOCAL].otype.value if self[LOCAL].otype else '?'
         remote_otype = self[REMOTE].otype.value if self[REMOTE].otype else '?'
 
@@ -416,12 +423,12 @@ class SyncEntry:
             _sig(self.storage_id),
             otype[:3],
 
-            secs(self[LOCAL].changed),
+            _secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
             str(self[LOCAL].sync_path), lexv, lhma,
 
-            secs(self[REMOTE].changed),
+            _secs(self[REMOTE].changed),
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path), rexv, rhma,
@@ -918,7 +925,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if e.ignored != IgnoreReason.NONE and not found_ignored:
                 ret += "------\n"
                 found_ignored = True
-            ret += e.pretty(widths=widths) + "\n"
+            ret += e.pretty(widths=widths, use_sigs=use_sigs) + "\n"
 
         return ret
 
@@ -989,13 +996,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
+
         # we aren't synced
         replace_ent[replace].sync_path = None
-        replace_ent[replace].sync_hash = None
-
-        # never synced
         defer_ent[defer].sync_path = None
-        defer_ent[defer].sync_hash = None
 
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
@@ -1006,7 +1010,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         assert replace_ent[replace].oid
 
         return defer_ent, defer, replace_ent, replace
-
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:
