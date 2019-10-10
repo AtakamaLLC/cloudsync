@@ -723,6 +723,8 @@ class SyncManager(Runnable):
                     if replace_ent:
                         replace_ent.ignore(IgnoreReason.CONFLICT)
                         replace_ent[defer].clear()
+                    if not defer_ent[defer].sync_path:
+                        defer_ent[defer].sync_hash = None
                 else:
                     log.debug("defer not none, and not keeping, so merge sides")
                     replace_ent[defer] = defer_ent[defer]
@@ -912,7 +914,14 @@ class SyncManager(Runnable):
                 return REQUEUE
 
         if sync.is_creation(changed):
-            assert not sync[changed].sync_hash
+            if sync[changed].sync_hash and sync.priority <= 0:
+                log.debug("requeue sync b/c hash w/o path %s", sync)
+                sync.punt()
+                return REQUEUE
+
+            if sync[changed].sync_hash:
+                sync[changed].sync_hash = None
+
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
