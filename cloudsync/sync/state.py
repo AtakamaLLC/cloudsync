@@ -241,7 +241,6 @@ class SyncEntry:
 
         self.storage_id = storage_init[0]
         ser: dict = msgpack.loads(storage_init[1], use_list=False, raw=False)
-        print("HERE!!!!", ser)
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
