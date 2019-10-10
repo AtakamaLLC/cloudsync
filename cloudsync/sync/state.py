@@ -8,7 +8,7 @@ altered to independent, and not paired at all.
 """
 
 import copy
-import json
+import msgpack
 import logging
 import time
 import random
@@ -205,9 +205,9 @@ class SyncEntry:
             ret = dict()
             ret['otype'] = side_state.otype.value
             ret['side'] = side_state.side
-            ret['hash'] = side_state.hash.hex() if isinstance(side_state.hash, bytes) else None
+            ret['hash'] = side_state.hash
             ret['changed'] = side_state.changed
-            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(side_state.sync_hash, bytes) else None
+            ret['sync_hash'] = side_state.sync_hash
             ret['path'] = side_state.path
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
@@ -221,7 +221,7 @@ class SyncEntry:
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
-        return json.dumps(ser).encode('utf-8')
+        return msgpack.dumps(ser, use_bin_type=True)
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
@@ -229,9 +229,9 @@ class SyncEntry:
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
             side_state.side = side_dict['side']
-            side_state.hash = bytes.fromhex(side_dict['hash']) if side_dict['hash'] else None
+            side_state.hash = side_dict['hash']
             side_state.changed = side_dict['changed']
-            side_state.sync_hash = bytes.fromhex(side_dict['sync_hash']) if side_dict['sync_hash'] else None
+            side_state.sync_hash = side_dict['sync_hash']
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
@@ -240,7 +240,8 @@ class SyncEntry:
             return side_state
 
         self.storage_id = storage_init[0]
-        ser: dict = json.loads(storage_init[1].decode('utf-8'))
+        ser: dict = msgpack.loads(storage_init[1], use_list=False, raw=False)
+        print("HERE!!!!", ser)
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
