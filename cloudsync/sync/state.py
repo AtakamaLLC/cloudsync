@@ -8,7 +8,7 @@ altered to independent, and not paired at all.
 """
 
 import copy
-import json
+import msgpack
 import logging
 import time
 import random
@@ -222,7 +222,7 @@ class SyncEntry:
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
-        return json.dumps(ser).encode('utf-8')
+        return msgpack.dumps(ser, use_bin_type=True)
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
@@ -241,7 +241,7 @@ class SyncEntry:
             return side_state
 
         self.storage_id = storage_init[0]
-        ser: dict = json.loads(storage_init[1].decode('utf-8'))
+        ser: dict = msgpack.loads(storage_init[1], use_list=False, raw=False)
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
