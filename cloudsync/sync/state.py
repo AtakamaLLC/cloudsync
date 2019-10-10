@@ -8,7 +8,6 @@ altered to independent, and not paired at all.
 """
 
 import copy
-import msgpack
 import logging
 import time
 import random
@@ -18,6 +17,7 @@ from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
 
 from typing import Union, Sequence
+import msgpack
 from pystrict import strict
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
