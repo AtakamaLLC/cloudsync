@@ -121,7 +121,7 @@ class MockProvider(Provider):
         self.connection_id = os.urandom(2).hex()
         self.hash_func = hash_func
         if hash_func is None:
-            self.hash_func = lambda a: md5(a).digest().hex()
+            self.hash_func = lambda a: md5(a).digest()
 
     def disconnect(self):
         self.connected = False

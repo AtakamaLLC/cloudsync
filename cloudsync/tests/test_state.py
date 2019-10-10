@@ -204,7 +204,7 @@ def test_state_storage(mock_provider):
     backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
-    state.update(LOCAL, FILE, path="123", oid="123", hash="123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
     state.storage_commit()
 
     state2 = SyncState(providers, storage, tag="whatever")
@@ -217,7 +217,7 @@ def test_state_storage2(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash=["123"])
+    state.update(LOCAL, FILE, path="123", oid="123", hash="123")
     state.storage_commit()
 
     ent1 = state.lookup_oid(LOCAL, "123")
@@ -234,7 +234,7 @@ def test_state_storage3(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash=["123"])
+    state.update(LOCAL, FILE, path="123", oid="123", hash=("123",))
     ent1 = state.lookup_oid(LOCAL, "123")
     ent1[REMOTE].oid = "456"
     ent1[REMOTE].path = "456"
@@ -253,7 +253,7 @@ def test_state_storage4(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash="123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
     ent1 = state.lookup_oid(LOCAL, "123")
 
     entx = SyncEntry(state, FILE)
@@ -273,11 +273,7 @@ def test_state_storage_bad_hash(mock_provider):
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
 
-    state.update(LOCAL, FILE, path="123", oid="123", hash=("123",))
+    state.update(LOCAL, FILE, path="123", oid="123", hash=["123",])
     state.storage_commit()
     state2 = SyncState(providers, storage, tag="whatever")
-    assert state_diff(state, state2), "tuples dont work for json....too mutable"
-
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
-    with pytest.raises(TypeError):
-        state.storage_commit()
+    assert state_diff(state, state2), "tuples used instead of lists"
