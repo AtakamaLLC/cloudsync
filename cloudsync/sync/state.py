@@ -303,7 +303,8 @@ class SyncEntry:
         return self[changed].path != self[changed].sync_path
 
     def is_creation(self, changed):
-        return not self[changed].sync_path and self[changed].path
+        return (not self[other_side(changed)].oid or self[other_side(changed)].exists == TRASHED) \
+                and self[changed].path and self[changed].exists != TRASHED
 
     def is_rename(self, changed):
         return (self[changed].sync_path and self[changed].path

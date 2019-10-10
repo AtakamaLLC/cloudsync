@@ -919,9 +919,6 @@ class SyncManager(Runnable):
                 sync.punt()
                 return REQUEUE
 
-            if sync[changed].sync_hash:
-                sync[changed].sync_hash = None
-
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
@@ -1101,13 +1098,6 @@ class SyncManager(Runnable):
     def handle_hash_diff(self, sync, changed, synced):
         if sync[changed].path is None:
             return FINISHED
-
-        if sync[changed].sync_hash is None:
-            sync[changed].sync_path = None
-            # creation must have failed
-            log.warning("needs create: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
-            return REQUEUE
-        # not a new file, which means we must have last sync info
 
         if sync[synced].exists == TRASHED or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
