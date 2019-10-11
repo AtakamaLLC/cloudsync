@@ -3,23 +3,21 @@ import json
 import traceback
 import socket
 
+from socketserver import ThreadingMixIn
+from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
 from typing import Callable, Dict
-from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
-from socketserver import ThreadingMixIn
 
 import unittest
 import requests
 
 log = logging.getLogger(__name__)
 
-from socketserver import ThreadingMixIn
-
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
-    def log_message(self, format, *args):
+    def log_message(self, unused_format, *args):
         pass
 
 class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
