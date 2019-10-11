@@ -185,7 +185,9 @@ class SyncManager(Runnable):
         if not have_paths:
             return False
 
-        are_synced = (ent[0].sync_hash and ent[1].sync_hash) or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)
+        are_synced = ((ent[0].sync_hash and ent[1].sync_hash)
+                      or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)) \
+                     and ent[0].sync_path and ent[1].sync_path
         if not are_synced:
             return False
 
@@ -1186,6 +1188,9 @@ class SyncManager(Runnable):
         # consistent handling
         log.debug("handle path conflict %s", sync)
 
+        assert sync[0].sync_path
+        assert sync[1].sync_path
+
         path1 = sync[0].path
         path2 = sync[1].path
         if path1 > path2:
@@ -1205,13 +1210,10 @@ class SyncManager(Runnable):
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
 
-        def _update_syncs(new_oid):
-            self.update_entry(sync, other.side, new_oid, path=other_path)
-            if sync[other.side].sync_path:
-                sync[other.side].sync_path = sync[other.side].path
-
-            if sync[picked.side].sync_path:
-                sync[picked.side].sync_path = sync[picked.side].path
+        def _update_syncs(newer_oid):
+            self.update_entry(sync, other.side, newer_oid, path=other_path)
+            sync[other.side].sync_path = sync[other.side].path
+            sync[picked.side].sync_path = sync[picked.side].path
 
         try:
             if other_info.path == other_path:
