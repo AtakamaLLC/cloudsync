@@ -42,6 +42,7 @@ class ResolveFile():
         self.provider = provider
         self.path = info.path
         self.side = info.side
+        self.hash = info.hash
         self.sync_hash = info.sync_hash
         self.otype = info.otype
         self.__temp_file = info.temp_file
