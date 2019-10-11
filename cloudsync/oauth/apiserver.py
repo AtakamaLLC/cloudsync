@@ -15,6 +15,16 @@ import requests
 
 log = logging.getLogger(__name__)
 
+from socketserver import ThreadingMixIn
+
+class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
+    pass
+
+
 class ApiServerLogLevel(Enum):
     NONE = 0  # do not log calls
     CALLS = 1  # log calls but not their args
@@ -81,7 +91,7 @@ class ApiServer:
 
 
         self.__started = False
-        self.__server = make_server(app=self, host=self.__addr, port=self.__port)
+        self.__server = make_server(app=self, host=self.__addr, port=self.__port, handler_class=NoLoggingWSGIRequestHandler, server_class=ThreadedWSGIServer)
         self.__routes: Dict[str, Callable] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
