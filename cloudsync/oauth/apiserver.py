@@ -3,17 +3,26 @@ import json
 import traceback
 import socket
 
+from socketserver import ThreadingMixIn
+from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
 from typing import Callable, Dict
-from wsgiref.simple_server import make_server
 
 import unittest
 import requests
 
 log = logging.getLogger(__name__)
+
+class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
+    def log_message(self, unused_format, *args):
+        pass
+
+class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
+    pass
+
 
 class ApiServerLogLevel(Enum):
     NONE = 0  # do not log calls
@@ -81,7 +90,7 @@ class ApiServer:
 
 
         self.__started = False
-        self.__server = make_server(app=self, host=self.__addr, port=self.__port)
+        self.__server = make_server(app=self, host=self.__addr, port=self.__port, handler_class=NoLoggingWSGIRequestHandler, server_class=ThreadedWSGIServer)
         self.__routes: Dict[str, Callable] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
