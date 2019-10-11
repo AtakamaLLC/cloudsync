@@ -392,24 +392,41 @@ class SyncEntry:
                 idx = 2
             return tup[idx]
 
+        def abbrev_equiv(a, b, table):
+            assert len(table) == 5                  # quick check
+            if a is None and b is not None:
+                return table["rightonly"]
+            if a is not None and b is None:
+                return table["leftonly"]
+            if a is None and b is None:
+                return table["neither"]
+            if (a == b):
+                return table["equiv"]
+            if (a != b):
+                return table["mismatch"]
+
         lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
         rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
-        lhma = abbrev_bool(self[LOCAL].hash and self[LOCAL].sync_hash !=
-                           self[LOCAL].hash, ("H", "=", "?"))
-        rhma = abbrev_bool(self[REMOTE].hash and self[REMOTE].sync_hash !=
-                           self[REMOTE].hash, ("H", "=", "?"))
+        abbrev_table = {
+            "mismatch": "H",
+            "leftonly": "<",
+            "rightonly": ">",
+            "equiv": "=",
+            "neither": "0"
+        }
+        lhma = abbrev_equiv(self[LOCAL].hash, self[LOCAL].sync_hash, abbrev_table)
+        rhma = abbrev_equiv(self[REMOTE].hash, self[REMOTE].sync_hash, abbrev_table)
 
         _sig: Callable[[Any], Any]
         if use_sigs:
             _sig = debug_sig
         else:
-            _sig = lambda a: a
+            _sig = lambda a: a      # noqa
 
         if use_sigs:
             _secs = secs
         else:
-            _secs = lambda a: a
-
+            _secs = lambda a: a     # noqa
 
         local_otype = self[LOCAL].otype.value if self[LOCAL].otype else '?'
         remote_otype = self[REMOTE].otype.value if self[REMOTE].otype else '?'

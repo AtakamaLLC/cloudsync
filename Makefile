@@ -17,7 +17,7 @@ test:
 	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests
 
 coverage:
-	pytest --cov-report html --cov-report annotate --cov=cloudsync -n=8 cloudsync/tests
+	pytest --cov-report html --cov=cloudsync -n=8 cloudsync/tests
 
 format:
 	autopep8 --in-place -r -j 8 cloudsync/
