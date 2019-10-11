@@ -175,12 +175,13 @@ class MockProvider(Provider):
         self._quota = quota
 
     def _unstore_object(self, fo: MockFSObject):
-        # TODO: do I need to check if the path and ID exist before del to avoid a key error,
-        #  or perhaps just catch and swallow that exception?
-        del self._fs_by_path[self.normalize(fo.path)]
-        del self._fs_by_oid[fo.oid]
-        if fo.contents:
-            self._total_size -= len(fo.contents)
+        try:
+            del self._fs_by_path[self.normalize(fo.path)]
+            del self._fs_by_oid[fo.oid]
+            if fo.contents:
+                self._total_size -= len(fo.contents)
+        except KeyError:
+            raise CloudFileNotFoundError("file doesn't exist %s", fo.path)
 
     def _translate_event(self, pe: MockEvent, cursor) -> Event:
         event = pe.serialize()
