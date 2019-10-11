@@ -8,7 +8,8 @@ import threading
 import logging
 from enum import Enum
 from typing import Callable, Dict
-from wsgiref.simple_server import make_server
+from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
+from socketserver import ThreadingMixIn
 
 import unittest
 import requests
