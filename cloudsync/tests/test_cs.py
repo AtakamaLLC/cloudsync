@@ -1888,7 +1888,8 @@ def test_unfile(cs):
         timeout=2)
 
 
-def test_multihash_one_side_equiv(mock_provider_creator):
+@pytest.mark.parametrize("side", [LOCAL, REMOTE], ids=["local", "remote"])
+def test_multihash_one_side_equiv(mock_provider_creator, side):
     roots = ("/local", "/remote")
 
     def segment_hash(data):
@@ -1907,6 +1908,10 @@ def test_multihash_one_side_equiv(mock_provider_creator):
             log.info("custom resolver sides:%s/%s, sh:%s, sh:%s", f1.side, f2.side, f1.sync_hash, f2.sync_hash)
 
             if fhs[0].sync_hash:
+                if fhs[0].hash[1] == fhs[0].sync_hash[1]:
+                    log.info("local was equivalent to last sync... remote wins")
+                    return (fhs[1], False)
+
                 # last time i synced fh0 same as fh1
                 other_sh = segment_hash(fhs[1].read())
                 log.info("%s == %s", fhs[0].sync_hash, other_sh)
@@ -1935,9 +1940,13 @@ def test_multihash_one_side_equiv(mock_provider_creator):
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
-    linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"b-diff"))
 
-    rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"c-same"))
+    if (side == LOCAL):
+        linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"b-diff"))
+        rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"c-same"))
+    else:
+        linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"c-same"))
+        rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"b-diff"))
 
     # run event managers only... not sync
     cs.emgrs[LOCAL].do()
