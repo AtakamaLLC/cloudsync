@@ -400,9 +400,9 @@ class SyncEntry:
                 return table["leftonly"]
             if a is None and b is None:
                 return table["neither"]
-            if (a == b):
+            if a == b:
                 return table["equiv"]
-            if (a != b):
+            else:
                 return table["mismatch"]
 
         lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
