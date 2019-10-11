@@ -634,6 +634,7 @@ class SyncManager(Runnable):
 
         defer_ent = self.state.lookup_oid(ent1.side, ent1.oid)
         replace_ent = self.state.lookup_oid(ent2.side, ent2.oid)
+        new_ent2 = defer_ent[ent2.side]
 
         if keep:
             # both sides are being kept, so we have to upload since there are no entries
@@ -643,7 +644,7 @@ class SyncManager(Runnable):
             info2 = self.providers[ent2.side].create(ent2.path, fh)
 
             ent1.oid = info1.oid
-            ent2.oid = info2.oid
+            new_ent2.oid = info2.oid
 
             self.update_entry(defer_ent, ent1.side, ent1.oid, path=ent1.path, hash=ent1.hash)
 
@@ -652,15 +653,17 @@ class SyncManager(Runnable):
 
             assert info2.hash
             assert info1.hash
-            ent2.sync_hash = info2.hash
-            ent2.sync_path = info2.path
+            new_ent2.sync_hash = info2.hash
+            new_ent2.sync_path = info2.path
             ent1.sync_hash = info1.hash
             ent1.sync_path = info1.path
         else:
             info1 = self.providers[ent1.side].info_oid(ent1.oid)
             info2 = self.providers[ent2.side].info_oid(ent2.oid)
 
-            ent2.sync_path = ent2.path
+            new_ent2.oid = info2.oid
+            new_ent2.path = info2.path
+            new_ent2.sync_path = new_ent2.path
             ent1.sync_path = self.translate(ent1.side, ent2.path)
 
         # in case oids have changed
@@ -668,6 +671,7 @@ class SyncManager(Runnable):
 
         defer_ent[ent2.side].sync_hash = ent2.sync_hash
         defer_ent[ent2.side].sync_path = ent2.sync_path
+        log.debug("keep ent %s", defer_ent)
         log.debug("discard ent %s", replace_ent)
         replace_ent.ignore(IgnoreReason.DISCARDED)
 
@@ -723,6 +727,8 @@ class SyncManager(Runnable):
                     if replace_ent:
                         replace_ent.ignore(IgnoreReason.CONFLICT)
                         replace_ent[defer].clear()
+                    defer_ent[defer].sync_path = None
+                    defer_ent[defer].sync_hash = None
                 else:
                     log.debug("defer not none, and not keeping, so merge sides")
                     replace_ent[defer] = defer_ent[defer]
@@ -913,6 +919,7 @@ class SyncManager(Runnable):
 
         if sync.is_creation(changed):
             assert not sync[changed].sync_hash
+
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
@@ -1092,13 +1099,6 @@ class SyncManager(Runnable):
     def handle_hash_diff(self, sync, changed, synced):
         if sync[changed].path is None:
             return FINISHED
-
-        if sync[changed].sync_hash is None:
-            sync[changed].sync_path = None
-            # creation must have failed
-            log.warning("needs create: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
-            return REQUEUE
-        # not a new file, which means we must have last sync info
 
         if sync[synced].exists == TRASHED or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
