@@ -921,8 +921,6 @@ class SyncManager(Runnable):
                 return REQUEUE
 
         if sync.is_creation(changed):
-            assert not sync[changed].sync_hash
-
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:

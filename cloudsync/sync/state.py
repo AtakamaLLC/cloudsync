@@ -108,8 +108,6 @@ class SideState():
         self.changed = 1
 
     def clear(self):
-        self.parent[1-self.side].sync_path = None
-        self.parent[1-self.side].sync_hash = None
         self.exists = UNKNOWN
         self.changed = None
         self.hash = None
