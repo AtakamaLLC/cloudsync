@@ -13,6 +13,8 @@ from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
     CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError
 
+from cloudsync.hashcachemixin import HashCacheMixin
+
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
@@ -87,7 +89,7 @@ class MockEvent:  # pylint: disable=too-few-public-methods
         return ret_val
 
 
-class MockProvider(Provider):
+class _MockProvider(Provider):
     default_sleep = 0.01
     connected = True
     name = "Mock"
@@ -459,6 +461,9 @@ class MockProvider(Provider):
     def log_debug_state(self, msg=""):
         files = list(self.walk("/"))
         log.debug("%s: mock provider state %s:%s", msg, len(files), files)
+
+class MockProvider(HashCacheMixin, _MockProvider):          # type: ignore
+    pass
 
 ###################
 
