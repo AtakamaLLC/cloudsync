@@ -1993,7 +1993,9 @@ def test_multihash_one_side_equiv(mock_provider_creator, side):
     assert b1.getvalue() == b'b-diff'
 
 
-def _setup_offline_state(mock_provider_creator, local_uses_path):
+@pytest.fixture(name="setup_offline_state", params=[True, False], ids=["path", "oid"])
+def _setup_offline_state(request, mock_provider_creator):
+    local_uses_path = request.param
     roots = ("/local", "/remote")
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
@@ -2012,13 +2014,13 @@ def _setup_offline_state(mock_provider_creator, local_uses_path):
     assert cs.providers[LOCAL].current_cursor is None
     assert cs.emgrs[LOCAL].cursor is None
 
-    cs.stop()
+    yield cs, storage, li1, ri1
 
-    return cs, storage, li1, ri1
+    cs.done()
 
-@pytest.mark.parametrize("local_uses_path", [True, False], ids=["path", "oid"])
-def test_walk_carefully1(mock_provider_creator, local_uses_path):
-    cs, storage, li1, ri1 = _setup_offline_state(mock_provider_creator, local_uses_path)
+
+def test_walk_carefully1(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
 
     # stuff that happened while i was away
     cs.providers[LOCAL].upload(li1.oid, BytesIO(b"changed-while-stopped"))
@@ -2038,14 +2040,17 @@ def test_walk_carefully1(mock_provider_creator, local_uses_path):
     cs.providers[REMOTE].download_path("/remote/new-name", b)
     assert b.getvalue() == b"changed-while-stopped"
 
-@pytest.mark.parametrize("local_uses_path", [True, False], ids=["path", "oid"])
-def test_walk_carefully2(mock_provider_creator, local_uses_path):
-    cs, storage, li1, ri1 = _setup_offline_state(mock_provider_creator, local_uses_path)
+
+def test_walk_carefully2(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    if cs.providers[LOCAL].oid_is_path and not cs.providers[LOCAL].uses_cursor:
+        pytest.skip("offline events for cursorless path providers cannot be supported")
 
     log.info("TABLE 0\n%s", cs.state.pretty_print())
     # stuff that happened while i was away
-    cs.providers[LOCAL].upload(li1.oid, BytesIO(b"changed-while-stopped"))
-    cs.providers[REMOTE].rename(ri1.oid, "/remote/new-name")
+    cs.providers[LOCAL].rename(li1.oid, "/local/new-name")
+    cs.providers[REMOTE].upload(ri1.oid, BytesIO(b"changed-while-stopped"))
     cs.emgrs[LOCAL]._drain()        # cursorless providers drop offline events on the floor
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
@@ -2059,5 +2064,31 @@ def test_walk_carefully2(mock_provider_creator, local_uses_path):
 
     b = BytesIO()
     cs.providers[LOCAL].download_path("/local/new-name", b)
+    assert b.getvalue() == b"changed-while-stopped"
+
+
+def test_walk_carefully3(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    # stuff that happened while i was away
+    cs.providers[REMOTE].upload(ri1.oid, BytesIO(b"changed-while-stopped"))
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.do()
+
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+    assert not cs.state.lookup_oid(LOCAL, li1.oid)[LOCAL].changed
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[LOCAL].download_path("/local/stuff1", b)
     assert b.getvalue() == b"changed-while-stopped"
 
