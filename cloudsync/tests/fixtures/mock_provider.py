@@ -122,6 +122,7 @@ class MockProvider(Provider):
         self.hash_func = hash_func
         if hash_func is None:
             self.hash_func = lambda a: md5(a).digest()
+        self.uses_cursor = True
 
     def disconnect(self):
         self.connected = False
@@ -195,6 +196,8 @@ class MockProvider(Provider):
         path = None
         if self.oid_is_path:
             path = event.get("path")
+        if not self.uses_cursor:
+            cursor = None
         retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
 
@@ -204,10 +207,14 @@ class MockProvider(Provider):
 
     @property
     def latest_cursor(self):
+        if not self.uses_cursor:
+            return None
         return self._latest_cursor
 
     @property
     def current_cursor(self):
+        if not self.uses_cursor:
+            return None
         return self._cursor
 
     @current_cursor.setter

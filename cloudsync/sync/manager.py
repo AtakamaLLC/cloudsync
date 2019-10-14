@@ -435,10 +435,8 @@ class SyncManager(Runnable):
 
             sync[synced].hash = info.hash
             sync[synced].sync_hash = info.hash
-            if info.path:
+            if not sync[synced].sync_path:
                 sync[synced].sync_path = info.path
-            else:
-                sync[synced].sync_path = sync[synced].path
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
 
