@@ -57,7 +57,7 @@ class SideState():
 
     def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
-        self._side: int = side                       
+        self._side: int = side
         self._otype: Optional[OType] = otype
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)

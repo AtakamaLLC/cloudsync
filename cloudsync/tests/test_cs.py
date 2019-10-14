@@ -40,7 +40,7 @@ def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
     cs.done()
 
 
-def make_cs(mock_provider_creator, left, right, storage=None):
+def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storage=None):
     roots = ("/local", "/remote")
 
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
@@ -468,8 +468,6 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
-
-
 def setup_remote_local(cs, *names):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -478,14 +476,40 @@ def setup_remote_local(cs, *names):
     cs.providers[REMOTE].mkdir(remote_parent)
 
     found = []
+    ret = []
     for name in names:
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
-        linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+        cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
         found.append((REMOTE, remote_path1))
+        ret.append((local_path1, remote_path1))
 
     cs.run_until_found(*found)
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    return ret
+
+
+# pass in local/remote pairs
+def get_infos(cs, *paths):
+    if type(paths[0]) is str:
+        # user passed in even number of paths
+        assert len(paths) % 2 == 0
+        paths = tuple([(paths[i+0], paths[i+1]) for i in range(0, len(paths), 2)])
+        flat = True
+    else:
+        flat = False
+
+    ret = []
+    for tup in paths:
+        (local, remote) = tup
+        li = cs.providers[LOCAL].info_path(tup[LOCAL])
+        ri = cs.providers[REMOTE].info_path(tup[REMOTE])
+        if flat:
+            ret.append(li)
+            ret.append(ri)
+        else:
+            ret.append((li, ri))
+    return ret
 
 
 @pytest.mark.repeat(4)
@@ -639,18 +663,15 @@ def test_cs_rename_heavy(cs):
 
     cs.do()
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1
-            )
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
     assert ok
     assert cs.providers[REMOTE].info_path(remote_path1)
 
-def test_cs_two_conflicts(cs):
-    remote_path1 = "/remote/stuff1"
-    local_path1 = "/local/stuff1"
 
-    setup_remote_local(cs, "stuff1")
+def test_cs_two_conflicts(cs):
+    ((local_path1, remote_path1),) = setup_remote_local(cs, "stuff1")
 
     log.info("TABLE 0\n%s", cs.state.pretty_print())
 
@@ -1971,4 +1992,103 @@ def test_multihash_one_side_equiv(mock_provider_creator, side):
 
     assert b1.getvalue() == b'b-diff'
 
+
+@pytest.fixture(name="setup_offline_state", params=[True, False], ids=["path", "oid"])
+def _setup_offline_state(request, mock_provider_creator):
+    local_uses_path = request.param
+    roots = ("/local", "/remote")
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+
+    providers = (mock_provider_creator(oid_is_path=local_uses_path, case_sensitive=True), mock_provider_creator(oid_is_path=False, case_sensitive=True))
+    providers[LOCAL].uses_cursor = False
+
+    # all this setup is necessry, because we need the "uses_cursor" flag to be false before the syncmgr is initalized
+    cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
+
+    [(lp1, lp2)] = setup_remote_local(cs, "stuff1")
+
+    li1, ri1 = get_infos(cs, lp1, lp2)
+    assert li1.path == lp1
+
+    assert cs.providers[LOCAL].current_cursor is None
+    assert cs.emgrs[LOCAL].cursor is None
+
+    yield cs, storage, li1, ri1
+
+    cs.done()
+
+
+def test_walk_carefully1(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    # stuff that happened while i was away
+    cs.providers[LOCAL].upload(li1.oid, BytesIO(b"changed-while-stopped"))
+    cs.providers[REMOTE].rename(ri1.oid, "/remote/new-name")
+    cs.emgrs[LOCAL]._drain()            # cursorless providers drop offline events on the floor
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[REMOTE].download_path("/remote/new-name", b)
+    assert b.getvalue() == b"changed-while-stopped"
+
+
+def test_walk_carefully2(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    if cs.providers[LOCAL].oid_is_path and not cs.providers[LOCAL].uses_cursor:
+        pytest.skip("offline events for cursorless path providers cannot be supported")
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+    # stuff that happened while i was away
+    cs.providers[LOCAL].rename(li1.oid, "/local/new-name")
+    cs.providers[REMOTE].upload(ri1.oid, BytesIO(b"changed-while-stopped"))
+    cs.emgrs[LOCAL]._drain()        # cursorless providers drop offline events on the floor
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[LOCAL].download_path("/local/new-name", b)
+    assert b.getvalue() == b"changed-while-stopped"
+
+
+def test_walk_carefully3(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    # stuff that happened while i was away
+    cs.providers[REMOTE].upload(ri1.oid, BytesIO(b"changed-while-stopped"))
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.do()
+
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+    assert not cs.state.lookup_oid(LOCAL, li1.oid)[LOCAL].changed
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[LOCAL].download_path("/local/stuff1", b)
+    assert b.getvalue() == b"changed-while-stopped"
 

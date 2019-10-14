@@ -105,7 +105,7 @@ class EventManager(Runnable):
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
                       self.provider.name, self.walk_one_time)
             for event in self.provider.walk(self.walk_one_time):
-                self.process_event(event)
+                self.process_event(event, from_walk=True)
             self.state.storage_update_data(self._walk_tag, time.time())
             self.walk_one_time = None
 
@@ -129,26 +129,34 @@ class EventManager(Runnable):
         for _ in self.events:
             pass
 
-    def process_event(self, event: Event):
+    def process_event(self, event: Event, from_walk=False):
         with self.state.lock:
             log.debug("%s got event %s", self.label, event)
             path = event.path
             exists = event.exists
             otype = event.otype
+            ehash = event.hash
+            info = None
 
-            if not event.path and not self.state.lookup_oid(self.side, event.oid):
-                try:
-                    info = self.provider.info_oid(event.oid)
-                    if info:
-                        if info.otype != event.otype:
-                            log.warning("provider %s gave a bad event: %s != %s, using %s",
-                                        self.provider.name, info.path, event.otype, info.otype)
-                        path = info.path
-                        otype = info.otype
-                except CloudTemporaryError:
-                    pass
+            if from_walk or not event.path and not self.state.lookup_oid(self.side, event.oid):
+                info = self.provider.info_oid(event.oid)
+                if info:
+                    if info.otype != event.otype:
+                        log.warning("provider %s gave a bad event: %s != %s, using %s",
+                                    self.provider.name, info.path, event.otype, info.otype)
+                    path = info.path
+                    otype = info.otype
+                    ehash = info.hash
 
-            self.state.update(self.side, otype, event.oid, path=path, hash=event.hash,
+            if from_walk:
+                # this event is from a walk, and we're checking to see if the state has changed
+                already = self.state.lookup_oid(self.side, event.oid)
+                if already:
+                    changed = already[self.side].hash != ehash or already[self.side].path != path
+                    if not changed:
+                        return
+
+            self.state.update(self.side, otype, event.oid, path=path, hash=ehash,
                               exists=exists, prior_oid=event.prior_oid)
             self.state.storage_commit()
 
