@@ -42,6 +42,8 @@ class _FolderIterator:
         self.api = api
         self.path = path
         self.ls_res = None
+        self.backoff = 0
+        self.longpoll = bool(cursor)
 
         if not cursor:
             self.ls_res = self.api('files_list_folder',
@@ -49,11 +51,23 @@ class _FolderIterator:
                                    recursive=recursive,
                                    limit=200)
         else:
-            self.ls_res = self.api('files_list_folder_continue',
-                                   cursor)
+            self.longpoll_continue(cursor)
 
     def __iter__(self):
         return self
+
+    def longpoll_continue(self, cursor):
+        if self.backoff:
+            time.sleep(self.backoff)
+
+        lpres = self.api('files_list_folder_longpoll', cursor)
+
+        if lpres.backoff:
+            self.backoff = lpres.backoff
+
+        if lpres.changes:
+            self.ls_res = self.api('files_list_folder_continue',
+                               cursor)
 
     def __next__(self):
         if self.ls_res:
@@ -66,10 +80,6 @@ class _FolderIterator:
                 ret.cursor = self.ls_res.cursor
                 return ret
         raise StopIteration()
-
-    @property
-    def cursor(self):
-        return self.ls_res and self.ls_res.cursor
 
 
 @strict                                     # pylint: disable=too-many-public-methods, too-many-instance-attributes
@@ -318,7 +328,9 @@ class DropboxProvider(Provider):
                         if inside_error.is_not_file():
                             raise NotAFileError(str(e))
 
-                log.exception("Unknown exception %s/%s", e, repr(e))
+                if isinstance(e.error, files.ListFolderLongpollError):
+                    raise CloudCursorError("cursor invalidated during longpoll")
+
                 raise CloudException("Unknown exception when executing %s(%s,%s): %s" % (method, args, kwargs, e))
             except (exceptions.InternalServerError, exceptions.RateLimitError, requests.exceptions.ReadTimeout):
                 raise CloudTemporaryError()
@@ -454,20 +466,23 @@ class DropboxProvider(Provider):
 
     def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
         info = self.info_oid(oid)
-        for res in _FolderIterator(self._api, oid, recursive=recursive):
-            if isinstance(res, files.DeletedMetadata):
-                continue
-            if isinstance(res, files.FolderMetadata):
-                otype = DIRECTORY
-                ohash = None
-            else:
-                otype = FILE
-                ohash = res.content_hash
-            path = res.path_display
-            oid = res.id
-            relative = self.is_subpath(info.path, path).lstrip("/")
-            if relative:
-                yield DirInfo(otype, oid, ohash, path, name=relative)
+        try:
+            for res in _FolderIterator(self._api, oid, recursive=recursive):
+                if isinstance(res, files.DeletedMetadata):
+                    continue
+                if isinstance(res, files.FolderMetadata):
+                    otype = DIRECTORY
+                    ohash = None
+                else:
+                    otype = FILE
+                    ohash = res.content_hash
+                path = res.path_display
+                oid = res.id
+                relative = self.is_subpath(info.path, path).lstrip("/")
+                if relative:
+                    yield DirInfo(otype, oid, ohash, path, name=relative)
+        except CloudCursorError as e:
+            raise CloudTemporaryError("Cursor error %s during listdir" % e)
 
     def create(self, path: str, file_like, metadata=None) -> OInfo:
         self._verify_parent_folder_exists(path)

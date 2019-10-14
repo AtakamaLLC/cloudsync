@@ -1,14 +1,14 @@
 import os
-import time
 import logging
 from io import BytesIO
 from unittest.mock import patch
 from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, cast
 
+import msgpack
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -212,11 +212,7 @@ class ProviderHelper(ProviderBase):
                 pass
 
     def prime_events(self):
-        try:
-            for e in self.events_poll(timeout=1):
-                log.debug("ignored event %s", e)
-        except TimeoutError:
-            pass
+        self.current_cursor = self.latest_cursor
 
     @property
     def current_cursor(self):
@@ -377,6 +373,7 @@ def test_connect(provider):
     provider.reconnect()
     assert provider.connected
 
+
 def test_create_upload_download(provider):
     dat = os.urandom(32)
 
@@ -391,6 +388,9 @@ def test_create_upload_download(provider):
 
     assert info1.hash
     assert info2.hash
+
+    # hash stuff must be jsonable... it can be complex, but must be comparable
+    assert msgpack.loads(msgpack.dumps(info1.hash, use_bin_type=True), use_list=False, raw=False) == info1.hash
 
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
@@ -565,14 +565,6 @@ def test_event_basic(provider):
                 received_event = e
                 event_count += 1
                 done = True
-
-    for e in provider.events():
-        if not e.path:
-            info = provider.info_oid(e.oid)
-            if info:
-                e.path = info.path
-        if e.path == dest:
-            event_count += 1
 
     assert event_count == 1
     assert received_event is not None
@@ -1442,3 +1434,41 @@ def test_special_characters(provider):
     new_oid2 = provider.rename(new_oid, newfname2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
+
+
+def test_cursor_error_during_listdir(provider):
+    # this test is only for dropbox
+    # todo: we need a better way to do this
+    # todo: we should probably have a factory for providers that produces wrapped or mixin
+    #       objects that contain higher level interfaces that handle things like this
+    if provider.name != "dropbox":
+        return
+
+    provider.current_cursor = provider.latest_cursor
+
+    orig_ld = provider.listdir
+
+    should_raise = False
+
+    def new_ld(oid):
+        for e in orig_ld(oid):
+            if should_raise:
+                raise CloudCursorError("cursor error")
+            yield e
+
+    provider.new_ld()
+
+    dir_name = provider.temp_name()
+    dir_oid = provider.mkdir(dir_name)
+    provider.create(dir_name + "/file1", BytesIO(b"hello"))
+    provider.create(dir_name + "/file2", BytesIO(b"there"))
+
+    it = iter(provider.listdir(dir_oid))
+
+    _ = next(it)
+    should_raise = True
+
+    # listdir should not accidentally raise a cursor error (dropbox uses cursors for listing folders)
+    with pytest.raises(CloudTemporaryError):
+        _ = next(it)
+

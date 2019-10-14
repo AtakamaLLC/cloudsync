@@ -13,7 +13,7 @@ __all__ = ['SyncManager']
 from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
-        CloudOutOfSpaceError, CloudException, CloudTokenError
+        CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -42,6 +42,8 @@ class ResolveFile():
         self.provider = provider
         self.path = info.path
         self.side = info.side
+        self.hash = info.hash
+        self.sync_hash = info.sync_hash
         self.otype = info.otype
         self.__temp_file = info.temp_file
         if self.otype == FILE:
@@ -99,7 +101,7 @@ class SyncManager(Runnable):
                  sleep: Optional[Tuple[float, float]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
-        self.translate = translate
+        self.__translate = translate
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
 
@@ -130,15 +132,16 @@ class SyncManager(Runnable):
             if sync:
                 try:
                     self.sync(sync)
-                    self.state.storage_update(sync)
+                    self.state.storage_commit()
                 except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError) as e:
                     log.warning(
                         "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
                     self.backoff()
                 except Exception as e:
                     log.exception(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority, stack_info=True)
+                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
                     sync.punt()
+                    self.state.storage_commit()
                     self.backoff()
 
     def done(self):
@@ -147,6 +150,12 @@ class SyncManager(Runnable):
             shutil.rmtree(self.tempdir)
         except FileNotFoundError:
             pass
+
+    def translate(self, side, path):
+        if path:
+            return self.__translate(side, path)
+        else:
+            return None
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
@@ -177,7 +186,9 @@ class SyncManager(Runnable):
         if not have_paths:
             return False
 
-        are_synced = (ent[0].sync_hash and ent[1].sync_hash) or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)
+        are_synced = ((ent[0].sync_hash and ent[1].sync_hash)
+                      or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)) \
+                     and ent[0].sync_path and ent[1].sync_path
         if not are_synced:
             return False
 
@@ -309,6 +320,8 @@ class SyncManager(Runnable):
                 self.providers[changed].download(sync[changed].oid, f)
             os.rename(partial_temp, sync[changed].temp_file)
             return True
+        except FileNotFoundError:
+            sync[changed].temp_file = self.temp_file(temp_for=sync[changed].path)
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
 
@@ -406,6 +419,9 @@ class SyncManager(Runnable):
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
+        except CloudFileNameError:
+            self.handle_file_name_error(sync, synced, translated_path)
+            return FINISHED
 
     def upload_synced(self, changed, sync):
         assert sync[changed].temp_file
@@ -419,10 +435,8 @@ class SyncManager(Runnable):
 
             sync[synced].hash = info.hash
             sync[synced].sync_hash = info.hash
-            if info.path:
+            if not sync[synced].sync_path:
                 sync[synced].sync_path = info.path
-            else:
-                sync[synced].sync_path = sync[synced].path
             sync[changed].sync_hash = sync[changed].hash
             sync[changed].sync_path = sync[changed].path
 
@@ -522,7 +536,6 @@ class SyncManager(Runnable):
                     log.debug("updated entry %s", parent)
 
             sync.punt()
-            return REQUEUE
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -531,20 +544,29 @@ class SyncManager(Runnable):
                 info = self.providers[synced].info_path(translated_path)
                 if not info:
                     log.debug("got a file exists, and then it didn't exist %s", sync)
-                    sync.punt()
-                    return REQUEUE
-
-                sync[synced].oid = info.oid
-                sync[synced].hash = info.hash
-                sync[synced].path = translated_path
-                self.update_entry(sync, synced, info.oid, path=translated_path)
-                # maybe it's a hash conflict
-                sync.punt()
-                return REQUEUE
+                    if sync.priority > 1:
+                        log.debug("repeated errors here, converting to pathname error %s", sync)
+                        self.handle_file_name_error(sync, synced, translated_path)
+                        return FINISHED
+                else:
+                    sync[synced].oid = info.oid
+                    sync[synced].hash = info.hash
+                    sync[synced].path = translated_path
+                    self.update_entry(sync, synced, info.oid, path=translated_path)
+                    # maybe it's a hash conflict
             else:
                 # maybe it's a name conflict
-                sync.punt()
-            return REQUEUE
+                pass
+            sync.punt()
+        except CloudFileNameError:
+            self.handle_file_name_error(sync, synced, translated_path)
+            return FINISHED
+        return REQUEUE
+
+    def handle_file_name_error(self, sync, synced, translated_path):
+        # pretend this sync translated as "None"
+        log.warning("File name error: not creating '%s' on %s", translated_path, self.providers[synced].name)
+        sync.ignore(IgnoreReason.IRRELEVANT)
 
     def __resolve_file_likes(self, side_states):
         class Guard:
@@ -613,6 +635,7 @@ class SyncManager(Runnable):
 
         defer_ent = self.state.lookup_oid(ent1.side, ent1.oid)
         replace_ent = self.state.lookup_oid(ent2.side, ent2.oid)
+        new_ent2 = defer_ent[ent2.side]
 
         if keep:
             # both sides are being kept, so we have to upload since there are no entries
@@ -622,7 +645,7 @@ class SyncManager(Runnable):
             info2 = self.providers[ent2.side].create(ent2.path, fh)
 
             ent1.oid = info1.oid
-            ent2.oid = info2.oid
+            new_ent2.oid = info2.oid
 
             self.update_entry(defer_ent, ent1.side, ent1.oid, path=ent1.path, hash=ent1.hash)
 
@@ -631,15 +654,17 @@ class SyncManager(Runnable):
 
             assert info2.hash
             assert info1.hash
-            ent2.sync_hash = info2.hash
-            ent2.sync_path = info2.path
+            new_ent2.sync_hash = info2.hash
+            new_ent2.sync_path = info2.path
             ent1.sync_hash = info1.hash
             ent1.sync_path = info1.path
         else:
             info1 = self.providers[ent1.side].info_oid(ent1.oid)
             info2 = self.providers[ent2.side].info_oid(ent2.oid)
 
-            ent2.sync_path = ent2.path
+            new_ent2.oid = info2.oid
+            new_ent2.path = info2.path
+            new_ent2.sync_path = new_ent2.path
             ent1.sync_path = self.translate(ent1.side, ent2.path)
 
         # in case oids have changed
@@ -647,6 +672,7 @@ class SyncManager(Runnable):
 
         defer_ent[ent2.side].sync_hash = ent2.sync_hash
         defer_ent[ent2.side].sync_path = ent2.sync_path
+        log.debug("keep ent %s", defer_ent)
         log.debug("discard ent %s", replace_ent)
         replace_ent.ignore(IgnoreReason.DISCARDED)
 
@@ -702,6 +728,8 @@ class SyncManager(Runnable):
                     if replace_ent:
                         replace_ent.ignore(IgnoreReason.CONFLICT)
                         replace_ent[defer].clear()
+                    defer_ent[defer].sync_path = None
+                    defer_ent[defer].sync_hash = None
                 else:
                     log.debug("defer not none, and not keeping, so merge sides")
                     replace_ent[defer] = defer_ent[defer]
@@ -711,6 +739,8 @@ class SyncManager(Runnable):
                     replace_ent[replace_side].sync_hash = replace_ent[replace_side].hash
                     replace_ent[defer].sync_path = self.translate(defer, replace_ent[replace_side].path)
                     replace_ent[defer].sync_hash = replace_ent[defer].hash
+                    if not replace_ent[defer].sync_path:
+                        log.warning("sync path irrelevant during merge")
             else:
                 # both sides were modified, because the fh returned was some third thing that should replace both
                 log.debug("resolver merge upload to both sides: %s", keep)
@@ -849,8 +879,12 @@ class SyncManager(Runnable):
             sync.punt()
             return True
 
-        return self.handle_split_conflict(
+        self.handle_split_conflict(
             found, synced, sync, changed)
+
+        # returns true since we're answering "is-disjoint"
+        # todo: change this?
+        return True
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
         if not sync[changed].path:
@@ -885,7 +919,6 @@ class SyncManager(Runnable):
                 return REQUEUE
 
         if sync.is_creation(changed):
-            assert not sync[changed].sync_hash
             # looks like a new file
 
             if sync[changed].otype == DIRECTORY:
@@ -1007,8 +1040,8 @@ class SyncManager(Runnable):
         log.debug("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def embrace_change(self, sync, changed, synced): # pylint: disable=too-many-return-statements, too-many-branches
-        if sync[changed].path:
+    def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
+        if sync[changed].path or (sync[changed].exists == EXISTS):
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
@@ -1051,6 +1084,11 @@ class SyncManager(Runnable):
                 log.debug("requeue, not handled")
                 return ret
 
+            if sync.is_discarded:
+                return FINISHED
+
+            # fall through in case of hash change
+
         if sync[changed].hash != sync[changed].sync_hash:
             return self.handle_hash_diff(sync, changed, synced)
 
@@ -1060,13 +1098,6 @@ class SyncManager(Runnable):
     def handle_hash_diff(self, sync, changed, synced):
         if sync[changed].path is None:
             return FINISHED
-
-        if sync[changed].sync_hash is None:
-            sync[changed].sync_path = None
-            # creation must have failed
-            log.warning("needs create: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
-            return REQUEUE
-        # not a new file, which means we must have last sync info
 
         if sync[synced].exists == TRASHED or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
@@ -1112,7 +1143,7 @@ class SyncManager(Runnable):
             sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
-        log.debug("splitting hash conflict %s", sync)
+        log.debug("splitting hash conflict %s %s %s", sync, sync[LOCAL].sync_hash, sync[REMOTE].sync_hash)
 
         try:
             save: Tuple[Dict[str, Any], Dict[str, Any]] = ({}, {})
@@ -1154,6 +1185,9 @@ class SyncManager(Runnable):
         # consistent handling
         log.debug("handle path conflict %s", sync)
 
+        assert sync[0].sync_path
+        assert sync[1].sync_path
+
         path1 = sync[0].path
         path2 = sync[1].path
         if path1 > path2:
@@ -1167,17 +1201,16 @@ class SyncManager(Runnable):
             return
 
         other_info = self.providers[other.side].info_oid(other.oid)
+        if other_info is None:
+            return
 
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
 
-        def _update_syncs(new_oid):
-            self.update_entry(sync, other.side, new_oid, path=other_path)
-            if sync[other.side].sync_path:
-                sync[other.side].sync_path = sync[other.side].path
-
-            if sync[picked.side].sync_path:
-                sync[picked.side].sync_path = sync[picked.side].path
+        def _update_syncs(newer_oid):
+            self.update_entry(sync, other.side, newer_oid, path=other_path)
+            sync[other.side].sync_path = sync[other.side].path
+            sync[picked.side].sync_path = sync[picked.side].path
 
         try:
             if other_info.path == other_path:

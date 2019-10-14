@@ -8,10 +8,14 @@ from unittest.mock import patch
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
+from cloudsync.types import IgnoreReason
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
 
+
+class CloudSyncMixin(CloudSync, RunUntilHelper):
+    pass
 
 @pytest.fixture(name="cs_storage")
 def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
@@ -29,9 +33,6 @@ def fixture_cs(mock_provider_generator, mock_provider_creator):
 def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
     roots = ("/local", "/remote")
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
     cs = CloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
 
     yield cs
@@ -39,13 +40,9 @@ def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
     cs.done()
 
 
-def make_cs(mock_provider_creator, left, right, storage=None):
+def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storage=None):
     roots = ("/local", "/remote")
-
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-    cs = CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
-    return cs
+    return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
 # multi local test has two local providers, each syncing up to the same folder on one remote provider.
@@ -55,8 +52,6 @@ def fixture_multi_local_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
 
     p1 = mock_provider_generator()  # local
     p2 = mock_provider_generator()  # local
@@ -83,9 +78,6 @@ def fixture_multi_local_cs(mock_provider_generator):
 def fixture_multi_remote_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
-
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
 
     p1 = mock_provider_generator()
     p2 = mock_provider_generator()
@@ -475,8 +467,6 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
-
-
 def setup_remote_local(cs, *names):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -485,14 +475,40 @@ def setup_remote_local(cs, *names):
     cs.providers[REMOTE].mkdir(remote_parent)
 
     found = []
+    ret = []
     for name in names:
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
-        linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+        cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
         found.append((REMOTE, remote_path1))
+        ret.append((local_path1, remote_path1))
 
     cs.run_until_found(*found)
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    return ret
+
+
+# pass in local/remote pairs
+def get_infos(cs, *paths):
+    if type(paths[0]) is str:
+        # user passed in even number of paths
+        assert len(paths) % 2 == 0
+        paths = tuple([(paths[i+0], paths[i+1]) for i in range(0, len(paths), 2)])
+        flat = True
+    else:
+        flat = False
+
+    ret = []
+    for tup in paths:
+        (local, remote) = tup
+        li = cs.providers[LOCAL].info_path(tup[LOCAL])
+        ri = cs.providers[REMOTE].info_path(tup[REMOTE])
+        if flat:
+            ret.append(li)
+            ret.append(ri)
+        else:
+            ret.append((li, ri))
+    return ret
 
 
 @pytest.mark.repeat(4)
@@ -646,18 +662,15 @@ def test_cs_rename_heavy(cs):
 
     cs.do()
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1
-            )
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
     assert ok
     assert cs.providers[REMOTE].info_path(remote_path1)
 
-def test_cs_two_conflicts(cs):
-    remote_path1 = "/remote/stuff1"
-    local_path1 = "/local/stuff1"
 
-    setup_remote_local(cs, "stuff1")
+def test_cs_two_conflicts(cs):
+    ((local_path1, remote_path1),) = setup_remote_local(cs, "stuff1")
 
     log.info("TABLE 0\n%s", cs.state.pretty_print())
 
@@ -892,9 +905,7 @@ def test_storage(storage):
     log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
 
     def not_dirty(s: SyncState):
-        se: SyncEntry
-        for se in s.get_all():
-            assert not se.dirty
+        return not s._dirtyset
 
     def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
         ret = []
@@ -1822,4 +1833,261 @@ def test_hash_mess(cs, side_locked):
     assert r_r is not None or r_l is not None
     assert bool(l_r) == bool(r_r)
     assert bool(r_l) == bool(l_l)
+
+
+
+def test_temp_dropped(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+
+    orig_changed = cs.smgr.download_changed
+
+    hit = False
+
+    def new_changed(changed, sync):
+        nonlocal hit
+        orig_changed(changed, sync)
+        hit = True
+        return False
+
+    cs.smgr.download_changed = new_changed
+
+    log.debug("run until hit")
+
+    cs.run(until=lambda: hit)
+
+    log.info("TABLE\n%s", cs.state.pretty_print())
+
+    import shutil
+    shutil.rmtree(cs.smgr.tempdir)
+
+    cs.smgr.download_changed = orig_changed
+
+    cs.run_until_found(
+        (REMOTE, remote_path1),
+        timeout=2)
+
+
+def test_unfile(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+    remote_path1 = "/remote/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.run_until_found(
+        (REMOTE, remote_parent),
+        timeout=1)
+
+    # test 1
+    log.debug("CREATE")
+    info = cs.providers[REMOTE].create(remote_path1, BytesIO(b"hello"), None)
+    log.debug("UNFILE")
+    cs.providers[REMOTE]._unfile(info.oid)
+    cs.run(until=lambda: cs.state.lookup_oid(REMOTE, info.oid).ignored != IgnoreReason.NONE, timeout=1)
+
+    # test 2
+
+    log.debug("CREATE")
+    info = cs.providers[REMOTE].create(remote_path1, BytesIO(b"hello"), None)
+    cs.run_until_found(
+        (LOCAL, local_path1),
+        timeout=2)
+
+    log.info("START TABLE\n%s", cs.state.pretty_print())
+    log.debug("UNFILE")
+    cs.providers[REMOTE]._unfile(info.oid)
+    cs.run_until_found(
+        WaitFor(LOCAL, local_path1, exists=False),
+        timeout=2)
+
+
+@pytest.mark.parametrize("side", [LOCAL, REMOTE], ids=["local", "remote"])
+def test_multihash_one_side_equiv(mock_provider_creator, side):
+    roots = ("/local", "/remote")
+
+    def segment_hash(data):
+        # two hashes.... one is mutable (notion of equivalence) the other causes conflicts (data change)
+        return [hash(data[0:1]), hash(data[1:])]
+
+    provs = (
+        mock_provider_creator(oid_is_path=True, case_sensitive=False, hash_func=segment_hash),
+        mock_provider_creator(oid_is_path=False, case_sensitive=False)
+    )
+
+    class CloudSyncMixin(CloudSync, RunUntilHelper):
+        def resolve_conflict(self, f1, f2):
+            fhs = sorted((f1, f2), key=lambda a: a.side)
+
+            log.info("custom resolver sides:%s/%s, sh:%s, sh:%s", f1.side, f2.side, f1.sync_hash, f2.sync_hash)
+
+            if fhs[0].sync_hash:
+                if fhs[0].hash[1] == fhs[0].sync_hash[1]:
+                    log.info("local was equivalent to last sync... remote wins")
+                    return (fhs[1], False)
+
+                # last time i synced fh0 same as fh1
+                other_sh = segment_hash(fhs[1].read())
+                log.info("%s == %s", fhs[0].sync_hash, other_sh)
+                if fhs[0].sync_hash[1] == other_sh[1]:
+                    log.info("remote was equivalent to last sync... local wins")
+                    return (fhs[0], False)
+
+            return None
+
+    cs = CloudSyncMixin(provs, roots, storage=None, sleep=None)
+
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+
+    setup_remote_local(cs, "stuff1")
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    cs.providers[LOCAL].delete(linfo1.oid)
+    cs.providers[REMOTE].delete(rinfo1.oid)
+
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"a-same"))
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    if (side == LOCAL):
+        linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"b-diff"))
+        rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"c-same"))
+    else:
+        linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"c-same"))
+        rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"b-diff"))
+
+    # run event managers only... not sync
+    cs.emgrs[LOCAL].do()
+    cs.emgrs[REMOTE].do()
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    # conflicted files are discarded, not in table
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    assert(len(cs.state) == 2)
+
+    assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted") \
+        and not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
+
+    b1 = BytesIO()
+
+    cs.providers[LOCAL].download_path(local_path1, b1)
+
+    assert b1.getvalue() == b'b-diff'
+
+
+@pytest.fixture(name="setup_offline_state", params=[True, False], ids=["path", "oid"])
+def _setup_offline_state(request, mock_provider_creator):
+    local_uses_path = request.param
+    roots = ("/local", "/remote")
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+
+    providers = (mock_provider_creator(oid_is_path=local_uses_path, case_sensitive=True), mock_provider_creator(oid_is_path=False, case_sensitive=True))
+    providers[LOCAL].uses_cursor = False
+
+    # all this setup is necessry, because we need the "uses_cursor" flag to be false before the syncmgr is initalized
+    cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
+
+    [(lp1, lp2)] = setup_remote_local(cs, "stuff1")
+
+    li1, ri1 = get_infos(cs, lp1, lp2)
+    assert li1.path == lp1
+
+    assert cs.providers[LOCAL].current_cursor is None
+    assert cs.emgrs[LOCAL].cursor is None
+
+    yield cs, storage, li1, ri1
+
+    cs.done()
+
+
+def test_walk_carefully1(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    # stuff that happened while i was away
+    cs.providers[LOCAL].upload(li1.oid, BytesIO(b"changed-while-stopped"))
+    cs.providers[REMOTE].rename(ri1.oid, "/remote/new-name")
+    cs.emgrs[LOCAL]._drain()            # cursorless providers drop offline events on the floor
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[REMOTE].download_path("/remote/new-name", b)
+    assert b.getvalue() == b"changed-while-stopped"
+
+
+def test_walk_carefully2(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    if cs.providers[LOCAL].oid_is_path and not cs.providers[LOCAL].uses_cursor:
+        pytest.skip("offline events for cursorless path providers cannot be supported")
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+    # stuff that happened while i was away
+    cs.providers[LOCAL].rename(li1.oid, "/local/new-name")
+    cs.providers[REMOTE].upload(ri1.oid, BytesIO(b"changed-while-stopped"))
+    cs.emgrs[LOCAL]._drain()        # cursorless providers drop offline events on the floor
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[LOCAL].download_path("/local/new-name", b)
+    assert b.getvalue() == b"changed-while-stopped"
+
+
+def test_walk_carefully3(setup_offline_state):
+    cs, storage, li1, ri1 = setup_offline_state
+
+    # stuff that happened while i was away
+    cs.providers[REMOTE].upload(ri1.oid, BytesIO(b"changed-while-stopped"))
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[LOCAL].cursor = None
+
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    cs.do()
+
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+    assert not cs.state.lookup_oid(LOCAL, li1.oid)[LOCAL].changed
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    b = BytesIO()
+    cs.providers[LOCAL].download_path("/local/stuff1", b)
+    assert b.getvalue() == b"changed-while-stopped"
 

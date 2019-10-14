@@ -8,7 +8,6 @@ altered to independent, and not paired at all.
 """
 
 import copy
-import json
 import logging
 import time
 import random
@@ -18,6 +17,7 @@ from enum import Enum
 from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
 
 from typing import Union, Sequence
+import msgpack
 from pystrict import strict
 
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 # safe ternary, don't allow traditional comparisons
+
 
 class Exists(Enum):
     UNKNOWN = None
@@ -56,7 +57,7 @@ class SideState():
 
     def __init__(self, parent: 'SyncEntry', side: int, otype: Optional[OType]):
         self._parent = parent
-        self._side: int = side                       
+        self._side: int = side
         self._otype: Optional[OType] = otype
         self._hash: Optional[bytes] = None           # hash at provider
         # time of last change (we maintain this)
@@ -68,7 +69,6 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
-
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -108,8 +108,6 @@ class SideState():
         self.changed = 1
 
     def clear(self):
-        self.parent[1-self.side].sync_path = None
-        self.parent[1-self.side].sync_hash = None
         self.exists = UNKNOWN
         self.changed = None
         self.hash = None
@@ -122,6 +120,7 @@ class SideState():
         d = self.__dict__.copy()
         d.pop("_parent", None)
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -172,18 +171,16 @@ class SyncEntry:
         self.__states: List[SideState] = [SideState(self, 0, otype), SideState(self, 1, otype)]
         self._ignored = ignore_reason
         self._storage_id: Any = None
-        self._dirty: bool = True
         self._priority: float = 0         # 0 == normal, > 0 == high, < 0 == low
         self._parent = parent
 
         if storage_init is not None:
             self._storage_id = storage_init[0]
             self.deserialize(storage_init)
-            self._dirty = False
         log.debug("new syncent %s", debug_sig(id(self)))
 
         self.priority: float
-        
+
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
@@ -199,7 +196,6 @@ class SyncEntry:
             object.__setattr__(self, "_" + k, v)
 
     def updated(self, side, key, val):
-        self._dirty = True
         self._parent.updated(self, side, key, val)
 
     def serialize(self) -> bytes:
@@ -208,9 +204,9 @@ class SyncEntry:
             ret = dict()
             ret['otype'] = side_state.otype.value
             ret['side'] = side_state.side
-            ret['hash'] = side_state.hash.hex() if isinstance(side_state.hash, bytes) else None
+            ret['hash'] = side_state.hash
             ret['changed'] = side_state.changed
-            ret['sync_hash'] = side_state.sync_hash.hex() if isinstance(side_state.sync_hash, bytes) else None
+            ret['sync_hash'] = side_state.sync_hash
             ret['path'] = side_state.path
             ret['sync_path'] = side_state.sync_path
             ret['oid'] = side_state.oid
@@ -224,7 +220,7 @@ class SyncEntry:
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
-        return json.dumps(ser).encode('utf-8')
+        return msgpack.dumps(ser, use_bin_type=True)
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
@@ -232,9 +228,9 @@ class SyncEntry:
             otype = OType(side_dict['otype'])
             side_state = SideState(self, side, otype)
             side_state.side = side_dict['side']
-            side_state.hash = bytes.fromhex(side_dict['hash']) if side_dict['hash'] else None
+            side_state.hash = side_dict['hash']
             side_state.changed = side_dict['changed']
-            side_state.sync_hash = bytes.fromhex(side_dict['sync_hash']) if side_dict['sync_hash'] else None
+            side_state.sync_hash = side_dict['sync_hash']
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
@@ -243,7 +239,7 @@ class SyncEntry:
             return side_state
 
         self.storage_id = storage_init[0]
-        ser: dict = json.loads(storage_init[1].decode('utf-8'))
+        ser: dict = msgpack.loads(storage_init[1], use_list=False, raw=False)
         self.__states = [dict_to_side_state(0, ser['side0']),
                          dict_to_side_state(1, ser['side1'])]
         reason_string = ser.get('ignored', "")
@@ -297,7 +293,7 @@ class SyncEntry:
         self.__states[side] = copy.copy(val)
 
     def hash_conflict(self):
-        if self[0].hash and self[1].hash:
+        if self[0].hash and self[1].hash and self[0].path and self[1].path:
             return self[0].hash != self[0].sync_hash and self[1].hash != self[1].sync_hash
         return False
 
@@ -305,7 +301,8 @@ class SyncEntry:
         return self[changed].path != self[changed].sync_path
 
     def is_creation(self, changed):
-        return not self[changed].sync_path and self[changed].path
+        return (not self[other_side(changed)].oid or self[other_side(changed)].exists == TRASHED) \
+                and self[changed].path and self[changed].exists != TRASHED
 
     def is_rename(self, changed):
         return (self[changed].sync_path and self[changed].path
@@ -334,6 +331,10 @@ class SyncEntry:
     @property
     def is_conflicted(self):
         return self.ignored == IgnoreReason.CONFLICT
+
+    @property
+    def is_trash(self):
+        return self[LOCAL].oid is None and self[REMOTE].oid is None
 
     @property
     def is_temp_rename(self):
@@ -389,18 +390,41 @@ class SyncEntry:
                 idx = 2
             return tup[idx]
 
+        def abbrev_equiv(a, b, table):
+            assert len(table) == 5                  # quick check
+            if a is None and b is not None:
+                return table["rightonly"]
+            if a is not None and b is None:
+                return table["leftonly"]
+            if a is None and b is None:
+                return table["neither"]
+            if a == b:
+                return table["equiv"]
+            else:
+                return table["mismatch"]
+
         lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
         rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
-        lhma = abbrev_bool(self[LOCAL].hash and self[LOCAL].sync_hash !=
-                           self[LOCAL].hash, ("H", "=", "?"))
-        rhma = abbrev_bool(self[REMOTE].hash and self[REMOTE].sync_hash !=
-                           self[REMOTE].hash, ("H", "=", "?"))
+        abbrev_table = {
+            "mismatch": "H",
+            "leftonly": "<",
+            "rightonly": ">",
+            "equiv": "=",
+            "neither": "0"
+        }
+        lhma = abbrev_equiv(self[LOCAL].hash, self[LOCAL].sync_hash, abbrev_table)
+        rhma = abbrev_equiv(self[REMOTE].hash, self[REMOTE].sync_hash, abbrev_table)
 
         _sig: Callable[[Any], Any]
         if use_sigs:
             _sig = debug_sig
         else:
-            _sig = lambda a: a
+            _sig = lambda a: a      # noqa
+
+        if use_sigs:
+            _secs = secs
+        else:
+            _secs = lambda a: a     # noqa
 
         local_otype = self[LOCAL].otype.value if self[LOCAL].otype else '?'
         remote_otype = self[REMOTE].otype.value if self[REMOTE].otype else '?'
@@ -415,12 +439,12 @@ class SyncEntry:
             _sig(self.storage_id),
             otype[:3],
 
-            secs(self[LOCAL].changed),
+            _secs(self[LOCAL].changed),
             self[LOCAL].path,
             _sig(self[LOCAL].oid),
             str(self[LOCAL].sync_path), lexv, lhma,
 
-            secs(self[REMOTE].changed),
+            _secs(self[REMOTE].changed),
             self[REMOTE].path,
             _sig(self[REMOTE].oid),
             str(self[REMOTE].sync_path), rexv, rhma,
@@ -511,6 +535,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset: Set[SyncEntry] = set()
+        self._dirtyset: Set[SyncEntry] = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
@@ -561,8 +586,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[LOCAL]._changed = False
                 ent[REMOTE]._changed = False
                 self._changeset.discard(ent)
-            ent._ignored = val  # TODO: remove this when storage_update is refactored
-            self.storage_update(ent)
         elif key == "changed":
             if val or ent[other_side(side)].changed:
                 self._changeset.add(ent)
@@ -575,6 +598,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     ent[LOCAL].changed += ent._parent._punt_secs[LOCAL]
                 if ent[REMOTE].changed:
                     ent[REMOTE].changed = ent._parent._punt_secs[REMOTE]
+
+        self._dirtyset.add(ent)
 
     @property
     def changes(self):
@@ -795,19 +820,29 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self.data_id[data_tag] = self._storage.create(data_tag, data)
                 log.log(TRACE, "storage_update_data data CREATE %s %s", data_tag, data)
 
-    def storage_update(self, ent: SyncEntry):
+    def storage_commit(self):
+        for ent in self._dirtyset:
+            self._storage_update(ent)
+        self._dirtyset.clear()
+
+    def _storage_update(self, ent: SyncEntry):
         if self._tag is None:
             return
+        tag = cast(str, self._tag)
 
         log.log(TRACE, "storage_update eid%s", ent.storage_id)
         if self._storage is not None:
             if ent.storage_id is not None:
-                self._storage.update(cast(str, self._tag), ent.serialize(), ent.storage_id)
+                if ent.is_trash:
+                    self._storage.delete(tag, ent.storage_id)
+                else:
+                    self._storage.update(tag, ent.serialize(), ent.storage_id)
             else:
-                new_id = self._storage.create(cast(str, self._tag), ent.serialize())
+                if ent.is_trash:
+                    return
+                new_id = self._storage.create(tag, ent.serialize())
                 ent.storage_id = new_id
                 log.debug("storage_update creating eid%s", ent.storage_id)
-            ent.dirty = False
 
     def __len__(self):
         return len(self.get_all())
@@ -836,8 +871,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent = SyncEntry(self, otype)
 
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
-
-        self.storage_update(ent)
 
     def change(self, age):
         if not self._changeset:
@@ -908,7 +941,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if e.ignored != IgnoreReason.NONE and not found_ignored:
                 ret += "------\n"
                 found_ignored = True
-            ret += e.pretty(widths=widths) + "\n"
+            ret += e.pretty(widths=widths, use_sigs=use_sigs) + "\n"
 
         return ret
 
@@ -979,13 +1012,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
+
         # we aren't synced
         replace_ent[replace].sync_path = None
-        replace_ent[replace].sync_hash = None
-
-        # never synced
         defer_ent[defer].sync_path = None
-        defer_ent[defer].sync_hash = None
 
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
@@ -995,11 +1025,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         assert replace_ent[replace].oid
 
-        self.storage_update(defer_ent)
-        self.storage_update(replace_ent)
-
         return defer_ent, defer, replace_ent, replace
-
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:

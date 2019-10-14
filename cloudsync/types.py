@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 from enum import Enum
 from dataclasses import dataclass
 
@@ -26,7 +26,7 @@ NOTKNOWN = OType.NOTKNOWN                  # only allowed for deleted files!
 class OInfo:
     otype: OType                           # fsobject type     (DIRECTORY or FILE)
     oid: str                               # fsobject id
-    hash: Optional[bytes]                  # fsobject hash     (better name: ohash)
+    hash: Any                              # fsobject hash     (better name: ohash)
     path: Optional[str]                    # path
     size: int = 0                          # size of object in bytes
 

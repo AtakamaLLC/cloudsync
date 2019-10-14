@@ -1,5 +1,6 @@
 pystrict
 arrow
+msgpack
 dataclasses
 oauth2client<4.0.0
 # gdrive provider
@@ -9,4 +10,3 @@ google-auth-httplib2
 google-auth-oauthlib
 # dropbox provider
 dropbox
-waitress

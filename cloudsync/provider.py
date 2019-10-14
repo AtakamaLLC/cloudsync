@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, Union, List, Any
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -11,9 +11,15 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class Provider(ABC):                        # pylint: disable=too-many-public-methods
-    sep: str = '/'                          # path delimiter
-    alt_sep: str = '\\'                     # alternate path delimiter
+# user-defined types.  must be serializable via msgpack and comparable
+# mypy doesn't support cyclic definitions yet...
+Hash = Union[Dict[str, 'Hash'], Tuple['Hash', ...], str, int, bytes, float, None]          # type: ignore
+Cursor = Union[Dict[str, 'Cursor'], Tuple['Cursor', ...], str, int, bytes, float, None]    # type: ignore
+
+
+class Provider(ABC):                    # pylint: disable=too-many-public-methods
+    sep: str = '/'                      # path delimiter
+    alt_sep: str = '\\'                 # alternate path delimiter
     oid_is_path: bool = False
     case_sensitive: bool = True
     win_paths: bool = False
@@ -78,11 +84,11 @@ class Provider(ABC):                        # pylint: disable=too-many-public-me
 
     @property
     @abstractmethod
-    def current_cursor(self) -> Any:
+    def current_cursor(self) -> Cursor:
         ...
 
     @current_cursor.setter
-    def current_cursor(self, val: Any) -> None:  # pylint: disable=no-self-use, unused-argument
+    def current_cursor(self, val: Cursor) -> None:  # pylint: disable=no-self-use, unused-argument
         ...
 
     @abstractmethod
@@ -132,13 +138,13 @@ class Provider(ABC):                        # pylint: disable=too-many-public-me
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         ...
 
-    def hash_oid(self, oid) -> Optional[bytes]:  # TODO add a test to FNFE
+    # override this if your implementation is more efficient
+    def hash_oid(self, oid) -> Hash:
         info = self.info_oid(oid)
         return info.hash if info else None
 
-    @staticmethod
     @abstractmethod
-    def hash_data(file_like) -> Union[str, bytes]:
+    def hash_data(self, file_like) -> Hash:
         ...
 
     @abstractmethod

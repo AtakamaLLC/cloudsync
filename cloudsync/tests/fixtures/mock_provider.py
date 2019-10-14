@@ -21,7 +21,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
     DIR = 'mock dir'
 
-    def __init__(self, path, object_type, oid_is_path, contents=None, mtime=None):
+    def __init__(self, path, object_type, oid_is_path, hash_func, contents=None, mtime=None):
         # self.display_path = path  # TODO: used for case insensitive file systems
         if contents is None and type == MockFSObject.FILE:
             contents = b""
@@ -38,6 +38,9 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
         self.mtime = mtime or time.time()
 
+        self.hash_func = hash_func
+        assert self.hash_func
+
     @property
     def otype(self):
         if self.type == self.FILE:
@@ -45,10 +48,10 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         else:
             return OType.DIRECTORY
 
-    def hash(self) -> Optional[bytes]:
+    def hash(self) -> Optional[str]:
         if self.type == self.DIR:
             return None
-        return md5(self.contents).digest()
+        return self.hash_func(self.contents)
 
     def update(self):
         self.mtime = time.time()
@@ -90,7 +93,7 @@ class MockProvider(Provider):
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None, hash_func=None):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -116,6 +119,10 @@ class MockProvider(Provider):
         self.event_sleep = 0.001
         self.creds = {"key": "val"}
         self.connect(self.creds)
+        self.hash_func = hash_func
+        if hash_func is None:
+            self.hash_func = lambda a: md5(a).digest()
+        self.uses_cursor = True
 
     def disconnect(self):
         self.connected = False
@@ -176,12 +183,13 @@ class MockProvider(Provider):
         }
 
     def _unstore_object(self, fo: MockFSObject):
-        # TODO: do I need to check if the path and ID exist before del to avoid a key error,
-        #  or perhaps just catch and swallow that exception?
-        del self._fs_by_path[self.normalize(fo.path)]
-        del self._fs_by_oid[fo.oid]
-        if fo.contents:
-            self._total_size -= len(fo.contents)
+        try:
+            del self._fs_by_path[self.normalize(fo.path)]
+            del self._fs_by_oid[fo.oid]
+            if fo.contents:
+                self._total_size -= len(fo.contents)
+        except KeyError:
+            raise CloudFileNotFoundError("file doesn't exist %s", fo.path)
 
     def _translate_event(self, pe: MockEvent, cursor) -> Event:
         event = pe.serialize()
@@ -195,6 +203,8 @@ class MockProvider(Provider):
         path = None
         if self.oid_is_path:
             path = event.get("path")
+        if not self.uses_cursor:
+            cursor = None
         retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
 
@@ -204,10 +214,14 @@ class MockProvider(Provider):
 
     @property
     def latest_cursor(self):
+        if not self.uses_cursor:
+            return None
         return self._latest_cursor
 
     @property
     def current_cursor(self):
+        if not self.uses_cursor:
+            return None
         return self._cursor
 
     @current_cursor.setter
@@ -229,7 +243,7 @@ class MockProvider(Provider):
         # TODO: implement "since" parameter
         self._api()
         for obj in list(self._fs_by_oid.values()):
-            if self.is_subpath(path, obj.path, strict=False):
+            if obj.path and self.is_subpath(path, obj.path, strict=False):
                 yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:
@@ -266,7 +280,7 @@ class MockProvider(Provider):
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         self._verify_parent_folder_exists(path)
         if file is None or not file.exists:
-            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path)
+            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self.hash_func)
         file.contents = file_like.read()
         file.exists = True
         self._store_object(file)
@@ -364,13 +378,23 @@ class MockProvider(Provider):
             else:
                 log.debug("Skipped creating already existing folder: %s", path)
                 return file.oid
-        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path)
+        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self.hash_func)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
         return new_fs_object.oid
 
     def delete(self, oid):
         return self._delete(oid)
+
+    def _unfile(self, oid):
+        file = self._fs_by_oid.get(oid, None)
+        if file is None or not file.exists:
+            raise CloudFileNotFoundError(oid)
+        prior_oid = file.oid if self.oid_is_path else None
+        del self._fs_by_path[self.normalize(file.path)]
+        file.path = None
+        self._register_event(MockEvent.ACTION_RENAME, file, prior_oid)
+        return None
 
     def _delete(self, oid, without_event=False):
         log.debug("delete %s", debug_sig(oid))
@@ -413,9 +437,8 @@ class MockProvider(Provider):
         else:
             return None
 
-    @staticmethod
-    def hash_data(file_like) -> bytes:
-        return md5(file_like.read()).digest()
+    def hash_data(self, file_like) -> Any:
+        return self.hash_func(file_like.read())
 
     def info_path(self, path: str) -> Optional[OInfo]:
         file: MockFSObject = self._get_by_path(path)
@@ -447,8 +470,8 @@ class MockProvider(Provider):
 ###################
 
 
-def mock_provider_instance(oid_is_path, case_sensitive):
-    prov = MockProvider(oid_is_path, case_sensitive)
+def mock_provider_instance(*args, **kws):
+    prov = MockProvider(*args, **kws)
     prov.event_timeout = 1
     prov.event_sleep = 0.001
     return prov
