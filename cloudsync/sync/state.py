@@ -552,15 +552,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             self._loading = True
             storage_dict = self._storage.read_all(cast(str, tag))
             for eid, ent_ser in storage_dict.items():
-                ent = SyncEntry(self, None, (eid, ent_ser))
-                for side in [LOCAL, REMOTE]:
-                    path, oid = ent[side].path, ent[side].oid
-                    if path not in self._paths[side]:
-                        self._paths[side][path] = {}
-                    self._paths[side][path][oid] = ent
-                    self._oids[side][oid] = ent
-                    if ent[side].changed:
-                        self._changeset.add(ent)
+                try:
+                    ent = SyncEntry(self, None, (eid, ent_ser))
+                    for side in [LOCAL, REMOTE]:
+                        path, oid = ent[side].path, ent[side].oid
+                        if path not in self._paths[side]:
+                            self._paths[side][path] = {}
+                        self._paths[side][path][oid] = ent
+                        self._oids[side][oid] = ent
+                        if ent[side].changed:
+                            self._changeset.add(ent)
+                except Exception as e:
+                    log.error("exception during deserialization %s", e)
             self._loading = False
         self.prioritize = prioritize
         if prioritize is None:

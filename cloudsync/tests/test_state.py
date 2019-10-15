@@ -277,3 +277,23 @@ def test_state_storage_bad_hash(mock_provider):
     state.storage_commit()
     state2 = SyncState(providers, storage, tag="whatever")
     assert state_diff(state, state2), "tuples used instead of lists"
+
+
+def test_state_storage_corrupt_input(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="456", oid="456", hash=b"456")
+    state.storage_commit()
+
+    tag = state._tag
+    eid = state.lookup_oid(LOCAL, "123").storage_id
+    state._storage.update(tag, b"crappy bad stuff", eid)
+
+    state2 = SyncState(providers, storage, tag="whatever")
+
+    # 123 record was corrupt, but 456 is still cool
+    assert not state2.lookup_oid(LOCAL, "123")
+    assert state2.lookup_oid(LOCAL, "456")
