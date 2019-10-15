@@ -105,6 +105,7 @@ def collect_info(args):
 
     return (package, branch, vorig)
 
+
 def bump(v, part):
     if type(v) is str:
         v = Version(v)
@@ -124,19 +125,23 @@ def bump(v, part):
     for i in range(part+1, len(vlist)):
         vlist[i] = "0"
 
+    def strs(a):
+        return [str(e) for e in a]
+
     vnew = ".".join(vlist)
     vsuffix = ""
     if v.pre:
-        vsuffix += "".join(v.pre)
+        print("PRE", v, v.pre)
+        vsuffix += "".join(strs(v.pre))
     elif v.post:
-        vsuffix += "".join(v.post)
+        vsuffix += "".join(strs(v.post))
     elif v.dev:
-        vsuffix += "".join(v.dev)
+        vsuffix += "".join(strs(v.dev))
     return Version(vnew + vsuffix)
 
 
 def apply_version(branch, vorig, v2, *, dry, msg=None):
-    if v2 <= vorig:
+    if v2 == vorig:
         print("No changes to apply")
     else:
         print("Branch 'origin/%s' will be tagged with '%s'" % (branch, v2))
@@ -273,4 +278,5 @@ def test_bump1():
     assert str(bump(v, PATCH)) == "1.2.4"
     assert str(bump(v, "b")) == "1.2.3b1"
     assert str(bump("1.2.3b1", "a")) == "1.2.3a2"
+    assert str(bump("1.2.3b1", PATCH)) == "1.2.4b1"
 
