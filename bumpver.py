@@ -131,12 +131,11 @@ def bump(v, part):
     vnew = ".".join(vlist)
     vsuffix = ""
     if v.pre:
-        print("PRE", v, v.pre)
         vsuffix += "".join(strs(v.pre))
     elif v.post:
         vsuffix += "".join(strs(v.post))
     elif v.dev:
-        vsuffix += "".join(strs(v.dev))
+        vsuffix += str(v.dev)
     return Version(vnew + vsuffix)
 
 
