@@ -19,7 +19,7 @@ import toml
 
 class XVersion(Version):
     def __init__(self, v):
-        super().__init__(v)
+        super().__init__(str(v))
         self.dot_dev = bool(".dev" in str(v))
 
     def __str__(self):
@@ -56,15 +56,11 @@ def collect_info(args):
     # todo... figure out the package info either from setup.py or pyproject.toml or from command-line arg
     package = args.package
 
-    # support flit
+    # support flit, poetry and others that use configs
     if not package:
         try:
             with open("pyproject.toml") as f:
                 res = toml.load(f)
-                try:
-                    package = res["tool"]["bumpver"]["module"]
-                except KeyError:
-                    pass
                 if not package:
                     try:
                         package = res["tool"]["flit"]["metadata"]["module"]
@@ -77,6 +73,25 @@ def collect_info(args):
                         pass
         except FileNotFoundError:
             pass
+
+    # support my own config
+    config = {}
+    try:
+        with open("pyproject.toml") as f:
+            res = toml.load(f)
+            config.update(res["tool"]["vernum"])
+    except (FileNotFoundError, KeyError):
+        pass
+
+    try:
+        with open("vernum.cfg") as f:
+            res = toml.load(f)
+            config.update(res)
+    except FileNotFoundError:
+        pass
+
+    if not package:
+        package = config.get("module")
 
     if not package:
         try:
@@ -117,12 +132,63 @@ def collect_info(args):
         print("Current branch has differences from remote, aborting.")
         sys.exit(1)
 
-    return (package, branch, vorig)
+    config["package"] = package
+    config["branch"] = branch
+    config["version"] = latest
 
+    return config
+
+def validate(vsrc, rules={}):
+    default_int_max = 65535
+    default_max = 5
+    default_min = 2
+    default_dot_dev = True
+    default_pre_uses_dash = False
+    default_labels = ["a", "b", "dev", "post", "pre"]
+
+    vsrc = vsrc.strip(" ")
+    v = XVersion(vsrc)
+
+    if len(v.release) > rules.get("component_max", default_max):
+        raise ValueError("Too many components in '%s'" % v)
+
+    if len(v.release) < rules.get("component_min", default_min):
+        raise ValueError("Too few components in '%s'" % v)
+
+    labs = rules.get("allowed_labels", default_labels)
+
+    if v.pre and v.pre[0] not in labs:
+        raise ValueError("Disallowed label '%s'" % v.pre[0])
+
+    int_max = rules.get("component_int_max", default_int_max)
+    for comp in v.release:
+        if comp > int_max:
+            raise ValueError("Component '%s' too large" % comp)
+    if v.pre and v.pre[1] > int_max:
+        raise ValueError("Component '%s' too large" % v.pre[1])
+    if v.post and v.post > int_max:
+        raise ValueError("Component '%s' too large" % v.post)
+    if v.dev and v.dev > int_max:
+        raise ValueError("Component '%s' too large" % v.dev)
+
+    dev_uses_dot = rules.get("dev_uses_dot", default_dot_dev)
+    if v.dev:
+        if v.dot_dev and not dev_uses_dot:
+            raise ValueError("Version '%s' should use dev, not .dev" % vsrc)
+        if not v.dot_dev and dev_uses_dot:
+            raise ValueError("Version '%s' should use .dev, not dev" % vsrc)
+
+#    pre_uses_dash = rules.get("pre_uses_dash", default_pre_uses_dash)
+#    if v.pre:
+#        if v.pre and not dev_uses_dot:
+#            raise ValueError("Version '%s' should use dev, not .dev" % vsrc)
+#        if not v.dot_dev and dev_uses_dot:
+#            raise ValueError("Version '%s' should use .dev, not dev" % vsrc)
+
+    return str(v)
 
 def bump(v, part):
-    if type(v) is str:
-        v = XVersion(v)
+    v = XVersion(v)
 
     if type(part) is str:
         if v.pre:
@@ -203,7 +269,7 @@ class MyPrompt(Cmd):
 
     def do_set(self, inp):
         """Set to specified version"""
-        self.vinfo = XVersion(inp.strip())
+        self.vinfo = XVersion(validate(inp.strip()))
 
     def do_minor(self, unused_inp):
         """Bump minor version"""
@@ -258,6 +324,7 @@ class MyPrompt(Cmd):
 def main():
     parser = argparse.ArgumentParser(description='Bump version')
 
+    parser.add_argument("-v", '--validate', action="store")
     parser.add_argument('--unsafe', action="store_true")
     parser.add_argument('--major', action="store_true")
     parser.add_argument('--minor', action="store_true")
@@ -268,13 +335,34 @@ def main():
 
     args = parser.parse_args()
 
+    if args.validate:
+        args.unsafe = True
+        config = collect_info(args)
+        vorig = XVersion(config["version"])
+        vnew = XVersion(args.validate)
+        try:
+            validate(args.validate, config)
+        except ValueError as e:
+            print(e)
+            sys.exit(1)
+
+        if vnew <= vorig:
+            print("Version '%s' is less than current '%s'", vnew, vorig)
+            sys.exit(2)
+        print("OK")
+        sys.exit(0)
+
     if args.major or args.minor or args.apply or args.patch:
         if not args.message:
             print("-m or --message is required")
             sys.exit(1)
         if not args.apply:
             print("#dry run#")
-        (_package, branch, vorig) = collect_info(args)
+        config = collect_info(args)
+
+        branch = config["branch"]
+        vorig = XVersion(config["version"])
+
         vinfo = vorig
         if args.major:
             vinfo = bump(vinfo, MAJOR)
@@ -285,12 +373,24 @@ def main():
         msg = args.message
         apply_version(branch, vorig, vinfo, dry=not args.apply, msg=msg)
     else:
-        (_package, branch, vorig) = collect_info(args)
+        config = collect_info(args)
+        branch = config["branch"]
+        vorig = XVersion(config["version"])
         MyPrompt(branch, vorig, args).cmdloop()
 
 
 if __name__ == "__main__":
     main()
+
+class assert_raises:
+    def __init__(self, ex):
+        self.ex = ex
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, typ, val, tb):
+        return issubclass(self.ex, typ)
 
 
 def test_bump1():
@@ -314,4 +414,11 @@ def test_bump1():
     print("t8")
     assert str(bump("1.2.3.dev1", PATCH)) == "1.2.4.dev1"
 
+def test_val1():
+    for v in ("1.2.4", "1.3", "1.2b1", "1.4dev1", "1.4.dev1", "9.2.post4"):
+        assert validate(v)
+
+    for v in ("1.2.65536", "1", "1.2.3.4.5.6.7.8", "1.4c1", "4.6post9999999"):
+        with assert_raises(ValueError):
+            validate(v)
 
