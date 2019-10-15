@@ -16,6 +16,20 @@ from packaging.version import Version
 
 import toml
 
+
+class XVersion(Version):
+    def __init__(self, v):
+        super().__init__(v)
+        self.dot_dev = bool(".dev" in str(v))
+
+    def __str__(self):
+        ret = super().__str__()
+        if not self.dot_dev:
+            if self.dev:
+                ret = ret.replace(".dev", "dev")
+        return ret
+
+
 MAJOR = 0
 MINOR = 1
 PATCH = 2
@@ -108,7 +122,7 @@ def collect_info(args):
 
 def bump(v, part):
     if type(v) is str:
-        v = Version(v)
+        v = XVersion(v)
 
     if type(part) is str:
         if v.pre:
@@ -117,7 +131,7 @@ def bump(v, part):
             num = v.post[1] + 1
         else:
             num = 1
-        return Version(v.base_version + part + str(num))
+        return XVersion(v.base_version + part + str(num))
 
     t = v.base_version
     vlist = t.split(".")
@@ -135,8 +149,12 @@ def bump(v, part):
     elif v.post:
         vsuffix += "".join(strs(v.post))
     elif v.dev:
-        vsuffix += str(v.dev)
-    return Version(vnew + vsuffix)
+        dot = ""
+        if v.dot_dev:
+            dot = "."
+        vsuffix += dot + "dev" + str(v.dev)
+
+    return XVersion(vnew + vsuffix)
 
 
 def apply_version(branch, vorig, v2, *, dry, msg=None):
@@ -185,7 +203,7 @@ class MyPrompt(Cmd):
 
     def do_set(self, inp):
         """Set to specified version"""
-        self.vinfo = Version(inp.strip())
+        self.vinfo = XVersion(inp.strip())
 
     def do_minor(self, unused_inp):
         """Bump minor version"""
@@ -198,6 +216,10 @@ class MyPrompt(Cmd):
     def do_beta(self, unused_inp):
         """Beta prelease, starting from current"""
         self.vinfo = bump(self.vinfo, "b")
+
+    def do_dev(self, unused_inp):
+        """Dev release, starting from current"""
+        self.vinfo = bump(self.vinfo, "dev")
 
     def do_alpha(self, unused_inp):
         """Alpha prelease, starting from current"""
@@ -270,12 +292,26 @@ def main():
 if __name__ == "__main__":
     main()
 
+
 def test_bump1():
     v = "1.2.3"
+    print("t1")
     assert str(bump(v, MAJOR)) == "2.0.0"
+    print("t2")
     assert str(bump(v, MINOR)) == "1.3.0"
+    print("t3")
     assert str(bump(v, PATCH)) == "1.2.4"
+    print("t4")
     assert str(bump(v, "b")) == "1.2.3b1"
+    print("t5")
     assert str(bump("1.2.3b1", "a")) == "1.2.3a2"
+    print("t6")
     assert str(bump("1.2.3b1", PATCH)) == "1.2.4b1"
+
+    # allow dev syntax to be either pep-compliant or "consistent with other labels"
+    print("t7")
+    assert str(bump("1.2.3dev1", PATCH)) == "1.2.4dev1"
+    print("t8")
+    assert str(bump("1.2.3.dev1", PATCH)) == "1.2.4.dev1"
+
 
