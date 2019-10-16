@@ -247,29 +247,35 @@ class SyncManager(Runnable):
         with disable_log_multiline():
             log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
-        for i in (LOCAL, REMOTE):
-            if sync[i].changed:
-                if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
-                    log.debug("ignore:%s, side:%s", sync, i)
-                    # no hash for file, ignore it
-                    self.finished(i, sync)
-                    break
+        ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
-                if sync[i].oid is None and sync[i].exists != TRASHED:
-                    log.debug("ignore:%s, side:%s", sync, i)
+        for i in ordered:
+            if not sync[i].needs_sync():
+                if sync[i].changed:
                     self.finished(i, sync)
+                continue
+
+            if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
+                log.debug("ignore:%s, side:%s", sync, i)
+                # no hash for file, ignore it
+                self.finished(i, sync)
+                break
+
+            if sync[i].oid is None and sync[i].exists != TRASHED:
+                log.debug("ignore:%s, side:%s", sync, i)
+                self.finished(i, sync)
+                continue
+
+            # if the other side changed hash, handle it first
+            if sync[i].hash == sync[i].sync_hash:
+                other = other_side(i)  
+                if sync[other].changed and sync[other].hash != sync[other].sync_hash:
                     continue
 
-                # if the other side changed hash, handle it first
-                if sync[i].hash == sync[i].sync_hash:
-                    other = other_side(i)  
-                    if sync[other].changed and sync[other].hash != sync[other].sync_hash:
-                        continue
-
-                response = self.embrace_change(sync, i, other_side(i))
-                if response == FINISHED:
-                    self.finished(i, sync)
-                break
+            response = self.embrace_change(sync, i, other_side(i))
+            if response == FINISHED:
+                self.finished(i, sync)
+            break
 
     def temp_file(self, temp_for=None):
         if not os.path.exists(self.tempdir):
@@ -908,6 +914,15 @@ class SyncManager(Runnable):
                 sync.punt()
                 log.debug("requeue sync + trash %s", sync)
                 return REQUEUE
+
+            if sync[synced].changed:        # rename + delete == delete goes first
+                # this is only needed when shuffling
+                # see: test_cs_folder_conflicts_del
+                if sync[changed].sync_hash == sync[changed].hash:
+                    sync[changed].changed = sync[synced].changed + .01
+                    log.debug("reprioritize sync + trash %s  (%s, %s)", sync, sync[changed].changed, sync[synced].changed)
+                    return REQUEUE
+
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
@@ -969,7 +984,7 @@ class SyncManager(Runnable):
                         log.debug("deleting %s out of the way", translated_path)
                         sync.punt()
                         return REQUEUE
-                log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
+                    log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
