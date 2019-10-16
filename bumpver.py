@@ -90,6 +90,8 @@ def collect_info(args):
     except FileNotFoundError:
         pass
 
+    #print(config)
+
     if not package:
         package = config.get("module")
 
@@ -138,12 +140,11 @@ def collect_info(args):
 
     return config
 
+
 def validate(vsrc, rules={}):
     default_int_max = 65535
     default_max = 5
     default_min = 2
-    default_dot_dev = True
-    default_pre_uses_dash = False
     default_labels = ["a", "b", "dev", "post", "pre"]
 
     vsrc = vsrc.strip(" ")
@@ -171,13 +172,14 @@ def validate(vsrc, rules={}):
     if v.dev and v.dev > int_max:
         raise ValueError("Component '%s' too large" % v.dev)
 
-    dev_uses_dot = rules.get("dev_uses_dot", default_dot_dev)
-    if v.dev:
+    dev_uses_dot = rules.get("dev_uses_dot", None)
+    if v.dev and dev_uses_dot is not None:
         if v.dot_dev and not dev_uses_dot:
             raise ValueError("Version '%s' should use dev, not .dev" % vsrc)
         if not v.dot_dev and dev_uses_dot:
             raise ValueError("Version '%s' should use .dev, not dev" % vsrc)
 
+#    default_pre_uses_dash = False
 #    pre_uses_dash = rules.get("pre_uses_dash", default_pre_uses_dash)
 #    if v.pre:
 #        if v.pre and not dev_uses_dot:
@@ -187,17 +189,25 @@ def validate(vsrc, rules={}):
 
     return str(v)
 
+
 def bump(v, part):
     v = XVersion(v)
 
     if type(part) is str:
+        dot = ""
         if v.pre:
-            num = v.pre[1] + 1
+            num = v.pre[1]
         elif v.post:
-            num = v.post[1] + 1
+            num = v.post
+        elif v.dev:
+            num = v.dev
+            if v.dot_dev:
+                dot = "."
         else:
-            num = 1
-        return XVersion(v.base_version + part + str(num))
+            num = 0
+
+        num += 1
+        return XVersion(v.base_version + dot + part + str(num))
 
     t = v.base_version
     vlist = t.split(".")
@@ -213,7 +223,7 @@ def bump(v, part):
     if v.pre:
         vsuffix += "".join(strs(v.pre))
     elif v.post:
-        vsuffix += "".join(strs(v.post))
+        vsuffix += str(v.post)
     elif v.dev:
         dot = ""
         if v.dot_dev:
@@ -243,10 +253,11 @@ def apply_version(branch, vorig, v2, *, dry, msg=None):
 
 
 class MyPrompt(Cmd):
-    def __init__(self, branch, vinfo, args, **kws):
-        self.branch = branch
-        self.vorig = vinfo
-        self.vinfo = vinfo
+    def __init__(self, config, args, **kws):
+        self.config = config
+        self.branch = config["branch"]
+        self.vorig = XVersion(config["version"])
+        self.vinfo = self.vorig
         self.args = args
         self._prompt()
         super().__init__(**kws)
@@ -269,7 +280,7 @@ class MyPrompt(Cmd):
 
     def do_set(self, inp):
         """Set to specified version"""
-        self.vinfo = XVersion(validate(inp.strip()))
+        self.vinfo = XVersion(validate(inp.strip(), self.config))
 
     def do_minor(self, unused_inp):
         """Bump minor version"""
@@ -374,13 +385,12 @@ def main():
         apply_version(branch, vorig, vinfo, dry=not args.apply, msg=msg)
     else:
         config = collect_info(args)
-        branch = config["branch"]
-        vorig = XVersion(config["version"])
-        MyPrompt(branch, vorig, args).cmdloop()
+        MyPrompt(config, args).cmdloop()
 
 
 if __name__ == "__main__":
     main()
+
 
 class assert_raises:
     def __init__(self, ex):
@@ -413,12 +423,15 @@ def test_bump1():
     assert str(bump("1.2.3dev1", PATCH)) == "1.2.4dev1"
     print("t8")
     assert str(bump("1.2.3.dev1", PATCH)) == "1.2.4.dev1"
+    print("t9")
+    assert str(bump("1.2.3.dev1", "dev")) == "1.2.3.dev2"
+
 
 def test_val1():
     for v in ("1.2.4", "1.3", "1.2b1", "1.4dev1", "1.4.dev1", "9.2.post4"):
-        assert validate(v)
+        assert validate(v, {"dev_uses_dot": None})
 
-    for v in ("1.2.65536", "1", "1.2.3.4.5.6.7.8", "1.4c1", "4.6post9999999"):
+    for v in ("1.2.65536", "1", "1.2.3.4.5.6.7.8", "1.4c1", "4.6post9999999", "1.4dev1"):
         with assert_raises(ValueError):
-            validate(v)
+            assert validate(v, {"dev_uses_dot": True})
 
