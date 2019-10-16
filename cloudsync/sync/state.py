@@ -121,6 +121,12 @@ class SideState():
         d.pop("_parent", None)
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
 
+    def needs_sync(self):
+        return self.changed and (
+               self.hash != self.sync_hash or
+               self.path != self.sync_path or
+               self.exists == TRASHED)
+
 
 # these are not really local or remote
 # but it's easier to reason about using these labels
@@ -870,6 +876,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
+            log.debug("prior ent %s", prior_ent)
+
+            # this is only needed when shuffling
+            # run test_cs_folder_conflicts_del 100 times or so
+            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists == TRASHED:
+                ent = prior_ent
+                ent.ignored = IgnoreReason.NONE
+
             if prior_ent and not prior_ent.is_discarded:
                 if not ent or not ent.is_conflicted:
                     ent = prior_ent
