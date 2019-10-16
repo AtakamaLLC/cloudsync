@@ -252,7 +252,7 @@ class SyncManager(Runnable):
         for i in ordered:
             if not sync[i].needs_sync():
                 if sync[i].changed:
-                    self.finished(i, sync)
+                    sync[i].changed = 0
                 continue
 
             if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
@@ -289,6 +289,7 @@ class SyncManager(Runnable):
         return ret
 
     def finished(self, side, sync):
+        log.debug("mark finished, clear punts, delete temps")
         sync[side].changed = 0
         # todo: changing the state above should signal this call below
         self.state.finished(sync)
