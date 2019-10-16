@@ -13,6 +13,7 @@ from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
 
+roots = ("/local", "/remote")
 
 class CloudSyncMixin(CloudSync, RunUntilHelper):
     pass
@@ -31,8 +32,6 @@ def fixture_cs(mock_provider_generator, mock_provider_creator):
 
 
 def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
-    roots = ("/local", "/remote")
-
     cs = CloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
 
     yield cs
@@ -41,7 +40,6 @@ def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
 
 
 def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storage=None):
-    roots = ("/local", "/remote")
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
@@ -60,8 +58,6 @@ def fixture_multi_local_cs(mock_provider_generator):
     log.debug(f"p1 oip={p1.oid_is_path} cs={p1.case_sensitive}")
     log.debug(f"p2 oip={p2.oid_is_path} cs={p2.case_sensitive}")
     log.debug(f"p3 oip={p3.oid_is_path} cs={p3.case_sensitive}")
-
-    roots = ("/local", "/remote")
 
     cs1 = CloudSyncMixin((p1, p3), roots, storage, sleep=None)
     cs2 = CloudSyncMixin((p2, p3), roots, storage, sleep=None)
@@ -467,7 +463,7 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
-def setup_remote_local(cs, *names):
+def setup_remote_local(cs, *names, content=b'hello'):
     remote_parent = "/remote"
     local_parent = "/local"
 
@@ -479,7 +475,10 @@ def setup_remote_local(cs, *names):
     for name in names:
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
-        cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+        if "/" in name:
+            local_dir1 = "/local/" + cs.providers[REMOTE].dirname(name)
+            cs.providers[LOCAL].mkdir(local_dir1)
+        cs.providers[LOCAL].create(local_path1, BytesIO(content))
         found.append((REMOTE, remote_path1))
         ret.append((local_path1, remote_path1))
 
@@ -495,14 +494,19 @@ def get_infos(cs, *paths):
         assert len(paths) % 2 == 0
         paths = tuple([(paths[i+0], paths[i+1]) for i in range(0, len(paths), 2)])
         flat = True
-    else:
+    elif len(paths) == 1:
+        paths = paths[0]
         flat = False
+    else:
+        raise ValueError("either pass paths, or a list of tuples")
 
     ret = []
     for tup in paths:
         (local, remote) = tup
         li = cs.providers[LOCAL].info_path(tup[LOCAL])
         ri = cs.providers[REMOTE].info_path(tup[REMOTE])
+        li.side = LOCAL
+        ri.side = REMOTE
         if flat:
             ret.append(li)
             ret.append(ri)
@@ -880,7 +884,6 @@ def storage_fixture(request):
 
 
 def test_storage(storage):
-    roots = ("/local", "/remote")
     storage_class = storage[0]
     storage_mechanism = storage[1]
 
@@ -1914,8 +1917,6 @@ def test_unfile(cs):
 
 @pytest.mark.parametrize("side", [LOCAL, REMOTE], ids=["local", "remote"])
 def test_multihash_one_side_equiv(mock_provider_creator, side):
-    roots = ("/local", "/remote")
-
     def segment_hash(data):
         # two hashes.... one is mutable (notion of equivalence) the other causes conflicts (data change)
         return [hash(data[0:1]), hash(data[1:])]
@@ -1999,7 +2000,6 @@ def test_multihash_one_side_equiv(mock_provider_creator, side):
 @pytest.fixture(name="setup_offline_state", params=[True, False], ids=["path", "oid"])
 def _setup_offline_state(request, mock_provider_creator):
     local_uses_path = request.param
-    roots = ("/local", "/remote")
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
@@ -2095,3 +2095,40 @@ def test_walk_carefully3(setup_offline_state):
     cs.providers[LOCAL].download_path("/local/stuff1", b)
     assert b.getvalue() == b"changed-while-stopped"
 
+
+def test_no_nsquare(cs):
+    setup_remote_local(cs)
+
+    apic = [0, 0]
+    for side in (LOCAL, REMOTE):
+        orig_api = cs.providers[side]._api
+
+        def api(*a, **kw):
+            apic[side] += 1
+            orig_api(*a, **kw)
+
+        cs.providers[side]._api = api
+
+    # each normal sync can take up to 12 api hits
+    normal = 12 * 24
+    expect = normal * 1.5
+
+    for i in range(12):
+        for side, d in enumerate(roots):
+            # these might get punted
+            cs.providers[side].create(d + "/" + str(i), BytesIO(b'yo'))
+        # clearing these successes shouldn't clear the punt counts of the others
+        cs.providers[LOCAL].create(roots[LOCAL] + "/x" + str(i), BytesIO(b'yo'))
+
+    # events all come in before processing....for simplicity
+    cs.emgrs[0].do()
+    cs.emgrs[1].do()
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=10)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    log.debug("APIC %s", apic)
+    assert (apic[1] + apic[0]) < expect
