@@ -504,6 +504,17 @@ class SyncEntry:
                 return False
         return True
 
+    def is_related_to(self, e):
+        return True
+        for side in (LOCAL, REMOTE):
+            for attr in ("path", "sync_path"):
+                if getattr(self[side], attr, None) and getattr(e[side], attr) == self._parent.providers[LOCAL].dirname(getattr(self[side], attr)):
+                    return True
+                if getattr(e[side], attr, None) and getattr(self[side], attr) == self._parent.providers[LOCAL].dirname(getattr(e[side], attr)):
+                    return True
+        return False
+
+
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     headers = (
@@ -880,8 +891,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return None
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
-        if self.shuffle:
-            sort_key = lambda a: (a.priority, random.random())
+        sort_key = lambda a: (a.priority, random.random())
 
         changes = sorted(self._changeset, key=sort_key)
 
@@ -894,7 +904,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return None
 
-    def finished(self, ent):
+    def finished(self, ent: SyncEntry):
         if ent[1].changed or ent[0].changed:
             log.info("not marking finished: %s", ent)
             return
@@ -902,8 +912,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._changeset.discard(ent)
 
         for e in self._changeset:
-            if e.priority > 0:
-                # low priority items are brought back to normal any time something changes
+            if e.priority > 0 and ent.is_related_to(e):
+                # low priority items are brought back to normal any time a related entry changes
                 e.priority = 0
 
     @staticmethod

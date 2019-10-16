@@ -848,13 +848,6 @@ class SyncManager(Runnable):
         if not other_untrashed_ents:
             return False
 
-        if sync.priority == 0:
-            # delaying sometimes helps, because future events can resolve conflicts
-            # it's generally better to wait before conflicting something
-            log.debug("punting, maybe it will fix itself")
-            sync.punt()
-            return True
-
         log.debug("split conflict found : %s:%s", len(other_untrashed_ents), other_untrashed_ents)
 
         found = None
