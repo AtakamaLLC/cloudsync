@@ -1450,7 +1450,8 @@ def test_many_small_files_mkdir_perf(cs):
     assert abs(local_no_clear.call_count - local_clear.call_count) < 3
     assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
 
-def test_cs_folder_conflicts_del(cs):
+@pytest.mark.parametrize("shuffle", [True, False], ids=["shuffled", "ordered"])
+def test_cs_folder_conflicts_del(cs, shuffle):
     local_path1 = "/local/stuff1"
     local_path1_u = "/local/stuff1/under"
     remote_path1 = "/remote/stuff1"
@@ -1462,6 +1463,9 @@ def test_cs_folder_conflicts_del(cs):
     remote_path2_u = "/remote/stuff2/under"
     remote_path3 = "/remote/stuff3"
     remote_path3_u = "/remote/stuff3/under"
+
+    if shuffle:
+        cs.state.shuffle = True
 
     cs.providers[LOCAL].mkdir("/local")
     linfo1_oid = cs.providers[LOCAL].mkdir(local_path1)
