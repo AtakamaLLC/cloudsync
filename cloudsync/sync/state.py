@@ -891,7 +891,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return None
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
-        sort_key = lambda a: (a.priority, random.random())
+        if self.shuffle:
+            sort_key = lambda a: (a.priority, random.random())
 
         changes = sorted(self._changeset, key=sort_key)
 

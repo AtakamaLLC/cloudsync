@@ -468,7 +468,7 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
-def setup_remote_local(cs, *names):
+def setup_remote_local(cs, *names, content=b'hello'):
     remote_parent = "/remote"
     local_parent = "/local"
 
@@ -480,7 +480,10 @@ def setup_remote_local(cs, *names):
     for name in names:
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
-        cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+        if "/" in name:
+            local_dir1 = "/local/" + cs.providers[REMOTE].dirname(name)
+            cs.providers[LOCAL].mkdir(local_dir1)
+        cs.providers[LOCAL].create(local_path1, BytesIO(content))
         found.append((REMOTE, remote_path1))
         ret.append((local_path1, remote_path1))
 
@@ -496,14 +499,19 @@ def get_infos(cs, *paths):
         assert len(paths) % 2 == 0
         paths = tuple([(paths[i+0], paths[i+1]) for i in range(0, len(paths), 2)])
         flat = True
-    else:
+    elif len(paths) == 1:
+        paths = paths[0]
         flat = False
+    else:
+        raise ValueError("either pass paths, or a list of tuples")
 
     ret = []
     for tup in paths:
         (local, remote) = tup
         li = cs.providers[LOCAL].info_path(tup[LOCAL])
         ri = cs.providers[REMOTE].info_path(tup[REMOTE])
+        li.side = LOCAL
+        ri.side = REMOTE
         if flat:
             ret.append(li)
             ret.append(ri)

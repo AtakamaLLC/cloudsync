@@ -848,6 +848,13 @@ class SyncManager(Runnable):
         if not other_untrashed_ents:
             return False
 
+        if sync.priority == 0:
+            # delaying sometimes helps, because future events can resolve conflicts
+            # it's generally better to wait before conflicting something
+            log.debug("punting, maybe it will fix itself")
+            sync.punt()
+            return True
+
         log.debug("split conflict found : %s:%s", len(other_untrashed_ents), other_untrashed_ents)
 
         found = None
@@ -1164,7 +1171,12 @@ class SyncManager(Runnable):
                 with open(defer_ent[defer_side].temp_file, "rb") as f:
                     dhash = self.providers[replace_side].hash_data(f)
                     if dhash == replace_ent[replace_side].hash:
-                        log.debug("same hash as remote, discard entry")
+                        log.debug("same hash as remote, discard one side and merge")
+                        defer_ent[replace_side] = replace_ent[replace_side]
+                        defer_ent[replace_side].sync_hash = defer_ent[replace_side].hash
+                        defer_ent[defer_side].sync_hash = defer_ent[defer_side].hash
+                        defer_ent[replace_side].sync_path = defer_ent[replace_side].path
+                        defer_ent[defer_side].sync_path = defer_ent[defer_side].path
                         replace_ent.ignore(IgnoreReason.DISCARDED)
                         return True
             except FileNotFoundError:
