@@ -2109,12 +2109,18 @@ def test_no_nsquare(cs):
 
         cs.providers[side]._api = api
 
-    for i in range(10):
+    # each normal sync can take up to 12 api hits
+    normal = 12 * 24
+    expect = normal * 1.5
+
+    for i in range(12):
         for side, d in enumerate(roots):
+            # these might get punted
             cs.providers[side].create(d + "/" + str(i), BytesIO(b'yo'))
+        # clearing these successes shouldn't clear the punt counts of the others
         cs.providers[LOCAL].create(roots[LOCAL] + "/x" + str(i), BytesIO(b'yo'))
 
-    # create on both sides
+    # events all come in before processing....for simplicity
     cs.emgrs[0].do()
     cs.emgrs[1].do()
 
@@ -2125,4 +2131,4 @@ def test_no_nsquare(cs):
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
     log.debug("APIC %s", apic)
-    assert (apic[1] + apic[0]) < 100
+    assert (apic[1] + apic[0]) < expect

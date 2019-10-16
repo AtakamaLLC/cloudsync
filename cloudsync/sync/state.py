@@ -511,7 +511,6 @@ class SyncEntry:
         return True
 
     def is_related_to(self, e):
-        return True
         for side in (LOCAL, REMOTE):
             for attr in ("path", "sync_path"):
                 if getattr(self[side], attr, None) and getattr(e[side], attr) == self._parent.providers[LOCAL].dirname(getattr(self[side], attr)):
@@ -928,6 +927,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         for e in self._changeset:
             if e.priority > 0 and ent.is_related_to(e):
+                log.debug("%s rel to %s, clearing", ent, e)
                 # low priority items are brought back to normal any time a related entry changes
                 e.priority = 0
 
