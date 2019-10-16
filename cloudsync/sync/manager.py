@@ -252,7 +252,7 @@ class SyncManager(Runnable):
         for i in ordered:
             if not sync[i].needs_sync():
                 if sync[i].changed:
-                    self.finished(i, sync)
+                    sync[i].changed = 0
                 continue
 
             if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
@@ -289,6 +289,7 @@ class SyncManager(Runnable):
         return ret
 
     def finished(self, side, sync):
+        log.debug("mark finished, clear punts, delete temps")
         sync[side].changed = 0
         # todo: changing the state above should signal this call below
         self.state.finished(sync)
@@ -1186,7 +1187,12 @@ class SyncManager(Runnable):
                 with open(defer_ent[defer_side].temp_file, "rb") as f:
                     dhash = self.providers[replace_side].hash_data(f)
                     if dhash == replace_ent[replace_side].hash:
-                        log.debug("same hash as remote, discard entry")
+                        log.debug("same hash as remote, discard one side and merge")
+                        defer_ent[replace_side] = replace_ent[replace_side]
+                        defer_ent[replace_side].sync_hash = defer_ent[replace_side].hash
+                        defer_ent[defer_side].sync_hash = defer_ent[defer_side].hash
+                        defer_ent[replace_side].sync_path = defer_ent[replace_side].path
+                        defer_ent[defer_side].sync_path = defer_ent[defer_side].path
                         replace_ent.ignore(IgnoreReason.DISCARDED)
                         return True
             except FileNotFoundError:
