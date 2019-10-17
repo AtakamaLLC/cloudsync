@@ -317,7 +317,7 @@ class SyncManager(Runnable):
             # for now hash could be nested tuples of bytes, or just a straight hash
             # probably we should just change it to bytes only
             # but this puts it in a somewhat deterministic form
-            tfn = os.path.basename(ss.path) + "." + hex(fnv1a_64(msgpack.dumps(ss.hash)))
+            tfn = hex(fnv1a_64(ss.path)) + "." + hex(fnv1a_64(msgpack.dumps(ss.hash)))
             if ss.temp_file and tfn in ss.temp_file and os.path.exists(os.path.dirname(ss.temp_file)):
                 return
 
