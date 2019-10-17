@@ -733,6 +733,37 @@ def test_dir_rm(sync):
     sync.state.assert_index_is_correct()
 
 
+def test_no_change_does_nothing(sync):
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+
+    sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
+
+    rinfo1 = sync.providers[REMOTE].info_path(remote_file1)
+
+    log.debug("TABLE 1:\n%s", sync.state.pretty_print())
+
+    sync.state.lookup_oid(LOCAL, linfo1.oid)[LOCAL].changed = 1
+    sync.state.lookup_oid(REMOTE, rinfo1.oid)[REMOTE].changed = 1
+
+    assert sync.state.changeset_len
+    assert not sync.state.lookup_oid(LOCAL, linfo1.oid)[LOCAL].needs_sync()
+    assert not sync.state.lookup_oid(REMOTE, rinfo1.oid)[REMOTE].needs_sync()
+
+    sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
+
+    assert sync.state.lookup_oid(LOCAL, linfo1.oid)[LOCAL].sync_path
+    assert sync.state.lookup_oid(REMOTE, rinfo1.oid)[REMOTE].sync_path
+    assert sync.state.lookup_oid(LOCAL, linfo1.oid)[LOCAL].sync_hash
+    assert sync.state.lookup_oid(REMOTE, rinfo1.oid)[REMOTE].sync_hash
+
+
 def test_file_name_error(sync):
     local_parent = "/local"
     local_file1 = "/local/file"

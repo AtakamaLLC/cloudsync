@@ -4,13 +4,15 @@ import os
 import logging
 import tempfile
 import shutil
+import hashlib
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, IO
+
+import msgpack
+from pystrict import strict
 
 __all__ = ['SyncManager']
-
-from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
         CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError
@@ -48,12 +50,13 @@ class ResolveFile():
         self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
-        self.__fh = None
+            self.__fh: IO = None
 
     def download(self):
         if not os.path.exists(self.__temp_file):
             try:
                 with open(self.__temp_file + ".tmp", "wb") as f:
+                    log.debug("download %s %s", self.path, self.info.oid)
                     self.provider.download(self.info.oid, f)
                 os.rename(self.__temp_file + ".tmp", self.__temp_file)
             except Exception as e:
@@ -63,6 +66,8 @@ class ResolveFile():
                 except FileNotFoundError:
                     pass
                 raise
+        else:
+            log.debug("using existing temp %s", self.path)
         return self.__temp_file
 
     @property
@@ -247,42 +252,50 @@ class SyncManager(Runnable):
         with disable_log_multiline():
             log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
-        for i in (LOCAL, REMOTE):
-            if sync[i].changed:
-                if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
-                    log.debug("ignore:%s, side:%s", sync, i)
-                    # no hash for file, ignore it
-                    self.finished(i, sync)
-                    break
+        ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
-                if sync[i].oid is None and sync[i].exists != TRASHED:
-                    log.debug("ignore:%s, side:%s", sync, i)
-                    self.finished(i, sync)
-                    continue
+        for i in ordered:
+            if not sync[i].needs_sync():
+                if sync[i].changed:
+                    sync[i].changed = 0
+                continue
 
-                # if the other side changed hash, handle it first
-                if sync[i].hash == sync[i].sync_hash:
-                    other = other_side(i)  
-                    if sync[other].changed and sync[other].hash != sync[other].sync_hash:
-                        continue
-
-                response = self.embrace_change(sync, i, other_side(i))
-                if response == FINISHED:
-                    self.finished(i, sync)
+            if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
+                log.debug("ignore:%s, side:%s", sync, i)
+                # no hash for file, ignore it
+                self.finished(i, sync)
                 break
 
-    def temp_file(self, temp_for=None):
+            if sync[i].oid is None and sync[i].exists != TRASHED:
+                log.debug("ignore:%s, side:%s", sync, i)
+                self.finished(i, sync)
+                continue
+
+            # if the other side changed hash, handle it first
+            if sync[i].hash == sync[i].sync_hash:
+                other = other_side(i)  
+                if sync[other].changed and sync[other].hash != sync[other].sync_hash:
+                    continue
+
+            response = self.embrace_change(sync, i, other_side(i))
+            if response == FINISHED:
+                self.finished(i, sync)
+            break
+
+    def _temp_file(self, temp_for=None, name=None):
         if not os.path.exists(self.tempdir):
             # in case user deletes it... recreate
             os.mkdir(self.tempdir)
         # prefer big random name over NamedTemp which can infinite loop
-        ret = os.path.join(self.tempdir, os.urandom(16).hex())
+        ret = os.path.join(self.tempdir, name or os.urandom(16).hex())
+
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         if temp_for:
             log.debug("%s is temped by %s", temp_for, ret)
         return ret
 
     def finished(self, side, sync):
+        log.debug("mark finished, clear punts, delete temps")
         sync[side].changed = 0
         # todo: changing the state above should signal this call below
         self.state.finished(sync)
@@ -294,34 +307,44 @@ class SyncManager(Runnable):
     def clean_temps(sync):
         # todo: move this to the sync obj
         for side in (LOCAL, REMOTE):
-            if sync[side].temp_file:
-                try:
-                    os.unlink(sync[side].temp_file)
-                except FileNotFoundError:
-                    pass
-                except OSError as e:
-                    log.debug("exception unlinking %s", e)
-                except Exception as e:  # any exceptions here are pointless
-                    log.warning("exception unlinking %s", e)
-                sync[side].temp_file = None
+            sync[side].clean_temp()
+
+    def make_temp_file(self, ss: SideState):
+        if ss.otype == DIRECTORY:
+            return
+        tfn = None
+        if ss.hash:
+            # for now hash could be nested tuples of bytes, or just a straight hash
+            # probably we should just change it to bytes only
+            # but this puts it in a somewhat deterministic form
+            tfn = hashlib.md5(bytes(ss.path, "utf8") + msgpack.dumps(ss.hash)).digest().hex()
+            if ss.temp_file and tfn in ss.temp_file and os.path.exists(os.path.dirname(ss.temp_file)):
+                return
+
+        if ss.temp_file:
+            ss.clean_temp()
+        ss.temp_file = self._temp_file(name=tfn)
 
     def download_changed(self, changed, sync):
-        sync[changed].temp_file = sync[changed].temp_file or self.temp_file(temp_for=sync[changed].path)
+        self.make_temp_file(sync[changed])
 
         assert sync[changed].oid
 
         if os.path.exists(sync[changed].temp_file):
+            log.debug("%s reused %s temp", self.providers[changed], sync[changed].oid)
             return True
 
         try:
             partial_temp = sync[changed].temp_file + ".tmp"
-            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, partial_temp)
+            log.debug("%s download %s to %s", self.providers[changed].name, sync[changed].oid, partial_temp)
             with open(partial_temp, "wb") as f:
                 self.providers[changed].download(sync[changed].oid, f)
             os.rename(partial_temp, sync[changed].temp_file)
             return True
         except FileNotFoundError:
-            sync[changed].temp_file = self.temp_file(temp_for=sync[changed].path)
+            log.debug("file not found %s", sync[changed].path)
+            sync[changed].clean_temp()
+            return False
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
 
@@ -578,8 +601,7 @@ class SyncManager(Runnable):
                 for ss in guard.side_states:
                     assert type(ss) is SideState
 
-                    if not ss.temp_file and ss.otype == FILE:
-                        ss.temp_file = self.temp_file(temp_for=ss.path)
+                    self.make_temp_file(ss)
 
                     guard.fhs.append(ResolveFile(ss, self.providers[ss.side]))
 
@@ -908,6 +930,15 @@ class SyncManager(Runnable):
                 sync.punt()
                 log.debug("requeue sync + trash %s", sync)
                 return REQUEUE
+
+            if sync[synced].changed:        # rename + delete == delete goes first
+                # this is only needed when shuffling
+                # see: test_cs_folder_conflicts_del
+                if sync[changed].sync_hash == sync[changed].hash:
+                    sync[changed].changed = sync[synced].changed + .01
+                    log.debug("reprioritize sync + trash %s  (%s, %s)", sync, sync[changed].changed, sync[synced].changed)
+                    return REQUEUE
+
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
@@ -969,7 +1000,7 @@ class SyncManager(Runnable):
                         log.debug("deleting %s out of the way", translated_path)
                         sync.punt()
                         return REQUEUE
-                log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
+                    log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
@@ -1171,7 +1202,12 @@ class SyncManager(Runnable):
                 with open(defer_ent[defer_side].temp_file, "rb") as f:
                     dhash = self.providers[replace_side].hash_data(f)
                     if dhash == replace_ent[replace_side].hash:
-                        log.debug("same hash as remote, discard entry")
+                        log.debug("same hash as remote, discard one side and merge")
+                        defer_ent[replace_side] = replace_ent[replace_side]
+                        defer_ent[replace_side].sync_hash = defer_ent[replace_side].hash
+                        defer_ent[defer_side].sync_hash = defer_ent[defer_side].hash
+                        defer_ent[replace_side].sync_path = defer_ent[replace_side].path
+                        defer_ent[defer_side].sync_path = defer_ent[defer_side].path
                         replace_ent.ignore(IgnoreReason.DISCARDED)
                         return True
             except FileNotFoundError:

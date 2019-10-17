@@ -10,6 +10,7 @@ altered to independent, and not paired at all.
 import copy
 import logging
 import time
+import os
 import random
 from threading import RLock
 from abc import ABC, abstractmethod
@@ -69,6 +70,7 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
+        self.temp_file: str
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -120,6 +122,24 @@ class SideState():
         d = self.__dict__.copy()
         d.pop("_parent", None)
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
+
+    def needs_sync(self):
+        return self.changed and (
+               self.hash != self.sync_hash or
+               self.path != self.sync_path or
+               self.exists == TRASHED)
+
+    def clean_temp(self):
+        if self.temp_file:
+            try:
+                os.unlink(self.temp_file)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                log.debug("exception unlinking %s", e)
+            except Exception as e:  # any exceptions here are pointless
+                log.warning("exception unlinking %s", e)
+                self.temp_file = None
 
 
 # these are not really local or remote
@@ -504,6 +524,16 @@ class SyncEntry:
                 return False
         return True
 
+    def is_related_to(self, e):
+        for side in (LOCAL, REMOTE):
+            for attr in ("path", "sync_path"):
+                if getattr(self[side], attr, None) and getattr(e[side], attr) == self._parent.providers[LOCAL].dirname(getattr(self[side], attr)):
+                    return True
+                if getattr(e[side], attr, None) and getattr(self[side], attr) == self._parent.providers[LOCAL].dirname(getattr(e[side], attr)):
+                    return True
+        return False
+
+
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     headers = (
@@ -859,6 +889,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
+            log.debug("prior ent %s", prior_ent)
+
+            # this is only needed when shuffling
+            # run test_cs_folder_conflicts_del 100 times or so
+            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists == TRASHED:
+                ent = prior_ent
+                ent.ignored = IgnoreReason.NONE
+
             if prior_ent and not prior_ent.is_discarded:
                 if not ent or not ent.is_conflicted:
                     ent = prior_ent
@@ -894,7 +932,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return None
 
-    def finished(self, ent):
+    def finished(self, ent: SyncEntry):
         if ent[1].changed or ent[0].changed:
             log.info("not marking finished: %s", ent)
             return
@@ -902,8 +940,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._changeset.discard(ent)
 
         for e in self._changeset:
-            if e.priority > 0:
-                # low priority items are brought back to normal any time something changes
+            if e.priority > 0 and ent.is_related_to(e):
+                log.debug("%s rel to %s, clearing", ent, e)
+                # low priority items are brought back to normal any time a related entry changes
                 e.priority = 0
 
     @staticmethod

@@ -27,7 +27,7 @@ class Runnable(ABC):
     max_backoff = 1.0
     mult_backoff = 2.0
     in_backoff = 0.0
-    interrupt = None
+    interrupt: threading.Event = None
 
     def __interruptable_sleep(self, secs):
         if self.interrupt.wait(secs):
