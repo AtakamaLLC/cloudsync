@@ -9,11 +9,10 @@ import time
 from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any
 
 import msgpack
+from pystrict import strict
 from fnvhash import fnv1a_64
 
 __all__ = ['SyncManager']
-
-from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
         CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError
