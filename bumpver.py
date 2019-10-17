@@ -90,8 +90,6 @@ def collect_info(args):
     except FileNotFoundError:
         pass
 
-    #print(config)
-
     if not package:
         package = config.get("module")
 
@@ -103,6 +101,8 @@ def collect_info(args):
 
     latest = latest_git
 
+    print("Latest git ver is %s" % Version(latest))
+
     if package:
         print("Searching pip for public versions of '%s'" % package)
         try:
@@ -113,8 +113,16 @@ def collect_info(args):
             versions = match[1]
             version_list = versions.split(",")
             latest_pub = version_list[-1].strip()
-            latest = str(max(Version(latest_git), Version(latest_pub)))
-            print("Latest version is '%s'" % latest)
+            gver = Version(latest_git)
+            pver = Version(latest_pub)
+            if gver >= pver:
+                src = "git"
+                latest = str(gver)
+            else:
+                assert pver > gver
+                src = "pip"
+                latest = str(pver)
+            print("Latest version from %s is '%s'" % (src, latest))
     else:
         print("WARNING: Unable to find package name, not searching public versions")
 
