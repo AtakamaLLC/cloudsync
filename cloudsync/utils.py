@@ -4,7 +4,7 @@ import functools
 
 from hashlib import md5
 from base64 import b64encode
-from typing import Any, List, Dict, Callable, Union, cast
+from typing import Any, List, Dict, Callable, cast
 from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
 
