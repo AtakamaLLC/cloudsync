@@ -4,7 +4,7 @@ import functools
 
 from hashlib import md5
 from base64 import b64encode
-from typing import Any, List, Dict, Callable
+from typing import Any, List, Dict, Callable, Union, cast
 from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
 
@@ -58,7 +58,7 @@ def debug_sig(t: Any, size: int = 3) -> str:
 class disable_log_multiline:
     @staticmethod
     def _format(loggerclass, record):
-        return loggerclass._fmt % record.__dict__  # pylint: disable=protected-access
+        return loggerclass._fmt % record.__dict__       # pylint: disable=protected-access
 
     def __init__(self):
         self.patch_object = patch.object(PercentStyleMultiline, "format", new=disable_log_multiline._format)
@@ -68,7 +68,7 @@ class disable_log_multiline:
         return self
 
     def __exit__(self, *args, **kwargs):
-        self.patch_object.__exit__(*args, **kwargs)
+        self.patch_object.__exit__(*args, **kwargs)     # type: ignore
 
 
 class memoize():
@@ -78,10 +78,10 @@ class memoize():
     method decorator: cache lives inside `obj_instance.__memoize_cache`
     """
 
-    def __init__(self, func: Callable[..., Any] = None, expire_secs: float = 0, obj=None, cache=None):
+    def __init__(self, func: Callable[..., Any] = None, expire_secs: float = 0, obj=None, cache: Dict[Any, Any] = None):
         self.func = func
         self.expire_secs = expire_secs
-        self.cache: Dict[Any, Any] = cache
+        self.cache = cache
         if cache is None:
             self.cache = {}
         if self.func is not None:
@@ -95,7 +95,7 @@ class memoize():
 
         if type(self.cache) is str:
             # user specified name of a property that contains the cache dictionary
-            cache = getattr(obj, self.cache)
+            cache = getattr(obj, cast(str, self.cache))
         else:
             # inject cache into the instance, so it doesn't live beyond the scope of the instance
             # without this, memoizing can cause serious unexpected memory leaks

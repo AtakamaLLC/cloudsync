@@ -179,7 +179,7 @@ class DropboxProvider(Provider):
         try:
             self.initialize()
             self._oauth_done.wait()
-            return self.creds
+            return self.__creds
         finally:
             if not self._oauth_config.manual_mode:
                 self._oauth_config.oauth_redir_server.shutdown()
