@@ -113,7 +113,7 @@ def collect_info(args):
             versions = match[1]
             version_list = versions.split(",")
             latest_pub = version_list[-1].strip()
-            latest = str(max(Version(latest_pub), Version(latest_git)))
+            latest = str(max(Version(latest_git), Version(latest_pub)))
             print("Latest version is '%s'" % latest)
     else:
         print("WARNING: Unable to find package name, not searching public versions")
