@@ -60,9 +60,6 @@ class ResolveFile():
                     log.debug("download %s %s", self.path, self.info.oid)
                     self.provider.download(self.info.oid, f)
                 os.rename(self.__temp_file + ".tmp", self.__temp_file)
-                with open(self.__temp_file, "rb") as f:
-                    log.debug("data is %s", f.read())
-
             except Exception as e:
                 log.debug("error downloading %s", e)
                 try:
@@ -314,13 +311,15 @@ class SyncManager(Runnable):
             sync[side].clean_temp()
 
     def make_temp_file(self, ss: SideState):
+        if ss.otype == DIRECTORY:
+            return
         tfn = None
         if ss.hash:
             # for now hash could be nested tuples of bytes, or just a straight hash
             # probably we should just change it to bytes only
             # but this puts it in a somewhat deterministic form
             tfn = os.path.basename(ss.path) + "." + hex(fnv1a_64(msgpack.dumps(ss.hash)))
-            if ss.temp_file and tfn in ss.temp_file:
+            if ss.temp_file and tfn in ss.temp_file and os.path.exists(os.path.dirname(ss.temp_file)):
                 return
 
         if ss.temp_file:
@@ -338,15 +337,15 @@ class SyncManager(Runnable):
 
         try:
             partial_temp = sync[changed].temp_file + ".tmp"
-            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, partial_temp)
+            log.debug("%s download %s to %s", self.providers[changed].name, sync[changed].oid, partial_temp)
             with open(partial_temp, "wb") as f:
                 self.providers[changed].download(sync[changed].oid, f)
-            with open(partial_temp, "rb") as f:
-                log.debug("data %s", f.read())
             os.rename(partial_temp, sync[changed].temp_file)
             return True
         except FileNotFoundError:
+            log.debug("file not found %s", sync[changed].path)
             sync[changed].clean_temp()
+            return False
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
 
@@ -720,8 +719,6 @@ class SyncManager(Runnable):
 
                     # user didn't opt to keep my rfh
                     log.debug("replacing side %s", loser.side)
-                    fh.seek(0)
-                    log.debug("replace data %s", fh.read())
                     if not keep:
                         log.debug("not keeping side %s, simply uploading to replace with new contents", loser.side)
                         fh.seek(0)
