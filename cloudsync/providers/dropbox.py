@@ -139,7 +139,7 @@ class DropboxProvider(Provider):
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
                 self._oauth_config.manual_mode = False
-        if self._oauth_config.manual_mode:
+        else:
             if not key and secret:
                 raise ValueError("require app key and secret")
             self._flow = DropboxOAuth2Flow(consumer_key=key,
@@ -148,7 +148,7 @@ class DropboxProvider(Provider):
                                            session=self._session,
                                            csrf_token_session_key=self._csrf,
                                            locale=None)
-            url = self._flow.start()
+        url = self._flow.start()
         self._oauth_done.clear()
         webbrowser.open(url)
 

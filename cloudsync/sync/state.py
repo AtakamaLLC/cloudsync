@@ -934,9 +934,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
     def finished(self, ent: SyncEntry):
         if ent[1].changed or ent[0].changed:
-            log.info("not marking finished: %s", ent)
+            log.debug("not marking finished: %s", ent)
             return
 
+        log.debug("finished: %s", ent)
         self._changeset.discard(ent)
 
         for e in self._changeset:
