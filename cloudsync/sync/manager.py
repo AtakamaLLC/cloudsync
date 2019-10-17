@@ -4,13 +4,13 @@ import os
 import logging
 import tempfile
 import shutil
+import hashlib
 import time
 
 from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, IO
 
 import msgpack
 from pystrict import strict
-from fnvhash import fnv1a_64
 
 __all__ = ['SyncManager']
 
@@ -317,7 +317,7 @@ class SyncManager(Runnable):
             # for now hash could be nested tuples of bytes, or just a straight hash
             # probably we should just change it to bytes only
             # but this puts it in a somewhat deterministic form
-            tfn = hex(fnv1a_64(ss.path)) + "." + hex(fnv1a_64(msgpack.dumps(ss.hash)))
+            tfn = hashlib.md5(bytes(ss.path, "utf8") + msgpack.dumps(ss.hash)).digest().hex()
             if ss.temp_file and tfn in ss.temp_file and os.path.exists(os.path.dirname(ss.temp_file)):
                 return
 
