@@ -59,8 +59,8 @@ class CloudSync(Runnable):
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
-        self.sthread = None
-        self.ethreads = (None, None)
+        self.sthread: threading.Thread = None
+        self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
 

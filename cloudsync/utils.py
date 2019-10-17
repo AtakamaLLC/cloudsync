@@ -1,7 +1,7 @@
 import logging
 from hashlib import md5
 from base64 import b64encode
-from typing import Any, Union, List, Dict
+from typing import Any, List, Dict
 from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
 
@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 
 
 MAX_DEBUG_STR = 64
+
 
 def _debug_arg(val: Any):
     ret: Any = val
@@ -33,6 +34,7 @@ def _debug_arg(val: Any):
             pass
     return ret
 
+
 # prevents very long arguments from getting logged
 def debug_args(*stuff: Any):
     if log.isEnabledFor(logging.DEBUG):
@@ -42,10 +44,11 @@ def debug_args(*stuff: Any):
         return r
     return "N/A"
 
+
 # useful for converting oids and pointer nubmers into digestible nonces
-def debug_sig(t: Any, size: int = 3) -> Union[str, int]:
+def debug_sig(t: Any, size: int = 3) -> str:
     if not t:
-        return 0
+        return "0"
     return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
 
 
@@ -62,4 +65,4 @@ class disable_log_multiline:
         return self
 
     def __exit__(self, *args, **kwargs):
-        self.patch_object.__exit__(*args, **kwargs)
+        self.patch_object.__exit__(*args, **kwargs)  # type: ignore

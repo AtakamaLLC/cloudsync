@@ -6,11 +6,13 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, IO
+
+import msgpack
+from pystrict import strict
+from fnvhash import fnv1a_64
 
 __all__ = ['SyncManager']
-
-from pystrict import strict
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
         CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError
@@ -48,12 +50,13 @@ class ResolveFile():
         self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
-        self.__fh = None
+            self.__fh: IO = None
 
     def download(self):
         if not os.path.exists(self.__temp_file):
             try:
                 with open(self.__temp_file + ".tmp", "wb") as f:
+                    log.debug("download %s %s", self.path, self.info.oid)
                     self.provider.download(self.info.oid, f)
                 os.rename(self.__temp_file + ".tmp", self.__temp_file)
             except Exception as e:
@@ -63,6 +66,8 @@ class ResolveFile():
                 except FileNotFoundError:
                     pass
                 raise
+        else:
+            log.debug("using existing temp %s", self.path)
         return self.__temp_file
 
     @property
@@ -277,12 +282,13 @@ class SyncManager(Runnable):
                 self.finished(i, sync)
             break
 
-    def temp_file(self, temp_for=None):
+    def _temp_file(self, temp_for=None, name=None):
         if not os.path.exists(self.tempdir):
             # in case user deletes it... recreate
             os.mkdir(self.tempdir)
         # prefer big random name over NamedTemp which can infinite loop
-        ret = os.path.join(self.tempdir, os.urandom(16).hex())
+        ret = os.path.join(self.tempdir, name or os.urandom(16).hex())
+
         log.debug("tempdir %s -> %s", self.tempdir, ret)
         if temp_for:
             log.debug("%s is temped by %s", temp_for, ret)
@@ -301,34 +307,44 @@ class SyncManager(Runnable):
     def clean_temps(sync):
         # todo: move this to the sync obj
         for side in (LOCAL, REMOTE):
-            if sync[side].temp_file:
-                try:
-                    os.unlink(sync[side].temp_file)
-                except FileNotFoundError:
-                    pass
-                except OSError as e:
-                    log.debug("exception unlinking %s", e)
-                except Exception as e:  # any exceptions here are pointless
-                    log.warning("exception unlinking %s", e)
-                sync[side].temp_file = None
+            sync[side].clean_temp()
+
+    def make_temp_file(self, ss: SideState):
+        if ss.otype == DIRECTORY:
+            return
+        tfn = None
+        if ss.hash:
+            # for now hash could be nested tuples of bytes, or just a straight hash
+            # probably we should just change it to bytes only
+            # but this puts it in a somewhat deterministic form
+            tfn = os.path.basename(ss.path) + "." + hex(fnv1a_64(msgpack.dumps(ss.hash)))
+            if ss.temp_file and tfn in ss.temp_file and os.path.exists(os.path.dirname(ss.temp_file)):
+                return
+
+        if ss.temp_file:
+            ss.clean_temp()
+        ss.temp_file = self._temp_file(name=tfn)
 
     def download_changed(self, changed, sync):
-        sync[changed].temp_file = sync[changed].temp_file or self.temp_file(temp_for=sync[changed].path)
+        self.make_temp_file(sync[changed])
 
         assert sync[changed].oid
 
         if os.path.exists(sync[changed].temp_file):
+            log.debug("%s reused %s temp", self.providers[changed], sync[changed].oid)
             return True
 
         try:
             partial_temp = sync[changed].temp_file + ".tmp"
-            log.debug("%s download %s to %s", self.providers[changed], sync[changed].oid, partial_temp)
+            log.debug("%s download %s to %s", self.providers[changed].name, sync[changed].oid, partial_temp)
             with open(partial_temp, "wb") as f:
                 self.providers[changed].download(sync[changed].oid, f)
             os.rename(partial_temp, sync[changed].temp_file)
             return True
         except FileNotFoundError:
-            sync[changed].temp_file = self.temp_file(temp_for=sync[changed].path)
+            log.debug("file not found %s", sync[changed].path)
+            sync[changed].clean_temp()
+            return False
         except PermissionError as e:
             raise CloudTemporaryError("download or rename exception %s" % e)
 
@@ -585,8 +601,7 @@ class SyncManager(Runnable):
                 for ss in guard.side_states:
                     assert type(ss) is SideState
 
-                    if not ss.temp_file and ss.otype == FILE:
-                        ss.temp_file = self.temp_file(temp_for=ss.path)
+                    self.make_temp_file(ss)
 
                     guard.fhs.append(ResolveFile(ss, self.providers[ss.side]))
 
