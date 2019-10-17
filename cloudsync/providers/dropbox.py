@@ -86,12 +86,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
     def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id=None, app_secret=None):
         super().__init__()
         self.__root_id = None
-        self.__cursor = None
-        self.__creds = None
+        self.__cursor: str = None
+        self.__creds : Dict[str, str] = None
         self.client = None
         self.api_key = None
-        self._csrf = None
-        self._flow = None
+        self._csrf: bytes = None
+        self._flow: DropboxOAuth2Flow = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._session: Dict[Any, Any] = {}
@@ -350,7 +350,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return self.__cursor
 
     @current_cursor.setter
-    def current_cursor(self, val):
+    def current_cursor(self, val: str):
         if val is None:
             val = self.latest_cursor
         if not isinstance(val, str) and val is not None:

@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, IO
 
 import msgpack
 from pystrict import strict
@@ -50,7 +50,7 @@ class ResolveFile():
         self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
-        self.__fh = None
+            self.__fh: IO = None
 
     def download(self):
         if not os.path.exists(self.__temp_file):

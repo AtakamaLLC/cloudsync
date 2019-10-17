@@ -3,6 +3,8 @@ import json
 import traceback
 import socket
 
+from typing import Callable, Tuple
+
 from socketserver import ThreadingMixIn
 from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 import urllib.parse as urlparse
@@ -91,7 +93,7 @@ class ApiServer:
 
         self.__started = False
         self.__server = make_server(app=self, host=self.__addr, port=self.__port, handler_class=NoLoggingWSGIRequestHandler, server_class=ThreadedWSGIServer)
-        self.__routes: Dict[str, Callable] = {}
+        self.__routes: Dict[str, Tuple[Callable, str]] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
         self.__server.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)

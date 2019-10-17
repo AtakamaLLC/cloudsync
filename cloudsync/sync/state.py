@@ -70,6 +70,7 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
+        self.temp_file: str
 
     def __getattr__(self, k):
         if k[0] != "_":
