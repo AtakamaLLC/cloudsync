@@ -673,7 +673,7 @@ def test_cs_rename_heavy(cs):
     assert cs.providers[REMOTE].info_path(remote_path1)
 
 
-def test_cs_two_conflicts(cs):
+def test_del_create_conflict(cs):
     ((local_path1, remote_path1),) = setup_remote_local(cs, "stuff1")
 
     log.info("TABLE 0\n%s", cs.state.pretty_print())
@@ -717,6 +717,45 @@ def test_cs_two_conflicts(cs):
     assert b1.getvalue() in (b'goodbye', b'world')
     assert b2.getvalue() in (b'goodbye', b'world')
     assert b1.getvalue() != b2.getvalue()
+
+
+def test_conflict_merge_twice(cs):
+    ((local_path1, remote_path1),) = setup_remote_local(cs, "stuff1")
+
+    cs.smgr._resolve_conflict = lambda f1, f2: (BytesIO(f1.read() + b"merged"), False)
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    linfo1 = cs.providers[LOCAL].info_path(local_path1)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+
+    cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"goodbye"))
+    cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"world"))
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    l1 = BytesIO()
+    r1 = BytesIO()
+
+    cs.providers[LOCAL].download_path(local_path1, l1)
+    cs.providers[REMOTE].download_path(remote_path1, r1)
+
+    assert l1.getvalue() == b'worldmerged'
+    assert r1.getvalue() == b'worldmerged'
+
+    cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"goodbye2"))
+    cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"world2"))
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    l1 = BytesIO()
+    r1 = BytesIO()
+
+    cs.providers[LOCAL].download_path(local_path1, l1)
+    cs.providers[REMOTE].download_path(remote_path1, r1)
+
+    assert l1.getvalue() == b'world2merged'
+    assert r1.getvalue() == b'world2merged'
 
 
 @pytest.mark.repeat(10)

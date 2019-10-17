@@ -9,7 +9,7 @@ import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
-from typing import Callable, Dict
+from typing import Callable, Dict, Tuple
 
 import unittest
 import requests
@@ -91,7 +91,7 @@ class ApiServer:
 
         self.__started = False
         self.__server = make_server(app=self, host=self.__addr, port=self.__port, handler_class=NoLoggingWSGIRequestHandler, server_class=ThreadedWSGIServer)
-        self.__routes: Dict[str, Callable] = {}
+        self.__routes: Dict[str, Tuple[Callable, str]] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
         self.__server.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)

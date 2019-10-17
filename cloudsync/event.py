@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import TYPE_CHECKING, Optional, Callable
+from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass
 from pystrict import strict
 from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError
@@ -20,7 +20,7 @@ class Event:
     otype: OType                           # fsobject type     (DIRECTORY or FILE)
     oid: str                               # fsobject id
     path: Optional[str]                    # path
-    hash: Optional[bytes]                  # fsobject hash     (better name: ohash)
+    hash: Any                              # fsobject hash     (better name: ohash)
     exists: Optional[bool]
     mtime: Optional[float] = None
     prior_oid: Optional[str] = None        # path basesd systems use this on renames

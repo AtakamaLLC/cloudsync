@@ -10,6 +10,7 @@ altered to independent, and not paired at all.
 import copy
 import logging
 import time
+import os
 import random
 from threading import RLock
 from abc import ABC, abstractmethod
@@ -69,6 +70,7 @@ class SideState():
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
+        self.temp_file: str
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -126,6 +128,18 @@ class SideState():
                self.hash != self.sync_hash or
                self.path != self.sync_path or
                self.exists == TRASHED)
+
+    def clean_temp(self):
+        if self.temp_file:
+            try:
+                os.unlink(self.temp_file)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                log.debug("exception unlinking %s", e)
+            except Exception as e:  # any exceptions here are pointless
+                log.warning("exception unlinking %s", e)
+                self.temp_file = None
 
 
 # these are not really local or remote
