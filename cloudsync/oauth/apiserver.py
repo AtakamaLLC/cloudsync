@@ -3,15 +3,13 @@ import json
 import traceback
 import socket
 
-from typing import Callable, Tuple
-
 from socketserver import ThreadingMixIn
 from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
-from typing import Callable, Dict
+from typing import Callable, Dict, Tuple
 
 import unittest
 import requests

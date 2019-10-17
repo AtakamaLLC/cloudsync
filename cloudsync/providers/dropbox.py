@@ -87,7 +87,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         super().__init__()
         self.__root_id = None
         self.__cursor: str = None
-        self.__creds : Dict[str, str] = None
+        self.__creds: Dict[str, str] = None
         self.client = None
         self.api_key = None
         self._csrf: bytes = None

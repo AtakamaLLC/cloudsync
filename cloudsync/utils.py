@@ -1,7 +1,7 @@
 import logging
 from hashlib import md5
 from base64 import b64encode
-from typing import Any, Union, List, Dict
+from typing import Any, List, Dict
 from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
 
