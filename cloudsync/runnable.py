@@ -37,6 +37,9 @@ class Runnable(ABC):
         if self.interrupt.wait(secs):
             self.interrupt.clear()
 
+    def __increment_backoff(self):
+        self.in_backoff = max(self.in_backoff * self.mult_backoff, self.min_backoff)
+
     def run(self, *, timeout=None, until=None, sleep=0.01):
         self.interrupt = threading.Event()
         self.stopped = False
@@ -49,15 +52,17 @@ class Runnable(ABC):
                 self.do()
                 self.in_backoff = 0
             except BackoffError:
+                self.__increment_backoff()
                 log.debug("backing off %s", self.__class__)
             except Exception:
+                self.__increment_backoff()
                 log.exception("unhandled exception in %s", self.__class__)
-                self.backoff()
 
             if self.stopped or (until is not None and until()):
                 break
 
             if self.in_backoff:
+                log.debug("backoff sleep")
                 self.__interruptable_sleep(self.in_backoff)
 
             if self.stopped:
@@ -67,7 +72,6 @@ class Runnable(ABC):
             self.done()
 
     def backoff(self):
-        self.in_backoff = max(self.in_backoff * self.mult_backoff, self.min_backoff)
         raise BackoffError()
 
     def wake(self):
@@ -97,6 +101,10 @@ class Runnable(ABC):
     def done(self):
         # cleanup code goes here
         pass
+
+    def wait(self):
+        if self.thread:
+            self.thread.join()
 
 
 def test_runnable():

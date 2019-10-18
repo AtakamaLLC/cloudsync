@@ -76,6 +76,10 @@ class EventManager(Runnable):
         if self._cursor_tag is not None:
             self.state.storage_delete_tag(self._cursor_tag)
 
+    @property
+    def busy(self):
+        return not self.events.empty
+
     def do(self):
         self.events.shutdown = False
         try:

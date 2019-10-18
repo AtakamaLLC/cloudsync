@@ -162,6 +162,10 @@ class SyncManager(Runnable):
         else:
             return None
 
+    @property
+    def busy(self):
+        return self.state.changeset_len
+
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
 
