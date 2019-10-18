@@ -234,11 +234,11 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def _real_api(self, client, mutex, method, *args, **kwargs):   # pylint: disable=too-many-branches, too-many-statements
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
-        with self.mutex:
-            if not self.client:
-                raise CloudDisconnectedError("currently disconnected")
 
         with mutex:
+            if not client:
+                raise CloudDisconnectedError("currently disconnected")
+
             try:
                 return getattr(client, method)(*args, **kwargs)
             except exceptions.ApiError as e:
@@ -345,8 +345,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return ""
 
     def disconnect(self):
-        with self.mutex:
-            self.client = None
+        self.client = None
+        self.longpoll_client = None
 
     @property
     def latest_cursor(self):
