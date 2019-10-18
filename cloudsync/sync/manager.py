@@ -148,6 +148,8 @@ class SyncManager(Runnable):
                     sync.punt()
                     self.state.storage_commit()
                     self.backoff()
+            else:
+                time.sleep(self.aging)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -254,7 +256,8 @@ class SyncManager(Runnable):
             return
 
         with disable_log_multiline():
-            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+            if log.isEnabledFor(TRACE):
+                log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 

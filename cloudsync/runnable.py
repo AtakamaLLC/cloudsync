@@ -40,7 +40,7 @@ class Runnable(ABC):
     def __increment_backoff(self):
         self.in_backoff = max(self.in_backoff * self.mult_backoff, self.min_backoff)
 
-    def run(self, *, timeout=None, until=None, sleep=0.01):
+    def run(self, *, timeout=None, until=None, sleep=0.001):
         self.interrupt = threading.Event()
         self.stopped = False
         for _ in time_helper(timeout):
