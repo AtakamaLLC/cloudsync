@@ -197,35 +197,36 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def connect(self, creds):
         log.debug('Connecting to dropbox')
-        if not self.client:
-            self.__creds = creds
-            api_key = creds.get('key', self.api_key)
+        with self.mutex:
+            if not self.client:
+                self.__creds = creds
+                api_key = creds.get('key', self.api_key)
 
-            if not api_key:
-                raise CloudTokenError()
+                if not api_key:
+                    raise CloudTokenError()
 
-            with self.mutex:
                 self.client = Dropbox(api_key)
 
-            try:
-                quota = self.get_quota()
-                self.connection_id = quota['login']
-            except Exception as e:
-                self.disconnect()
-                if isinstance(e, exceptions.AuthError):
-                    log.debug("auth error connecting %s", e)
-                    raise CloudTokenError()
-                log.exception("error connecting %s", e)
-                raise CloudDisconnectedError()
-            self.api_key = api_key
+                try:
+                    quota = self.get_quota()
+                    self.connection_id = quota['login']
+                except Exception as e:
+                    self.disconnect()
+                    if isinstance(e, exceptions.AuthError):
+                        log.debug("auth error connecting %s", e)
+                        raise CloudTokenError()
+                    log.exception("error connecting %s", e)
+                    raise CloudDisconnectedError()
+                self.api_key = api_key
 
     def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
-        if not self.client:
-            raise CloudDisconnectedError("currently disconnected")
 
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
 
         with self.mutex:
+            if not self.client:
+                raise CloudDisconnectedError("currently disconnected")
+
             try:
                 return getattr(self.client, method)(*args, **kwargs)
             except exceptions.ApiError as e:
@@ -332,7 +333,8 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         return ""
 
     def disconnect(self):
-        self.client = None
+        with self.mutex:
+            self.client = None
 
     @property
     def latest_cursor(self):

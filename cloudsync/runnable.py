@@ -18,6 +18,10 @@ def time_helper(timeout, sleep=None, multiply=1):
     raise TimeoutError()
 
 
+class BackoffError(Exception):
+    pass
+
+
 class Runnable(ABC):
     stopped = False
     __shutdown = False
@@ -44,8 +48,12 @@ class Runnable(ABC):
             try:
                 self.do()
                 self.in_backoff = 0
+            except BackoffError:
+                log.debug("backing off %s", self.__class__)
             except Exception:
                 log.exception("unhandled exception in %s", self.__class__)
+                self.backoff()
+
             if self.stopped or (until is not None and until()):
                 break
 
@@ -60,6 +68,7 @@ class Runnable(ABC):
 
     def backoff(self):
         self.in_backoff = max(self.in_backoff * self.mult_backoff, self.min_backoff)
+        raise BackoffError()
 
     def wake(self):
         if not self.interrupt:
