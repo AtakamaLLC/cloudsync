@@ -93,7 +93,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self._csrf: bytes = None
         self._flow: DropboxOAuth2Flow = None
         self.user_agent = 'cloudsync/1.0'
-        self.mutex = threading.Lock()
+        self.mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
