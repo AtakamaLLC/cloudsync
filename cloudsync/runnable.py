@@ -71,7 +71,8 @@ class Runnable(ABC):
         if self.__shutdown:
             self.done()
 
-    def backoff(self):
+    @staticmethod
+    def backoff():
         raise BackoffError()
 
     def wake(self):
