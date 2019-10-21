@@ -32,6 +32,9 @@ class Muxer:
     def __iter__(self):
         return self
 
+    def empty(self):
+        return self.queue.empty()
+
     def __next__(self):
         try:
             e = self.queue.get_nowait()

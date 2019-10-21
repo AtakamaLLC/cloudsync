@@ -2,7 +2,10 @@ import os
 import logging
 from io import BytesIO
 from unittest.mock import patch
-from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, cast
+from typing import Union, Optional, Generator, TYPE_CHECKING, List, cast
+
+import threading
+import time
 
 import msgpack
 import pytest
@@ -720,6 +723,39 @@ def test_event_rename(provider):
         # oid based providers just need to let us know something happend to that oid
         assert info1.oid in seen
 
+
+def test_event_longpoll(provider):
+    temp = BytesIO(os.urandom(32))
+    dest = provider.temp_name("dest")
+
+    provider.prime_events()
+
+    received_event = None
+
+    def waiter():
+        nonlocal received_event
+        timeout = time.monotonic() + provider.event_timeout
+        while time.monotonic() < timeout:
+            for e in provider.events_poll(until=lambda: received_event):
+                if e.exists:
+                    if not e.path:
+                        info = provider.info_oid(e.oid)
+                        if info:
+                            e.path = info.path
+
+                    if e.path == dest:
+                        received_event = e
+                        return
+
+    t = threading.Thread(target=waiter)
+    t.start()
+
+    log.debug("create event")
+    provider.create(dest, temp, None)
+
+    t.join(timeout=provider.event_timeout)
+
+    assert received_event
 
 def test_api_failure(provider):
     # assert that the cloud
