@@ -943,6 +943,11 @@ class SyncManager(Runnable):
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
+        if sync.is_creation(changed) and sync.priority == 0 and sync[synced].exists == MISSING:
+            sync.punt()
+            log.debug("create on top of missing, punt, maybe a rename")
+            return REQUEUE
+
         if sync.is_creation(changed):
             # never synced this before, maybe there's another local path with
             # the same name already?
