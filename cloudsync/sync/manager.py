@@ -217,7 +217,7 @@ class SyncManager(Runnable):
                 changed = i
                 synced = other_side(i)
                 se = sync[changed]
-                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.is_conflicted:
+                if not se.changed or se.sync_path or not se.oid or se.exists != EXISTS or sync.is_conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -364,7 +364,7 @@ class SyncManager(Runnable):
     def get_folder_file_conflict(self, sync: SyncEntry, translated_path: str, synced: int) -> SyncEntry:
         # if a non-dir file exists with the same name on the sync side
         syents: List[SyncEntry] = list(self.state.lookup_path(synced, translated_path))
-        conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
+        conflicts = [ent for ent in syents if ent[synced].exists == EXISTS and ent != sync and ent[synced].otype != DIRECTORY]
 
         nc: List[SyncEntry] = []
         for ent in conflicts:
@@ -391,6 +391,8 @@ class SyncManager(Runnable):
                     ent.ignore(IgnoreReason.DISCARDED)
 
         ents = [ent for ent in ents if TRASHED not in (
+            ent[changed].exists, ent[synced].exists)]
+        ents = [ent for ent in ents if MISSING not in (
             ent[changed].exists, ent[synced].exists)]
 
         if ents:
@@ -480,8 +482,8 @@ class SyncManager(Runnable):
             info = self.providers[synced].info_oid(sync[synced].oid)
 
             if not info:
-                log.debug("convert to unsynced")
-                sync[synced].exists = TRASHED
+                log.debug("convert to missing")
+                sync[synced].exists = MISSING
             else:
                 # you got an FNF during upload, but when you queried... it existed
                 # basically this is just a "retry" or something
@@ -858,16 +860,15 @@ class SyncManager(Runnable):
                   translated_path, other_ents)
 
         # ignoring trashed entries with different oids on the same path
-        if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
+        if all(ent[synced].exists != EXISTS or ent[changed].exists != EXISTS for ent in other_ents):
             for ent in other_ents:
-                if ent[synced].exists == TRASHED:
+                if ent[synced].exists in (TRASHED, MISSING):
                     # old trashed entries can be safely ignored
                     log.debug("discard ent %s", ent)
                     ent.ignore(IgnoreReason.DISCARDED)
             return None
 
-        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
-            ent[synced].exists, ent[changed].exists)]
+        other_untrashed_ents = [ent for ent in other_ents if ent[synced].exists == EXISTS and ent[changed].exists == EXISTS]
 
         return other_untrashed_ents
 
@@ -958,7 +959,7 @@ class SyncManager(Runnable):
             if not self.download_changed(changed, sync):
                 return REQUEUE
 
-            if sync[synced].oid and sync[synced].exists != TRASHED:
+            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING):
                 if self.upload_synced(changed, sync):
                     return FINISHED
                 return REQUEUE
@@ -1134,7 +1135,7 @@ class SyncManager(Runnable):
         if sync[changed].path is None:
             return FINISHED
 
-        if sync[synced].exists == TRASHED or sync[synced].oid is None:
+        if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
             # not an upload
             sync[synced].exists = UNKNOWN
@@ -1163,7 +1164,7 @@ class SyncManager(Runnable):
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
-            sync[changed].exists = TRASHED
+            sync[changed].exists = MISSING
             return
 
         if not info.path:
