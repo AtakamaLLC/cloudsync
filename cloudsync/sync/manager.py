@@ -134,7 +134,8 @@ class SyncManager(Runnable):
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
 
-            if sync:
+        if sync:
+            with self.state.lock:
                 try:
                     self.sync(sync)
                     self.state.storage_commit()
@@ -148,8 +149,8 @@ class SyncManager(Runnable):
                     sync.punt()
                     self.state.storage_commit()
                     self.backoff()
-            else:
-                time.sleep(self.aging)
+        else:
+            time.sleep(self.aging)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
