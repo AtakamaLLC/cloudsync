@@ -1002,10 +1002,13 @@ class SyncManager(Runnable):
                     conflict = ents[0]
                     if not conflict[changed].changed and not conflict[synced].changed:
                         # file is up to date, we're replacing a known synced copy
-                        self.providers[synced].delete(conflict[synced].oid)
-                        log.debug("deleting %s out of the way", translated_path)
-                        sync.punt()
-                        return REQUEUE
+                        try:
+                            self.providers[synced].delete(conflict[synced].oid)
+                            log.debug("deleting %s out of the way", translated_path)
+                            sync.punt()
+                            return REQUEUE
+                        except CloudFileExistsError:
+                            pass
                     log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()

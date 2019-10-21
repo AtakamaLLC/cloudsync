@@ -628,7 +628,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[REMOTE]._changed = False
                 self._changeset.discard(ent)
         elif key == "changed":
-            if val or ent[other_side(side)].changed:
+            if (val and ent[side].oid) or (ent[other_side(side)].changed and ent[other_side(side)].oid):
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
@@ -733,7 +733,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             self._paths[side][ent[side].path][oid] = ent
 
         if oid:
+            # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
+            if ent[side].changed or ent[other_side(side)].changed:
+                self._changeset.add(ent)
+        else:
+            # ent without oid doesn't go in changeset
+            if ent[side].changed and not ent[other_side(side)].changed:
+                self._changeset.discard(ent)
 
     def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]
