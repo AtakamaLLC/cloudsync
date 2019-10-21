@@ -148,6 +148,8 @@ class SyncManager(Runnable):
                     sync.punt()
                     self.state.storage_commit()
                     self.backoff()
+            else:
+                time.sleep(self.aging)
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -161,6 +163,10 @@ class SyncManager(Runnable):
             return self.__translate(side, path)
         else:
             return None
+
+    @property
+    def busy(self):
+        return self.state.changeset_len
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
@@ -250,7 +256,8 @@ class SyncManager(Runnable):
             return
 
         with disable_log_multiline():
-            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
+            if log.isEnabledFor(TRACE):
+                log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
@@ -869,13 +876,6 @@ class SyncManager(Runnable):
 
         if not other_untrashed_ents:
             return False
-
-        if sync.priority == 0:
-            # delaying sometimes helps, because future events can resolve conflicts
-            # it's generally better to wait before conflicting something
-            log.debug("punting, maybe it will fix itself")
-            sync.punt()
-            return True
 
         log.debug("split conflict found : %s:%s", len(other_untrashed_ents), other_untrashed_ents)
 

@@ -89,11 +89,13 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         self.__cursor: str = None
         self.__creds: Dict[str, str] = None
         self.client = None
+        self.longpoll_client = None
         self.api_key = None
         self._csrf: bytes = None
         self._flow: DropboxOAuth2Flow = None
         self.user_agent = 'cloudsync/1.0'
-        self.mutex = threading.Lock()
+        self.mutex = threading.RLock()
+        self.longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
@@ -197,37 +199,48 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def connect(self, creds):
         log.debug('Connecting to dropbox')
-        if not self.client:
-            self.__creds = creds
-            api_key = creds.get('key', self.api_key)
+        with self.mutex:
+            if not self.client:
+                self.__creds = creds
+                api_key = creds.get('key', self.api_key)
 
-            if not api_key:
-                raise CloudTokenError()
-
-            with self.mutex:
-                self.client = Dropbox(api_key)
-
-            try:
-                quota = self.get_quota()
-                self.connection_id = quota['login']
-            except Exception as e:
-                self.disconnect()
-                if isinstance(e, exceptions.AuthError):
-                    log.debug("auth error connecting %s", e)
+                if not api_key:
                     raise CloudTokenError()
-                log.exception("error connecting %s", e)
-                raise CloudDisconnectedError()
-            self.api_key = api_key
 
-    def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
-        if not self.client:
-            raise CloudDisconnectedError("currently disconnected")
+                self.client = Dropbox(api_key)
+                self.longpoll_client = Dropbox(api_key)
 
+                try:
+                    quota = self.get_quota()
+                    self.connection_id = quota['login']
+                except Exception as e:
+                    self.disconnect()
+                    if isinstance(e, exceptions.AuthError):
+                        log.debug("auth error connecting %s", e)
+                        raise CloudTokenError()
+                    log.exception("error connecting %s", e)
+                    raise CloudDisconnectedError()
+                self.api_key = api_key
+
+    def _lpapi(self, method, *args, **kwargs):
+        if self.longpoll_mutex.acquire(blocking=False):
+            self.longpoll_mutex.release()
+        else:
+            log.warning("multiple longpoll threads, probably going to wait for a long time")
+        return self._real_api(self.longpoll_client, self.longpoll_mutex, method, *args, **kwargs)
+
+    def _api(self, method, *args, **kwargs):    # pylint: disable=arguments-differ
+        return self._real_api(self.client, self.mutex, method, *args, **kwargs)
+
+    def _real_api(self, client, mutex, method, *args, **kwargs):   # pylint: disable=too-many-branches, too-many-statements
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
 
-        with self.mutex:
+        with mutex:
+            if not client:
+                raise CloudDisconnectedError("currently disconnected")
+
             try:
-                return getattr(self.client, method)(*args, **kwargs)
+                return getattr(client, method)(*args, **kwargs)
             except exceptions.ApiError as e:
                 inside_error: Union[files.LookupError, files.WriteError]
 
@@ -333,6 +346,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
 
     def disconnect(self):
         self.client = None
+        self.longpoll_client = None
 
     @property
     def latest_cursor(self):
@@ -366,7 +380,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
         else:
             oid = self.root_id
 
-        for res in _FolderIterator(self._api, oid, recursive=True, cursor=cursor):
+        for res in _FolderIterator(self._lpapi, oid, recursive=True, cursor=cursor):
             exists = True
 
             log.debug("event %s", res)
