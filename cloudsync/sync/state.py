@@ -37,9 +37,10 @@ __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRE
 
 
 class Exists(Enum):
-    UNKNOWN = None
-    EXISTS = True
-    TRASHED = False
+    UNKNOWN = "unknown"
+    EXISTS = "exists"
+    TRASHED = "trashed"
+    MISSING = "missing"
 
     def __bool__(self):
         raise ValueError("never bool enums")
@@ -48,6 +49,7 @@ class Exists(Enum):
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
+MISSING = Exists.MISSING
 
 
 # state of a single object
@@ -96,8 +98,10 @@ class SideState():
             xval = EXISTS
         elif val is None:
             xval = UNKNOWN
-        else:
+        elif type(val) is Exists:
             xval = cast(Exists, val)
+        else:
+            xval = Exists(val)
 
         if type(xval) != Exists:
             raise ValueError("use enum for exists")
@@ -254,6 +258,13 @@ class SyncEntry:
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
+            # back compat: 10/21/19
+            if side_dict['exists'] is None:
+                side_state.exists = UNKNOWN
+            if side_dict['exists'] is True:
+                side_state.exists = EXISTS
+            if side_dict['exists'] is False:
+                side_state.exists = TRASHED
             side_state.exists = side_dict['exists']
             side_state.temp_file = side_dict['temp_file']
             return side_state
@@ -321,8 +332,8 @@ class SyncEntry:
         return self[changed].path != self[changed].sync_path
 
     def is_creation(self, changed):
-        return (not self[other_side(changed)].oid or self[other_side(changed)].exists == TRASHED) \
-                and self[changed].path and self[changed].exists != TRASHED
+        return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
+                and self[changed].path and self[changed].exists == EXISTS
 
     def is_rename(self, changed):
         return (self[changed].sync_path and self[changed].path
@@ -404,11 +415,8 @@ class SyncEntry:
             else:
                 return 0
 
-        def abbrev_bool(b, tup=('T', 'F', '?')):
-            idx = 1-int(bool(b))
-            if b is None:
-                idx = 2
-            return tup[idx]
+        def abbrev_exists(v):
+            return v.value[0].upper()
 
         def abbrev_equiv(a, b, table):
             assert len(table) == 5                  # quick check
@@ -423,8 +431,8 @@ class SyncEntry:
             else:
                 return table["mismatch"]
 
-        lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
-        rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
+        lexv = abbrev_exists(self[LOCAL].exists)
+        rexv = abbrev_exists(self[REMOTE].exists)
         abbrev_table = {
             "mismatch": "H",
             "leftonly": "<",
@@ -893,7 +901,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
             # this is only needed when shuffling
             # run test_cs_folder_conflicts_del 100 times or so
-            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists == TRASHED:
+            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists in (TRASHED, MISSING):
                 ent = prior_ent
                 ent.ignored = IgnoreReason.NONE
 
@@ -1071,14 +1079,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:
-            if ent[i].exists != TRASHED:
+            if ent[i].exists not in (TRASHED, MISSING):
                 ent[i].exists = UNKNOWN
             return
 
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
-            ent[i].exists = TRASHED
+            if ent[i].exists != TRASHED:
+                # we never got a trash event
+                ent[i].exists = MISSING
             return
 
         ent[i].exists = EXISTS

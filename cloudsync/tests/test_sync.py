@@ -722,7 +722,7 @@ def test_dir_rm(sync):
     sync.do()
     assert len(list(sync.providers[LOCAL].listdir(ldir))) == 1
 
-    # Next action should be on deleted child (detected in above)
+    sync.change_state(REMOTE, FILE, path=remote_file, oid=rfile.oid, exists=False)
     sync.do()
     assert len(list(sync.providers[LOCAL].listdir(ldir))) == 0
 
@@ -795,6 +795,39 @@ def test_file_name_error(sync):
 
     assert sync.state.lookup_oid(LOCAL, linfo1.oid).ignored == IgnoreReason.IRRELEVANT
 
+
+def test_modif_rename(sync):
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    local_file2 = "/local/file2"
+    remote_file1 = "/remote/file"
+    remote_file2 = "/remote/file2"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.run_until_found((REMOTE, remote_file1))
+
+    linfo2 = sync.providers[LOCAL].upload(linfo1.oid, BytesIO(b"hello2"))
+    sync.change_state(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo2.hash)
+    new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file2)
+
+    log.debug("CHANGE LF1 NO REN EVENT")
+    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+    sync.run(until=lambda: not sync.busy, timeout=1)
+
+    if sync.providers[LOCAL].oid_is_path:
+        # other providers can figure out the rename happend
+        assert sync.providers[REMOTE].info_path(remote_file1) is not None
+
+    log.debug("REN EVENT")
+    sync.change_state(LOCAL, FILE, path=local_file2,
+                      oid=new_loid, prior_oid=linfo1.oid)
+
+    sync.run_until_found((REMOTE, remote_file2))
+
+    assert sync.providers[REMOTE].info_path(remote_file2)
 
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated

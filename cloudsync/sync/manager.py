@@ -21,7 +21,7 @@ from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
 
-from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
+from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
@@ -50,7 +50,7 @@ class ResolveFile():
         self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
-            self.__fh: IO = None
+        self.__fh: IO = None
 
     def download(self):
         if not os.path.exists(self.__temp_file):
@@ -358,7 +358,7 @@ class SyncManager(Runnable):
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
                       self.providers[changed].name)
-            sync[changed].exists = TRASHED
+            sync[changed].exists = MISSING
             return False
 
     def get_folder_file_conflict(self, sync: SyncEntry, translated_path: str, synced: int) -> SyncEntry:
@@ -370,7 +370,7 @@ class SyncManager(Runnable):
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent[synced].exists = TRASHED
+                ent[synced].exists = MISSING
             else:
                 nc.append(ent)
 
@@ -1108,6 +1108,10 @@ class SyncManager(Runnable):
         if sync[changed].exists == TRASHED:
             log.debug("delete")
             return self.delete_synced(sync, changed, synced)
+
+        if sync[changed].exists == MISSING:
+            log.debug("%s missing", sync[changed].path)
+            return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
