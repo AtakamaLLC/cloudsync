@@ -284,7 +284,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudFileExistsError('Another user is modifying')
 
                 if str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % (
+                    raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % debug_args(
                         resource, method, kwargs
                     ))
 
