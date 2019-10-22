@@ -37,8 +37,3 @@ from .sync import *
 from .exceptions import *
 from .types import *
 from .cs import *
-
-from .command import main
-
-if __name__ == "__main__":
-    main()
