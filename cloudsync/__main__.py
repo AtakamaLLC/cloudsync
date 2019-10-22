@@ -1,4 +1,4 @@
-from .command import main
+from cloudsync.command import main
 
 if __name__ == "__main__":
     import sys
