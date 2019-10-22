@@ -1,5 +1,4 @@
 import logging
-from hashlib import md5
 from base64 import b64encode
 from typing import Any, List, Dict
 from unittest.mock import patch
@@ -49,7 +48,7 @@ def debug_args(*stuff: Any):
 def debug_sig(t: Any, size: int = 3) -> str:
     if not t:
         return "0"
-    return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
+    return b64encode(abs(hash(str(t))).to_bytes(8, "big")).decode()[0:size]
 
 
 class disable_log_multiline:

@@ -1866,7 +1866,8 @@ def test_hash_mess(cs, side_locked):
         with patch("cloudsync.tests.fixtures.mock_provider.CloudTemporaryError", new=_called):
             for locked in locks:
                 cs.providers[locked].locked_for_test.add(renamed_path[locked])
-            cs.run(until=lambda: _called.count > 0, timeout=1)  # type: ignore
+                log.info("lock set: %s", renamed_path[locked])
+            cs.run(until=lambda: _called.count > 0, timeout=2)  # type: ignore
             for locked in locks:
                 cs.providers[locked].locked_for_test.discard(renamed_path[locked])
 
