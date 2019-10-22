@@ -236,6 +236,8 @@ class SyncManager(Runnable):
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
+                    sync[changed].changed = time.time()
+                    sync[synced].clear()
 
     def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
@@ -545,7 +547,7 @@ class SyncManager(Runnable):
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
-    def create_synced(self, changed, sync, translated_path):
+    def create_synced(self, changed, sync, translated_path):        # pylint: disable=too-many-branches
         synced = other_side(changed)
         try:
             self._create_synced(changed, sync, translated_path)
@@ -555,7 +557,7 @@ class SyncManager(Runnable):
             parent = self.providers[changed].dirname(sync[changed].path)
             log.debug("make %s first before %s", parent, sync[changed].path)
             ents = self.state.lookup_path(changed, parent)
-            if not ents: 
+            if not ents:
                 info = self.providers[changed].info_path(parent)
                 if info:
                     self.state.update(changed, DIRECTORY, info.oid, path=parent)
@@ -563,10 +565,14 @@ class SyncManager(Runnable):
                     log.info("no info and no dir, ignoring?")
 
             else:
-                if not ents[0][changed].changed:
-                    # Clear the sync_path so we will recognize that this dir needs to be created
-                    ents[0][changed].sync_path = None
-                    self.update_entry(ents[0], changed, ents[0][changed].oid, changed=True)
+                parent_ent = ents[0]
+                if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
+                    # Clear the sync_path, and set synced to MISSING,
+                    # that way, we will recognize that this dir needs to be created
+                    parent_ent[changed].sync_path = None
+                    parent_ent[changed].changed = True
+                    parent_ent[synced].exists = MISSING
+                    assert parent_ent.is_creation(changed)
                     log.debug("updated entry %s", parent)
 
             sync.punt()
@@ -1148,6 +1154,7 @@ class SyncManager(Runnable):
         if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
             # not an upload
+            # todo: change to clear()
             sync[synced].exists = UNKNOWN
             sync[synced].hash = None
             sync[synced].changed = 0
