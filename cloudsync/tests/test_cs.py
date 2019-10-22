@@ -1546,6 +1546,8 @@ def test_cs_folder_conflicts_del(cs, shuffle):
         assert cs.providers[REMOTE].info_path(remote_path2)
     else:
         assert not cs.providers[LOCAL].info_path(local_path2_u)
+        if not cs.providers[LOCAL].oid_is_path:
+            assert not cs.providers[LOCAL].info_path(local_path2)
 
 
 def test_api_hit_perf(cs):
