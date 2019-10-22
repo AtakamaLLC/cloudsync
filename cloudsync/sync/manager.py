@@ -1127,7 +1127,7 @@ class SyncManager(Runnable):
                     # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
                     # also breaks test_folder_del_loop
                     sync[synced].changed = 1
-                    pass
+
                 return REQUEUE
 
         if sync[changed].exists == TRASHED:
