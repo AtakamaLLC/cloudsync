@@ -179,6 +179,10 @@ class CloudSync(Runnable):
     def change_count(self):
         return self.smgr.change_count
 
+    @property
+    def busy(self):
+        return self.smgr.busy or self.emgrs[0].busy or self.emgrs[1].busy
+
     def start(self, **kwargs):
         # override Runnable start/stop so that events can be processed in separate threads
         self.sthread = threading.Thread(target=self.smgr.run, kwargs={'sleep': 0.1, **kwargs}, daemon=True)
@@ -226,3 +230,8 @@ class CloudSync(Runnable):
         self.smgr.done()
         self.emgrs[0].done()
         self.emgrs[1].done()
+
+    def wait(self):
+        self.sthread.join()
+        self.ethreads[0].join()
+        self.ethreads[1].join()

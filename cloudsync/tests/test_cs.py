@@ -15,8 +15,13 @@ log = logging.getLogger(__name__)
 
 roots = ("/local", "/remote")
 
+
 class CloudSyncMixin(CloudSync, RunUntilHelper):
-    pass
+    def __init__(self, *ar, **kw):
+        super().__init__(*ar, **kw)
+        # default for tests is no aging, feel free to change
+        self.aging = 0
+
 
 @pytest.fixture(name="cs_storage")
 def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
@@ -1369,10 +1374,6 @@ def test_cursor(cs_storage):
 
     linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
-
     p1 = cs.providers[LOCAL]
     p2 = cs.providers[REMOTE]
     p1.current_cursor = None
@@ -1706,11 +1707,11 @@ def test_out_of_space(cs):
 
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
-    cs.run(until=lambda: cs.smgr.in_backoff, timeout=0.25)
+    cs.run(until=lambda: cs.in_backoff, timeout=0.25)
 
     log.info("END TABLE\n%s", cs.state.pretty_print())
 
-    assert cs.smgr.in_backoff
+    assert cs.in_backoff
     assert cs.state.changeset_len
 
 
@@ -1724,25 +1725,28 @@ def test_backoff(cs, recover):
 
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
-    if not recover:
-        # prevent reconnection
-        remote.creds = None
     remote.disconnect()
+    remote.creds = None
 
+    cs.start(until=lambda: cs.smgr.in_backoff, timeout=1)
+    cs.wait()
+
+    log.info("START TABLE\n%s", cs.state.pretty_print())
     log.info("DISCONNECTED")
 
     if recover:
-        cs.run(until=lambda: not cs.smgr.state.changeset_len, timeout=0.25)
-    else:
-        cs.run(until=lambda: cs.smgr.in_backoff, timeout=0.25)
+        remote.creds = "ok"
+        log.info("RECONNECT %s", cs.smgr.in_backoff)
+        cs.start(until=lambda: not cs.smgr.in_backoff, timeout=1)
+        cs.wait()
 
     log.info("END TABLE\n%s", cs.state.pretty_print())
 
     if recover:
-        assert not cs.smgr.in_backoff
+        assert not cs.in_backoff
+        assert cs.state.changeset_len
     else:
         assert cs.smgr.in_backoff
-        assert cs.state.changeset_len
 
 
 def test_cs_prioritize(cs):
@@ -1862,7 +1866,8 @@ def test_hash_mess(cs, side_locked):
         with patch("cloudsync.tests.fixtures.mock_provider.CloudTemporaryError", new=_called):
             for locked in locks:
                 cs.providers[locked].locked_for_test.add(renamed_path[locked])
-            cs.run(until=lambda: _called.count > 0, timeout=1)  # type: ignore
+                log.info("lock set: %s", renamed_path[locked])
+            cs.run(until=lambda: _called.count > 0, timeout=2)  # type: ignore
             for locked in locks:
                 cs.providers[locked].locked_for_test.discard(renamed_path[locked])
 
@@ -2122,7 +2127,7 @@ def test_walk_carefully3(setup_offline_state):
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    cs.do()
+    cs.smgr.do()
 
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
@@ -2171,3 +2176,4 @@ def test_no_nsquare(cs):
 
     log.debug("APIC %s", apic)
     assert (apic[1] + apic[0]) < expect
+
