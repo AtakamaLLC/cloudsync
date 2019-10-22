@@ -869,11 +869,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self.data_id[data_tag] = self._storage.create(data_tag, data)
                 log.log(TRACE, "storage_update_data data CREATE %s %s", data_tag, data)
 
-    def pretty_log_state_table_diffs(self):
+    def pretty_log_state_table_diffs(self, header="table"):
         try:
             if log.isEnabledFor(TRACE):
                 with disable_log_multiline():
-                    log.log(TRACE, "table\r\n%s", self.pretty_print(only_dirty=True))
+                    log.log(TRACE, "%s\n%s", header, self.pretty_print(only_dirty=True))
         except Exception:
             pass  # logging shouldn't be the cause of other things breaking
 
@@ -1092,8 +1092,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        with disable_log_multiline():
-            log.log(TRACE, "SPLIT\n%s", self.pretty_print(only_dirty=True))
+        self.pretty_log_state_table_diffs(header="SPLIT")
 
         assert replace_ent[replace].oid
 
