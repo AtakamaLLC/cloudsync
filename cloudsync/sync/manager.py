@@ -1116,6 +1116,14 @@ class SyncManager(Runnable):
                 # gentle punt, based on parent's priority
                 sync.priority = conflict.priority + 0.1
                 log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
+                if sync.is_path_change(changed) and sync[synced].exists == TRASHED and sync.priority > 2:
+                    # right hand side was trashed at the same time as a rename happened
+                    # punting is in a loop
+                    # force the trash to sync instead
+                    # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
+                    # also breaks test_folder_del_loop
+                    sync[synced].changed = 1
+
                 return REQUEUE
 
         if sync[changed].exists == TRASHED:
