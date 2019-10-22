@@ -830,5 +830,33 @@ def test_modif_rename(sync):
     assert sync.providers[REMOTE].info_path(remote_file2)
 
 
+def test_re_mkdir_synced(sync):
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_file = "/local/sub/file"
+    remote_sub = "/remote/sub"
+    remote_file = "/remote/sub/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+
+    sync.run_until_found((REMOTE, remote_file))
+
+    rfil = sync.providers[REMOTE].info_path(remote_file)
+    sync.providers[REMOTE].upload(rfil.oid, BytesIO(b"hello2"))
+
+    sync.providers[LOCAL].delete(lfil.oid)
+    sync.providers[LOCAL].delete(lsub_oid)
+
+    sync.run(until=lambda: not sync.busy)
+    sync.change_state(REMOTE, FILE, path=remote_file, oid=rfil.oid, hash=rfil.hash)
+
+    log.info("TABLE 0:\n%s", sync.state.pretty_print())
+
+    sync.run_until_found((LOCAL, local_file))
+
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)

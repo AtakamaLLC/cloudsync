@@ -926,7 +926,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
+        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype)
 
     def change(self, age):
         if not self._changeset:
