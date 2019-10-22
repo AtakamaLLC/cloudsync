@@ -236,6 +236,8 @@ class SyncManager(Runnable):
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
+                    sync[changed].changed = time.time()
+                    sync[synced].clear()
 
     def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
@@ -1152,6 +1154,7 @@ class SyncManager(Runnable):
         if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
             # not an upload
+            # todo: change to clear()
             sync[synced].exists = UNKNOWN
             sync[synced].hash = None
             sync[synced].changed = 0
