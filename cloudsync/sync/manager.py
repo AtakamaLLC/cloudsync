@@ -259,10 +259,6 @@ class SyncManager(Runnable):
             self.handle_path_conflict(sync)
             return
 
-        with disable_log_multiline():
-            if log.isEnabledFor(TRACE):
-                log.log(TRACE, "table\r\n%s", self.state.pretty_print())
-
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
         for i in ordered:
