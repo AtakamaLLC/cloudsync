@@ -547,7 +547,7 @@ class SyncManager(Runnable):
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
-    def create_synced(self, changed, sync, translated_path):
+    def create_synced(self, changed, sync, translated_path):        # pylint: disable=too-many-branches
         synced = other_side(changed)
         try:
             self._create_synced(changed, sync, translated_path)
