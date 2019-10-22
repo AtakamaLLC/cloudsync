@@ -1493,6 +1493,7 @@ def test_many_small_files_mkdir_perf(cs):
     assert abs(local_no_clear.call_count - local_clear.call_count) < 3
     assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
 
+@pytest.mark.repeat(4)
 @pytest.mark.parametrize("shuffle", [True, False], ids=["shuffled", "ordered"])
 def test_cs_folder_conflicts_del(cs, shuffle):
     local_path1 = "/local/stuff1"
@@ -1537,14 +1538,14 @@ def test_cs_folder_conflicts_del(cs, shuffle):
 
     assert cs.state.changeset_len == 0
 
-    # either a deletion happend or a rename... whatever
+    # either a deletion happened or a rename... whatever
+    # but at least it doesn't time out or crash
 
     if cs.providers[REMOTE].info_path(remote_path2_u):
         assert cs.providers[LOCAL].info_path(local_path2_u)
         assert cs.providers[REMOTE].info_path(remote_path2)
     else:
         assert not cs.providers[LOCAL].info_path(local_path2_u)
-        assert not cs.providers[LOCAL].info_path(local_path2)
 
 
 def test_api_hit_perf(cs):
