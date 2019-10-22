@@ -1493,8 +1493,8 @@ def test_many_small_files_mkdir_perf(cs):
     assert abs(local_no_clear.call_count - local_clear.call_count) < 3
     assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
 
-@pytest.mark.repeat(4)
-@pytest.mark.parametrize("shuffle", [True, False], ids=["shuffled", "ordered"])
+
+@pytest.mark.parametrize("shuffle", range(5), ids=list("shuff%s" % i if i else "ordered" for i in range(5)))
 def test_cs_folder_conflicts_del(cs, shuffle):
     local_path1 = "/local/stuff1"
     local_path1_u = "/local/stuff1/under"
