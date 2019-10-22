@@ -990,7 +990,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         ents: List[SyncEntry] = list()
         widths: List[int] = [len(x) for x in SyncState.headers]
         if only_dirty:
-            all_ents = list(self._dirtyset)
+            all_ents = self._dirtyset
         else:
             all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
 
