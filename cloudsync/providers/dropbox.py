@@ -248,57 +248,54 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error = e.error.get_path()
                         if inside_error.is_malformed_path():
-                            log.debug('Malformed path when executing %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                            log.debug('Malformed path when executing %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'Malformed path when executing %s(%s)' % (method, kwargs))
+                                'Malformed path when executing %s(%s)' % debug_args(method, kwargs))
                         if inside_error.is_not_found():
-                            log.debug('file not found %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                            log.debug('file not found %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'File not found when executing %s(%s)' % (method, kwargs))
+                                'File not found when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.UploadError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.UploadWriteFailed):
                         inside_error = e.error.get_path()
                         write_error = inside_error.reason
                         if write_error.is_insufficient_space():
-                            log.debug('out of space %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                            log.debug('out of space %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudOutOfSpaceError(
-                                'Out of space when executing %s(%s)' % (method, kwargs))
+                                'Out of space when executing %s(%s)' % debug_args(method, kwargs))
                         if write_error.is_conflict():
                             raise CloudFileExistsError(
-                                'Conflict when executing %s(%s)' % (method, kwargs))
+                                'Conflict when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.DownloadError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error = e.error.get_path()
                         if inside_error.is_not_found():
-                            raise CloudFileNotFoundError("Not found when executing %s(%s)" % (method, kwargs))
+                            raise CloudFileNotFoundError("Not found when executing %s(%s)" % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.DeleteError):
                     if e.error.is_path_lookup():
                         inside_error = e.error.get_path_lookup()
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                                      *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'File not found when executing %s(%s)' % (method, kwargs))
+                                'File not found when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.RelocationError):
                     if e.error.is_from_lookup():
                         inside_error = e.error.get_from_lookup()
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                                      *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'File not found when executing %s(%s,%s)' % (method, args, kwargs))
+                                'File not found when executing %s(%s,%s)' % debug_args(method, args, kwargs))
                     if e.error.is_to():
                         inside_error = e.error.get_to()
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
-                                'File already exists when executing %s(%s)' % (method, kwargs))
+                                'File already exists when executing %s(%s)' % debug_args(method, kwargs))
                         log.debug("here")
 
                 if isinstance(e.error, files.CreateFolderError):
@@ -306,7 +303,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         inside_error = e.error.get_path()
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
-                                'File already exists when executing %s(%s)' % (method, kwargs))
+                                'File already exists when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.ListFolderContinueError):
                     # all list-folder-continue errors should cause a cursor reset
@@ -323,7 +320,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 if isinstance(e.error, files.ListFolderLongpollError):
                     raise CloudCursorError("cursor invalidated during longpoll")
 
-                raise CloudException("Unknown exception when executing %s(%s,%s): %s" % (method, args, kwargs, e))
+                raise CloudException("Unknown exception when executing %s(%s,%s): %s" % debug_args(method, args, kwargs, e))
             except (exceptions.InternalServerError, exceptions.RateLimitError, requests.exceptions.ReadTimeout):
                 raise CloudTemporaryError()
             except dropbox.stone_validators.ValidationError as e:
