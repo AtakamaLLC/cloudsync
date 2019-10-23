@@ -519,10 +519,10 @@ class SyncEntry:
         # do this one later
         self.priority += 1
 
-    def get_latest(self):
+    def get_latest(self, force=False):
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if max_changed > self[side]._last_gotten:
+            if force or max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
@@ -602,6 +602,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                             self._changeset.add(ent)
                 except Exception as e:
                     log.error("exception during deserialization %s", e)
+                    self._storage.delete(tag, eid)
             self._loading = False
         self.prioritize = prioritize
         if prioritize is None:
@@ -868,7 +869,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self.data_id[data_tag] = self._storage.create(data_tag, data)
                 log.log(TRACE, "storage_update_data data CREATE %s %s", data_tag, data)
 
+    def pretty_log_state_table_diffs(self, header="table"):
+        try:
+            if log.isEnabledFor(TRACE):
+                with disable_log_multiline():
+                    log.log(TRACE, "%s\n%s", header, self.pretty_print(only_dirty=True))
+        except Exception:
+            pass  # logging shouldn't be the cause of other things breaking
+
     def storage_commit(self):
+        self.pretty_log_state_table_diffs()
         for ent in self._dirtyset:
             self._storage_update(ent)
         self._dirtyset.clear()
@@ -976,12 +986,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return 0
         return 1
 
-    def pretty_print(self, use_sigs=True):
+    def pretty_print(self, use_sigs=True, only_dirty=False):
         ents: List[SyncEntry] = list()
         widths: List[int] = [len(x) for x in SyncState.headers]
+        if only_dirty:
+            all_ents = self._dirtyset
+        else:
+            all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
 
         e: SyncEntry
-        for e in self.get_all(discarded=True):  # allow conflicted to be printed
+        for e in all_ents:
             ents.append(e)
             for i, val in enumerate(e.pretty_summary(use_sigs=use_sigs)):
                 width = len(str(val))
@@ -996,7 +1010,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         found_ignored = False
         for e in sorted(ents, key=self.pretty_sort_key):
             if e.ignored != IgnoreReason.NONE and not found_ignored:
-                ret += "------\n"
+                if not only_dirty:
+                    ret += "------\n"
                 found_ignored = True
             ret += e.pretty(widths=widths, use_sigs=use_sigs) + "\n"
 
@@ -1077,8 +1092,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        with disable_log_multiline():
-            log.log(TRACE, "SPLIT\n%s", self.pretty_print())
+        self.pretty_log_state_table_diffs(header="SPLIT")
 
         assert replace_ent[replace].oid
 

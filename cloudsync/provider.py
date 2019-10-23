@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
 if TYPE_CHECKING:
-    from cloudsync.event import Event
+    from .event import Event
 
 log = logging.getLogger(__name__)
 

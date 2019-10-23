@@ -9,7 +9,7 @@ from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import SideState
+from cloudsync.sync.state import SideState, TRASHED
 
 log = logging.getLogger(__name__)
 
@@ -407,13 +407,16 @@ def test_sync_conflict_path(sync):
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
 
-    # currently defers to the alphabetcially greater name, rather than conflicting
-    sync.run_until_found((LOCAL, "/local/stuff-r"))
+    # defer to the one renamed "first", which in this case is local
+    sync.run_until_found((LOCAL, local_path2))
+    sync.run_until_found((REMOTE, "/remote/stuff-l"))
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
+    assert not sync.providers[REMOTE].exists_path(remote_path2)
     assert not sync.providers[LOCAL].exists_path(local_path1)
-    assert not sync.providers[LOCAL].exists_path(local_path2)
+    assert not sync.providers[REMOTE].exists_path(remote_path1)
+    assert not sync.providers[LOCAL].exists_path("/local/stuff-r")
     sync.state.assert_index_is_correct()
 
 
@@ -857,6 +860,50 @@ def test_re_mkdir_synced(sync):
     log.info("TABLE 0:\n%s", sync.state.pretty_print())
 
     sync.run_until_found((LOCAL, local_file))
+
+
+def test_folder_del_loop(sync):
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_sub2 = "/local/sub2"
+    local_file = "/local/sub/file"
+    local_file2 = "/local/sub2/file"
+    remote_sub = "/remote/sub"
+    remote_sub2 = "/remote/sub2"
+    remote_file = "/remote/sub/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    sync.change_state(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+
+    sync.run_until_found((REMOTE, remote_file))
+
+    rfil = sync.providers[REMOTE].info_path(remote_file)
+    rsub_oid = sync.providers[REMOTE].info_path(remote_sub).oid
+    sync.providers[REMOTE].delete(rfil.oid)
+    sync.providers[REMOTE].delete(rsub_oid)
+    lsub2_oid = sync.providers[LOCAL].rename(lsub_oid, local_sub2)
+    lfil2 = sync.providers[LOCAL].info_path(local_file2)
+
+    log.info("TABLE 0:\n%s", sync.state.pretty_print())
+
+    sync.change_state(REMOTE, FILE, oid=rfil.oid, exists=TRASHED)
+    sync.run(until=lambda: not sync.busy, timeout=1)
+
+    sync.change_state(LOCAL, DIRECTORY, oid=lsub2_oid, path=local_sub2, prior_oid=lsub_oid)
+    sync.change_state(LOCAL, FILE, oid=lfil2.oid, path=local_file2, prior_oid=lfil.oid)
+    sync.change_state(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
+
+    log.info("TABLE 1:\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: not sync.busy, timeout=1)
+
+    assert not sync.providers[REMOTE].info_path(remote_sub)
+    assert not sync.providers[REMOTE].info_path(remote_sub2)
+    assert not sync.providers[LOCAL].info_path(local_sub)
+    assert not sync.providers[LOCAL].info_path(local_sub2)
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)

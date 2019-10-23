@@ -22,5 +22,4 @@ dropbox = [ "dropbox" ]
 gdrive = [ "httplib2", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib", ]
 
 [tool.flit.scripts]
-cloudsync = "cloudsync:main"
-cloudsync-tests = "cloudsync:test_main"
+cloudsync = "cloudsync.command:main"

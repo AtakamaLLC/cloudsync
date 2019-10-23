@@ -39,9 +39,11 @@ def debug_args(*stuff: Any):
     if log.isEnabledFor(logging.DEBUG):
         r = _debug_arg(stuff)
         if len(r) == 1:
-            r = r[0]
-        return r
-    return "N/A"
+            return r[0]
+        return tuple(r)
+    if len(stuff) == 1:
+        return "N/A"
+    return tuple(["N/A"] * len(stuff))
 
 
 # useful for converting oids and pointer nubmers into digestible nonces
