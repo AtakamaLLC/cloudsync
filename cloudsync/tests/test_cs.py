@@ -478,12 +478,18 @@ def setup_remote_local(cs, *names, content=b'hello'):
     found = []
     ret = []
     for name in names:
+        is_dir = name.endswith("/")
+        name = name.strip("/")
+
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
         if "/" in name:
             local_dir1 = "/local/" + cs.providers[REMOTE].dirname(name)
             cs.providers[LOCAL].mkdir(local_dir1)
-        cs.providers[LOCAL].create(local_path1, BytesIO(content))
+        if is_dir:
+            cs.providers[LOCAL].mkdir(local_path1)
+        else:
+            cs.providers[LOCAL].create(local_path1, BytesIO(content))
         found.append((REMOTE, remote_path1))
         ret.append((local_path1, remote_path1))
 
@@ -494,6 +500,7 @@ def setup_remote_local(cs, *names, content=b'hello'):
 
 # pass in local/remote pairs
 def get_infos(cs, *paths):
+    log.info("infos %s", paths)
     if type(paths[0]) is str:
         # user passed in even number of paths
         assert len(paths) % 2 == 0
@@ -2179,4 +2186,39 @@ def test_no_nsquare(cs):
 
     log.debug("APIC %s", apic)
     assert (apic[1] + apic[0]) < expect
+
+
+def test_two_level_rename(cs):
+    (local, remote) = cs.providers
+
+    ret = setup_remote_local(cs, "a/", "a/fa1", "a/fa2", "a/b/", "a/b/fb1", "a/b/fb2")
+
+    log.debug("setup ret == %s", ret)
+
+    (
+        (la, ra),
+        (la1, ra1),
+        (la2, ra2),
+        (lb, rb),
+        (lb1, rb1),
+        (lb2, rb1),
+    ) = get_infos(cs, ret)
+
+    
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    local.rename(lb.oid, "/local/a/c")
+    local.rename(la.oid, "/local/d")
+
+    cs.run(until=lambda: not cs.busy, timeout=3)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    assert local.info_path("/local/d/c/fb1")
+    assert remote.info_path("/remote/d/c/fb1")
+    assert local.info_path("/local/d/c/fb2")
+    assert remote.info_path("/remote/d/c/fb2")
+
+    assert not any("conflicted" in e.path for e in local.walk("/local"))
+    assert not any("conflicted" in e.path for e in remote.walk("/remote"))
 
