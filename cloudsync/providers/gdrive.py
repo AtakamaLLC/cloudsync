@@ -560,7 +560,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if possible_conflict.oid != oid:  # it's OK to rename a file over itself, frex, to change case
                     raise CloudFileExistsError(path)
             else:
-                if self.paths_match(possible_conflict.path, path):
+                if possible_conflict.oid == oid:
                     return oid
 
                 try:
