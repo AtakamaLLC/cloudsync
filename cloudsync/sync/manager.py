@@ -1022,7 +1022,11 @@ class SyncManager(Runnable):
                         except CloudFileExistsError:
                             pass
                     log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
-                self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+            if sync.priority == 0:
+                sync.get_latest(force=True)
+                sync.punt()
+                return REQUEUE
+            self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
 
