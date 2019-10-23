@@ -468,7 +468,15 @@ def test_rename(provider):
     sub_file_name = os.urandom(16).hex()
     sub_file_path3 = provider.join(sub_folder_path2, sub_file_name)
     info1 = provider.create(dest, data())
-    provider.rename(info1.oid, sub_file_path3)
+    new_oid = provider.rename(info1.oid, sub_file_path3)
+
+    # dup rename file
+    provider.rename(new_oid, sub_file_path3)
+
+    # dup rename folder
+    sfp2 = provider.info_path(sub_folder_path2)
+    provider.rename(sfp2.oid, sub_folder_path2)
+
 
 def test_mkdir(provider):
     dat = os.urandom(32)

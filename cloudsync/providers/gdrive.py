@@ -560,13 +560,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if possible_conflict.oid != oid:  # it's OK to rename a file over itself, frex, to change case
                     raise CloudFileExistsError(path)
             else:
-                try:
-                    next(self.listdir(possible_conflict.oid))
-                    raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-                except StopIteration:
-                    # Folder is empty, rename over it no problem
-                    if possible_conflict.oid != oid:  # delete the target if we're not just changing case
-                        self.delete(possible_conflict.oid)
+                if possible_conflict.oid != oid:
+                    try:
+                        next(self.listdir(possible_conflict.oid))
+                        raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
+                    except StopIteration:
+                        # Folder is empty, rename over it no problem
+                        if possible_conflict.oid != oid:  # delete the target if we're not just changing case
+                            self.delete(possible_conflict.oid)
 
         if not old_path:
             for cpath, coid in list(self._ids.items()):

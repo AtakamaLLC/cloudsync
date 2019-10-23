@@ -23,7 +23,11 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudO
     CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError, CloudException
 
 log = logging.getLogger(__name__)
-logging.getLogger('dropbox').setLevel(logging.INFO)
+
+# default logging for these libraries is very verbose
+# user can turn this on explicitly
+logging.getLogger('dropbox').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.INFO)
 
 # internal use errors
 class NotAFileError(Exception):
@@ -296,7 +300,9 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
                                 'File already exists when executing %s(%s)' % debug_args(method, kwargs))
-                        log.debug("here")
+
+                    if e.error.is_duplicated_or_nested_paths():
+                        raise CloudFileExistsError('Duplicated or nested path %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.CreateFolderError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.WriteError):

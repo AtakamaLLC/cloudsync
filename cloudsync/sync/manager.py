@@ -199,15 +199,23 @@ class SyncManager(Runnable):
         if not have_paths:
             return False
 
+        have_changed = ent[0].changed and ent[1].changed
+        if not have_changed:
+            return False
+
         are_synced = ((ent[0].sync_hash and ent[1].sync_hash)
                       or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)) \
-                     and ent[0].sync_path and ent[1].sync_path
+                      and ent[0].sync_path and ent[1].sync_path
         if not are_synced:
             return False
 
         both_exist = ent[0].exists == EXISTS and ent[0].exists == EXISTS
 
         if not both_exist:
+            return False
+
+        translated_path = self.translate(1, ent[0].path)
+        if ent[1].path == translated_path:
             return False
 
         return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
@@ -1014,6 +1022,9 @@ class SyncManager(Runnable):
                         except CloudFileExistsError:
                             pass
                     log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
+            if sync.priority == 0:
+                sync.get_latest(force=True)
+            else:
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
@@ -1250,9 +1261,7 @@ class SyncManager(Runnable):
         assert sync[0].sync_path
         assert sync[1].sync_path
 
-        path1 = sync[0].path
-        path2 = sync[1].path
-        if path1 > path2:
+        if sync[0].changed < sync[1].changed:
             pick = 0
         else:
             pick = 1

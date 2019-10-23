@@ -519,10 +519,10 @@ class SyncEntry:
         # do this one later
         self.priority += 1
 
-    def get_latest(self):
+    def get_latest(self, force=False):
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if max_changed > self[side]._last_gotten:
+            if force or max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
