@@ -407,13 +407,16 @@ def test_sync_conflict_path(sync):
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
 
-    # currently defers to the alphabetcially greater name, rather than conflicting
-    sync.run_until_found((LOCAL, "/local/stuff-r"))
+    # defer to the one renamed "first", which in this case is local
+    sync.run_until_found((LOCAL, local_path2))
+    sync.run_until_found((REMOTE, "/remote/stuff-l"))
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
+    assert not sync.providers[REMOTE].exists_path(remote_path2)
     assert not sync.providers[LOCAL].exists_path(local_path1)
-    assert not sync.providers[LOCAL].exists_path(local_path2)
+    assert not sync.providers[REMOTE].exists_path(remote_path1)
+    assert not sync.providers[LOCAL].exists_path("/local/stuff-r")
     sync.state.assert_index_is_correct()
 
 
