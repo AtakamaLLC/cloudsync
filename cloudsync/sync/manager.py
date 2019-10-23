@@ -1024,9 +1024,8 @@ class SyncManager(Runnable):
                     log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
             if sync.priority == 0:
                 sync.get_latest(force=True)
-                sync.punt()
-                return REQUEUE
-            self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+            else:
+                self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
 
