@@ -398,34 +398,36 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 try:
                     revs = self._api('files_list_revisions',
                                      res.path_lower, limit=10)
-                except NotAFileError as e:
+                except NotAFileError:
+                    oid = None
                     otype = DIRECTORY
 
-                if revs is None:
-                    # dropbox will give a 409 conflict if the revision history was deleted
-                    # instead of raising an error, this gets converted to revs==None
-                    log.info("revs is none for %s %s", oid, path)
-                    continue
+                if otype == FILE:
+                    if revs is None:
+                        # dropbox will give a 409 conflict if the revision history was deleted
+                        # instead of raising an error, this gets converted to revs==None
+                        log.info("revs is none for %s %s", oid, path)
+                        continue
 
-                log.debug("revs %s", revs)
-                deleted_time = revs.server_deleted
-                if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
-                    log.error("revs %s has no deleted time?", revs)
-                    continue
-                latest_time = None
-                for ent in revs.entries:
-                    assert ent.server_modified is not None
-                    if ent.server_modified <= deleted_time and \
-                            (latest_time is None or ent.server_modified >= latest_time):
-                        oid = ent.id
-                        latest_time = ent.server_modified
-                if not oid:
-                    log.error(
-                        "skipping deletion %s, because we don't know the oid", res)
-                    continue
+                    log.debug("revs %s", revs)
+                    deleted_time = revs.server_deleted
+                    if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
+                        log.error("revs %s has no deleted time?", revs)
+                        continue
+                    latest_time = None
+                    for ent in revs.entries:
+                        assert ent.server_modified is not None
+                        if ent.server_modified <= deleted_time and \
+                                (latest_time is None or ent.server_modified >= latest_time):
+                            oid = ent.id
+                            latest_time = ent.server_modified
+                    if not oid:
+                        log.error(
+                            "skipping deletion %s, because we don't know the oid", res)
+                        continue
 
                 exists = False
-                otype = NOTKNOWN
+                otype = otype
                 ohash = None
             elif isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY

@@ -552,14 +552,17 @@ def check_event_path(event: Event, provider, target_path):
 def test_event_basic(provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest2")
 
     provider.prime_events()
 
-    log.debug("create event")
+    log.debug("create events")
     info1 = provider.create(dest, temp, None)
+    info2 = provider.mkdir(dest2)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
+    received_event2 = None
     event_count = 0
     done = False
 
@@ -575,9 +578,14 @@ def test_event_basic(provider):
             if e.path == dest:
                 received_event = e
                 event_count += 1
-                done = True
 
-    assert event_count == 1
+            if e.path == dest2:
+                received_event2 = e
+                event_count += 1
+
+            done = event_count == 2
+
+    assert done
     assert received_event is not None
     assert received_event.oid
     path = received_event.path
@@ -587,14 +595,18 @@ def test_event_basic(provider):
     assert received_event.mtime
     assert received_event.exists
     deleted_oid = received_event.oid
+    deleted_oid2 = received_event2.oid
+    path2 = provider.info_oid(received_event2.oid).path
 
     log.debug("delete event")
 
     provider.delete(oid=deleted_oid)
     provider.delete(oid=deleted_oid)  # Tests that deleting a non-existing file does not raise a FNFE
+    provider.delete(oid=deleted_oid2)  # Tests that deleting a non-existing file does not raise a FNFE
 
     received_event = None
-    for e in provider.events_poll(until=lambda: received_event is not None):
+    received_event2 = None
+    for e in provider.events_poll(until=lambda: received_event is not None and received_event2 is not None):
         log.debug("event %s", e)
         if e.exists and e.path is None:
             info2 = provider.info_oid(e.oid)
@@ -609,8 +621,11 @@ def test_event_basic(provider):
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
             received_event = e
+        if (not e.exists and e.oid == deleted_oid2) or (e.path and path2 in e.path):
+            received_event2 = e
 
     assert received_event is not None
+    assert received_event2 is not None
     assert received_event.oid
     assert not received_event.exists
     if received_event.path is not None:

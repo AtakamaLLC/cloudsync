@@ -158,6 +158,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError()
         self.download(info.oid, io)
 
+    def listdir_path(self, path):
+        info = self.info_path(path)
+        if not info or not info.oid:
+            raise CloudFileNotFoundError()
+        return self.listdir(info.oid)
+
+
 # HELPER
     @classmethod
     def join(cls, *paths):
