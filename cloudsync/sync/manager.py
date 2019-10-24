@@ -986,7 +986,7 @@ class SyncManager(Runnable):
 
         return self.handle_rename(sync, changed, synced, translated_path)
 
-    def handle_rename(self, sync, changed, synced, translated_path):
+    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches
         # handle rename
         # use == to allow rename for case reasons
         # todo: need a paths_match flag instead, so slashes don't break this line
@@ -1009,30 +1009,42 @@ class SyncManager(Runnable):
             return REQUEUE
         except CloudFileExistsError:
             log.debug("can't rename, file exists")
-            if sync.priority > 0:
+            if sync.priority <= 0:
+                sync.get_latest(force=True)
+            else:
                 ents = self.state.lookup_path(synced, translated_path)
+                ents = [e for e in ents if e is not sync]
+
                 if ents:
                     conflict = ents[0]
-                    if not conflict[changed].changed and not conflict[synced].changed:
+                    conflict.get_latest()
+                    if not conflict[LOCAL].needs_sync() and not conflict[REMOTE].needs_sync():
                         # file is up to date, we're replacing a known synced copy
                         try:
                             self.providers[synced].delete(conflict[synced].oid)
                             log.debug("deleting %s out of the way", translated_path)
+                            conflict[synced].exists = TRASHED
+                            if not conflict[changed].oid:
+                                # conflict row was because of a rename on-to-of
+                                # oid got zeroed out....
+                                # todo: handle this more gracefully
+                                conflict.ignored = IgnoreReason.DISCARDED
                             sync.punt()
                             return REQUEUE
                         except CloudFileExistsError:
                             pass
-                    log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
+                    log.debug("rename to fix conflict %s because %s not synced, NS: %s", translated_path, conflict, conflict.needs_sync())
+                else:
+                    log.debug("rename because of new/unknown content")
 
-            if sync.priority == 0:
-                sync.get_latest(force=True)
-            else:
                 try:
                     self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
                 except CloudFileNotFoundError as e:
                     log.error("file disappeared out from under us %s", e)
                     log.info("%s", self.state.pretty_print())
                     sync.get_latest(force=True)
+
+                self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
 
             sync.punt()
             return REQUEUE

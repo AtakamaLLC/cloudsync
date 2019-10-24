@@ -477,7 +477,10 @@ def setup_remote_local(cs, *names, content=b'hello'):
 
     found = []
     ret = []
-    for name in names:
+    if type(content) is bytes:
+        content = [content]*len(names)
+
+    for i, name in enumerate(names):
         is_dir = name.endswith("/")
         name = name.strip("/")
 
@@ -489,7 +492,7 @@ def setup_remote_local(cs, *names, content=b'hello'):
         if is_dir:
             cs.providers[LOCAL].mkdir(local_path1)
         else:
-            cs.providers[LOCAL].create(local_path1, BytesIO(content))
+            cs.providers[LOCAL].create(local_path1, BytesIO(content[i]))
         found.append((REMOTE, remote_path1))
         ret.append((local_path1, remote_path1))
 
@@ -2226,4 +2229,5 @@ def test_two_level_rename(cs):
 
     assert not any("conflicted" in e.path for e in local.walk("/local"))
     assert not any("conflicted" in e.path for e in remote.walk("/remote"))
+
 
