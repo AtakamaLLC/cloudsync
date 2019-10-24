@@ -1008,7 +1008,7 @@ class SyncManager(Runnable):
             return REQUEUE
         except CloudFileExistsError:
             log.debug("can't rename, file exists")
-            if sync.priority == 0:
+            if sync.priority <= 0:
                 sync.get_latest(force=True)
             else:
                 ents = self.state.lookup_path(synced, translated_path)
