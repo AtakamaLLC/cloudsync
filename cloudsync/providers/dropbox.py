@@ -17,7 +17,7 @@ from dropbox.oauth import OAuth2FlowResult
 
 from cloudsync.utils import debug_args
 from cloudsync.oauth import OAuthConfig
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
     CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError, CloudException
@@ -427,7 +427,6 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                         continue
 
                 exists = False
-                otype = otype
                 ohash = None
             elif isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
