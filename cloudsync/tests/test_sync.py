@@ -17,7 +17,12 @@ TIMEOUT = 4
 
 
 class SyncMgrMixin(SyncManager, RunUntilHelper):
-    pass
+    def process_events(self, side=None):
+        for i in (LOCAL, REMOTE):
+            prov = self.providers[i]
+            if side is None or side == i:
+                for e in prov.events():
+                    self.state.update(i, e.otype, path=e.path, oid=e.oid, hash=e.hash, prior_oid=e.prior_oid, exists=e.exists)
 
 
 def make_sync(request, mock_provider_generator, shuffle):
@@ -53,9 +58,51 @@ def make_sync(request, mock_provider_generator, shuffle):
 def fixture_sync(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, True)
 
+
 @pytest.fixture(name="sync_sh", params=[0, 1], ids=["sh0", "sh1"])
 def fixture_sync_sh(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, request.param)
+
+
+def setup_remote_local(sync, *names, content=b'hello'):
+    local, remote = sync.providers
+
+    remote_parent = "/remote"
+    local_parent = "/local"
+
+    local.mkdir(local_parent)
+    remote.mkdir(remote_parent)
+
+    found = []
+    if type(content) is bytes:
+        content = [content]*len(names)
+
+    paths = []
+    for i, name in enumerate(names):
+        is_dir = name.endswith("/")
+        name = name.strip("/")
+
+        remote_path1 = "/remote/" + name
+        local_path1 = "/local/" + name
+        if "/" in name:
+            local_dir1 = "/local/" + remote.dirname(name)
+            local.mkdir(local_dir1)
+        if is_dir:
+            local.mkdir(local_path1)
+        else:
+            local.create(local_path1, BytesIO(content[i]))
+        found.append((REMOTE, remote_path1))
+        paths.append((local_path1, remote_path1))
+
+    sync.process_events()
+    sync.run_until_found(*found)
+    sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
+
+    ret = []
+    for path in paths:
+        ret.append((local.info_path(path[0]), remote.info_path(path[1])))
+    return ret
+
 
 def test_sync_basic(sync: "SyncMgrMixin"):
     remote_parent = "/remote"
@@ -904,6 +951,42 @@ def test_folder_del_loop(sync):
     assert not sync.providers[REMOTE].info_path(remote_sub2)
     assert not sync.providers[LOCAL].info_path(local_sub)
     assert not sync.providers[LOCAL].info_path(local_sub2)
+
+def test_replace_rename(sync):
+    (local, remote) = sync.providers
+
+    (
+        (la, ra),
+        (lb, rb),
+    ) = setup_remote_local(sync, "a", "b", content=(b'a', b'b'))
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    local.upload(la.oid, BytesIO(b'tmp'))
+    local._delete(la.oid, without_event=True)
+    local.rename(lb.oid, la.path)
+
+    sync.process_events(LOCAL)
+
+    log.info("TABLE 1\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: not sync.busy, timeout=3)
+
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    sync.process_events(REMOTE)
+
+    sync.run(until=lambda: not sync.busy, timeout=3)
+
+    log.info("TABLE 3\n%s", sync.state.pretty_print())
+
+    assert not local.info_path(la.path + ".conflicted")
+    assert not local.info_path(lb.path + ".conflicted")
+    assert not remote.info_path(ra.path + ".conflicted")
+    assert not remote.info_path(rb.path + ".conflicted")
+
+    log.info("%s->%s", ra.path + ".conflicted", remote.info_path(ra.path + ".conflicted"))
+    log.info("%s", list(remote.walk("/remote")))
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)

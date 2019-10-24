@@ -128,10 +128,10 @@ class SideState():
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
 
     def needs_sync(self):
-        return self.changed and (
+        return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.path != self.sync_path or
-               self.exists == TRASHED)
+               self.exists == TRASHED )
 
     def clean_temp(self):
         if self.temp_file:
@@ -343,11 +343,15 @@ class SyncEntry:
         for i in (LOCAL, REMOTE):
             if not self[i].changed:
                 continue
-            if self[i].path != self[i].sync_path:
+            if self[i].path != self[i].sync_path and self[i].oid:
+                log.debug("path diff %s", self[i])
                 return True
-            if self[i].hash != self[i].sync_hash:
+            if self[i].hash != self[i].sync_hash and self[i].oid:
+                log.debug("hash diff %s", self[i])
                 return True
-        if self[LOCAL].exists != self[REMOTE].exists:
+        if self[LOCAL].exists != self[REMOTE].exists and \
+           self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
+            log.debug("exists diff %s != %s", self[LOCAL].exists, self[REMOTE].exists)
             return True
         return False
 
@@ -522,7 +526,7 @@ class SyncEntry:
     def get_latest(self, force=False):
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if force or max_changed > self[side]._last_gotten:
+            if force or max_changed > self[side]._last_gotten or self[side].exists == UNKNOWN:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
@@ -1113,7 +1117,12 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return
 
         ent[i].exists = EXISTS
-        ent[i].hash = info.hash
+
+        if ent[i].hash != info.hash:
+            ent[i].hash = info.hash
+            if ent.ignored == IgnoreReason.NONE:
+                ent[i].changed = time.time()
+
         ent[i].otype = info.otype
 
         if ent[i].otype == FILE:
@@ -1126,4 +1135,5 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[i].path != info.path:
             ent[i].path = info.path
-            self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
+            if ent.ignored == IgnoreReason.NONE:
+                ent[i].changed = time.time()

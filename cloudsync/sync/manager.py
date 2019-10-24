@@ -1008,11 +1008,15 @@ class SyncManager(Runnable):
             return REQUEUE
         except CloudFileExistsError:
             log.debug("can't rename, file exists")
-            if sync.priority > 0:
+            if sync.priority == 0:
+                sync.get_latest(force=True)
+            else:
                 ents = self.state.lookup_path(synced, translated_path)
+                ents = [e for e in ents if e is not sync]
                 if ents:
                     conflict = ents[0]
-                    if not conflict[changed].changed and not conflict[synced].changed:
+                    conflict.get_latest()
+                    if not conflict[LOCAL].needs_sync() and not conflict[REMOTE].needs_sync():
                         # file is up to date, we're replacing a known synced copy
                         try:
                             self.providers[synced].delete(conflict[synced].oid)
@@ -1021,10 +1025,9 @@ class SyncManager(Runnable):
                             return REQUEUE
                         except CloudFileExistsError:
                             pass
-                    log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
-            if sync.priority == 0:
-                sync.get_latest(force=True)
-            else:
+                    log.debug("rename to fix conflict %s because %s not synced, NS: %s", translated_path, conflict, conflict.needs_sync())
+                else:
+                    log.debug("rename because of new/unknown content")
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
             sync.punt()
             return REQUEUE
