@@ -394,20 +394,12 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 # then find out which one was the latest before the deletion time
                 # then get the oid for that
 
+                otype = FILE
                 try:
                     revs = self._api('files_list_revisions',
                                      res.path_lower, limit=10)
                 except NotAFileError as e:
-                    # todo: we need to actually handle this
-                    # this bug was exposed when we started raising errors during the fix of 409's
-                    # right now, we have no good solution for events without oids
-                    # the event manager needs to be modified to deal with this
-                    # otype = DIRECTORY
-                    # ohash = None
-                    # oid = None
-                    # yield ...
-                    log.error("deleted folder ignored %s", e)
-                    continue
+                    otype = DIRECTORY
 
                 if revs is None:
                     # dropbox will give a 409 conflict if the revision history was deleted

@@ -905,5 +905,3 @@ def test_folder_del_loop(sync):
     assert not sync.providers[LOCAL].info_path(local_sub)
     assert not sync.providers[LOCAL].info_path(local_sub2)
 
-# TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
-# TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
