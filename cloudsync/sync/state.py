@@ -131,7 +131,7 @@ class SideState():
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.path != self.sync_path or
-               self.exists == TRASHED )
+               self.exists == TRASHED)
 
     def clean_temp(self):
         if self.temp_file:
@@ -344,14 +344,11 @@ class SyncEntry:
             if not self[i].changed:
                 continue
             if self[i].path != self[i].sync_path and self[i].oid:
-                log.debug("path diff %s", self[i])
                 return True
             if self[i].hash != self[i].sync_hash and self[i].oid:
-                log.debug("hash diff %s", self[i])
                 return True
         if self[LOCAL].exists != self[REMOTE].exists and \
            self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
-            log.debug("exists diff %s != %s", self[LOCAL].exists, self[REMOTE].exists)
             return True
         return False
 
