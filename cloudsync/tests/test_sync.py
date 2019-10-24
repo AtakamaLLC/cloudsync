@@ -980,13 +980,18 @@ def test_replace_rename(sync):
 
     log.info("TABLE 3\n%s", sync.state.pretty_print())
 
+    log.info("%s->%s", ra.path + ".conflicted", remote.info_path(ra.path + ".conflicted"))
+    log.info("%s", list(remote.walk("/remote")))
+
     assert not local.info_path(la.path + ".conflicted")
     assert not local.info_path(lb.path + ".conflicted")
     assert not remote.info_path(ra.path + ".conflicted")
     assert not remote.info_path(rb.path + ".conflicted")
 
-    log.info("%s->%s", ra.path + ".conflicted", remote.info_path(ra.path + ".conflicted"))
-    log.info("%s", list(remote.walk("/remote")))
+    bio = BytesIO()
+    remote.download_path(ra.path, bio)
+    assert bio.getvalue() == b'b'
+
 
 # TODO: test to confirm that a file that is both a rename and an update will be both renamed and updated
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
