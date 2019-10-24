@@ -1021,6 +1021,12 @@ class SyncManager(Runnable):
                         try:
                             self.providers[synced].delete(conflict[synced].oid)
                             log.debug("deleting %s out of the way", translated_path)
+                            conflict[synced].exists = TRASHED
+                            if not conflict[changed].oid:
+                                # conflict row was because of a rename on-to-of
+                                # oid got zeroed out....
+                                # todo: handle this more gracefully
+                                conflict.ignored = IgnoreReason.DISCARDED
                             sync.punt()
                             return REQUEUE
                         except CloudFileExistsError:

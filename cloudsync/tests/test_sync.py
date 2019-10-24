@@ -952,7 +952,8 @@ def test_folder_del_loop(sync):
     assert not sync.providers[LOCAL].info_path(local_sub)
     assert not sync.providers[LOCAL].info_path(local_sub2)
 
-def test_replace_rename(sync):
+@pytest.mark.parametrize("order", [LOCAL, REMOTE], ids=("local", "remote"))
+def test_replace_rename(sync, order):
     (local, remote) = sync.providers
 
     (
@@ -966,7 +967,7 @@ def test_replace_rename(sync):
     local._delete(la.oid, without_event=True)
     local.rename(lb.oid, la.path)
 
-    sync.process_events(LOCAL)
+    sync.process_events(order)
 
     log.info("TABLE 1\n%s", sync.state.pretty_print())
 
@@ -974,7 +975,7 @@ def test_replace_rename(sync):
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
-    sync.process_events(REMOTE)
+    sync.process_events(1-order)
 
     sync.run(until=lambda: not sync.busy, timeout=3)
 
