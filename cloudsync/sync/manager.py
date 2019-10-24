@@ -573,11 +573,12 @@ class SyncManager(Runnable):
                 if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
                     # Clear the sync_path, and set synced to MISSING,
                     # that way, we will recognize that this dir needs to be created
-                    parent_ent[changed].sync_path = None
-                    parent_ent[changed].changed = True
-                    parent_ent[synced].exists = MISSING
-                    assert parent_ent.is_creation(changed)
-                    log.debug("updated entry %s", parent)
+                    if parent_ent[changed].exists == EXISTS:
+                        parent_ent[changed].sync_path = None
+                        parent_ent[changed].changed = True
+                        parent_ent[synced].exists = MISSING
+                        assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
+                        log.debug("updated entry %s", parent)
 
             sync.punt()
         except CloudFileExistsError:
@@ -1022,10 +1023,17 @@ class SyncManager(Runnable):
                         except CloudFileExistsError:
                             pass
                     log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
+
             if sync.priority == 0:
                 sync.get_latest(force=True)
             else:
-                self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+                try:
+                    self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+                except CloudFileNotFoundError as e:
+                    log.error("file disappeared out from under us %s", e)
+                    log.info("%s", self.state.pretty_print())
+                    sync.get_latest(force=True)
+
             sync.punt()
             return REQUEUE
 

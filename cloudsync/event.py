@@ -6,7 +6,7 @@ from pystrict import strict
 from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError
 from .runnable import Runnable
 from .muxer import Muxer
-from .types import OType
+from .types import OType, DIRECTORY
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
@@ -136,6 +136,19 @@ class EventManager(Runnable):
             otype = event.otype
             ehash = event.hash
             info = None
+
+            if event.oid is None:
+                if not event.exists and event.path and event.otype == DIRECTORY:
+                    # allow no oid on deletion of folders
+                    # this is because of dropbox
+                    known = self.state.lookup_path(self.side, event.path)
+                    if known:
+                        log.debug("using known oid for %s", event.path)
+                        event.oid = known[0][self.side].oid
+
+            if event.oid is None:
+                log.warning("ignoring event %s, no oid", event)
+                return
 
             if from_walk or not event.path and not self.state.lookup_oid(self.side, event.oid):
                 info = self.provider.info_oid(event.oid)

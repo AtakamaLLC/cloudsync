@@ -17,7 +17,7 @@ from dropbox.oauth import OAuth2FlowResult
 
 from cloudsync.utils import debug_args
 from cloudsync.oauth import OAuthConfig
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
     CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError, CloudException
@@ -394,46 +394,39 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                 # then find out which one was the latest before the deletion time
                 # then get the oid for that
 
+                otype = FILE
                 try:
                     revs = self._api('files_list_revisions',
                                      res.path_lower, limit=10)
-                except NotAFileError as e:
-                    # todo: we need to actually handle this
-                    # this bug was exposed when we started raising errors during the fix of 409's
-                    # right now, we have no good solution for events without oids
-                    # the event manager needs to be modified to deal with this
-                    # otype = DIRECTORY
-                    # ohash = None
-                    # oid = None
-                    # yield ...
-                    log.error("deleted folder ignored %s", e)
-                    continue
+                except NotAFileError:
+                    oid = None
+                    otype = DIRECTORY
 
-                if revs is None:
-                    # dropbox will give a 409 conflict if the revision history was deleted
-                    # instead of raising an error, this gets converted to revs==None
-                    log.info("revs is none for %s %s", oid, path)
-                    continue
+                if otype == FILE:
+                    if revs is None:
+                        # dropbox will give a 409 conflict if the revision history was deleted
+                        # instead of raising an error, this gets converted to revs==None
+                        log.info("revs is none for %s %s", oid, path)
+                        continue
 
-                log.debug("revs %s", revs)
-                deleted_time = revs.server_deleted
-                if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
-                    log.error("revs %s has no deleted time?", revs)
-                    continue
-                latest_time = None
-                for ent in revs.entries:
-                    assert ent.server_modified is not None
-                    if ent.server_modified <= deleted_time and \
-                            (latest_time is None or ent.server_modified >= latest_time):
-                        oid = ent.id
-                        latest_time = ent.server_modified
-                if not oid:
-                    log.error(
-                        "skipping deletion %s, because we don't know the oid", res)
-                    continue
+                    log.debug("revs %s", revs)
+                    deleted_time = revs.server_deleted
+                    if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
+                        log.error("revs %s has no deleted time?", revs)
+                        continue
+                    latest_time = None
+                    for ent in revs.entries:
+                        assert ent.server_modified is not None
+                        if ent.server_modified <= deleted_time and \
+                                (latest_time is None or ent.server_modified >= latest_time):
+                            oid = ent.id
+                            latest_time = ent.server_modified
+                    if not oid:
+                        log.error(
+                            "skipping deletion %s, because we don't know the oid", res)
+                        continue
 
                 exists = False
-                otype = NOTKNOWN
                 ohash = None
             elif isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
