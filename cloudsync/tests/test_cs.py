@@ -606,7 +606,7 @@ def test_cs_create_delete_same_name_heavy(cs):
                 if linfo1:
                     cs.providers[LOCAL].delete(linfo1.oid)
             time.sleep(0.01)
-    
+
     def done():
         bio = BytesIO()
         rinfo = cs.providers[REMOTE].info_path(remote_path1)
@@ -1656,10 +1656,12 @@ def test_dir_delete_give_up(cs):
     assert ldir[0].path == local_dir
 
 
-def test_replace_dir(cs):
+@pytest.mark.parametrize("oidless", [True, False], ids=["oidless", "normal"])
+def test_replace_dir(cs, oidless):
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
 
+    remote.oidless_folder_trash_events = oidless
     local.mkdir("/local")
     remote.mkdir("/remote")
 
@@ -1707,6 +1709,9 @@ def test_replace_dir(cs):
 
     bad_linfo_file = local.info_path("/local/Test2/Excel.xlsx")
     assert bad_linfo_file is None
+
+    assert not any("conflicted" in x.path for x in local.listdir_path("/local/Test"))
+    assert not any("conflicted" in x.path for x in remote.listdir_path("/remote/Test"))
 
 
 def test_out_of_space(cs):

@@ -573,11 +573,12 @@ class SyncManager(Runnable):
                 if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
                     # Clear the sync_path, and set synced to MISSING,
                     # that way, we will recognize that this dir needs to be created
-                    parent_ent[changed].sync_path = None
-                    parent_ent[changed].changed = True
-                    parent_ent[synced].exists = MISSING
-                    assert parent_ent.is_creation(changed)
-                    log.debug("updated entry %s", parent)
+                    if parent_ent[changed].exists == EXISTS:
+                        parent_ent[changed].sync_path = None
+                        parent_ent[changed].changed = True
+                        parent_ent[synced].exists = MISSING
+                        assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
+                        log.debug("updated entry %s", parent)
 
             sync.punt()
         except CloudFileExistsError:
@@ -1013,6 +1014,7 @@ class SyncManager(Runnable):
             else:
                 ents = self.state.lookup_path(synced, translated_path)
                 ents = [e for e in ents if e is not sync]
+
                 if ents:
                     conflict = ents[0]
                     conflict.get_latest()
@@ -1034,7 +1036,16 @@ class SyncManager(Runnable):
                     log.debug("rename to fix conflict %s because %s not synced, NS: %s", translated_path, conflict, conflict.needs_sync())
                 else:
                     log.debug("rename because of new/unknown content")
+
+                try:
+                    self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+                except CloudFileNotFoundError as e:
+                    log.error("file disappeared out from under us %s", e)
+                    log.info("%s", self.state.pretty_print())
+                    sync.get_latest(force=True)
+
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+
             sync.punt()
             return REQUEUE
 

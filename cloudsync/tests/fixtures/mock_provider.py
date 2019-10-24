@@ -93,7 +93,7 @@ class MockProvider(Provider):
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None, hash_func=None):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None, hash_func=None, oidless_folder_trash_events: bool = False):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -103,6 +103,8 @@ class MockProvider(Provider):
         log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
+        # this horrid setting is because dropbox won't give you an oid when folders are trashed
+        self.oidless_folder_trash_events = oidless_folder_trash_events
         self._fs_by_path: Dict[str, MockFSObject] = {}
         self._fs_by_oid: Dict[str, MockFSObject] = {}
         self._events: List[MockEvent] = []
@@ -182,7 +184,7 @@ class MockProvider(Provider):
             if fo.contents:
                 self._total_size -= len(fo.contents)
         except KeyError:
-            raise CloudFileNotFoundError("file doesn't exist %s", fo.path)
+            raise CloudFileNotFoundError("file doesn't exist %s" % fo.path)
 
     def _translate_event(self, pe: MockEvent, cursor) -> Event:
         event = pe.serialize()
@@ -198,6 +200,10 @@ class MockProvider(Provider):
             path = event.get("path")
         if not self.uses_cursor:
             cursor = None
+        if self.oidless_folder_trash_events:
+            if trashed and standard_type == OType.DIRECTORY:
+                oid = None
+                path = event.get("path")
         retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
 
