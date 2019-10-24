@@ -1117,7 +1117,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[i].hash != info.hash:
             ent[i].hash = info.hash
-            if ent.ignored == IgnoreReason.NONE:
+            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
 
         ent[i].otype = info.otype
@@ -1132,5 +1132,5 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[i].path != info.path:
             ent[i].path = info.path
-            if ent.ignored == IgnoreReason.NONE:
+            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
