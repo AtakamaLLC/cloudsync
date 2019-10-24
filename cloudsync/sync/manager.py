@@ -986,7 +986,7 @@ class SyncManager(Runnable):
 
         return self.handle_rename(sync, changed, synced, translated_path)
 
-    def handle_rename(self, sync, changed, synced, translated_path):
+    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches
         # handle rename
         # use == to allow rename for case reasons
         # todo: need a paths_match flag instead, so slashes don't break this line
