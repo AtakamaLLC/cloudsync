@@ -179,14 +179,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             refresh_token = creds.get('refresh_token', self.refresh_token)
             self.__creds = creds
             if not refresh_token:
-                new_creds = self.authenticate()
-                self.__creds = new_creds
-                api_key = new_creds.get('api_key', None)
-                refresh_token = new_creds.get('refresh_token', None)
+                raise CloudTokenError("acquire a token using authenticate() first")
+
             kwargs = {}
 
             if (not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
-                raise ValueError("require app_id/secret or api_key")
+                raise CloudTokenError("require app_id/secret or api_key")
 
             try:
                 with self.mutex:
