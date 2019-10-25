@@ -693,7 +693,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             # changing directory also changes child paths
             for sub, relative in self.get_kids(prior_path, side):
                 new_path = provider.join(path, relative)
-                sub[side].path = new_path
                 if provider.oid_is_path:
                     # TODO: state should not do online hits esp from event manager
                     # either
@@ -704,6 +703,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     new_info = provider.info_path(new_path)
                     if new_info:
                         sub[side].oid = new_info.oid
+                sub[side].path = new_path
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry

@@ -338,7 +338,7 @@ class DropboxProvider(Provider):         # pylint: disable=too-many-public-metho
                     raise CloudFileNotFoundError()
                 raise
             except requests.exceptions.ConnectionError as e:
-                log.exception('api error handled exception %s:%s',
+                log.error('api error handled exception %s:%s',
                               "dropbox", e.__class__.__name__)
                 self.disconnect()
                 raise CloudDisconnectedError()
