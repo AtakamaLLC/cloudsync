@@ -987,17 +987,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return 0
         return 1
 
-    def pretty_print(self, use_sigs=True, only_dirty=False):
-        ents: List[SyncEntry] = list()
+    def pretty_print(self, use_sigs=True, only_dirty=False, ents=None):
         widths: List[int] = [len(x) for x in SyncState.headers]
-        if only_dirty:
-            all_ents = self._dirtyset
+        if ents:
+            all_ents = ents
         else:
-            all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
+            if only_dirty:
+                all_ents = self._dirtyset
+            else:
+                all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
 
         e: SyncEntry
         for e in all_ents:
-            ents.append(e)
             for i, val in enumerate(e.pretty_summary(use_sigs=use_sigs)):
                 width = len(str(val))
                 if width > widths[i]:
@@ -1009,7 +1010,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         ret = SyncState.pretty_headers(widths=widths) + "\n"
         found_ignored = False
-        for e in sorted(ents, key=self.pretty_sort_key):
+        for e in sorted(all_ents, key=self.pretty_sort_key):
             if e.ignored != IgnoreReason.NONE and not found_ignored:
                 if not only_dirty:
                     ret += "------\n"
