@@ -83,6 +83,10 @@ class EventManager(Runnable):
     def do(self):
         self.events.shutdown = False
         try:
+            if self.need_auth:
+                self.reauthenticate()
+            self.need_auth = False
+
             if not self.provider.connected:
                 log.info("reconnect to %s", self.provider.name)
                 self.provider.reconnect()
@@ -97,7 +101,7 @@ class EventManager(Runnable):
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
-            self.reauthenticate()
+            self.need_auth = True
 
     def _do_unsafe(self):
         if self.walk_one_time:
