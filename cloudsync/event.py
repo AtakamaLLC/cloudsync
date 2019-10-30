@@ -42,6 +42,7 @@ class EventManager(Runnable):
         self.walk_one_time = None
         self._walk_tag: str = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
+        self.need_auth = False
 
         if self.cursor is not None:
             log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
