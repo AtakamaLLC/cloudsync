@@ -39,6 +39,12 @@ def do_debug(args):
         tags = set()
         for tag, _ in store.read_all().items():
             tags.add(tag)
+        for tag in list(tags):
+            # TODO: rename all the tags so that they have "cursor_", "walked_" or "state_" at the front
+            if tag.endswith("_cursor") or "_walked_" in tag:
+                count = len(store.read_all(tag))
+                if count == 1:
+                    tags.remove(tag)  # don't deserialize
 
         tag_comma = ""
         for tag in tags:
@@ -67,9 +73,14 @@ def do_debug(args):
                     print(ent_comma, json.dumps(d))
                     ent_comma = ","
             else:
-                if ss.get_all(discarded=args.discarded):
+                if args.changed:
+                    stuff = ss.changes
+                else:
+                    stuff = ss.get_all(discarded=args.discarded)
+
+                if stuff:
                     print("****", tag, "****")
-                    print(ss.pretty_print())
+                    print(ss.pretty_print(ents=stuff))
 
             if args.json:
                 print("]")
