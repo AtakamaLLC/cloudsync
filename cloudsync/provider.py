@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import re
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, Any
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -55,19 +55,19 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def connected(self):
         return self.connection_id is not None
 
-    def authenticate(self):
+    def authenticate(self) -> Any:
         # implement this method for providers that need authentication
-        pass
+        return
 
-    def connect_or_authenticate(self, creds):
-        # This won't attempt oauth unless the specific failure to connect is an authentication error
-        try:
-            self.connect(creds)
-        except CloudTokenError:
-            creds = self.authenticate()  # pylint: disable=assignment-from-no-return
-            self.connect(creds)
-        return creds
-
+    # def connect_or_authenticate(self, creds):
+    #     # This won't attempt oauth unless the specific failure to connect is an authentication error
+    #     try:
+    #         self.connect(creds)
+    #     except CloudTokenError:
+    #         creds = self.authenticate()  # pylint: disable=assignment-from-no-return
+    #         self.connect(creds)
+    #     return creds
+    #
     @property
     @abstractmethod
     def name(self):

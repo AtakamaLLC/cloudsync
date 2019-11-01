@@ -4,6 +4,7 @@ import logging
 import threading
 import webbrowser
 import hashlib
+from logextension import add_trace_extension_to_logger
 from ssl import SSLError
 import json
 from typing import Generator, Optional, List, Dict, Any
@@ -29,6 +30,7 @@ class GDriveFileDoneError(Exception):
     pass
 
 
+add_trace_extension_to_logger()
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
@@ -261,7 +263,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     ret = meth
                 else:
                     ret = meth.execute()
-                log.debug("api: %s (%s) -> %s", method, debug_args(args, kwargs), ret)
+                log.trace("api: %s (%s) -> %s", method, debug_args(args, kwargs), ret)
                 return ret
             except HttpAccessTokenRefreshError:
                 self.disconnect()

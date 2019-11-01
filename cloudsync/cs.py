@@ -106,7 +106,7 @@ class CloudSync(Runnable):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
-    def authenticate(self, side: int):     # pylint: disable=unused-argument, no-self-use
+    def authenticate(self, side: int) -> any:     # pylint: disable=unused-argument, no-self-use
         """Override this method to change (re)authentication
 
         Default is to call provider[side].authenticate()
@@ -115,7 +115,8 @@ class CloudSync(Runnable):
             side: either 0 (LOCAL) or 1 (REMOTE)
 
         """
-        self.providers[side].connect(self.providers[side].authenticate())
+        return self.providers[side].authenticate()
+
 
     def prioritize(self, side: int, path: str):     # pylint: disable=unused-argument, no-self-use
         """Override this method to change the sync priority

@@ -85,7 +85,9 @@ class EventManager(Runnable):
         self.events.shutdown = False
         try:
             if self.need_auth:
-                self.reauthenticate()
+                creds = self.reauthenticate()
+                if creds:
+                    self.provider.connect(creds)
             self.need_auth = False
 
             if not self.provider.connected:
