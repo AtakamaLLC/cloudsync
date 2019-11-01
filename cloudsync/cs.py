@@ -106,7 +106,7 @@ class CloudSync(Runnable):
             for event in provider.walk(roots[index]):
                 self.emgrs[index].process_event(event)
 
-    def authenticate(self, side: int) -> any:     # pylint: disable=unused-argument, no-self-use
+    def authenticate(self, side: int) -> Any:     # pylint: disable=unused-argument, no-self-use
         """Override this method to change (re)authentication
 
         Default is to call provider[side].authenticate()

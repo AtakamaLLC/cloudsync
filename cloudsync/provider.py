@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, Any
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 if TYPE_CHECKING:
     from .event import Event
 
@@ -55,7 +55,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def connected(self):
         return self.connection_id is not None
 
-    def authenticate(self) -> Any:
+    def authenticate(self) -> Any:  # pylint: disable=no-self-use
         # implement this method for providers that need authentication
         return
 
