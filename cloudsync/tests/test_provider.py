@@ -379,6 +379,13 @@ def test_connect(provider):
     provider.reconnect()
     assert provider.connected
 
+def test_info_root(provider):
+    info = provider.info_path("/")
+
+    assert info
+    assert info.oid
+    assert info.path == "/"
+
 
 def test_create_upload_download(provider):
     dat = os.urandom(32)

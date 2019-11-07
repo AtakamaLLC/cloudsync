@@ -225,6 +225,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             except (TimeoutError, ):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
+            except onedrivesdk.error.OneDriveError as e:
+                if e.code == "itemNotFound":
+                    raise CloudFileNotFoundError(str(e))
             except Exception:
                 pass
 
@@ -543,12 +546,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 yield OneDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
+        log.debug("mkdir %s", path)
+
+        # boilerplate: probably belongs in base class
         if self.exists_path(path):
             info = self.info_path(path)
             if info.otype == FILE:
                 raise CloudFileExistsError(path)
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
+
         pid = self.get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {
@@ -596,61 +603,15 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return self._info_oid(oid) is not None
 
     def info_path(self, path: str) -> Optional[OInfo]:  # pylint: disable=too-many-locals # GD
-        if path == "/":
-            return self.info_oid(self.root_id)
-
-        try:
-            parent_id = self.get_parent_id(path)
-            _, name = self.split(path)
-
-            escaped_name = self.__escape(name)
-            query = f"'{parent_id}' in parents and name='{escaped_name}'"
-
-            res = self._api('files', 'list',
-                            q=query,
-                            spaces='drive',
-                            fields='files(id, md5Checksum, parents, mimeType, trashed, name, shared, capabilities)',
-                            pageToken=None)
-        except CloudFileNotFoundError:
-            return None
-
-        if not res['files']:
-            return None
-
-        ent = res['files'][0]
-
-        if ent.get('trashed'):
-            # TODO:
-            # need to write a tests that moves files to the trash, as if a user moved the file to the trash
-            # then assert it shows up "file not found" in all queries
-            return None
-
-        log.debug("res is %s", res)
-
-        oid = ent['id']
-        pids = ent['parents']
-        fhash = ent.get('md5Checksum')
-        name = ent.get('name')
-
-        # query is insensitive to certain features of the name
-        # ....cache correct basename
-        path = self.join(self.dirname(path), name)
-
-        shared = ent['shared']
-        readonly = not ent['capabilities']['canEdit']
-        if ent.get('mimeType') == self._folder_mime_type:
-            otype = DIRECTORY
-        else:
-            otype = FILE
-
-        self._ids[path] = oid
-
-        return OneDriveInfo(otype, oid, fhash, path, shared=shared, readonly=readonly, pids=pids)
+        with self._api():
+            item = self.client.item(path=path).get()
 
     def exists_path(self, path) -> bool: # GD
-        if path in self._ids:
-            return True
-        return self.info_path(path) is not None
+        try:
+            with self._api():
+                return bool(self.client.item(path=path).get())
+        except CloudFileNotFoundError:
+            return False
 
     def get_parent_id(self, path): # GD
         if not path:
@@ -658,10 +619,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         parent, _ = self.split(path)
 
-        if parent == path:
-            return self._ids.get(parent)
-
-        # get the latest version of the parent path
         # it may have changed, or case may be different, etc.
         info = self.info_path(parent)
         if not info:
