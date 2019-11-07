@@ -63,32 +63,18 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     provider = 'onedrive'
     name = 'OneDrive'
-    # _scope = ['https://www.googleapis.com/auth/drive',
-    #           'https://www.googleapis.com/auth/drive.activity.readonly'
-    #           ]
-    # _redir = 'urn:ietf:wg:oauth:2.0:oob'
-    # _token_uri = 'https://accounts.google.com/o/oauth2/token'
-    # _folder_mime_type = 'application/vnd.google-apps.folder'
-    # _io_mime_type = 'application/octet-stream'
-    _redirect_uri = 'http://localhost:8080/'
-    _client_secret = 'your_client_secret'
     _scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id: str = None, app_secret: str = None): # GD
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__creds: Optional[Dict[str, str]] = None
-        # self.__root_id = None
-        # self.__cursor: Optional[str] = None
-        # self.client = None
-        # self.api_key = None
-        # self.refresh_token = None
-        # self.user_agent = 'cloudsync/1.0'
-        # self.mutex = threading.Lock()
-        # self._ids = {"/": "root"}
-        # self._trashed_ids: Dict[str, str] = {}
-        # self._flow: Optional[OAuth2WebServerFlow] = None
-        # self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
-        # self._oauth_done = threading.Event()
+        self.__cursor: Optional[str] = None
+        self.client = None
+        self.mutex = threading.Lock()
+        self._oauth_config = oauth_config
+        
+        # todo, pick a port...just like dropbox
+        self._redirect_uri = 'http://localhost:8080/'
 
     @property
     def connected(self):  # One Drive
@@ -98,13 +84,20 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return self.name
 
     def authenticate(self):  # One Drive
+        assert self._oauth_config.app_id
+
+        log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
+
         client = onedrivesdk.get_default_client(
-            client_id='your_client_id', scopes=self._scopes)
+            client_id=self._oauth_config.app_id, scopes=self._scopes)
 
         auth_url = client.auth_provider.get_auth_url(self._redirect_uri)
 
         # this will block until we have the code
         auth_code = GetAuthCodeServer.get_auth_code(auth_url, self._redirect_uri)
+
+        client.auth_provider.authenticate(auth_code, self._redirect_uri, self._oauth_config.app_secret)
+
         self.__creds = {"code": auth_code}
         return self.__creds
 
