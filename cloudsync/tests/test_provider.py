@@ -272,6 +272,9 @@ def config_provider(request, provider_config):
     elif provider_config.name == "gdrive":
         from .providers.gdrive import gdrive_provider
         return gdrive_provider()
+    elif provider_config.name == "onedrive":
+        from .providers.gdrive import onedrive_provider
+        return onedrive_provider()
     elif provider_config.name == "dropbox":
         from .providers.dropbox import dropbox_provider
         return dropbox_provider()
@@ -279,7 +282,7 @@ def config_provider(request, provider_config):
         assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
 
-known_providers = ('gdrive', 'external', 'dropbox', 'mock')
+known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'onedrive')
 
 
 def configs_from_name(name):

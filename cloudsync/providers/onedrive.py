@@ -32,7 +32,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 from cloudsync.oauth import OAuthConfig
 
 
-class GDriveFileDoneError(Exception):
+class OneDriveFileDoneError(Exception):
     pass
 
 
@@ -41,7 +41,7 @@ logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
-class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
+class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids: List[str] = []
     # oid, hash, otype and path are included here to satisfy a bug in mypy,
     # which does not recognize that they are already inherited from the grandparent class
@@ -57,7 +57,7 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
         self.pids = pids
 
 
-class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
+class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
 
@@ -205,7 +205,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise
             except HttpError as e:
                 if str(e.resp.status) == '416':
-                    raise GDriveFileDoneError()
+                    raise OneDriveFileDoneError()
 
                 if str(e.resp.status) == '413':
                     raise CloudOutOfSpaceError('Payload too large')
@@ -464,7 +464,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         while not done:
             try:
                 _, done = self._api('media', 'next_chunk', dl)
-            except GDriveFileDoneError:
+            except OneDriveFileDoneError:
                 done = True
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches # GD
@@ -526,7 +526,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return oid
 
-    def listdir(self, oid) -> Generator[GDriveInfo, None, None]: # GD
+    def listdir(self, oid) -> Generator[OneDriveInfo, None, None]: # GD
         query = f"'{oid}' in parents"
         try:
             res = self._api('files', 'list',
@@ -560,7 +560,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             else:
                 otype = FILE
             if not trashed:
-                yield GDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
+                yield OneDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
         if self.exists_path(path):
@@ -665,7 +665,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._ids[path] = oid
 
-        return GDriveInfo(otype, oid, fhash, path, shared=shared, readonly=readonly, pids=pids)
+        return OneDriveInfo(otype, oid, fhash, path, shared=shared, readonly=readonly, pids=pids)
 
     def exists_path(self, path) -> bool: # GD
         if path in self._ids:
@@ -714,7 +714,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[GDriveInfo]: # GD
+    def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]: # GD
         info = self._info_oid(oid)
         if info is None:
             return None
@@ -731,7 +731,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             md5.update(c)
         return md5.hexdigest()
 
-    def _info_oid(self, oid) -> Optional[GDriveInfo]: # GD
+    def _info_oid(self, oid) -> Optional[OneDriveInfo]: # GD
         try:
             res = self._api('files', 'get', fileId=oid,
                             fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities',
@@ -753,4 +753,4 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         else:
             otype = FILE
 
-        return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
+        return OneDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
