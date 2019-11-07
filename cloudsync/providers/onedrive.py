@@ -108,10 +108,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return creds
 
     def _direct_api(self, path):
-        return self._api(self._unsafe_direct_api, path)
-
-    def _unsafe_direct_api(self, path):
-        req = requests.get(self.client.base_url + path,
+        with self._api():
+            req = requests.get(self.client.base_url + path,
                            headers={
                                'Authorization': 'bearer {access_token}'.format(access_token=self.client.auth_provider.access_token),
                                'content-type': 'application/json'})
@@ -139,9 +137,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.connect(self.__creds)
 
     def connect(self, creds): # GD
-        self._api(lambda: self._connect(creds), needs_client=False)
-
-    def _connect(self, creds): # GD
         if not self.client:
             log.debug('Connecting to One Drive')
             assert self._oauth_config.app_id
@@ -149,37 +144,38 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
             assert creds.get("refresh")
 
-            http_provider = onedrivesdk.HttpProvider()
-            auth_provider = onedrivesdk.AuthProvider(
-                    http_provider=http_provider,
-                    client_id=self._oauth_config.app_id,
-                    scopes=self._scopes)
-            auth_url = auth_provider.get_auth_url(self._redirect_uri)
+            with self._api(needs_client=False):
+                http_provider = onedrivesdk.HttpProvider()
+                auth_provider = onedrivesdk.AuthProvider(
+                        http_provider=http_provider,
+                        client_id=self._oauth_config.app_id,
+                        scopes=self._scopes)
+                auth_url = auth_provider.get_auth_url(self._redirect_uri)
 
-            class MySession(onedrivesdk.session.Session):
-                def __init__(self, **kws):
-                    self.__dict__ = kws
+                class MySession(onedrivesdk.session.Session):
+                    def __init__(self, **kws):
+                        self.__dict__ = kws
 
-                @staticmethod
-                def load_session(**kws):
-                    return MySession(
-                        refresh_token = creds.get("refresh"),
-                        access_token = creds.get("access", None),
-                        redirect_uri = self._redirect_uri,
-                        auth_server_url = creds.get("url"),
-                        client_id = self._oauth_config.app_id,
-                        client_secret = self._oauth_config.app_secret,
-                    )
+                    @staticmethod
+                    def load_session(**kws):
+                        return MySession(
+                            refresh_token = creds.get("refresh"),
+                            access_token = creds.get("access", None),
+                            redirect_uri = self._redirect_uri,
+                            auth_server_url = creds.get("url"),
+                            client_id = self._oauth_config.app_id,
+                            client_secret = self._oauth_config.app_secret,
+                        )
 
-            auth_provider = onedrivesdk.AuthProvider(
-                    http_provider=http_provider,
-                    client_id=self._oauth_config.app_id,
-                    session_type=MySession,
-                    scopes=self._scopes)
+                auth_provider = onedrivesdk.AuthProvider(
+                        http_provider=http_provider,
+                        client_id=self._oauth_config.app_id,
+                        session_type=MySession,
+                        scopes=self._scopes)
 
-            auth_provider.load_session()
-            auth_provider.refresh_token()
-            self.client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
+                auth_provider.load_session()
+                auth_provider.refresh_token()
+                self.client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
 
         if not self.connection_id:
             q = self.get_quota()
@@ -210,19 +206,27 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         ret = ret.replace("'", "\\'")
         return ret
 
-    def _api(self, func, *args, needs_client=True):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements # GD
+    def _api(self, needs_client=True):
         if needs_client and not self.client:
             raise CloudDisconnectedError("currently disconnected")
+        return self
 
-        with self.mutex:
+    def __enter__(self):
+        self.mutex.__enter__()
+
+    def __exit__(self, ty, ex, tb):
+        self.mutex.__exit__(ty, ex, tb)
+
+        if ex:
             try:
-                log.debug("api: %s: %s", func, args)
-                return func(*args)
+                raise ex
             except requests.ConnectionError as e:
                 raise CloudDisconnectedError("cannot connect %s" % e)
             except (TimeoutError, ):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
+            except Exception:
+                pass
 
     @property
     def root_id(self): # GD
