@@ -273,7 +273,7 @@ def config_provider(request, provider_config):
         from .providers.gdrive import gdrive_provider
         return gdrive_provider()
     elif provider_config.name == "onedrive":
-        from .providers.gdrive import onedrive_provider
+        from .providers.onedrive import onedrive_provider
         return onedrive_provider()
     elif provider_config.name == "dropbox":
         from .providers.dropbox import dropbox_provider

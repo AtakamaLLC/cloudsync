@@ -117,15 +117,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise Exception("should have used  _api if you wanted a better exception")
 
         dat = req.json()
-        log.debug("DAT %s", dat)
-
-        return dat
 
         res = {
-            'used': usage,
-            'total': limit,
-            'login': user['emailAddress'],
-            'uid': user['permissionId']
+            'used': dat["quota"]["total"]-dat["quota"]["remaining"],
+            'total': dat["quota"]["total"],
+            'login': dat["owner"]["user"]["displayName"],
+            'uid': dat['id']
         }
 
         return res
@@ -147,8 +144,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     client_id=self._oauth_config.app_id,
                     scopes=self._scopes)
             auth_url = auth_provider.get_auth_url(self._redirect_uri)
-
-            log.debug("CREDZ %s", creds)
 
             class MySession(onedrivesdk.session.Session):
                 def __init__(self, **kws):
@@ -175,6 +170,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             auth_provider.load_session()
             auth_provider.refresh_token()
             self.client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
+
+        if not self.connection_id:
+            q = self.get_quota()
+            self.connection_id = q["uid"]
+
 
     @staticmethod
     def _get_reason_from_http_error(e): # GD

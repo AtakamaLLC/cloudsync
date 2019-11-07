@@ -29,6 +29,17 @@ def app_id():
 def app_secret():
     return os.environ.get("ONEDRIVE_APP_SECRET", None)
 
+def onedrive_provider():
+
+    cls = OneDriveProvider
+
+    # duck type in testing parameters
+    cls.event_timeout = 60                  # type: ignore
+    cls.event_sleep = 2                     # type: ignore
+    cls.creds = onedrive_creds()              # type: ignore
+
+    return cls(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+
 
 # this seems generic enough now it could use a provider class fixture and be moved to the provider tests
 
