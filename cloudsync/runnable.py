@@ -32,6 +32,7 @@ class Runnable(ABC):
     mult_backoff = 2.0
     in_backoff = 0.0
     interrupt: threading.Event = None
+    thread_name = None
 
     def __interruptable_sleep(self, secs):
         if self.interrupt.wait(secs):
@@ -82,7 +83,10 @@ class Runnable(ABC):
         self.interrupt.set()
 
     def start(self, **kwargs):
-        self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=True)
+        if self.thread_name is None:
+            self.thread_name = self.__class__.__name__
+        self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=True, name=self.thread_name)
+        self.thread.name = self.thread_name
         self.thread.start()
 
     @abstractmethod
