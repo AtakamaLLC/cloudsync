@@ -14,7 +14,9 @@ def onedrive_creds():
     tokens = token_set.split(",")
 
     creds = {
-        "refresh_token": tokens[random.randrange(0, len(tokens))],
+        "refresh": tokens[random.randrange(0, len(tokens))],
+        "url": 'https://login.live.com/oauth20_token.srf',
+        "access": None,
     }
 
     return creds
@@ -32,15 +34,15 @@ def app_secret():
 
 @pytest.mark.manual
 def test_oauth_connect():
-    sync_root = "/" + os.urandom(16).hex()
     prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
     creds = prov.authenticate()
     prov.connect(creds)
     assert prov.client
     prov.get_quota()
-    try:
-        info = prov.info_path(sync_root)
-        if info and info.oid:
-            prov.delete(info.oid)
-    except CloudFileNotFoundError:
-        pass
+
+def test_env_connect():
+    prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+    creds = onedrive_creds()
+    prov.connect(creds)
+    assert prov.client
+    prov.get_quota()

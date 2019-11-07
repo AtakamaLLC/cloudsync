@@ -139,9 +139,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             assert self._oauth_config.app_id
             assert self._oauth_config.app_secret
 
-            assert creds.get("access")
             assert creds.get("refresh")
-
 
             http_provider = onedrivesdk.HttpProvider()
             auth_provider = onedrivesdk.AuthProvider(
@@ -160,7 +158,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 def load_session(**kws):
                     return MySession(
                         refresh_token = creds.get("refresh"),
-                        access_token = creds.get("access"),
+                        access_token = creds.get("access", None),
                         redirect_uri = self._redirect_uri,
                         auth_server_url = creds.get("url"),
                         client_id = self._oauth_config.app_id,
