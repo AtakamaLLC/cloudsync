@@ -6,6 +6,7 @@
 import io
 import time
 import logging
+import requests
 import threading
 import webbrowser
 import hashlib
@@ -64,6 +65,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     provider = 'onedrive'
     name = 'OneDrive'
     _scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
+    _base_url = 'https://api.onedrive.com/v1.0/'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -98,22 +100,26 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         client.auth_provider.authenticate(auth_code, self._redirect_uri, self._oauth_config.app_secret)
 
-        self.__creds = {"code": auth_code}
-        return self.__creds
+        creds = {"access": client.auth_provider.access_token, 
+                 "refresh": client.auth_provider._session.refresh_token,
+                 "url": client.auth_provider._session.auth_server_url,
+                 }
+
+        return creds
 
     def get_quota(self): # GD
-        # https://developers.google.com/drive/api/v3/reference/about
-        res = self._api('about', 'get', fields='storageQuota,user')
+        req = requests.get(self.client.base_url + 'drive/',
+                       headers = {
+                           'Authorization': 'bearer {access_token}'.format(access_token=self.client.auth_provider.access_token),
+                           'content-type': 'application/json'})
+        if req.status_code > 201:
+            log.error("get_quota error %s", str(req.status_code)+" "+req.json()['error']['message'])
+            raise Exception("should have used  _api if you wanted a better exception")
 
-        quota = res['storageQuota']
-        user = res['user']
+        dat = req.json()
+        log.debug("DAT %s", dat)
 
-        usage = int(quota['usage'])
-        if 'limit' in quota and quota['limit']:
-            limit = int(quota['limit'])
-        else:
-            # It is possible for an account to have unlimited space - pretend it's 1TB
-            limit = 1024 * 1024 * 1024 * 1024
+        return dat
 
         res = {
             'used': usage,
@@ -128,21 +134,49 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.connect(self.__creds)
 
     def connect(self, creds): # GD
-        log.debug('Connecting to One Drive')
         if not self.client:
-            client = onedrivesdk.get_default_client(
-                client_id='your_client_id', scopes=_scopes)
-            self.__creds = creds
-            auth_token = creds.get('auth_code', None)
-            if not auth_token:
-                raise CloudTokenError("acquire a token using authenticate() first")
-            try:
-                client.auth_provider.authenticate(auth_token, self._redirect_uri, self._client_secret)
-                self.client = client
-            except Exception as e:  # TODO: make this more specific
-                raise CloudTokenError("failed to authenticate: %s" % (e, ))
+            log.debug('Connecting to One Drive')
+            assert self._oauth_config.app_id
+            assert self._oauth_config.app_secret
 
-        return self.client
+            assert creds.get("access")
+            assert creds.get("refresh")
+
+
+            http_provider = onedrivesdk.HttpProvider()
+            auth_provider = onedrivesdk.AuthProvider(
+                    http_provider=http_provider,
+                    client_id=self._oauth_config.app_id,
+                    scopes=self._scopes)
+            auth_url = auth_provider.get_auth_url(self._redirect_uri)
+
+            log.debug("CREDZ %s", creds)
+
+            class MySession(onedrivesdk.session.Session):
+                def __init__(self, **kws):
+                    self.__dict__ = kws
+
+                @staticmethod
+                def load_session(**kws):
+                    return MySession(
+                        refresh_token = creds.get("refresh"),
+                        access_token = creds.get("access"),
+                        redirect_uri = self._redirect_uri,
+                        auth_server_url = creds.get("url"),
+                        client_id = self._oauth_config.app_id,
+                        client_secret = self._oauth_config.app_secret,
+                    )
+                
+
+            auth_provider = onedrivesdk.AuthProvider(
+                    http_provider=http_provider,
+                    client_id=self._oauth_config.app_id,
+                    session_type=MySession,
+                    scopes=self._scopes)
+
+            auth_provider.load_session()
+            auth_provider.refresh_token()
+            self.client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
 
     @staticmethod
     def _get_reason_from_http_error(e): # GD
