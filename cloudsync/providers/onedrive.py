@@ -8,7 +8,7 @@ import time
 import logging
 import requests
 import threading
-import webbrowser
+from requests import HTTPError
 import hashlib
 from ssl import SSLError
 import json
@@ -72,7 +72,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__creds: Optional[Dict[str, str]] = None
         self.__cursor: Optional[str] = None
         self.client = None
-        self.mutex = threading.Lock()
+        self.mutex = threading.RLock()
         self._oauth_config = oauth_config
         
         # todo, pick a port...just like dropbox
@@ -107,16 +107,24 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return creds
 
-    def get_quota(self): # GD
-        req = requests.get(self.client.base_url + 'drive/',
-                       headers = {
-                           'Authorization': 'bearer {access_token}'.format(access_token=self.client.auth_provider.access_token),
-                           'content-type': 'application/json'})
+    def _direct_api(self, path):
+        return self._api(self._unsafe_direct_api, path)
+
+    def _unsafe_direct_api(self, path):
+        req = requests.get(self.client.base_url + path,
+                           headers={
+                               'Authorization': 'bearer {access_token}'.format(access_token=self.client.auth_provider.access_token),
+                               'content-type': 'application/json'})
         if req.status_code > 201:
             log.error("get_quota error %s", str(req.status_code)+" "+req.json()['error']['message'])
-            raise Exception("should have used  _api if you wanted a better exception")
+            if req.json()['error']['code'] == 'unauthenticated':
+                raise CloudTokenError(req.json()['error']['message'])
+            raise CloudDisconnectedError(req.json()['error']['message'])
 
-        dat = req.json()
+        return req.json()
+
+    def get_quota(self): # GD
+        dat = self._direct_api("drive/")
 
         res = {
             'used': dat["quota"]["total"]-dat["quota"]["remaining"],
@@ -131,6 +139,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.connect(self.__creds)
 
     def connect(self, creds): # GD
+        self._api(lambda: self._connect(creds), needs_client=False)
+
+    def _connect(self, creds): # GD
         if not self.client:
             log.debug('Connecting to One Drive')
             assert self._oauth_config.app_id
@@ -159,7 +170,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         client_id = self._oauth_config.app_id,
                         client_secret = self._oauth_config.app_secret,
                     )
-                
 
             auth_provider = onedrivesdk.AuthProvider(
                     http_provider=http_provider,
@@ -200,76 +210,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         ret = ret.replace("'", "\\'")
         return ret
 
-    def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements # GD
-        if not self.client:
+    def _api(self, func, *args, needs_client=True):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements # GD
+        if needs_client and not self.client:
             raise CloudDisconnectedError("currently disconnected")
 
         with self.mutex:
             try:
-                if resource == 'media':
-                    res = args[0]
-                    args = args[1:]
-                else:
-                    res = getattr(self.client, resource)()
-
-                meth = getattr(res, method)(*args, **kwargs)
-
-                if resource == 'media' or (resource == 'files' and method == 'get_media'):
-                    ret = meth
-                else:
-                    ret = meth.execute()
-                log.debug("api: %s (%s) -> %s", method, debug_args(args, kwargs), ret)
-                return ret
-            except HttpAccessTokenRefreshError:
-                self.disconnect()
-                raise CloudTokenError()
-            except SSLError as e:
-                if "WRONG_VERSION" in str(e):
-                    # httplib2 used by google's api gives this weird error for no discernable reason
-                    raise CloudTemporaryError(str(e))
-                raise
-            except HttpError as e:
-                if str(e.resp.status) == '416':
-                    raise OneDriveFileDoneError()
-
-                if str(e.resp.status) == '413':
-                    raise CloudOutOfSpaceError('Payload too large')
-
-                if str(e.resp.status) == '409':
-                    raise CloudFileExistsError('Another user is modifying')
-
-                if str(e.resp.status) == '404':
-                    raise CloudFileNotFoundError('File not found when executing %s.%s(%s)' % debug_args(
-                        resource, method, kwargs
-                    ))
-
-                reason = self._get_reason_from_http_error(e)
-
-                if str(e.resp.status) == '403' and str(reason) == 'storageQuotaExceeded':
-                    raise CloudOutOfSpaceError("Storage storageQuotaExceeded")
-
-                if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
-                    raise CloudFileExistsError("Parent Not A Folder")
-
-                if str(e.resp.status) == '403' and str(reason) == 'insufficientFilePermissions':
-                    raise PermissionError("PermissionError")
-
-                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', 'dailyLimitExceeded')) \
-                        or str(e.resp.status) == '429':
-                    raise CloudTemporaryError("rate limit hit")
-
-                # At this point, _should_retry_response() returns true for error codes >=500, 429, and 403 with
-                #  the reason 'userRateLimitExceeded' or 'rateLimitExceeded'. 403 without content, or any other
-                #  response is not retried. We have already taken care of some of those cases above, but we call this
-                #  below to catch the rest, and in case they improve their library with more conditions. If we called
-                #  meth.execute() above with a num_retries argument, all this retrying would happen in the google api
-                #  library, and we wouldn't have to think about retries.
-                should_retry = _should_retry_response(e.resp.status, e.content)
-                if should_retry:
-                    raise CloudTemporaryError("unknown error %s" % e)
-                log.error("Unhandled %s error %s", e.resp.status, reason)
-                raise
-            except (TimeoutError, HttpLib2Error):
+                log.debug("api: %s: %s", func, args)
+                return func(*args)
+            except requests.ConnectionError as e:
+                raise CloudDisconnectedError("cannot connect %s" % e)
+            except (TimeoutError, ):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
 
