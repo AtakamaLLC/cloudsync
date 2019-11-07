@@ -1,6 +1,8 @@
 # https://dev.onedrive.com/
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/concepts/upload?view=odsp-graph-online
 # https://github.com/OneDrive/onedrive-sdk-python
+# https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/msa-oauth?view=odsp-graph-online
+# https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/app-registration?view=odsp-graph-online
 import io
 import time
 import logging
