@@ -575,7 +575,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.debug("hashes %s", item.file.hashes)
 
         if path is None:
-            log.warning("TODO")
+            path = self._get_path(item=item)
 
         return OInfo(oid=item.id, otype=otype, hash=None, path=path)
 
@@ -603,29 +603,28 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return info.oid
 
-    def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]: # GD
-        """convert oid to path"""
-        if use_cache:
-            for p, pid in self._ids.items():
-                if pid == oid:
-                    return p
+    def _get_path(self, oid=None, item=None) -> Optional[str]:
+        """get path using oid or item"""
+        # TODO: implement caching
 
-            for p, pid in self._trashed_ids.items():
-                if pid == oid:
-                    return p
+        try:
+            with self._api() as client:
+                if oid is not None and item is None:
+                    item = client.item(id=oid).get()
 
-        # todo, better cache, keep up to date, etc.
+                if item is not None:
+                    parent_folder = item.parent_reference.path
+                    path = self.join(parent_folder, item.name)
+                    preamble = "/drive/root:/"
+                    if path.startswith(preamble):
+                        path = path[len(preamble) - 1:]
+                    else:
+                        raise Exception("path '%s' does not start with '%s', time to implement recursion" % (path, preamble))
+                    return path
 
-        if not info:
-            info = self._info_oid(oid)
-
-        if info and info.pids and info.name:
-            ppath = self._path_oid(info.pids[0])
-            if ppath:
-                path = self.join(ppath, info.name)
-                self._ids[path] = oid
-                return path
-        return None
+                raise ValueError("_get_path requires oid or item")
+        except CloudFileNotFoundError:
+            return None
 
     def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
         return self._info_oid(oid)
