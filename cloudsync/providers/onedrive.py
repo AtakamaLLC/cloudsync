@@ -108,13 +108,18 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return creds
 
-    def _direct_api(self, action, path):
-        path.lstrip("/")
+    def _direct_api(self, action, path=None, *, url=None, stream=None):
+        assert path or url
         with self._api() as client:
-            req = getattr(requests, action)(client.base_url + path,
-                          headers={
-                               'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
-                               'content-type': 'application/json'})
+            if not url:
+                path = path.lstrip("/")
+                url = client.base_url + path
+            req = getattr(requests, action)(
+                url,
+                stream=stream,
+                headers={
+                    'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
+                    'content-type': 'application/json'})
 
         if req.status_code == 204:
             return {}
@@ -125,9 +130,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudTokenError(req.json()['error']['message'])
             raise CloudDisconnectedError(req.json()['error']['message'])
 
+        if stream:
+            return req
         return req.json()
 
-    def get_quota(self): # GD
+    def get_quota(self):
         dat = self._direct_api("get", "drive/")
 
         res = {
@@ -407,18 +414,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return self._info_item(item, path=path)
 
-    def download(self, oid, file_like): # GD
-        item = client.item(id=oid).get()
-        log.debug("FILE %s", pformat(item.file.__dict__))
+    def download(self, oid, file_like):
+        with self._api() as client:
+            item = client.item(id=oid).get()
 
-        req = self._direct_api('files', 'get_media', fileId=oid)
-        dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
-        done = False
-        while not done:
-            try:
-                _, done = self._api('media', 'next_chunk', dl)
-            except OneDriveFileDoneError:
-                done = True
+            raw = item.to_dict()
+            url = raw['@content.downloadUrl']
+            r = self._direct_api('get', url=url, stream=True)
+            for chunk in r.iter_content(chunk_size=4096):
+                file_like.write(chunk)
+                file_like.flush()
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches # GD
         pid = self.get_parent_id(path)
@@ -523,9 +528,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if not item:
                 log.debug("deleted non-existing oid %s", debug_sig(oid))
                 return  # file doesn't exist already...
-            log.debug("ITEM %s", pformat(item.__dict__))
-            log.debug("OID %s", oid)
-            log.debug("ID %s", item.id)
             info = self._info_item(item)
             if info.otype == DIRECTORY:
                 try:
