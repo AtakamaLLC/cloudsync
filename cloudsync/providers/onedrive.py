@@ -8,7 +8,7 @@ import time
 import logging
 import requests
 import threading
-import pprint
+from pprint import pformat
 from requests import HTTPError
 import hashlib
 from ssl import SSLError
@@ -44,19 +44,17 @@ logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
 class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
-    pids: List[str] = []
     # oid, hash, otype and path are included here to satisfy a bug in mypy,
     # which does not recognize that they are already inherited from the grandparent class
     oid: str
     hash: Any
     otype: OType
     path: str
+    pid: str = None
 
-    def __init__(self, *a, pids=None, **kws):
+    def __init__(self, *a, pid=None, **kws):
         super().__init__(*a, **kws)
-        if pids is None:
-            pids = []
-        self.pids = pids
+        self.pid = pid
 
 
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
@@ -108,13 +106,18 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return creds
 
-    def _direct_api(self, action, path):
-        path.lstrip("/")
+    def _direct_api(self, action, path=None, *, url=None, stream=None):
+        assert path or url
         with self._api() as client:
-            req = getattr(requests, action)(client.base_url + path,
-                          headers={
-                               'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
-                               'content-type': 'application/json'})
+            if not url:
+                path = path.lstrip("/")
+                url = client.base_url + path
+            req = getattr(requests, action)(
+                url,
+                stream=stream,
+                headers={
+                    'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
+                    'content-type': 'application/json'})
 
         if req.status_code == 204:
             return {}
@@ -125,9 +128,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudTokenError(req.json()['error']['message'])
             raise CloudDisconnectedError(req.json()['error']['message'])
 
+        if stream:
+            return req
         return req.json()
 
-    def get_quota(self): # GD
+    def get_quota(self):
         dat = self._direct_api("get", "drive/")
 
         res = {
@@ -386,37 +391,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return gdrive_info
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo': # GD
-        if not metadata:
-            metadata = {}
-        gdrive_info = self.__prep_upload(None, metadata)
+        with self._api() as client:
+            req = client.item(drive='me', id=oid).content.request()
+            req.method = "PUT"
+            resp = req.send(data=file_like)
+            item = onedrivesdk.Item(json.loads(resp.content))
 
-        file_like.seek(0, io.SEEK_END)
-        file_size = file_like.tell()
-        file_like.seek(0, io.SEEK_SET)
-
-        chunksize = 4 * 1024 * 1024
-        resumable = file_size > chunksize
-        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable)
-
-        fields = 'id, md5Checksum'
-
-        res = self._api('files', 'update',
-                        body=gdrive_info,
-                        fileId=oid,
-                        media_body=ul,
-                        fields=fields)
-
-        log.debug("response from upload %s", res)
-
-        if not res:
-            raise CloudTemporaryError("unknown response from drive on upload")
-
-        md5 = res.get('md5Checksum', None)  # can be none if the user tries to upload to a folder
-        if md5 is None:
-            possible_conflict = self._info_oid(oid)
-            if possible_conflict and possible_conflict.otype == DIRECTORY:
-                raise CloudFileExistsError("Can only upload to a file: %s" % possible_conflict.path)
-        return OInfo(otype=FILE, oid=res['id'], hash=md5, path=None)
+        return self._info_item(item)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo': # GD
         if not metadata:
@@ -431,72 +412,36 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return self._info_item(item, path=path)
 
-    def download(self, oid, file_like): # GD
-        req = self._api('files', 'get_media', fileId=oid)
-        dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
-        done = False
-        while not done:
-            try:
-                _, done = self._api('media', 'next_chunk', dl)
-            except OneDriveFileDoneError:
-                done = True
+    def download(self, oid, file_like):
+        with self._api() as client:
+            item = client.item(id=oid).get()
+
+            raw = item.to_dict()
+            url = raw['@content.downloadUrl']
+            r = self._direct_api('get', url=url, stream=True)
+            for chunk in r.iter_content(chunk_size=4096):
+                file_like.write(chunk)
+                file_like.flush()
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches # GD
-        pid = self.get_parent_id(path)
+        with self._api() as client:
+            parent, base = self.split(path)
 
-        add_pids = [pid]
-        if pid == 'root':
-            add_pids = [self.root_id]
+            item = client.item(id=oid)
+            info = item.get()
 
-        info = self._info_oid(oid)
-        if info is None:
-            log.debug("can't rename, oid doesn't exist %s", debug_sig(oid))
-            raise CloudFileNotFoundError(oid)
-        remove_pids = info.pids
-        old_path = info.path
+            pid = info.parent_reference.id
 
-        _, name = self.split(path)
-        body = {'name': name}
+            pitem = client.item(path=parent)
+            pinfo = pitem.get()
 
-        if self.exists_path(path):
-            possible_conflict = self.info_path(path)
-            if FILE in (info.otype, possible_conflict.otype):
-                if possible_conflict.oid != oid:  # it's OK to rename a file over itself, frex, to change case
-                    raise CloudFileExistsError(path)
+            if pid == pinfo.id:
+                info = onedrivesdk.Item()
+                info.name = base
+                item.update(info)
             else:
-                if possible_conflict.oid != oid:
-                    try:
-                        next(self.listdir(possible_conflict.oid))
-                        raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-                    except StopIteration:
-                        # Folder is empty, rename over it no problem
-                        if possible_conflict.oid != oid:  # delete the target if we're not just changing case
-                            self.delete(possible_conflict.oid)
-
-        if not old_path:
-            for cpath, coid in list(self._ids.items()):
-                if coid == oid:
-                    old_path = cpath
-
-
-        if add_pids == remove_pids:
-            add_pids_str = ""
-            remove_pids_str = ""
-        else:
-            add_pids_str = ",".join(add_pids)
-            remove_pids_str = ",".join(remove_pids)
-
-        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids_str, removeParents=remove_pids_str, fields='id')
-
-        if old_path:
-            for cpath, coid in list(self._ids.items()):
-                relative = self.is_subpath(old_path, cpath)
-                if relative:
-                    new_cpath = self.join(path, relative)
-                    self._ids.pop(cpath)
-                    self._ids[new_cpath] = coid
-
-        log.debug("renamed %s -> %s", debug_sig(oid), body)
+                info.path = path
+                item.update(info)
 
         return oid
 
@@ -524,7 +469,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
 
-        pid = self.get_parent_id(path)
+        pid = self.get_parent_id(path=path)
         log.debug("got pid %s", pid)
 
         f = onedrivesdk.Folder()
@@ -544,9 +489,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if not item:
                 log.debug("deleted non-existing oid %s", debug_sig(oid))
                 return  # file doesn't exist already...
-            log.debug("ITEM %s", pprint.pformat(item.__dict__))
-            log.debug("OID %s", oid)
-            log.debug("ID %s", item.id)
             info = self._info_item(item)
             if info.otype == DIRECTORY:
                 try:
@@ -570,14 +512,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def _info_item(self, item, path=None) -> OInfo:
         if item.folder:
             otype = DIRECTORY
+            ohash = None
         else:
             otype = FILE
-            log.debug("hashes %s", item.file.hashes)
+            ohash = item.file.hashes.sha1_hash
 
         if path is None:
             path = self._get_path(item=item)
 
-        return OInfo(oid=item.id, otype=otype, hash=None, path=path)
+        pid = item.parent_reference.id
+
+        return OneDriveInfo(oid=item.id, otype=otype, hash=ohash, path=path, pid=pid)
 
     def exists_path(self, path) -> bool:
         try:
@@ -586,22 +531,28 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except CloudFileNotFoundError:
             return False
 
-    def get_parent_id(self, path):
+    def get_parent_id(self, *, path=None, oid=None):
         log.debug("get parent %s", path)
-        if not path:
+        if not path and not oid:
             return None
 
-        parent, _ = self.split(path)
+        ret = None
 
-        if parent == "/":
-            return "root"
+        if path:
+            ppath = self.dirname(path)
+            i = self.info_path(ppath)
+            if i:
+                ret = i.oid
 
-        # it may have changed, or case may be different, etc.
-        info = self.info_path(parent)
-        if not info:
-            raise CloudFileNotFoundError("parent %s must exist" % parent)
+        if oid:
+            i = self.info_oid(oid)
+            if i:
+                ret = i.pid     # parent id
 
-        return info.oid
+        if not ret:
+            raise CloudFileNotFoundError("parent %s must exist" % ppath)
+
+        return ret
 
     def _get_path(self, oid=None, item=None) -> Optional[str]:
         """get path using oid or item"""
