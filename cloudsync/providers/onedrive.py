@@ -557,7 +557,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             self._direct_api("delete", "drive/items/%s" % item.id)
 
     def exists_oid(self, oid):
-        return self._info_oid(oid) is not None
+        return self._info_oid(oid, path=False) is not None
 
     def info_path(self, path: str) -> Optional[OInfo]:
         try:
@@ -630,11 +630,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
         return self._info_oid(oid)
 
-    def _info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
+    def _info_oid(self, oid, use_cache=True, path=None) -> Optional[OneDriveInfo]:
         try:
             with self._api() as client:
                 item = client.item(id=oid).get()
-            return self._info_item(item)
+            return self._info_item(item, path=path)
         except CloudFileNotFoundError:
             return None
 
