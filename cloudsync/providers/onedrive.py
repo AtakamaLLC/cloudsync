@@ -71,7 +71,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         super().__init__()
         self.__creds: Optional[Dict[str, str]] = None
         self.__cursor: Optional[str] = None
-        self.client = None
+        self.__client = None
         self.mutex = threading.RLock()
         self._oauth_config = oauth_config
         
@@ -80,7 +80,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     @property
     def connected(self):  # One Drive
-        return self.client is not None
+        return self.__client is not None
 
     def get_display_name(self):  # One Drive
         return self.name
@@ -107,11 +107,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return creds
 
-    def _direct_api(self, path):
-        with self._api():
-            req = requests.get(self.client.base_url + path,
-                           headers={
-                               'Authorization': 'bearer {access_token}'.format(access_token=self.client.auth_provider.access_token),
+    def _direct_api(self, action, path):
+        with self._api() as client:
+            req = getattr(requests, action)(client.base_url + path,
+                          headers={
+                               'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
                                'content-type': 'application/json'})
         if req.status_code > 201:
             log.error("get_quota error %s", str(req.status_code)+" "+req.json()['error']['message'])
@@ -122,7 +122,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return req.json()
 
     def get_quota(self): # GD
-        dat = self._direct_api("drive/")
+        dat = self._direct_api("get", "drive/")
 
         res = {
             'used': dat["quota"]["total"]-dat["quota"]["remaining"],
@@ -133,11 +133,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return res
 
-    def reconnect(self): # GD
+    def reconnect(self): 
         self.connect(self.__creds)
 
     def connect(self, creds): # GD
-        if not self.client:
+        if not self.__client:
             log.debug('Connecting to One Drive')
             assert self._oauth_config.app_id
             assert self._oauth_config.app_secret
@@ -175,7 +175,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
                 auth_provider.load_session()
                 auth_provider.refresh_token()
-                self.client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
+                self.__client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
+                self.__creds = creds
 
         if not self.connection_id:
             q = self.get_quota()
@@ -207,12 +208,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return ret
 
     def _api(self, needs_client=True):
-        if needs_client and not self.client:
+        if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
         return self
 
     def __enter__(self):
         self.mutex.__enter__()
+        return self.__client
 
     def __exit__(self, ty, ex, tb):
         self.mutex.__exit__(ty, ex, tb)
@@ -243,7 +245,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return self.__root_id
 
     def disconnect(self): # GD
-        self.client = None
+        self.__client = None
 
     @property
     def latest_cursor(self): # GD
@@ -510,40 +512,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return oid
 
     def listdir(self, oid) -> Generator[OneDriveInfo, None, None]: # GD
-        query = f"'{oid}' in parents"
-        try:
-            res = self._api('files', 'list',
-                            q=query,
-                            spaces='drive',
-                            fields='files(id, md5Checksum, parents, name, mimeType, trashed, shared, capabilities)',
-                            pageToken=None)
-        except CloudFileNotFoundError:
-            if self._info_oid(oid):
-                return
-            log.debug("listdir oid gone %s", oid)
-            raise
+        with self._api() as client:
+            collection = client.item(drive='me', id=oid).children.request(top=50).get()
 
-        if not res or not res['files']:
-            if self.exists_oid(oid):
-                return
-            raise CloudFileNotFoundError(oid)
+            while collection:
+                for i in collection:
+                    oi = self._info_item(i)
+                    yield DirInfo(oi.otype, oi.id, oi.ohash, oi.path)
 
-        log.debug("listdir got res %s", res)
+                collection = onedrivesdk.ChildrenCollectionRequest.get_next_page_request(collection, client).get()
 
-        for ent in res['files']:
-            fid = ent['id']
-            pids = ent['parents']
-            fhash = ent.get('md5Checksum')
-            name = ent['name']
-            shared = ent['shared']
-            readonly = not ent['capabilities']['canEdit']
-            trashed = ent.get('trashed', False)
-            if ent.get('mimeType') == self._folder_mime_type:
-                otype = DIRECTORY
-            else:
-                otype = FILE
-            if not trashed:
-                yield OneDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
         log.debug("mkdir %s", path)
@@ -557,75 +535,77 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return info.oid
 
         pid = self.get_parent_id(path)
+        log.debug("got pid %s", pid)
+
+        f = onedrivesdk.Folder()
+        i = onedrivesdk.Item()
         _, name = self.split(path)
-        file_metadata = {
-            'name': name,
-            'parents': [pid],
-            'mimeType': self._folder_mime_type,
-        }
-        if metadata:
-            file_metadata.update(metadata)
-        res = self._api('files', 'create',
-                        body=file_metadata, fields='id')
-        fileid = res.get('id')
-        self._ids[path] = fileid
-        return fileid
+        i.name = name
+        i.folder = f
 
-    def delete(self, oid): # GD
-        info = self._info_oid(oid)
-        if not info:
-            log.debug("deleted non-existing oid %s", debug_sig(oid))
-            return  # file doesn't exist already...
-        if info.otype == DIRECTORY:
-            try:
-                next(self.listdir(oid))
-                raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
-            except StopIteration:
-                pass  # Folder is empty, delete it no problem
-        try:
-            self._api('files', 'delete', fileId=oid)
-        except CloudFileNotFoundError:
-            log.debug("deleted non-existing oid %s", debug_sig(oid))
-        except PermissionError:
-            try:
-                log.debug("permission denied deleting %s:%s, unfile instead", debug_sig(oid), info.name)
-                remove_str = ",".join(info.pids)
-                self._api('files', 'update', fileId=oid, removeParents=remove_str, fields='id')
-            except PermissionError:
-                log.warning("Unable to delete oid %s.", debug_sig(oid))
+        with self._api() as client:
+            item = client.item(drive='me', id=pid).children.add(i)
 
-        for currpath, curroid in list(self._ids.items()):
-            if curroid == oid:
-                self._trashed_ids[currpath] = self._ids[currpath]
-                del self._ids[currpath]
+        return item.id
+
+    def delete(self, oid):
+        with self._api() as client:
+            item = client.item(id=oid).get()
+            if not item:
+                log.debug("deleted non-existing oid %s", debug_sig(oid))
+                return  # file doesn't exist already...
+            info = self._info_item(item)
+            if info.otype == DIRECTORY:
+                try:
+                    next(self.listdir(oid))
+                    raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
+                except StopIteration:
+                    pass  # Folder is empty, delete it no problem
+            self._direct_api("delete", "me/drive/items/%s" % item.id)
+            item.deleted = True
+            item.update()
 
     def exists_oid(self, oid): # GD
         return self._info_oid(oid) is not None
 
     def info_path(self, path: str) -> Optional[OInfo]:  # pylint: disable=too-many-locals # GD
-        with self._api():
-            item = self.client.item(path=path).get()
+        try:
+            with self._api() as client:
+                item = client.item(path=path).get()
+            return self._info_item(item)
+        except CloudFileNotFoundError:
+            return None
+
+    def _info_item(self, item) -> OInfo:
+        if item.folder:
+            otype = DIRECTORY
+        else:
+            otype = FILE
+        return OInfo(oid=item.id, otype=otype, hash=None, path="TODO")
 
     def exists_path(self, path) -> bool: # GD
         try:
-            with self._api():
-                return bool(self.client.item(path=path).get())
+            with self._api() as client:
+                return bool(client.item(path=path).get())
         except CloudFileNotFoundError:
             return False
 
-    def get_parent_id(self, path): # GD
+    def get_parent_id(self, path):
+        log.debug("get parent %s", path)
         if not path:
             return None
 
         parent, _ = self.split(path)
+
+        if parent == "/":
+            return "root"
 
         # it may have changed, or case may be different, etc.
         info = self.info_path(parent)
         if not info:
             raise CloudFileNotFoundError("parent %s must exist" % parent)
 
-        # cache the latest version
-        return self._ids[info.path]
+        return info.oid
 
     def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]: # GD
         """convert oid to path"""
@@ -651,14 +631,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 return path
         return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]: # GD
-        info = self._info_oid(oid)
-        if info is None:
+    def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
+        return self._info_oid(oid)
+
+    def _info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]: # GD
+        try:
+            with self._api() as client:
+                item = client.item(id=oid).get()
+            return self._info_item(item)
+        except CloudFileNotFoundError:
             return None
-        # expensive
-        info.path = self._path_oid(oid, info, use_cache=use_cache)
-        log.debug("info oid ret: %s", info)
-        return info
 
     @staticmethod
     def hash_data(file_like) -> str: # GD
@@ -667,27 +649,3 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         for c in iter(lambda: file_like.read(32768), b''):
             md5.update(c)
         return md5.hexdigest()
-
-    def _info_oid(self, oid) -> Optional[OneDriveInfo]: # GD
-        try:
-            res = self._api('files', 'get', fileId=oid,
-                            fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities',
-                            )
-        except CloudFileNotFoundError:
-            return None
-
-        log.debug("info oid %s", res)
-        if res.get('trashed'):
-            return None
-
-        pids = res.get('parents')
-        fhash = res.get('md5Checksum')
-        name = res.get('name')
-        shared = res['shared']
-        readonly = not res['capabilities']['canEdit']
-        if res.get('mimeType') == self._folder_mime_type:
-            otype = DIRECTORY
-        else:
-            otype = FILE
-
-        return OneDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
