@@ -8,7 +8,7 @@ import time
 import logging
 import requests
 import threading
-import pprint
+from pprint import pformat
 from requests import HTTPError
 import hashlib
 from ssl import SSLError
@@ -386,37 +386,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return gdrive_info
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo': # GD
-        if not metadata:
-            metadata = {}
-        gdrive_info = self.__prep_upload(None, metadata)
+        with self._api() as client:
+            req = client.item(drive='me', id=oid).content.request()
+            req.method = "PUT"
+            resp = req.send(data=file_like)
+            item = onedrivesdk.Item(json.loads(resp.content))
 
-        file_like.seek(0, io.SEEK_END)
-        file_size = file_like.tell()
-        file_like.seek(0, io.SEEK_SET)
-
-        chunksize = 4 * 1024 * 1024
-        resumable = file_size > chunksize
-        ul = MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable)
-
-        fields = 'id, md5Checksum'
-
-        res = self._api('files', 'update',
-                        body=gdrive_info,
-                        fileId=oid,
-                        media_body=ul,
-                        fields=fields)
-
-        log.debug("response from upload %s", res)
-
-        if not res:
-            raise CloudTemporaryError("unknown response from drive on upload")
-
-        md5 = res.get('md5Checksum', None)  # can be none if the user tries to upload to a folder
-        if md5 is None:
-            possible_conflict = self._info_oid(oid)
-            if possible_conflict and possible_conflict.otype == DIRECTORY:
-                raise CloudFileExistsError("Can only upload to a file: %s" % possible_conflict.path)
-        return OInfo(otype=FILE, oid=res['id'], hash=md5, path=None)
+        return self._info_item(item)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo': # GD
         if not metadata:
@@ -432,7 +408,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return self._info_item(item, path=path)
 
     def download(self, oid, file_like): # GD
-        req = self._api('files', 'get_media', fileId=oid)
+        item = client.item(id=oid).get()
+        log.debug("FILE %s", pformat(item.file.__dict__))
+
+        req = self._direct_api('files', 'get_media', fileId=oid)
         dl = MediaIoBaseDownload(file_like, req, chunksize=4 * 1024 * 1024)
         done = False
         while not done:
@@ -544,7 +523,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if not item:
                 log.debug("deleted non-existing oid %s", debug_sig(oid))
                 return  # file doesn't exist already...
-            log.debug("ITEM %s", pprint.pformat(item.__dict__))
+            log.debug("ITEM %s", pformat(item.__dict__))
             log.debug("OID %s", oid)
             log.debug("ID %s", item.id)
             info = self._info_item(item)
@@ -570,14 +549,15 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def _info_item(self, item, path=None) -> OInfo:
         if item.folder:
             otype = DIRECTORY
+            ohash = None
         else:
             otype = FILE
-            log.debug("hashes %s", item.file.hashes)
+            ohash = item.file.hashes.sha1_hash
 
         if path is None:
             log.warning("TODO")
 
-        return OInfo(oid=item.id, otype=otype, hash=None, path=path)
+        return OInfo(oid=item.id, otype=otype, hash=ohash, path=path)
 
     def exists_path(self, path) -> bool:
         try:
