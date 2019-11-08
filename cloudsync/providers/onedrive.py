@@ -44,19 +44,17 @@ logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
 class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
-    pids: List[str] = []
     # oid, hash, otype and path are included here to satisfy a bug in mypy,
     # which does not recognize that they are already inherited from the grandparent class
     oid: str
     hash: Any
     otype: OType
     path: str
+    pid: str = None
 
-    def __init__(self, *a, pids=None, **kws):
+    def __init__(self, *a, pid=None, **kws):
         super().__init__(*a, **kws)
-        if pids is None:
-            pids = []
-        self.pids = pids
+        self.pid = pid
 
 
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
@@ -426,61 +424,24 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 file_like.flush()
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches # GD
-        pid = self.get_parent_id(path)
+        with self._api() as client:
+            parent, base = self.split(path)
 
-        add_pids = [pid]
-        if pid == 'root':
-            add_pids = [self.root_id]
+            item = client.item(id=oid)
+            info = item.get()
 
-        info = self._info_oid(oid)
-        if info is None:
-            log.debug("can't rename, oid doesn't exist %s", debug_sig(oid))
-            raise CloudFileNotFoundError(oid)
-        remove_pids = info.pids
-        old_path = info.path
+            pid = info.parent_reference.id
 
-        _, name = self.split(path)
-        body = {'name': name}
+            pitem = client.item(path=parent)
+            pinfo = pitem.get()
 
-        if self.exists_path(path):
-            possible_conflict = self.info_path(path)
-            if FILE in (info.otype, possible_conflict.otype):
-                if possible_conflict.oid != oid:  # it's OK to rename a file over itself, frex, to change case
-                    raise CloudFileExistsError(path)
+            if pid == pinfo.id:
+                info = onedrivesdk.Item()
+                info.name = base
+                item.update(info)
             else:
-                if possible_conflict.oid != oid:
-                    try:
-                        next(self.listdir(possible_conflict.oid))
-                        raise CloudFileExistsError("Cannot rename over non-empty folder %s" % path)
-                    except StopIteration:
-                        # Folder is empty, rename over it no problem
-                        if possible_conflict.oid != oid:  # delete the target if we're not just changing case
-                            self.delete(possible_conflict.oid)
-
-        if not old_path:
-            for cpath, coid in list(self._ids.items()):
-                if coid == oid:
-                    old_path = cpath
-
-
-        if add_pids == remove_pids:
-            add_pids_str = ""
-            remove_pids_str = ""
-        else:
-            add_pids_str = ",".join(add_pids)
-            remove_pids_str = ",".join(remove_pids)
-
-        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids_str, removeParents=remove_pids_str, fields='id')
-
-        if old_path:
-            for cpath, coid in list(self._ids.items()):
-                relative = self.is_subpath(old_path, cpath)
-                if relative:
-                    new_cpath = self.join(path, relative)
-                    self._ids.pop(cpath)
-                    self._ids[new_cpath] = coid
-
-        log.debug("renamed %s -> %s", debug_sig(oid), body)
+                info.path = path
+                item.update(info)
 
         return oid
 
@@ -508,7 +469,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
 
-        pid = self.get_parent_id(path)
+        pid = self.get_parent_id(path=path)
         log.debug("got pid %s", pid)
 
         f = onedrivesdk.Folder()
@@ -559,7 +520,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if path is None:
             log.warning("TODO")
 
-        return OInfo(oid=item.id, otype=otype, hash=ohash, path=path)
+        pid = item.parent_reference.id
+
+        return OneDriveInfo(oid=item.id, otype=otype, hash=ohash, path=path, pid=pid)
 
     def exists_path(self, path) -> bool:
         try:
@@ -568,22 +531,28 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except CloudFileNotFoundError:
             return False
 
-    def get_parent_id(self, path):
+    def get_parent_id(self, *, path=None, oid=None):
         log.debug("get parent %s", path)
-        if not path:
+        if not path and not oid:
             return None
 
-        parent, _ = self.split(path)
+        ret = None
 
-        if parent == "/":
-            return "root"
+        if path:
+            ppath = self.dirname(path)
+            i = self.info_path(ppath)
+            if i:
+                ret = i.oid
 
-        # it may have changed, or case may be different, etc.
-        info = self.info_path(parent)
-        if not info:
-            raise CloudFileNotFoundError("parent %s must exist" % parent)
+        if oid:
+            i = self.info_oid(oid)
+            if i:
+                ret = i.pid     # parent id
 
-        return info.oid
+        if not ret:
+            raise CloudFileNotFoundError("parent %s must exist" % ppath)
+
+        return ret
 
     def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]: # GD
         """convert oid to path"""
