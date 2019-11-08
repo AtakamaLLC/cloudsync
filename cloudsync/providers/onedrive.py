@@ -243,6 +243,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     raise CloudFileNotFoundError(str(e))
                 if e.code == "nameAlreadyExists":
                     raise CloudFileExistsError(str(e))
+                if e.code == "invalidRequest":
+                    raise CloudFileNotFoundError(str(e))
             except Exception:
                 pass
 
@@ -403,9 +405,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if not metadata:
             metadata = {}
 
+        pid = self.get_parent_id(path=path)
         parent, base = self.split(path)
         with self._api() as client:
-            req = client.item(drive='me', path=parent).children[base].content.request()
+            req = client.item(drive='me', id=pid).children[base].content.request()
             req.method = "PUT"
             resp = req.send(data=file_like)
             item = onedrivesdk.Item(json.loads(resp.content))
@@ -435,8 +438,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             pitem = client.item(path=parent)
             pinfo = pitem.get()
 
+            info = onedrivesdk.Item()
+
             if pid == pinfo.id:
-                info = onedrivesdk.Item()
                 info.name = base
                 item.update(info)
             else:
@@ -456,6 +460,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
                 # todo , switch to direct_api
 #                collection = onedrivesdk.ChildrenCollectionRequest.get_next_page_request(collection, client).get()
+                collection = None
 
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
@@ -484,19 +489,22 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return item.id
 
     def delete(self, oid):
-        with self._api() as client:
-            item = client.item(id=oid).get()
-            if not item:
-                log.debug("deleted non-existing oid %s", debug_sig(oid))
-                return  # file doesn't exist already...
-            info = self._info_item(item)
-            if info.otype == DIRECTORY:
-                try:
-                    next(self.listdir(oid))
-                    raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
-                except StopIteration:
-                    pass  # Folder is empty, delete it no problem
-            self._direct_api("delete", "drive/items/%s" % item.id)
+        try:
+            with self._api() as client:
+                item = client.item(id=oid).get()
+                if not item:
+                    log.debug("deleted non-existing oid %s", debug_sig(oid))
+                    return  # file doesn't exist already...
+                info = self._info_item(item)
+                if info.otype == DIRECTORY:
+                    try:
+                        next(self.listdir(oid))
+                        raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
+                    except StopIteration:
+                        pass  # Folder is empty, delete it no problem
+                self._direct_api("delete", "drive/items/%s" % item.id)
+        except CloudFileNotFoundError:
+            pass
 
     def exists_oid(self, oid):
         return self._info_oid(oid, path=False) is not None
