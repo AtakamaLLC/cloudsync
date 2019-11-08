@@ -472,7 +472,6 @@ def test_rename(provider):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
-   
     # move to sub
     dest = provider.temp_name("movy")
     sub_file_name = os.urandom(16).hex()
