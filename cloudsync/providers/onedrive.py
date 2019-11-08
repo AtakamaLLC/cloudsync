@@ -74,7 +74,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.mutex = threading.RLock()
         self._oauth_config = oauth_config
 
-        # todo, pick a port...just like dropbox
+        # TODO pick a port...just like dropbox
         self._redirect_uri = 'http://localhost:8080/'
 
     @property
@@ -244,7 +244,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if e.code == "nameAlreadyExists":
                     raise CloudFileExistsError(str(e))
                 if e.code == "invalidRequest":
-                    raise CloudFileNotFoundError(str(e))
+                    if "expected type" in str(e).lower():
+                        # TODO this is a 405 error code, use that with directapi
+                        raise CloudFileExistsError(str(e))
+                    if "handle is invalid" in str(e).lower():
+                        # TODO this is a 400 error code, use that with directapi
+                        raise CloudFileNotFoundError(str(e))
+                if e.code == "accessDenied":
+                    raise CloudFileExistsError(str(e))
             except Exception:
                 pass
 
@@ -405,9 +412,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if not metadata:
             metadata = {}
 
+        with self._api() as client:
+            # TODO: set @microsoft.graph.conflictBehavior to "fail"
+            # see https://docs.microsoft.com/en-us/onedrive/developer/rest-api/api/driveitem_createuploadsession?view=odsp-graph-online
+            if self.exists_path(path):
+                raise CloudFileExistsError()
+
         pid = self.get_parent_id(path=path)
         parent, base = self.split(path)
         with self._api() as client:
+            # TODO switch to directapi
             req = client.item(drive='me', id=pid).children[base].content.request()
             req.method = "PUT"
             resp = req.send(data=file_like)
@@ -417,9 +431,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def download(self, oid, file_like):
         with self._api() as client:
-            item = client.item(id=oid).get()
+            info = client.item(id=oid).get()
 
-            raw = item.to_dict()
+            raw = info.to_dict()
             url = raw['@content.downloadUrl']
             r = self._direct_api('get', url=url, stream=True)
             for chunk in r.iter_content(chunk_size=4096):
@@ -438,14 +452,36 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             pitem = client.item(path=parent)
             pinfo = pitem.get()
 
-            info = onedrivesdk.Item()
+            new_info = onedrivesdk.Item()
 
-            if pid == pinfo.id:
-                info.name = base
-                item.update(info)
-            else:
-                info.path = path
-                item.update(info)
+            try:
+                if pid == pinfo.id:
+                    new_info.name = base
+                    item.update(new_info)
+                else:
+                    new_info.path = path
+                    item.update(new_info)
+            except onedrivesdk.error.OneDriveError as e:
+                if not (e.code == "nameAlreadyExists" and info.folder):
+                    log.debug("self not a folder, or not an exists error")
+                    raise
+
+                confl = self.info_path(path)
+                if not (confl and confl.otype == DIRECTORY):
+                    log.debug("conflict not a folder")
+                    raise
+
+                try:
+                    next(self.listdir(confl.oid))
+                    log.debug("folder is not empty")
+                    raise
+                except StopIteration:
+                    pass  # Folder is empty, rename over is ok
+
+                log.debug("remove conflict out of the way")
+                self.delete(confl.oid)
+
+                self.rename(oid, path)
 
         return oid
 
@@ -458,7 +494,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     oi = self._info_item(i)
                     yield DirInfo(oi.otype, oi.oid, oi.hash, oi.path)
 
-                # todo , switch to direct_api
+                # TODO, switch to direct_api
 #                collection = onedrivesdk.ChildrenCollectionRequest.get_next_page_request(collection, client).get()
                 collection = None
 
