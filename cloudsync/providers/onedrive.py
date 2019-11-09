@@ -337,10 +337,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             res = self._direct_api("get", url=page_token)
             delta_link = res.get('@odata.deltaLink')
             next_link = res.get('@odata.nextLink')
-            events = res.get('value')
+            events: List = res.get('value')
             new_cursor = next_link or delta_link
 
-            for change in events:
+            # for change in sorted(events, key=lambda x: x["lastModifiedDateTime"]): # sorting by modtime also works
+            for change in reversed(events):
                 with disable_log_multiline():
                     log.debug("got event\n%s", pformat(change))
                 # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
@@ -495,21 +496,26 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             item = client.item(id=oid)
             info = item.get()
 
-            pid = info.parent_reference.id
+            old_parent_id = info.parent_reference.id
 
-            pitem = client.item(path=parent)
-            pinfo = pitem.get()
+            new_parent_item = client.item(path=parent)
+            new_parent_info = new_parent_item.get()
+            new_parent_id = new_parent_info.id
 
-            new_info = onedrivesdk.Item()
+            new_info: onedrivesdk.Item = onedrivesdk.Item()
 
             try:
-                # TODO: fix case where both name and path are changed
-                if pid == pinfo.id:
+                updated = False
+                if info.name != base:
                     new_info.name = base
                     item.update(new_info)
-                else:
-                    new_info.path = path
-                    item.update(new_info)
+                    updated = True
+                if old_parent_id != new_parent_info.id:
+                    new_info.parent_reference = onedrivesdk.ItemReference()
+                    new_info.parent_reference.id = new_parent_id
+                    updated = True
+                if updated:
+                    item_after_updating = item.update(new_info)
             except onedrivesdk.error.OneDriveError as e:
                 if not (e.code == "nameAlreadyExists" and info.folder):
                     log.debug("self not a folder, or not an exists error")
@@ -545,8 +551,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
             while collection:
                 for i in collection:
-                    oi = self._info_item(i)
-                    yield DirInfo(oi.otype, oi.oid, oi.hash, oi.path)
+                    yield self._info_item(i)
 
                 # TODO, switch to direct_api
 #                collection = onedrivesdk.ChildrenCollectionRequest.get_next_page_request(collection, client).get()
@@ -607,7 +612,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except CloudFileNotFoundError:
             return None
 
-    def _info_item(self, item, path=None) -> OInfo:
+    def _info_item(self, item, path=None) -> OneDriveInfo:
         if item.folder:
             otype = DIRECTORY
             ohash = None
@@ -620,7 +625,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         pid = item.parent_reference.id
 
-        return OneDriveInfo(oid=item.id, otype=otype, hash=ohash, path=path, pid=pid)
+        return OneDriveInfo(oid=item.id, otype=otype, hash=ohash, path=path, pid=pid, name=item.name,
+                            mtime=item.last_modified_date_time, shared=item.shared)
 
     def exists_path(self, path) -> bool:
         try:
@@ -660,6 +666,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 path = path[len(preamble):]
             else:
                 raise Exception("path '%s'(%s, %s) does not start with '%s', time to implement recursion" % (path, pr_path, name, preamble))
+        import urllib.parse
+        path = urllib.parse.unquote(path)
         return path
 
     def _get_path(self, oid=None, item=None, event=None) -> Optional[str]:

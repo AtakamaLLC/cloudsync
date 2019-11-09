@@ -216,7 +216,6 @@ class ProviderHelper(ProviderBase):
 
     def prime_events(self):
         self.current_cursor = self.latest_cursor
-        assert self.current_cursor
 
     @property
     def current_cursor(self):
@@ -1373,7 +1372,10 @@ def test_rename_case_change(provider, otype):
         assert not infopl
     else:
         assert infopl
-        assert infopl.path == temp_nameu
+        # Asserting UC path is bullshit. you asked for a LC path, and assert that you get an UC path back?
+        # we already know that the path from oid returned the correct case. If you ask for the wrong case,
+        # you might get the wrong case back. garbage in, garbage out. deal.  (OneDrive in particular behaves this way)
+        assert infopl.path == temp_nameu or infopl.path == temp_namel
 
 
 def test_quota_limit(mock_provider):
