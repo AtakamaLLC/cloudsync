@@ -3,18 +3,15 @@
 # https://github.com/OneDrive/onedrive-sdk-python
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/msa-oauth?view=odsp-graph-online
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/app-registration?view=odsp-graph-online
-import io
 import time
 import logging
-import requests
-import threading
 from pprint import pformat
-from requests import HTTPError
+import threading
 import hashlib
-from ssl import SSLError
 import json
 from typing import Generator, Optional, List, Dict, Any
-from cloudsync.utils import debug_sig, disable_log_multiline
+import urllib.parse
+import requests
 
 import arrow
 # from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -29,11 +26,11 @@ import onedrivesdk
 from onedrivesdk.helpers import GetAuthCodeServer
 from onedrivesdk.error import OneDriveError
 
-from cloudsync.utils import debug_args, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
-    CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
+    CloudFileExistsError, CloudCursorError
 from cloudsync.oauth import OAuthConfig
+from cloudsync.utils import debug_sig, disable_log_multiline
 
 
 class OneDriveFileDoneError(Exception):
@@ -74,6 +71,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__creds: Optional[Dict[str, str]] = None
         self.__cursor: Optional[str] = None
         self.__client = None
+        self.__root_id = None
         self.mutex = threading.RLock()
         self._oauth_config = oauth_config
 
@@ -171,21 +169,23 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         http_provider=http_provider,
                         client_id=self._oauth_config.app_id,
                         scopes=self._scopes)
-                auth_url = auth_provider.get_auth_url(self._redirect_uri)
+                auth_provider.get_auth_url(self._redirect_uri)
 
                 class MySession(onedrivesdk.session.Session):
                     def __init__(self, **kws):
+                        super().__init__()
                         self.__dict__ = kws
 
                     @staticmethod
                     def load_session(**kws):
+                        _ = kws
                         return MySession(
-                            refresh_token = creds.get("refresh"),
-                            access_token = creds.get("access", None),
-                            redirect_uri = self._redirect_uri,
-                            auth_server_url = creds.get("url"),
-                            client_id = self._oauth_config.app_id,
-                            client_secret = self._oauth_config.app_secret,
+                            refresh_token=creds.get("refresh"),
+                            access_token=creds.get("access", None),
+                            redirect_uri=self._redirect_uri,
+                            auth_server_url=creds.get("url"),
+                            client_id=self._oauth_config.app_id,
+                            client_secret=self._oauth_config.app_secret,
                         )
 
                 auth_provider = onedrivesdk.AuthProvider(
@@ -248,7 +248,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             except (TimeoutError, ):
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
-            except onedrivesdk.error.OneDriveError as e:
+            except OneDriveError as e:
                 if e.code == "itemNotFound":
                     raise CloudFileNotFoundError(str(e))
                 if e.code == "nameAlreadyExists":
@@ -266,17 +266,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 pass
 
     @property
-    def root_id(self): # GD
+    def root_id(self):
         if not self.__root_id:
-            res = self._api('files', 'get',
-                            fileId='root',
-                            fields='id',
-                            )
-            self.__root_id = res['id']
-            self._ids['/'] = self.__root_id
+            self.__root_id = self.info_oid('root').oid
         return self.__root_id
 
-    def disconnect(self): # GD
+    def disconnect(self):
         self.__client = None
 
     @property
@@ -468,7 +463,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudFileExistsError()
 
         pid = self.get_parent_id(path=path)
-        parent, base = self.split(path)
+        _, base = self.split(path)
         with self._api() as client:
             # TODO switch to directapi
             req: onedrivesdk.ItemContentRequest = client.item(drive='me', id=pid).children[base].content.request()
@@ -515,7 +510,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     new_info.parent_reference.id = new_parent_id
                     updated = True
                 if updated:
-                    item_after_updating = item.update(new_info)
+                    item.update(new_info)
             except onedrivesdk.error.OneDriveError as e:
                 if not (e.code == "nameAlreadyExists" and info.folder):
                     log.debug("self not a folder, or not an exists error")
@@ -559,6 +554,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
+        _ = metadata
         log.debug("mkdir %s", path)
 
         # boilerplate: probably belongs in base class
@@ -666,11 +662,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 path = path[len(preamble):]
             else:
                 raise Exception("path '%s'(%s, %s) does not start with '%s', time to implement recursion" % (path, pr_path, name, preamble))
-        import urllib.parse
         path = urllib.parse.unquote(path)
         return path
 
-    def _get_path(self, oid=None, item=None, event=None) -> Optional[str]:
+    def _get_path(self, oid=None, item=None) -> Optional[str]:
         """get path using oid or item"""
         # TODO: implement caching
 
@@ -689,7 +684,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
         return self._info_oid(oid)
 
-    def _info_oid(self, oid, use_cache=True, path=None) -> Optional[OneDriveInfo]:
+    def _info_oid(self, oid, path=None) -> Optional[OneDriveInfo]:
         try:
             with self._api() as client:
                 item = client.item(id=oid).get()
