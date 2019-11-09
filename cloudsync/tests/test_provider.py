@@ -216,6 +216,7 @@ class ProviderHelper(ProviderBase):
 
     def prime_events(self):
         self.current_cursor = self.latest_cursor
+        assert self.current_cursor
 
     @property
     def current_cursor(self):
@@ -806,6 +807,10 @@ def test_api_failure(provider):
 def test_file_not_found(provider):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
+    import faulthandler
+    import signal
+    import sys
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr)
     dat = os.urandom(32)
 
     def data():
@@ -1442,11 +1447,14 @@ def test_large_file_support(provider):
 
 def test_special_characters(provider):
     fname = ""
+    additional_invalid_characters = getattr(provider, "additional_invalid_characters", "")
     for i in range(32, 127):
         char = str(chr(i))
         if char in (provider.sep, provider.alt_sep):
             continue
         if char in """<>:"/\\|?*""":
+            continue
+        if char in additional_invalid_characters:
             continue
         fname = fname + str(chr(i))
     fname = "/fn-" + fname
@@ -1473,6 +1481,7 @@ def test_special_characters(provider):
     assert dirinfo.oid == diroid
     newfname2 = provider.join(dirname, fname2)
     new_oid2 = provider.rename(new_oid, newfname2)
+    test_newfname2 = provider.info_oid(new_oid2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
 

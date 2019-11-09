@@ -14,6 +14,7 @@ import hashlib
 from ssl import SSLError
 import json
 from typing import Generator, Optional, List, Dict, Any
+from cloudsync.utils import debug_sig, disable_log_multiline
 
 import arrow
 # from googleapiclient.discovery import build   # pylint: disable=import-error
@@ -26,6 +27,7 @@ import arrow
 
 import onedrivesdk
 from onedrivesdk.helpers import GetAuthCodeServer
+from onedrivesdk.error import OneDriveError
 
 from cloudsync.utils import debug_args, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
@@ -65,6 +67,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     name = 'OneDrive'
     _scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
     _base_url = 'https://api.onedrive.com/v1.0/'
+    additional_invalid_characters = '#'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -106,8 +109,15 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return creds
 
+    def _get_url(self, api_path):
+        api_path = api_path.lstrip("/")
+        with self._api() as client:
+            return client.base_url + api_path
+
     def _direct_api(self, action, path=None, *, url=None, stream=None):
         assert path or url
+        if not url:
+            url = self._get_url(path)
         with self._api() as client:
             if not url:
                 path = path.lstrip("/")
@@ -270,21 +280,48 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__client = None
 
     @property
-    def latest_cursor(self): # GD
-        res = self._api('changes', 'getStartPageToken')
-        if res:
-            return res.get('startPageToken')
-        else:
-            return None
+    def latest_cursor(self):
+        save_cursor = self.__cursor
+        self.__cursor = self._get_url("drive/root/oneDrive.delta")
+        for _ in self.events():
+            pass
+        retval = self.__cursor
+        self.__cursor = save_cursor
+        return retval
+
+        # done = False
+        # next_link = None
+        # delta_link = None
+        # res = self._direct_api("get", path="drive/root/oneDrive.delta")
+        # while not done:
+        #     delta_link = res.get('@odata.deltaLink')
+        #     next_link = res.get('@odata.nextLink')
+        #     events = res.get('value')
+        #     import pprint
+        #     from cloudsync.utils import debug_sig, disable_log_multiline
+        #     with disable_log_multiline():
+        #         log.debug("events = \n%s", pprint.pformat(events))
+        #     if delta_link:
+        #         return delta_link
+        #     if events and len(events) == 0:
+        #         return next_link  # This probably shouldn't happen...
+        #     res = self._direct_api("get", url=next_link)
+        #
+        # if res:
+        #     retval = res.get('@odata.nextLink')
+        #     log.debug("latest_cursor = %s", retval)
+        #     return retval
+        # else:
+        #     return None
 
     @property
-    def current_cursor(self): # GD
+    def current_cursor(self):
         if not self.__cursor:
             self.__cursor = self.latest_cursor
         return self.__cursor
 
     @current_cursor.setter
-    def current_cursor(self, val): # GD
+    def current_cursor(self, val):
         if val is None:
             val = self.latest_cursor
         if not isinstance(val, str) and val is not None:
@@ -293,53 +330,62 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches # GD
         page_token = self.current_cursor
-        while page_token is not None:
+        assert page_token
+        done = False
+        while not done:
             # log.debug("looking for events, timeout: %s", timeout)
-            response = self._api('changes', 'list', pageToken=page_token, spaces='drive',
-                                 includeRemoved=True, includeItemsFromAllDrives=True, supportsAllDrives=True)
-            new_cursor = response.get('newStartPageToken', None)
-            for change in response.get('changes'):
-                log.debug("got event %s", change)
+            res = self._direct_api("get", url=page_token)
+            delta_link = res.get('@odata.deltaLink')
+            next_link = res.get('@odata.nextLink')
+            events = res.get('value')
+            new_cursor = next_link or delta_link
 
-                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T16:57:06.779Z',
-                # 'removed': False, 'fileId': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'file': {'kind': 'drive#file',
-                # 'id': '1NCi2j1SjsPUTQTtaD2dFNsrt49J8TPDd', 'name': 'dest', 'mimeType': 'application/octet-stream'}}
+            for change in events:
+                with disable_log_multiline():
+                    log.debug("got event\n%s", pformat(change))
+                # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
+                #  'createdBy': {'application': {'id': '4805d153'},
+                #                'user': {'displayName': 'erik aronesty', 'id': '4ab5f266fc495e74'}},
+                #  'createdDateTime': '2015-09-19T11:14:15.9Z', 'eTag': 'aNEFCNUYyNjZGQzQ5NUU3NCEzMzguMA',
+                #  'fileSystemInfo': {
+                #      'createdDateTime': '2015-09-19T11:14:15.9Z',
+                #      'lastModifiedDateTime': '2015-09-19T11:14:15.9Z'},
+                #  'folder': {'childCount': 0, 'folderType': 'document',
+                #             'folderView': {'sortBy': 'name', 'sortOrder': 'ascending', 'viewType': 'thumbnails'}},
+                #  'id': '4AB5F266FC495E74!338',
+                #  'lastModifiedBy': {'application': {'id': '4805d153'}, 'user': {'displayName': 'erik aronesty', 'id': '4ab5f266fc495e74'}},
+                #  'lastModifiedDateTime': '2019-11-08T22:13:20.56Z', 'name': 'root',
+                #  'parentReference': {'driveId': '4ab5f266fc495e74', 'driveType': 'personal', 'id': '4AB5F266FC495E74!0', 'path': '/drive/root:'},
+                #  'root': {}, 'size': 156, 'webUrl': 'https://onedrive.live.com/?cid=4ab5f266fc495e74'}
 
-                # {'kind': 'drive#change', 'type': 'file', 'changeType': 'file', 'time': '2019-07-23T20:02:14.156Z',
-                # 'removed': True, 'fileId': '1lhRe0nDplA6I5JS18642rg0KIbYN66lR'}
-
-                ts = arrow.get(change.get('time')).float_timestamp
-                oid = change.get('fileId')
-                exists = not change.get('removed')
+                ts = arrow.get(change.get('lastModifiedDateTime')).float_timestamp
+                oid = change.get('id')
+                exists = not change.get('deleted')
 
                 fil = change.get('file')
+                fol = change.get('folder')
                 if fil:
-                    if fil.get('mimeType') == self._folder_mime_type:
-                        otype = DIRECTORY
-                    else:
-                        otype = FILE
+                    otype = FILE
+                elif fol:
+                    otype = DIRECTORY
                 else:
                     otype = NOTKNOWN
 
                 ohash = None
-                path = self._path_oid(oid, use_cache=False)
+                path = None
+                if exists:
+                    if otype == FILE:
+                        if 'hashes' in change['file']:
+                            ohash = change['file']['hashes']['quickXorHash']
+                        else:
+                            log.debug("no hash for file? %s", pformat(change))
+                            raise Exception("no hash for file")
+
+                    path = self._join_parent_reference_path_and_name(change['parentReference']['path'], change['name'])
+                    # path_slow = self._get_path(oid=oid)
+                    # assert path == path_slow
 
                 event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
-
-                remove = []
-                for cpath, coid in self._ids.items():
-                    if coid == oid:
-                        if cpath != path:
-                            remove.append(cpath)
-
-                    if path and otype == DIRECTORY and self.is_subpath(path, cpath):
-                        remove.append(cpath)
-
-                for r in remove:
-                    self._ids.pop(r, None)
-
-                if path:
-                    self._ids[path] = oid
 
                 log.debug("converted event %s as %s", change, event)
 
@@ -347,7 +393,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
             if new_cursor and page_token and new_cursor != page_token:
                 self.__cursor = new_cursor
-            page_token = response.get('nextPageToken')
+            page_token = new_cursor
+            if delta_link:
+                done = True
 
     def _walk(self, path, oid): # GD
         for ent in self.listdir(oid):
@@ -422,7 +470,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         parent, base = self.split(path)
         with self._api() as client:
             # TODO switch to directapi
-            req = client.item(drive='me', id=pid).children[base].content.request()
+            req: onedrivesdk.ItemContentRequest = client.item(drive='me', id=pid).children[base].content.request()
             req.method = "PUT"
             resp = req.send(data=file_like)
             item = onedrivesdk.Item(json.loads(resp.content))
@@ -455,6 +503,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             new_info = onedrivesdk.Item()
 
             try:
+                # TODO: fix case where both name and path are changed
                 if pid == pinfo.id:
                     new_info.name = base
                     item.update(new_info)
@@ -482,6 +531,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.delete(confl.oid)
 
                 self.rename(oid, path)
+
+        new_path = self._get_path(oid)
+        if new_path != path:
+            log.error("path mismatch after rename -- wanted %s, got %s", path, new_path)
+            assert new_path == path  # must raise, cuz it's in the if block
 
         return oid
 
@@ -598,7 +652,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return ret
 
-    def _get_path(self, oid=None, item=None) -> Optional[str]:
+    def _join_parent_reference_path_and_name(self, pr_path, name):
+        path = self.join(pr_path, name)
+        preamble = "/drive/root:"
+        if ':' in path:
+            if path.startswith(preamble):
+                path = path[len(preamble):]
+            else:
+                raise Exception("path '%s'(%s, %s) does not start with '%s', time to implement recursion" % (path, pr_path, name, preamble))
+        return path
+
+    def _get_path(self, oid=None, item=None, event=None) -> Optional[str]:
         """get path using oid or item"""
         # TODO: implement caching
 
@@ -608,14 +672,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     item = client.item(id=oid).get()
 
                 if item is not None:
-                    parent_folder = item.parent_reference.path
-                    path = self.join(parent_folder, item.name)
-                    preamble = "/drive/root:/"
-                    if path.startswith(preamble):
-                        path = path[len(preamble) - 1:]
-                    else:
-                        raise Exception("path '%s' does not start with '%s', time to implement recursion" % (path, preamble))
-                    return path
+                    return self._join_parent_reference_path_and_name(item.parent_reference.path, item.name)
 
                 raise ValueError("_get_path requires oid or item")
         except CloudFileNotFoundError:
