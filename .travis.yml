@@ -16,11 +16,18 @@ jobs:
       python:
         - '3.6'
         - '3.7'
-    - stage: integ
+    - stage: integ1
       script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
-        - ./test_providers.sh
+        - ./test_providers.sh 1
+      python:
+        - '3.6'
+    - stage: integ2
+      script:
+          # only run tests if the interface or any implementations change
+          # todo: move providers to their own individual repos/projects with a plugin model
+        - ./test_providers.sh 2
       python:
         - '3.6'
     - stage: deploy

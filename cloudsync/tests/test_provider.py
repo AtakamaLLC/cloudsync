@@ -1303,6 +1303,7 @@ def test_listdir(provider):
     contents = [x.name for x in provider.listdir(outer_oid)]
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
+    log.info("contents %s", contents)
     assert sorted(contents) == sorted(expected)
 
 

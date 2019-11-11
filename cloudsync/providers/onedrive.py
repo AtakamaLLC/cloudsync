@@ -543,18 +543,37 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return oid
 
-    def listdir(self, oid) -> Generator[OneDriveInfo, None, None]: # GD
-        with self._api() as client:
-            collection = client.item(drive='me', id=oid).children.request(top=50).get()
+    def listdir(self, oid) -> Generator[OneDriveInfo, None, None]:
 
-            while collection:
-                for i in collection:
-                    yield self._info_item(i)
+        res = self._direct_api("get", "drive/items/%s/children" % oid)
 
-                # TODO, switch to direct_api
-#                collection = onedrivesdk.ChildrenCollectionRequest.get_next_page_request(collection, client).get()
-                collection = None
+        log.debug("listdir %s", res)
+        idir = self.info_oid(oid)
+        root = idir.path
 
+        items = res.get("value", [])
+
+        while items:
+            for item in items:
+                name = item["name"]
+                path = self.join(root, name)
+                oid = item["id"]
+                ohash = None
+                if "folder" in item:
+                    otype = DIRECTORY
+                else:
+                    otype = FILE
+                if "file" in item:
+                    log.info(item)
+                    hashes = item["file"]["hashes"]
+                    ohash = hashes.get("sha1Hash")
+                yield DirInfo(otype=otype, oid=oid, path=path, hash=ohash)
+
+            items = []
+            if next_link:
+                res = self._direct_api("get", url=next_link)
+                items = res.get("value", [])
+                next_link = res.get("@odata.nextLink")
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
         _ = metadata
