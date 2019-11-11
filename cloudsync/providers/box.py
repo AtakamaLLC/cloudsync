@@ -1,6 +1,7 @@
 import threading
 import logging
 import json
+import webbrowser
 
 from typing import Optional, Generator
 
@@ -17,7 +18,7 @@ from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor
 log = logging.getLogger(__name__)
 
 
-class BoxProvider(Provider):
+class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
 
@@ -50,7 +51,6 @@ class BoxProvider(Provider):
                     on_failure=self._on_oauth_failure,
                 )
                 url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.oauth_redir_server.uri('/auth/'))
-                import webbrowser
                 logging.error(self._oauth_config.oauth_redir_server.uri('/auth/'))
                 webbrowser.open(url)
             except OSError:
@@ -63,7 +63,7 @@ class BoxProvider(Provider):
         pass
 
     def _on_oauth_success(self, auth_dict):
-        assert(self._csrf_token == auth_dict['state'][0]) # checks for csrf attack, what state am i in?
+        assert self._csrf_token == auth_dict['state'][0] # checks for csrf attack, what state am i in?
         try:
             self.api_key, self.refresh_token = self._flow.authenticate(auth_dict['code'])
             self._oauth_done.set()
