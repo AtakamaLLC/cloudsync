@@ -173,7 +173,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
                 class MySession(onedrivesdk.session.Session):
                     def __init__(self, **kws):
-                        super().__init__()
                         self.__dict__ = kws
 
                     @staticmethod
