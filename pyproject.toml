@@ -18,8 +18,9 @@ requires = ["arrow", "oauth2client", "dataclasses", "pystrict", "msgpack"]
 requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]
-dropbox = [ "dropbox" ]
+dropbox = [ "dropbox", ]
 gdrive = [ "httplib2", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib", ]
+onedrive = [ "onedrivesdk<2", ]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
