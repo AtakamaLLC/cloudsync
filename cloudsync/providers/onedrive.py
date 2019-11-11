@@ -552,6 +552,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         root = idir.path
 
         items = res.get("value", [])
+        next_link = res.get("@odata.nextLink")
 
         while items:
             for item in items:
@@ -567,7 +568,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     log.info(item)
                     hashes = item["file"]["hashes"]
                     ohash = hashes.get("sha1Hash")
-                yield DirInfo(otype=otype, oid=oid, path=path, hash=ohash)
+                pid = item["parentReference"]["id"]
+                name = item["name"]
+                mtime = item["lastModifiedDateTime"]
+                shared = item["createdBy"]["user"]["id"] != self.connection_id
+
+                yield OneDriveInfo(oid=oid, otype=otype, hash=ohash, path=path, pid=pid, name=name,
+                                   mtime=mtime, shared=shared)
 
             items = []
             if next_link:
