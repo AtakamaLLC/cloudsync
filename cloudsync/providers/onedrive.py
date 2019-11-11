@@ -7,6 +7,7 @@ import time
 import logging
 from pprint import pformat
 import threading
+import asyncio
 import hashlib
 import json
 from typing import Generator, Optional, List, Dict, Any
@@ -90,6 +91,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         assert self._oauth_config.app_id
 
         log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
+
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
 
         client = onedrivesdk.get_default_client(
             client_id=self._oauth_config.app_id, scopes=self._scopes)
