@@ -1,9 +1,10 @@
 import threading
 import logging
+import json
 
 from typing import Optional, Generator
 
-from boxsdk import OAuth2, Client
+from boxsdk import OAuth2, Client, JWTAuth, session
 from cloudsync.utils import debug_args
 from oauth2client.client import HttpAccessTokenRefreshError
 
@@ -96,31 +97,39 @@ class BoxProvider(Provider):
     def connect(self, creds):
         log.debug('Connecting to box')
         if not self.client:
-            api_key = creds.get('api_key', self.api_key)
-            refresh_token = creds.get('refresh_token', self.api_key)
             self.__creds = creds
 
-            if not refresh_token:
-                raise CloudTokenError("acquire a token using authenticate() first")
+            jwt_token = creds.get('jwt_token')
+            api_key = creds.get('api_key', self.api_key)
+            refresh_token = creds.get('refresh_token', self.api_key)
 
-            if (not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
-                raise CloudTokenError("require app_id/secret or api_key")
-            # verify this ^ is proper for box
+            if not jwt_token:
+                if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or api_key)):
+                    raise CloudTokenError("require app_id/secret and either api_key or refresh token")
 
             try:
                 with self.mutex:
-                    self.client = Client(self._flow)
-
-                if getattr(creds, 'refresh_token', None):
-                    refresh_token = creds.refresh_token
-
+                    if jwt_token:
+                        sdk = JWTAuth.from_settings_dictionary(json.loads(jwt_token))
+                        self.client = Client(sdk)
+                    else:
+                        session = boxsdk.S()
+                        self._session = self.authorized_session_class(self._oauth, **session.get_constructor_kwargs())
+                        self.client = Client(self._flow)
+                self.connection_id = self.client.user(user_id='me').get().id
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
+        else:
+
         return self.client
 
     def disconnect(self):
         self.client = None
+        self.connection_id = None
+
+    def reconnect(self):
+        self.connect(self.__creds)
 
     def _api(self, resource, method, *args, **kwargs):
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
@@ -131,13 +140,20 @@ class BoxProvider(Provider):
 
             try:
                 return getattr(self.client, method)(*args, **kwargs)
-            except Exception as e:
+                # TODO add an exception for when the key is expired
+                #       also create a provider test that verifies the behavior when the api_key goes bad
+                #       to verify that the callback for the refresh_token is called when it changes
+                #       also create a box test that verifies that when the api_token is refreshed that the
+                #       refresh_token changes
+            except boxsdk.exception.BoxException as e:
                 self.refresh_api_key()
                 self.write_refresh_token_to_database()
                 try:
                     return getattr(self.client, method)(*args, **kwargs)
                 except Exception as e:
                     logging.error(e)
+            except Exception as e:
+                logging.error(e)
 
     @property
     def name(self):

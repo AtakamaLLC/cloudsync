@@ -10,20 +10,18 @@ from cloudsync.providers.box import BoxProvider
 
 # move this to provider ci_creds() function?
 def box_creds():
-    # token_set = os.environ.get("BOX_TOKEN")
-    # if not token_set:
-    #     return {}
-    #
-    # tokens = token_set.split(",")
+    token_set = os.environ.get("BOX_TOKEN")
+    if not token_set:
+        return {}
+
+    tokens = token_set.split("|")
 
     creds = {
-        #prolly wrong
-        "api_token": "HYTZSeJDawUahEvdb1umvPn3LHq1QJSt",
-        # "refresh_token": tokens[random.randrange(0, len(tokens))],
-        "refresh_token": "vF6cLnJY7A1kaHYaypRHaB7c5yoqO7ojLBdb00T9l1HAlpgn7nP9D1OuH43rslWS",
+        "jwt_token": tokens[random.randrange(0, len(tokens))],
     }
 
     return creds
+
 
 def on_success(auth_dict=None):
     assert auth_dict is not None and isinstance(auth_dict, dict)
@@ -32,8 +30,10 @@ def on_success(auth_dict=None):
 def app_id():
     return os.environ.get("BOX_CLIENT_ID", None)
 
+
 def app_secret():
     return os.environ.get("BOX_CLIENT_SECRET", None)
+
 
 def box_provider():
 
@@ -45,6 +45,7 @@ def box_provider():
     cls.creds = box_creds()              # type: ignore
 
     return cls(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+
 
 @pytest.fixture
 def cloudsync_provider():
