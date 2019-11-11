@@ -4,9 +4,10 @@ import json
 
 from typing import Optional, Generator
 
-from boxsdk import OAuth2, Client, JWTAuth, session
+from boxsdk import OAuth2, Client, JWTAuth
+from boxsdk.exception import BoxException  # , BoxAPIException, BoxNetworkException, BoxOAuthException
+from boxsdk.session.session import Session, AuthorizedSession
 from cloudsync.utils import debug_args
-from oauth2client.client import HttpAccessTokenRefreshError
 
 from cloudsync.oauth import OAuthConfig
 
@@ -32,6 +33,8 @@ class BoxProvider(Provider):
         self._oauth_config = oauth_config
         self._oauth_done = threading.Event()
         self._csrf_token = None
+        self._session = None
+        self._flow = None
 
     def initialize(self):
         logging.error('initializing')
@@ -113,14 +116,18 @@ class BoxProvider(Provider):
                         sdk = JWTAuth.from_settings_dictionary(json.loads(jwt_token))
                         self.client = Client(sdk)
                     else:
-                        session = boxsdk.S()
-                        self._session = self.authorized_session_class(self._oauth, **session.get_constructor_kwargs())
-                        self.client = Client(self._flow)
+                        box_session = Session()
+                        box_kwargs = box_session.get_constructor_kwargs()
+                        box_kwargs['default_network_request_kwargs']['auto_session_renewal'] = False
+                        self._session = AuthorizedSession(self._flow, **box_kwargs)
+                        self.client = Client(self._flow, self._session)
                 self.connection_id = self.client.user(user_id='me').get().id
-            except HttpAccessTokenRefreshError:
+            except BoxException as e:
                 self.disconnect()
                 raise CloudTokenError()
         else:
+            # TODO: reconnect, and also call the callback for saving the new refresh token
+            pass
 
         return self.client
 
@@ -145,7 +152,7 @@ class BoxProvider(Provider):
                 #       to verify that the callback for the refresh_token is called when it changes
                 #       also create a box test that verifies that when the api_token is refreshed that the
                 #       refresh_token changes
-            except boxsdk.exception.BoxException as e:
+            except BoxException as e:
                 self.refresh_api_key()
                 self.write_refresh_token_to_database()
                 try:
