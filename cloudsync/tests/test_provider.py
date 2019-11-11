@@ -275,11 +275,14 @@ def config_provider(request, provider_config):
     elif provider_config.name == "dropbox":
         from .providers.dropbox import dropbox_provider
         return dropbox_provider()
+    elif provider_config.name == "box":
+        from .providers.box import box_provider
+        return box_provider()
     else:
         assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
 
-known_providers = ('gdrive', 'external', 'dropbox', 'mock')
+known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'box')
 
 
 def configs_from_name(name):
