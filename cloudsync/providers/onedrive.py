@@ -70,8 +70,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         super().__init__()
         self.__creds: Optional[Dict[str, str]] = None
         self.__cursor: Optional[str] = None
-        self.__client = None
-        self.__root_id = None
+        self.__client: onedrivesdk.OneDriveClient = None
+        self.__root_id: str = None
         self.mutex = threading.RLock()
         self._oauth_config = oauth_config
 
@@ -543,6 +543,31 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return oid
 
+    def _info_from_rest(self, item, root=None):
+        name = item["name"]
+        if root:
+            path = self.join(root, name)
+        else:
+            raise NotImplementedError()
+
+        oid = item["id"]
+        ohash = None
+        if "folder" in item:
+            otype = DIRECTORY
+        else:
+            otype = FILE
+        if "file" in item:
+            log.info(item)
+            hashes = item["file"]["hashes"]
+            ohash = hashes.get("sha1Hash")
+        pid = item["parentReference"]["id"]
+        name = item["name"]
+        mtime = item["lastModifiedDateTime"]
+        shared = item["createdBy"]["user"]["id"] != self.connection_id
+
+        return OneDriveInfo(oid=oid, otype=otype, hash=ohash, path=path, pid=pid, name=name,
+                            mtime=mtime, shared=shared)
+
     def listdir(self, oid) -> Generator[OneDriveInfo, None, None]:
 
         res = self._direct_api("get", "drive/items/%s/children" % oid)
@@ -556,25 +581,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         while items:
             for item in items:
-                name = item["name"]
-                path = self.join(root, name)
-                oid = item["id"]
-                ohash = None
-                if "folder" in item:
-                    otype = DIRECTORY
-                else:
-                    otype = FILE
-                if "file" in item:
-                    log.info(item)
-                    hashes = item["file"]["hashes"]
-                    ohash = hashes.get("sha1Hash")
-                pid = item["parentReference"]["id"]
-                name = item["name"]
-                mtime = item["lastModifiedDateTime"]
-                shared = item["createdBy"]["user"]["id"] != self.connection_id
-
-                yield OneDriveInfo(oid=oid, otype=otype, hash=ohash, path=path, pid=pid, name=name,
-                                   mtime=mtime, shared=shared)
+                yield self._info_from_rest(item, root=root)
 
             items = []
             if next_link:
