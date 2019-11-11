@@ -64,7 +64,7 @@ class EventManager(Runnable):
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 4
         self.mult_backoff = 2
-
+        self.need_auth = False
         self.reauthenticate = reauth or self.__reauth
 
     def __reauth(self):
