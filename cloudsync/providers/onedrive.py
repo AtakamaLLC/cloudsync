@@ -132,10 +132,18 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return {}
 
         if req.status_code > 201:
-            log.error("%s error %s", action, str(req.status_code)+" "+req.json()['error']['message'])
-            if req.json()['error']['code'] == 'unauthenticated':
-                raise CloudTokenError(req.json()['error']['message'])
-            raise CloudDisconnectedError(req.json()['error']['message'])
+            dat = req.json()
+            emsg = dat['error']['message']
+            log.error("%s error %s (%s)", action, str(req.status_code)+" "+emsg, dat['error'])
+            if req.status_code == 404:
+                raise CloudFileNotFoundError(emsg)
+            if dat['error']['code'] == 'unauthenticated':
+                raise CloudTokenError(emsg)
+            if dat['error']['code'] == 'itemNotFound':
+                raise CloudFileNotFoundError(emsg)
+            if dat['error']['code'] in ('nameAlreadyExists', 'accessDenied'):
+                raise CloudFileExistsError(emsg)
+            raise CloudDisconnectedError(emsg)
 
         if stream:
             return req
@@ -557,7 +565,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         else:
             otype = FILE
         if "file" in item:
-            log.info(item)
             hashes = item["file"]["hashes"]
             ohash = hashes.get("sha1Hash")
         pid = item["parentReference"]["id"]
