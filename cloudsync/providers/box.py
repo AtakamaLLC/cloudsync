@@ -15,9 +15,6 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError
 from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor
 
 log = logging.getLogger(__name__)
-# logging.getLogger('googleapiclient').setLevel(logging.INFO)
-# logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
-# ^ FIX THESE
 
 
 class BoxProvider(Provider):
@@ -34,7 +31,14 @@ class BoxProvider(Provider):
         self._oauth_done = threading.Event()
         self._csrf_token = None
         self._session = None
-        self._flow = None
+        self._flow = OAuth2(client_id=self._oauth_config.app_id,
+                        client_secret=self._oauth_config.app_secret,
+                        store_tokens=self._store_refresh_token
+                        )
+
+    def _store_refresh_token(self, access_token, refresh_token):
+        _ = access_token
+        self._oauth_config.store_refresh_token(refresh_token)
 
     def initialize(self):
         logging.error('initializing')
@@ -45,7 +49,6 @@ class BoxProvider(Provider):
                     on_success=self._on_oauth_success,
                     on_failure=self._on_oauth_failure,
                 )
-                self._flow = OAuth2(client_id=self._oauth_config.app_id, client_secret=self._oauth_config.app_secret)
                 url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.oauth_redir_server.uri('/auth/'))
                 import webbrowser
                 logging.error(self._oauth_config.oauth_redir_server.uri('/auth/'))
@@ -118,7 +121,7 @@ class BoxProvider(Provider):
                     else:
                         box_session = Session()
                         box_kwargs = box_session.get_constructor_kwargs()
-                        box_kwargs['default_network_request_kwargs']['auto_session_renewal'] = False
+                        # box_kwargs['default_network_request_kwargs']['auto_session_renewal'] = False
                         self._session = AuthorizedSession(self._flow, **box_kwargs)
                         self.client = Client(self._flow, self._session)
                 self.connection_id = self.client.user(user_id='me').get().id
@@ -136,7 +139,8 @@ class BoxProvider(Provider):
         self.connection_id = None
 
     def reconnect(self):
-        self.connect(self.__creds)
+        if not self.connected:
+            self.connect(self.__creds)
 
     def _api(self, resource, method, *args, **kwargs):
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))

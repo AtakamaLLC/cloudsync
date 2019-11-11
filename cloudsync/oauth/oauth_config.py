@@ -46,3 +46,8 @@ class OAuthConfig:
     @staticmethod
     def failure_message(error_str: str) -> str:
         return 'OAuth failed: {}'.format(error_str)
+
+    @staticmethod
+    def store_refresh_token(token: str):
+        _ = token
+        log.warning("refresh token will not be saved, implement OAuthConfig.store_refresh_token to save it.")
