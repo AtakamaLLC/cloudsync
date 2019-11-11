@@ -379,6 +379,7 @@ def test_connect(provider):
     provider.reconnect()
     assert provider.connected
 
+
 def test_info_root(provider):
     info = provider.info_path("/")
 
@@ -407,6 +408,7 @@ def test_create_upload_download(provider):
 
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
+    assert info1.hash == provider.hash_data(data())
 
     assert provider.exists_path(dest)
 

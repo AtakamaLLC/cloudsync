@@ -143,6 +143,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudFileNotFoundError(emsg)
             if dat['error']['code'] in ('nameAlreadyExists', 'accessDenied'):
                 raise CloudFileExistsError(emsg)
+            if req.status_code == 400:
+                if dat['error']['code'] == 'invalidRequest':
+                    # invalid oid
+                    raise CloudFileNotFoundError(emsg)
+            if req.status_code == 405:
+                if dat['error']['code'] == 'invalidRequest':
+                    # expected type to be folder
+                    raise CloudFileExistsError(emsg)
             raise CloudDisconnectedError(emsg)
 
         if stream:
@@ -164,7 +172,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def reconnect(self): 
         self.connect(self.__creds)
 
-    def connect(self, creds): # GD
+    def connect(self, creds):
         if not self.__client:
             log.debug('Connecting to One Drive')
             assert self._oauth_config.app_id
@@ -212,32 +220,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             q = self.get_quota()
             self.connection_id = q["uid"]
 
-
-    @staticmethod
-    def _get_reason_from_http_error(e): # GD
-        # gets a default something (actually the message, not the reason) using their secret interface
-        reason = e._get_reason()  # pylint: disable=protected-access
-
-        # parses the JSON of the content to get the reason from where it really lives in the content
-        try:  # this code was copied from googleapiclient/http.py:_should_retry_response()
-            data = json.loads(e.content.decode('utf-8'))
-            if isinstance(data, dict):
-                reason = data['error']['errors'][0]['reason']
-            else:
-                reason = data[0]['error']['errors']['reason']
-        except (UnicodeDecodeError, ValueError, KeyError):
-            log.warning('Invalid JSON content from response: %s', e.content)
-
-        return reason
-
-    @staticmethod
-    def __escape(filename: str): # GD
-        ret = filename
-        ret = ret.replace("\\", "\\\\")
-        ret = ret.replace("'", "\\'")
-        return ret
-
-    # def _api(self, needs_client=True):
     def _api(self, *args, **kwargs):
         needs_client = kwargs.get('needs_client', None)
         if needs_client and not self.__client:
@@ -334,7 +316,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudCursorError(val)
         self.__cursor = val
 
-    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches # GD
+    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
         page_token = self.current_cursor
         assert page_token
         done = False
@@ -383,7 +365,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if exists:
                     if otype == FILE:
                         if 'hashes' in change['file']:
-                            ohash = change['file']['hashes']['quickXorHash']
+                            ohash = change['file']['hashes']['sha1Hash']
                         else:
                             log.debug("no hash for file? %s", pformat(change))
                             raise Exception("no hash for file")
@@ -404,7 +386,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if delta_link:
                 done = True
 
-    def _walk(self, path, oid): # GD
+    def _walk(self, path, oid):
         for ent in self.listdir(oid):
             current_path = self.join(path, ent.name)
             event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
@@ -414,47 +396,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if self.exists_oid(ent.oid):
                     yield from self._walk(current_path, ent.oid)
 
-    def walk(self, path, since=None): # GD
+    def walk(self, path, since=None):
         info = self.info_path(path)
         if not info:
             raise CloudFileNotFoundError(path)
         yield from self._walk(path, info.oid)
 
-    def __prep_upload(self, path, metadata): # GD
-        # modification time
-        mtime = metadata.get("modifiedTime", time.time())
-        mtime = arrow.get(mtime).isoformat()
-        gdrive_info = {
-            'modifiedTime':  mtime
-        }
-
-        # mime type, if provided
-        mime_type = metadata.get("mimeType", None)
-        if mime_type:
-            gdrive_info['mimeType'] = mime_type
-
-        # path, if provided
-        if path:
-            _, name = self.split(path)
-            gdrive_info['name'] = name
-
-        # misc properties, if provided
-        app_props = metadata.get("appProperties", None)
-        if app_props:
-            # caller can specify google-specific stuff, if desired
-            gdrive_info['appProperties'] = app_props
-
-        # misc properties, if provided
-        app_props = metadata.get("properties", None)
-        if app_props:
-            # caller can specify google-specific stuff, if desired
-            gdrive_info['properties'] = app_props
-
-        log.debug("info %s", gdrive_info)
-
-        return gdrive_info
-
-    def upload(self, oid, file_like, metadata=None) -> 'OInfo': # GD
+    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         with self._api() as client:
             req = client.item(drive='me', id=oid).content.request()
             req.method = "PUT"
@@ -463,7 +411,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return self._info_item(item)
 
-    def create(self, path, file_like, metadata=None) -> 'OInfo': # GD
+    def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
             metadata = {}
 
@@ -495,7 +443,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 file_like.write(chunk)
                 file_like.flush()
 
-    def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches # GD
+    def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches
         with self._api() as client:
             parent, base = self.split(path)
 
@@ -596,7 +544,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 items = res.get("value", [])
                 next_link = res.get("@odata.nextLink")
 
-    def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ # GD
+    def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
         _ = metadata
         log.debug("mkdir %s", path)
 
@@ -739,9 +687,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return None
 
     @staticmethod
-    def hash_data(file_like) -> str: # GD
+    def hash_data(file_like) -> str:
         # get a hash from a filelike that's the same as the hash i natively use
-        md5 = hashlib.md5()
+        md5 = hashlib.sha1()
         for c in iter(lambda: file_like.read(32768), b''):
             md5.update(c)
-        return md5.hexdigest()
+        return md5.hexdigest().upper()
