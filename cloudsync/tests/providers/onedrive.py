@@ -48,12 +48,12 @@ def test_oauth_connect():
     prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
     creds = prov.authenticate()
     prov.connect(creds)
-    assert prov.client
+    assert prov.connected
     prov.get_quota()
 
 def test_env_connect():
     prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
     creds = onedrive_creds()
     prov.connect(creds)
-    assert prov.client
+    assert prov.connected
     prov.get_quota()

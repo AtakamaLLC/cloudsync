@@ -85,6 +85,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def get_display_name(self):  # One Drive
         return self.name
 
+    # noinspection PyProtectedMember
     def authenticate(self):  # One Drive
         assert self._oauth_config.app_id
 
@@ -101,8 +102,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         client.auth_provider.authenticate(auth_code, self._redirect_uri, self._oauth_config.app_secret)
 
         creds = {"access": client.auth_provider.access_token, 
-                 "refresh": client.auth_provider._session.refresh_token,
-                 "url": client.auth_provider._session.auth_server_url,
+                 "refresh": client.auth_provider._session.refresh_token,  # pylint: disable=protected-access
+                 "url": client.auth_provider._session.auth_server_url,  # pylint: disable=protected-access
                  }
 
         return creds
@@ -172,7 +173,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 auth_provider.get_auth_url(self._redirect_uri)
 
                 class MySession(onedrivesdk.session.Session):
-                    def __init__(self, **kws):
+                    def __init__(self, **kws):  # pylint: disable=super-init-not-called
                         self.__dict__ = kws
 
                     @staticmethod
@@ -181,10 +182,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         return MySession(
                             refresh_token=creds.get("refresh"),
                             access_token=creds.get("access", None),
-                            redirect_uri=self._redirect_uri,
+                            redirect_uri=self._redirect_uri,  # pylint: disable=protected-access
                             auth_server_url=creds.get("url"),
-                            client_id=self._oauth_config.app_id,
-                            client_secret=self._oauth_config.app_secret,
+                            client_id=self._oauth_config.app_id,  # pylint: disable=protected-access
+                            client_secret=self._oauth_config.app_secret,  # pylint: disable=protected-access
                         )
 
                 auth_provider = onedrivesdk.AuthProvider(
@@ -196,6 +197,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 auth_provider.load_session()
                 auth_provider.refresh_token()
                 self.__client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
+                self.__client.item = self.__client.item  # satisfies a lint confusion
                 self.__creds = creds
 
         if not self.connection_id:
@@ -227,7 +229,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         ret = ret.replace("'", "\\'")
         return ret
 
-    def _api(self, needs_client=True):
+    # def _api(self, needs_client=True):
+    def _api(self, *args, **kwargs):
+        needs_client = kwargs.get('needs_client', None)
         if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
         return self
