@@ -125,7 +125,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
                         self._session = AuthorizedSession(self._flow, **box_kwargs)
                         self.client = Client(self._flow, self._session)
                 self.connection_id = self.client.user(user_id='me').get().id
-            except BoxException as e:
+            except BoxException:
                 self.disconnect()
                 raise CloudTokenError()
         else:
@@ -142,7 +142,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
         if not self.connected:
             self.connect(self.__creds)
 
-    def _api(self, resource, method, *args, **kwargs):
+    def _api(self, resource, method, *args, **kwargs):  # pylint: disable=arguments-differ
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
 
         with self.mutex:
