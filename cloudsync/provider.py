@@ -4,7 +4,7 @@ import re
 import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
-from cloudsync.types import OInfo, DIRECTORY, DirInfo
+from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
 if TYPE_CHECKING:
     from .event import Event
@@ -26,7 +26,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False
     connection_id: Optional[str] = None
     default_sleep: float = 0.01
-    __creds: None
+    __creds: Optional[Any]
 
     @abstractmethod
     def _api(self, *args, **kwargs):
