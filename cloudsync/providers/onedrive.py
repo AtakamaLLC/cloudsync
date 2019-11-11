@@ -113,7 +113,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         with self._api() as client:
             return client.base_url + api_path
 
-    def _direct_api(self, action, path=None, *, url=None, stream=None):
+    def _direct_api(self, action, path=None, *, url=None, stream=None):  # pylint: disable=too-many-branches
         assert path or url
         if not url:
             url = self._get_url(path)
