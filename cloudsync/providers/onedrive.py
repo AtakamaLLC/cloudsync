@@ -607,7 +607,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         try:
             with self._api() as client:
                 item = client.item(path=path).get()
-            return self._info_item(item, path=path)
+            if item:
+                return self._info_item(item)
+            else:
+                return None
         except CloudFileNotFoundError:
             return None
 
