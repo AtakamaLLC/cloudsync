@@ -3,10 +3,10 @@ import re
 import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
-from cloudsync.types import OInfo, DIRECTORY, DirInfo
+from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
 if TYPE_CHECKING:
-    from cloudsync.event import Event
+    from .event import Event
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False
     default_sleep: float = 0.01
     connection_id: str = None
-    __creds: str = None
+    __creds: Optional[Any] = None
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -161,6 +161,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         if not info or not info.oid:
             raise CloudFileNotFoundError()
         self.download(info.oid, io)
+
+    def listdir_path(self, path):
+        info = self.info_path(path)
+        if not info or not info.oid:
+            raise CloudFileNotFoundError()
+        return self.listdir(info.oid)
+
 
 # HELPER
     @classmethod

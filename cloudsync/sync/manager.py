@@ -19,9 +19,9 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
-from cloudsync.utils import debug_sig, disable_log_multiline
+from cloudsync.utils import debug_sig
 
-from .state import SyncState, SyncEntry, SideState, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
+from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
@@ -50,7 +50,7 @@ class ResolveFile():
         self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
-            self.__fh: IO = None
+        self.__fh: IO = None
 
     def download(self):
         if not os.path.exists(self.__temp_file):
@@ -131,10 +131,11 @@ class SyncManager(Runnable):
         self._resolve_conflict = resolver
 
     def do(self):
+        need_to_sleep = True
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
-
             if sync:
+                need_to_sleep = False
                 try:
                     self.sync(sync)
                     self.state.storage_commit()
@@ -149,6 +150,9 @@ class SyncManager(Runnable):
                     self.state.storage_commit()
                     self.backoff()
 
+        if need_to_sleep:
+            time.sleep(self.aging)
+
     def done(self):
         log.info("cleanup %s", self.tempdir)
         try:
@@ -161,6 +165,10 @@ class SyncManager(Runnable):
             return self.__translate(side, path)
         else:
             return None
+
+    @property
+    def busy(self):
+        return self.state.changeset_len
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
@@ -191,15 +199,23 @@ class SyncManager(Runnable):
         if not have_paths:
             return False
 
+        have_changed = ent[0].changed and ent[1].changed
+        if not have_changed:
+            return False
+
         are_synced = ((ent[0].sync_hash and ent[1].sync_hash)
                       or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)) \
-                     and ent[0].sync_path and ent[1].sync_path
+                      and ent[0].sync_path and ent[1].sync_path
         if not are_synced:
             return False
 
         both_exist = ent[0].exists == EXISTS and ent[0].exists == EXISTS
 
         if not both_exist:
+            return False
+
+        translated_path = self.translate(1, ent[0].path)
+        if ent[1].path == translated_path:
             return False
 
         return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
@@ -211,7 +227,7 @@ class SyncManager(Runnable):
                 changed = i
                 synced = other_side(i)
                 se = sync[changed]
-                if not se.changed or se.sync_path or not se.oid or se.exists == TRASHED or sync.is_conflicted:
+                if not se.changed or se.sync_path or not se.oid or se.exists != EXISTS or sync.is_conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -228,6 +244,8 @@ class SyncManager(Runnable):
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
+                    sync[changed].changed = time.time()
+                    sync[synced].clear()
 
     def sync(self, sync: SyncEntry):
         self.check_revivify(sync)
@@ -248,9 +266,6 @@ class SyncManager(Runnable):
             log.debug("handle path conflict")
             self.handle_path_conflict(sync)
             return
-
-        with disable_log_multiline():
-            log.log(TRACE, "table\r\n%s", self.state.pretty_print())
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
@@ -351,19 +366,19 @@ class SyncManager(Runnable):
         except CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
                       self.providers[changed].name)
-            sync[changed].exists = TRASHED
+            sync[changed].exists = MISSING
             return False
 
     def get_folder_file_conflict(self, sync: SyncEntry, translated_path: str, synced: int) -> SyncEntry:
         # if a non-dir file exists with the same name on the sync side
         syents: List[SyncEntry] = list(self.state.lookup_path(synced, translated_path))
-        conflicts = [ent for ent in syents if ent[synced].exists != TRASHED and ent != sync and ent[synced].otype != DIRECTORY]
+        conflicts = [ent for ent in syents if ent[synced].exists == EXISTS and ent != sync and ent[synced].otype != DIRECTORY]
 
         nc: List[SyncEntry] = []
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent[synced].exists = TRASHED
+                ent[synced].exists = MISSING
             else:
                 nc.append(ent)
 
@@ -384,6 +399,8 @@ class SyncManager(Runnable):
                     ent.ignore(IgnoreReason.DISCARDED)
 
         ents = [ent for ent in ents if TRASHED not in (
+            ent[changed].exists, ent[synced].exists)]
+        ents = [ent for ent in ents if MISSING not in (
             ent[changed].exists, ent[synced].exists)]
 
         if ents:
@@ -473,8 +490,8 @@ class SyncManager(Runnable):
             info = self.providers[synced].info_oid(sync[synced].oid)
 
             if not info:
-                log.debug("convert to unsynced")
-                sync[synced].exists = TRASHED
+                log.debug("convert to missing")
+                sync[synced].exists = MISSING
             else:
                 # you got an FNF during upload, but when you queried... it existed
                 # basically this is just a "retry" or something
@@ -534,7 +551,7 @@ class SyncManager(Runnable):
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
-    def create_synced(self, changed, sync, translated_path):
+    def create_synced(self, changed, sync, translated_path):        # pylint: disable=too-many-branches
         synced = other_side(changed)
         try:
             self._create_synced(changed, sync, translated_path)
@@ -544,7 +561,7 @@ class SyncManager(Runnable):
             parent = self.providers[changed].dirname(sync[changed].path)
             log.debug("make %s first before %s", parent, sync[changed].path)
             ents = self.state.lookup_path(changed, parent)
-            if not ents: 
+            if not ents:
                 info = self.providers[changed].info_path(parent)
                 if info:
                     self.state.update(changed, DIRECTORY, info.oid, path=parent)
@@ -552,11 +569,16 @@ class SyncManager(Runnable):
                     log.info("no info and no dir, ignoring?")
 
             else:
-                if not ents[0][changed].changed:
-                    # Clear the sync_path so we will recognize that this dir needs to be created
-                    ents[0][changed].sync_path = None
-                    self.update_entry(ents[0], changed, ents[0][changed].oid, changed=True)
-                    log.debug("updated entry %s", parent)
+                parent_ent = ents[0]
+                if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
+                    # Clear the sync_path, and set synced to MISSING,
+                    # that way, we will recognize that this dir needs to be created
+                    if parent_ent[changed].exists == EXISTS:
+                        parent_ent[changed].sync_path = None
+                        parent_ent[changed].changed = True
+                        parent_ent[synced].exists = MISSING
+                        assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
+                        log.debug("updated entry %s", parent)
 
             sync.punt()
         except CloudFileExistsError:
@@ -851,16 +873,15 @@ class SyncManager(Runnable):
                   translated_path, other_ents)
 
         # ignoring trashed entries with different oids on the same path
-        if all(TRASHED in (ent[synced].exists, ent[changed].exists) for ent in other_ents):
+        if all(ent[synced].exists != EXISTS or ent[changed].exists != EXISTS for ent in other_ents):
             for ent in other_ents:
-                if ent[synced].exists == TRASHED:
+                if ent[synced].exists in (TRASHED, MISSING):
                     # old trashed entries can be safely ignored
                     log.debug("discard ent %s", ent)
                     ent.ignore(IgnoreReason.DISCARDED)
             return None
 
-        other_untrashed_ents = [ent for ent in other_ents if TRASHED not in (
-            ent[synced].exists, ent[changed].exists)]
+        other_untrashed_ents = [ent for ent in other_ents if ent[synced].exists == EXISTS and ent[changed].exists == EXISTS]
 
         return other_untrashed_ents
 
@@ -869,13 +890,6 @@ class SyncManager(Runnable):
 
         if not other_untrashed_ents:
             return False
-
-        if sync.priority == 0:
-            # delaying sometimes helps, because future events can resolve conflicts
-            # it's generally better to wait before conflicting something
-            log.debug("punting, maybe it will fix itself")
-            sync.punt()
-            return True
 
         log.debug("split conflict found : %s:%s", len(other_untrashed_ents), other_untrashed_ents)
 
@@ -942,6 +956,11 @@ class SyncManager(Runnable):
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
+        if sync.is_creation(changed) and sync.priority == 0 and sync[synced].exists == MISSING:
+            sync.punt()
+            log.debug("create on top of missing, punt, maybe a rename")
+            return REQUEUE
+
         if sync.is_creation(changed):
             # never synced this before, maybe there's another local path with
             # the same name already?
@@ -958,7 +977,7 @@ class SyncManager(Runnable):
             if not self.download_changed(changed, sync):
                 return REQUEUE
 
-            if sync[synced].oid and sync[synced].exists != TRASHED:
+            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING):
                 if self.upload_synced(changed, sync):
                     return FINISHED
                 return REQUEUE
@@ -967,7 +986,7 @@ class SyncManager(Runnable):
 
         return self.handle_rename(sync, changed, synced, translated_path)
 
-    def handle_rename(self, sync, changed, synced, translated_path):
+    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches
         # handle rename
         # use == to allow rename for case reasons
         # todo: need a paths_match flag instead, so slashes don't break this line
@@ -990,18 +1009,43 @@ class SyncManager(Runnable):
             return REQUEUE
         except CloudFileExistsError:
             log.debug("can't rename, file exists")
-            if sync.priority > 0:
+            if sync.priority <= 0:
+                sync.get_latest(force=True)
+            else:
                 ents = self.state.lookup_path(synced, translated_path)
+                ents = [e for e in ents if e is not sync]
+
                 if ents:
                     conflict = ents[0]
-                    if not conflict[changed].changed and not conflict[synced].changed:
+                    conflict.get_latest()
+                    if not conflict[LOCAL].needs_sync() and not conflict[REMOTE].needs_sync():
                         # file is up to date, we're replacing a known synced copy
-                        self.providers[synced].delete(conflict[synced].oid)
-                        log.debug("deleting %s out of the way", translated_path)
-                        sync.punt()
-                        return REQUEUE
-                    log.debug("rename to fix conflict %s because %s not synced", translated_path, conflict)
+                        try:
+                            self.providers[synced].delete(conflict[synced].oid)
+                            log.debug("deleting %s out of the way", translated_path)
+                            conflict[synced].exists = TRASHED
+                            if not conflict[changed].oid:
+                                # conflict row was because of a rename on-to-of
+                                # oid got zeroed out....
+                                # todo: handle this more gracefully
+                                conflict.ignored = IgnoreReason.DISCARDED
+                            sync.punt()
+                            return REQUEUE
+                        except CloudFileExistsError:
+                            pass
+                    log.debug("rename to fix conflict %s because %s not synced, NS: %s", translated_path, conflict, conflict.needs_sync())
+                else:
+                    log.debug("rename because of new/unknown content")
+
+                try:
+                    self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+                except CloudFileNotFoundError as e:
+                    log.error("file disappeared out from under us %s", e)
+                    log.info("%s", self.state.pretty_print())
+                    sync.get_latest(force=True)
+
                 self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
+
             sync.punt()
             return REQUEUE
 
@@ -1103,11 +1147,23 @@ class SyncManager(Runnable):
                 # gentle punt, based on parent's priority
                 sync.priority = conflict.priority + 0.1
                 log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
+                if sync.is_path_change(changed) and sync[synced].exists == TRASHED and sync.priority > 2:
+                    # right hand side was trashed at the same time as a rename happened
+                    # punting is in a loop
+                    # force the trash to sync instead
+                    # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
+                    # also breaks test_folder_del_loop
+                    sync[synced].changed = 1
+
                 return REQUEUE
 
         if sync[changed].exists == TRASHED:
             log.debug("delete")
             return self.delete_synced(sync, changed, synced)
+
+        if sync[changed].exists == MISSING:
+            log.debug("%s missing", sync[changed].path)
+            return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
@@ -1130,9 +1186,10 @@ class SyncManager(Runnable):
         if sync[changed].path is None:
             return FINISHED
 
-        if sync[synced].exists == TRASHED or sync[synced].oid is None:
+        if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
             # not an upload
+            # todo: change to clear()
             sync[synced].exists = UNKNOWN
             sync[synced].hash = None
             sync[synced].changed = 0
@@ -1159,7 +1216,7 @@ class SyncManager(Runnable):
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
-            sync[changed].exists = TRASHED
+            sync[changed].exists = MISSING
             return
 
         if not info.path:
@@ -1224,9 +1281,7 @@ class SyncManager(Runnable):
         assert sync[0].sync_path
         assert sync[1].sync_path
 
-        path1 = sync[0].path
-        path2 = sync[1].path
-        if path1 > path2:
+        if sync[0].changed < sync[1].changed:
             pick = 0
         else:
             pick = 1

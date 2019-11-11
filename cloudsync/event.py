@@ -6,7 +6,7 @@ from pystrict import strict
 from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError
 from .runnable import Runnable
 from .muxer import Muxer
-from .types import OType
+from .types import OType, DIRECTORY
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
@@ -76,25 +76,24 @@ class EventManager(Runnable):
         if self._cursor_tag is not None:
             self.state.storage_delete_tag(self._cursor_tag)
 
+    @property
+    def busy(self):
+        return not self.events.empty
+
     def do(self):
         self.events.shutdown = False
         try:
-            try:
-                self._do_unsafe()
-            except CloudTemporaryError as e:
-                log.warning("temporary error %s[%s] in event watcher", type(e), e)
-                self.backoff()
-            except CloudDisconnectedError:
-                self.backoff()
-                try:
-                    log.info("reconnect to %s", self.provider.name)
-                    self.provider.reconnect()
-                except CloudDisconnectedError as e:
-                    log.info("can't reconnect to %s: %s", self.provider.name, e)
-            except CloudCursorError as e:
-                log.exception("Cursor error... resetting cursor. %s", e)
-                self.provider.current_cursor = self.provider.latest_cursor
-                self._save_current_cursor()
+            if not self.provider.connected:
+                log.info("reconnect to %s", self.provider.name)
+                self.provider.reconnect()
+            self._do_unsafe()
+        except (CloudTemporaryError, CloudDisconnectedError) as e:
+            log.warning("temporary error %s[%s] in event watcher", type(e), e)
+            self.backoff()
+        except CloudCursorError as e:
+            log.exception("Cursor error... resetting cursor. %s", e)
+            self.provider.current_cursor = self.provider.latest_cursor
+            self._save_current_cursor()
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
@@ -137,6 +136,19 @@ class EventManager(Runnable):
             otype = event.otype
             ehash = event.hash
             info = None
+
+            if event.oid is None:
+                if not event.exists and event.path and event.otype == DIRECTORY:
+                    # allow no oid on deletion of folders
+                    # this is because of dropbox
+                    known = self.state.lookup_path(self.side, event.path)
+                    if known:
+                        log.debug("using known oid for %s", event.path)
+                        event.oid = known[0][self.side].oid
+
+            if event.oid is None:
+                log.warning("ignoring event %s, no oid", event)
+                return
 
             if from_walk or not event.path and not self.state.lookup_oid(self.side, event.oid):
                 info = self.provider.info_oid(event.oid)

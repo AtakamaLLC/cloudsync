@@ -26,6 +26,10 @@ def _verok(ver):
 
     ver = ver.strip()
 
+    # in python land, dev tags have dots
+    # but this crappy parser doesn't support them
+    ver.replace(".dev", "dev")
+
     if ver[0] == "v":
         ver = ver[1:]
 

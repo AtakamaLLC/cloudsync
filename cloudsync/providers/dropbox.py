@@ -19,13 +19,17 @@ from dropbox.oauth import OAuth2FlowResult
 
 from cloudsync.utils import debug_args, memoize
 from cloudsync.oauth import OAuthConfig
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudOutOfSpaceError, \
     CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudCursorError, CloudException
 
 log = logging.getLogger(__name__)
-logging.getLogger('dropbox').setLevel(logging.INFO)
+
+# default logging for these libraries is very verbose
+# user can turn this on explicitly
+logging.getLogger('dropbox').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.INFO)
 
 
 CACHE_QUOTA_TIME = 120
@@ -98,10 +102,12 @@ class DropboxProvider(Provider):
         self.__cursor: str = None
         self.__creds: Dict[str, str] = None
         self.client = None
+        self.longpoll_client = None
         self._csrf: bytes = None
         self._flow: DropboxOAuth2Flow = None
         self.user_agent = 'cloudsync/1.0'
-        self.mutex = threading.Lock()
+        self.mutex = threading.RLock()
+        self.longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
         self._oauth_done = threading.Event()
@@ -216,16 +222,17 @@ class DropboxProvider(Provider):
 
     def connect(self, creds):
         log.debug('Connecting to dropbox')
-        if not self.client:
-            if creds:
-                self.__creds = creds
-            api_key = self.__creds.get('key', None)
+        with self.mutex:
+            if not self.client:
+                if creds:
+                    self.__creds = creds
+                api_key = creds.get('key', None)
 
-            if not api_key:
-                raise CloudTokenError()
+                if not api_key:
+                    raise CloudTokenError()
 
-            with self.mutex:
                 self.client = Dropbox(api_key)
+                self.longpoll_client = Dropbox(api_key)
 
             try:
                 self.__memoize_quota.clear()
@@ -240,15 +247,25 @@ class DropboxProvider(Provider):
                 log.exception("error connecting %s", e)
                 raise CloudDisconnectedError()
 
-    def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
-        if not self.client:
-            raise CloudDisconnectedError("currently disconnected")
+    def _lpapi(self, method, *args, **kwargs):
+        if self.longpoll_mutex.acquire(blocking=False):
+            self.longpoll_mutex.release()
+        else:
+            log.warning("multiple longpoll threads, probably going to wait for a long time")
+        return self._real_api(self.longpoll_client, self.longpoll_mutex, method, *args, **kwargs)
 
+    def _api(self, method, *args, **kwargs):    # pylint: disable=arguments-differ
+        return self._real_api(self.client, self.mutex, method, *args, **kwargs)
+
+    def _real_api(self, client, mutex, method, *args, **kwargs):   # pylint: disable=too-many-branches, too-many-statements
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
 
-        with self.mutex:
+        with mutex:
+            if not client:
+                raise CloudDisconnectedError("currently disconnected")
+
             try:
-                return getattr(self.client, method)(*args, **kwargs)
+                return getattr(client, method)(*args, **kwargs)
             except exceptions.ApiError as e:
                 inside_error: Union[files.LookupError, files.WriteError]
 
@@ -256,65 +273,64 @@ class DropboxProvider(Provider):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error = e.error.get_path()
                         if inside_error.is_malformed_path():
-                            log.debug('Malformed path when executing %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                            log.debug('Malformed path when executing %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'Malformed path when executing %s(%s)' % (method, kwargs))
+                                'Malformed path when executing %s(%s)' % debug_args(method, kwargs))
                         if inside_error.is_not_found():
-                            log.debug('file not found %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                            log.debug('file not found %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'File not found when executing %s(%s)' % (method, kwargs))
+                                'File not found when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.UploadError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.UploadWriteFailed):
                         inside_error = e.error.get_path()
                         write_error = inside_error.reason
                         if write_error.is_insufficient_space():
-                            log.debug('out of space %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                            log.debug('out of space %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudOutOfSpaceError(
-                                'Out of space when executing %s(%s)' % (method, kwargs))
+                                'Out of space when executing %s(%s)' % debug_args(method, kwargs))
                         if write_error.is_conflict():
                             raise CloudFileExistsError(
-                                'Conflict when executing %s(%s)' % (method, kwargs))
+                                'Conflict when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.DownloadError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.LookupError):
                         inside_error = e.error.get_path()
                         if inside_error.is_not_found():
-                            raise CloudFileNotFoundError("Not found when executing %s(%s)" % (method, kwargs))
+                            raise CloudFileNotFoundError("Not found when executing %s(%s)" % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.DeleteError):
                     if e.error.is_path_lookup():
                         inside_error = e.error.get_path_lookup()
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                                      *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'File not found when executing %s(%s)' % (method, kwargs))
+                                'File not found when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.RelocationError):
                     if e.error.is_from_lookup():
                         inside_error = e.error.get_from_lookup()
                         if inside_error.is_not_found():
                             log.debug('file not found %s(%s %s) : %s',
-                                      method, args, kwargs, e)
+                                      *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
-                                'File not found when executing %s(%s,%s)' % (method, args, kwargs))
+                                'File not found when executing %s(%s,%s)' % debug_args(method, args, kwargs))
                     if e.error.is_to():
                         inside_error = e.error.get_to()
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
-                                'File already exists when executing %s(%s)' % (method, kwargs))
-                        log.debug("here")
+                                'File already exists when executing %s(%s)' % debug_args(method, kwargs))
+
+                    if e.error.is_duplicated_or_nested_paths():
+                        raise CloudFileExistsError('Duplicated or nested path %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.CreateFolderError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.WriteError):
                         inside_error = e.error.get_path()
                         if inside_error.is_conflict():
                             raise CloudFileExistsError(
-                                'File already exists when executing %s(%s)' % (method, kwargs))
+                                'File already exists when executing %s(%s)' % debug_args(method, kwargs))
 
                 if isinstance(e.error, files.ListFolderContinueError):
                     # all list-folder-continue errors should cause a cursor reset
@@ -331,7 +347,7 @@ class DropboxProvider(Provider):
                 if isinstance(e.error, files.ListFolderLongpollError):
                     raise CloudCursorError("cursor invalidated during longpoll")
 
-                raise CloudException("Unknown exception when executing %s(%s,%s): %s" % (method, args, kwargs, e))
+                raise CloudException("Unknown exception when executing %s(%s,%s): %s" % debug_args(method, args, kwargs, e))
             except (exceptions.InternalServerError, exceptions.RateLimitError, requests.exceptions.ReadTimeout):
                 raise CloudTemporaryError()
             except dropbox.stone_validators.ValidationError as e:
@@ -343,7 +359,7 @@ class DropboxProvider(Provider):
                     raise CloudFileNotFoundError()
                 raise
             except requests.exceptions.ConnectionError as e:
-                log.exception('api error handled exception %s:%s',
+                log.error('api error handled exception %s:%s',
                               "dropbox", e.__class__.__name__)
                 self.disconnect()
                 raise CloudDisconnectedError()
@@ -354,6 +370,7 @@ class DropboxProvider(Provider):
 
     def disconnect(self):
         self.client = None
+        self.longpoll_client = None
         self.__memoize_quota.clear()      # pylint: disable=no-member
 
     @property
@@ -388,7 +405,7 @@ class DropboxProvider(Provider):
         else:
             oid = self.root_id
 
-        for res in _FolderIterator(self._api, oid, recursive=True, cursor=cursor):
+        for res in _FolderIterator(self._lpapi, oid, recursive=True, cursor=cursor):
             exists = True
 
             log.debug("event %s", res)
@@ -399,46 +416,39 @@ class DropboxProvider(Provider):
                 # then find out which one was the latest before the deletion time
                 # then get the oid for that
 
+                otype = FILE
                 try:
                     revs = self._api('files_list_revisions',
                                      res.path_lower, limit=10)
-                except NotAFileError as e:
-                    # todo: we need to actually handle this
-                    # this bug was exposed when we started raising errors during the fix of 409's
-                    # right now, we have no good solution for events without oids
-                    # the event manager needs to be modified to deal with this
-                    # otype = DIRECTORY
-                    # ohash = None
-                    # oid = None
-                    # yield ...
-                    log.error("deleted folder ignored %s", e)
-                    continue
+                except NotAFileError:
+                    oid = None
+                    otype = DIRECTORY
 
-                if revs is None:
-                    # dropbox will give a 409 conflict if the revision history was deleted
-                    # instead of raising an error, this gets converted to revs==None
-                    log.info("revs is none for %s %s", oid, path)
-                    continue
+                if otype == FILE:
+                    if revs is None:
+                        # dropbox will give a 409 conflict if the revision history was deleted
+                        # instead of raising an error, this gets converted to revs==None
+                        log.info("revs is none for %s %s", oid, path)
+                        continue
 
-                log.debug("revs %s", revs)
-                deleted_time = revs.server_deleted
-                if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
-                    log.error("revs %s has no deleted time?", revs)
-                    continue
-                latest_time = None
-                for ent in revs.entries:
-                    assert ent.server_modified is not None
-                    if ent.server_modified <= deleted_time and \
-                            (latest_time is None or ent.server_modified >= latest_time):
-                        oid = ent.id
-                        latest_time = ent.server_modified
-                if not oid:
-                    log.error(
-                        "skipping deletion %s, because we don't know the oid", res)
-                    continue
+                    log.debug("revs %s", revs)
+                    deleted_time = revs.server_deleted
+                    if deleted_time is None:  # not really sure why this happens, but this event isn't useful without it
+                        log.error("revs %s has no deleted time?", revs)
+                        continue
+                    latest_time = None
+                    for ent in revs.entries:
+                        assert ent.server_modified is not None
+                        if ent.server_modified <= deleted_time and \
+                                (latest_time is None or ent.server_modified >= latest_time):
+                            oid = ent.id
+                            latest_time = ent.server_modified
+                    if not oid:
+                        log.error(
+                            "skipping deletion %s, because we don't know the oid", res)
+                        continue
 
                 exists = False
-                otype = NOTKNOWN
                 ohash = None
             elif isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY

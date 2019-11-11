@@ -2,7 +2,6 @@ import logging
 import time
 import functools
 
-from hashlib import md5
 from base64 import b64encode
 from typing import Any, List, Dict, Callable, cast
 from unittest.mock import patch
@@ -43,16 +42,18 @@ def debug_args(*stuff: Any):
     if log.isEnabledFor(logging.DEBUG):
         r = _debug_arg(stuff)
         if len(r) == 1:
-            r = r[0]
-        return r
-    return "N/A"
+            return r[0]
+        return tuple(r)
+    if len(stuff) == 1:
+        return "N/A"
+    return tuple(["N/A"] * len(stuff))
 
 
 # useful for converting oids and pointer nubmers into digestible nonces
 def debug_sig(t: Any, size: int = 3) -> str:
     if not t:
         return "0"
-    return b64encode(md5(str(t).encode()).digest()).decode()[0:size]
+    return b64encode(abs(hash(str(t))).to_bytes(8, "big")).decode()[0:size]
 
 
 class disable_log_multiline:

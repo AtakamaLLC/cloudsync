@@ -153,6 +153,7 @@ def test_state_alter_oid(mock_provider):
     assert ent1 in state.changes
     state.update(LOCAL, FILE, path="456", oid="456", hash="456")
     ent2 = state.lookup_oid(LOCAL, "456")
+    assert ent2[LOCAL].changed
     assert ent2 in state.changes
     ent1[LOCAL].oid = "456"
     assert state.lookup_oid(LOCAL, "456") is ent1
@@ -160,6 +161,7 @@ def test_state_alter_oid(mock_provider):
     assert ent2 not in state.get_all()
     ent1[LOCAL].oid = "456"
     ent2[LOCAL].oid = "123"
+    assert ent2[LOCAL].changed
     assert state.lookup_oid(LOCAL, "123") is ent2
     assert ent2 in state.changes
 

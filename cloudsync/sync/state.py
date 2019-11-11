@@ -37,9 +37,10 @@ __all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRE
 
 
 class Exists(Enum):
-    UNKNOWN = None
-    EXISTS = True
-    TRASHED = False
+    UNKNOWN = "unknown"
+    EXISTS = "exists"
+    TRASHED = "trashed"
+    MISSING = "missing"
 
     def __bool__(self):
         raise ValueError("never bool enums")
@@ -48,6 +49,7 @@ class Exists(Enum):
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
+MISSING = Exists.MISSING
 
 
 # state of a single object
@@ -96,8 +98,10 @@ class SideState():
             xval = EXISTS
         elif val is None:
             xval = UNKNOWN
-        else:
+        elif type(val) is Exists:
             xval = cast(Exists, val)
+        else:
+            xval = Exists(val)
 
         if type(xval) != Exists:
             raise ValueError("use enum for exists")
@@ -124,7 +128,7 @@ class SideState():
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
 
     def needs_sync(self):
-        return self.changed and (
+        return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.path != self.sync_path or
                self.exists == TRASHED)
@@ -254,6 +258,13 @@ class SyncEntry:
             side_state.sync_path = side_dict['sync_path']
             side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
+            # back compat: 10/21/19
+            if side_dict['exists'] is None:
+                side_state.exists = UNKNOWN
+            if side_dict['exists'] is True:
+                side_state.exists = EXISTS
+            if side_dict['exists'] is False:
+                side_state.exists = TRASHED
             side_state.exists = side_dict['exists']
             side_state.temp_file = side_dict['temp_file']
             return side_state
@@ -321,8 +332,8 @@ class SyncEntry:
         return self[changed].path != self[changed].sync_path
 
     def is_creation(self, changed):
-        return (not self[other_side(changed)].oid or self[other_side(changed)].exists == TRASHED) \
-                and self[changed].path and self[changed].exists != TRASHED
+        return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
+                and self[changed].path and self[changed].exists == EXISTS
 
     def is_rename(self, changed):
         return (self[changed].sync_path and self[changed].path
@@ -332,11 +343,12 @@ class SyncEntry:
         for i in (LOCAL, REMOTE):
             if not self[i].changed:
                 continue
-            if self[i].path != self[i].sync_path:
+            if self[i].path != self[i].sync_path and self[i].oid:
                 return True
-            if self[i].hash != self[i].sync_hash:
+            if self[i].hash != self[i].sync_hash and self[i].oid:
                 return True
-        if self[LOCAL].exists != self[REMOTE].exists:
+        if self[LOCAL].exists != self[REMOTE].exists and \
+           self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
             return True
         return False
 
@@ -404,11 +416,8 @@ class SyncEntry:
             else:
                 return 0
 
-        def abbrev_bool(b, tup=('T', 'F', '?')):
-            idx = 1-int(bool(b))
-            if b is None:
-                idx = 2
-            return tup[idx]
+        def abbrev_exists(v):
+            return v.value[0].upper()
 
         def abbrev_equiv(a, b, table):
             assert len(table) == 5                  # quick check
@@ -423,8 +432,8 @@ class SyncEntry:
             else:
                 return table["mismatch"]
 
-        lexv = abbrev_bool(self[LOCAL].exists.value, ("E", "X", "?"))
-        rexv = abbrev_bool(self[REMOTE].exists.value, ("E", "X", "?"))
+        lexv = abbrev_exists(self[LOCAL].exists)
+        rexv = abbrev_exists(self[REMOTE].exists)
         abbrev_table = {
             "mismatch": "H",
             "leftonly": "<",
@@ -511,10 +520,10 @@ class SyncEntry:
         # do this one later
         self.priority += 1
 
-    def get_latest(self):
+    def get_latest(self, force=False):
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if max_changed > self[side]._last_gotten:
+            if force or max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
@@ -594,6 +603,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                             self._changeset.add(ent)
                 except Exception as e:
                     log.error("exception during deserialization %s", e)
+                    self._storage.delete(tag, eid)
             self._loading = False
         self.prioritize = prioritize
         if prioritize is None:
@@ -620,7 +630,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[REMOTE]._changed = False
                 self._changeset.discard(ent)
         elif key == "changed":
-            if val or ent[other_side(side)].changed:
+            if (val and ent[side].oid) or (ent[other_side(side)].changed and ent[other_side(side)].oid):
                 self._changeset.add(ent)
             else:
                 self._changeset.discard(ent)
@@ -683,7 +693,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             # changing directory also changes child paths
             for sub, relative in self.get_kids(prior_path, side):
                 new_path = provider.join(path, relative)
-                sub[side].path = new_path
                 if provider.oid_is_path:
                     # TODO: state should not do online hits esp from event manager
                     # either
@@ -694,6 +703,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     new_info = provider.info_path(new_path)
                     if new_info:
                         sub[side].oid = new_info.oid
+                sub[side].path = new_path
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
@@ -725,7 +735,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             self._paths[side][ent[side].path][oid] = ent
 
         if oid:
+            # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
+            if ent[side].changed or ent[other_side(side)].changed:
+                self._changeset.add(ent)
+        else:
+            # ent without oid doesn't go in changeset
+            if ent[side].changed and not ent[other_side(side)].changed:
+                self._changeset.discard(ent)
 
     def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]
@@ -853,7 +870,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self.data_id[data_tag] = self._storage.create(data_tag, data)
                 log.log(TRACE, "storage_update_data data CREATE %s %s", data_tag, data)
 
+    def pretty_log_state_table_diffs(self, header="table"):
+        try:
+            if log.isEnabledFor(TRACE):
+                with disable_log_multiline():
+                    log.log(TRACE, "%s\n%s", header, self.pretty_print(only_dirty=True))
+        except Exception:
+            pass  # logging shouldn't be the cause of other things breaking
+
     def storage_commit(self):
+        self.pretty_log_state_table_diffs()
         for ent in self._dirtyset:
             self._storage_update(ent)
         self._dirtyset.clear()
@@ -893,7 +919,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
             # this is only needed when shuffling
             # run test_cs_folder_conflicts_del 100 times or so
-            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists == TRASHED:
+            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists in (TRASHED, MISSING):
                 ent = prior_ent
                 ent.ignored = IgnoreReason.NONE
 
@@ -911,7 +937,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=True, otype=otype)
+        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype)
 
     def change(self, age):
         if not self._changeset:
@@ -962,12 +988,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return 0
         return 1
 
-    def pretty_print(self, use_sigs=True):
+    def pretty_print(self, use_sigs=True, only_dirty=False):
         ents: List[SyncEntry] = list()
         widths: List[int] = [len(x) for x in SyncState.headers]
+        if only_dirty:
+            all_ents = self._dirtyset
+        else:
+            all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
 
         e: SyncEntry
-        for e in self.get_all(discarded=True):  # allow conflicted to be printed
+        for e in all_ents:
             ents.append(e)
             for i, val in enumerate(e.pretty_summary(use_sigs=use_sigs)):
                 width = len(str(val))
@@ -982,7 +1012,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         found_ignored = False
         for e in sorted(ents, key=self.pretty_sort_key):
             if e.ignored != IgnoreReason.NONE and not found_ignored:
-                ret += "------\n"
+                if not only_dirty:
+                    ret += "------\n"
                 found_ignored = True
             ret += e.pretty(widths=widths, use_sigs=use_sigs) + "\n"
 
@@ -1063,8 +1094,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         log.debug("split: %s", defer_ent)
         log.debug("split: %s", replace_ent)
 
-        with disable_log_multiline():
-            log.log(TRACE, "SPLIT\n%s", self.pretty_print())
+        self.pretty_log_state_table_diffs(header="SPLIT")
 
         assert replace_ent[replace].oid
 
@@ -1072,18 +1102,25 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
     def unconditionally_get_latest(self, ent, i):
         if not ent[i].oid:
-            if ent[i].exists != TRASHED:
+            if ent[i].exists not in (TRASHED, MISSING):
                 ent[i].exists = UNKNOWN
             return
 
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
-            ent[i].exists = TRASHED
+            if ent[i].exists != TRASHED:
+                # we never got a trash event
+                ent[i].exists = MISSING
             return
 
         ent[i].exists = EXISTS
-        ent[i].hash = info.hash
+
+        if ent[i].hash != info.hash:
+            ent[i].hash = info.hash
+            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
+                ent[i].changed = time.time()
+
         ent[i].otype = info.otype
 
         if ent[i].otype == FILE:
@@ -1096,4 +1133,5 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[i].path != info.path:
             ent[i].path = info.path
-            self.update_entry(ent, oid=ent[i].oid, side=i, path=info.path)
+            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
+                ent[i].changed = time.time()

@@ -15,8 +15,13 @@ log = logging.getLogger(__name__)
 
 roots = ("/local", "/remote")
 
+
 class CloudSyncMixin(CloudSync, RunUntilHelper):
-    pass
+    def __init__(self, *ar, **kw):
+        super().__init__(*ar, **kw)
+        # default for tests is no aging, feel free to change
+        self.aging = 0
+
 
 @pytest.fixture(name="cs_storage")
 def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
@@ -472,13 +477,22 @@ def setup_remote_local(cs, *names, content=b'hello'):
 
     found = []
     ret = []
-    for name in names:
+    if type(content) is bytes:
+        content = [content]*len(names)
+
+    for i, name in enumerate(names):
+        is_dir = name.endswith("/")
+        name = name.strip("/")
+
         remote_path1 = "/remote/" + name
         local_path1 = "/local/" + name
         if "/" in name:
             local_dir1 = "/local/" + cs.providers[REMOTE].dirname(name)
             cs.providers[LOCAL].mkdir(local_dir1)
-        cs.providers[LOCAL].create(local_path1, BytesIO(content))
+        if is_dir:
+            cs.providers[LOCAL].mkdir(local_path1)
+        else:
+            cs.providers[LOCAL].create(local_path1, BytesIO(content[i]))
         found.append((REMOTE, remote_path1))
         ret.append((local_path1, remote_path1))
 
@@ -489,6 +503,7 @@ def setup_remote_local(cs, *names, content=b'hello'):
 
 # pass in local/remote pairs
 def get_infos(cs, *paths):
+    log.info("infos %s", paths)
     if type(paths[0]) is str:
         # user passed in even number of paths
         assert len(paths) % 2 == 0
@@ -591,7 +606,7 @@ def test_cs_create_delete_same_name_heavy(cs):
                 if linfo1:
                     cs.providers[LOCAL].delete(linfo1.oid)
             time.sleep(0.01)
-    
+
     def done():
         bio = BytesIO()
         rinfo = cs.providers[REMOTE].info_path(remote_path1)
@@ -1369,10 +1384,6 @@ def test_cursor(cs_storage):
 
     linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
-
     p1 = cs.providers[LOCAL]
     p2 = cs.providers[REMOTE]
     p1.current_cursor = None
@@ -1492,7 +1503,8 @@ def test_many_small_files_mkdir_perf(cs):
     assert abs(local_no_clear.call_count - local_clear.call_count) < 3
     assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
 
-@pytest.mark.parametrize("shuffle", [True, False], ids=["shuffled", "ordered"])
+
+@pytest.mark.parametrize("shuffle", range(5), ids=list("shuff%s" % i if i else "ordered" for i in range(5)))
 def test_cs_folder_conflicts_del(cs, shuffle):
     local_path1 = "/local/stuff1"
     local_path1_u = "/local/stuff1/under"
@@ -1536,14 +1548,16 @@ def test_cs_folder_conflicts_del(cs, shuffle):
 
     assert cs.state.changeset_len == 0
 
-    # either a deletion happend or a rename... whatever
+    # either a deletion happened or a rename... whatever
+    # but at least it doesn't time out or crash
 
     if cs.providers[REMOTE].info_path(remote_path2_u):
         assert cs.providers[LOCAL].info_path(local_path2_u)
         assert cs.providers[REMOTE].info_path(remote_path2)
     else:
         assert not cs.providers[LOCAL].info_path(local_path2_u)
-        assert not cs.providers[LOCAL].info_path(local_path2)
+        if not cs.providers[LOCAL].oid_is_path:
+            assert not cs.providers[LOCAL].info_path(local_path2)
 
 
 def test_api_hit_perf(cs):
@@ -1642,10 +1656,12 @@ def test_dir_delete_give_up(cs):
     assert ldir[0].path == local_dir
 
 
-def test_replace_dir(cs):
+@pytest.mark.parametrize("oidless", [True, False], ids=["oidless", "normal"])
+def test_replace_dir(cs, oidless):
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
 
+    remote.oidless_folder_trash_events = oidless
     local.mkdir("/local")
     remote.mkdir("/remote")
 
@@ -1694,6 +1710,9 @@ def test_replace_dir(cs):
     bad_linfo_file = local.info_path("/local/Test2/Excel.xlsx")
     assert bad_linfo_file is None
 
+    assert not any("conflicted" in x.path for x in local.listdir_path("/local/Test"))
+    assert not any("conflicted" in x.path for x in remote.listdir_path("/remote/Test"))
+
 
 def test_out_of_space(cs):
     local = cs.providers[LOCAL]
@@ -1706,11 +1725,11 @@ def test_out_of_space(cs):
 
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
-    cs.run(until=lambda: cs.smgr.in_backoff, timeout=0.25)
+    cs.run(until=lambda: cs.in_backoff, timeout=0.25)
 
     log.info("END TABLE\n%s", cs.state.pretty_print())
 
-    assert cs.smgr.in_backoff
+    assert cs.in_backoff
     assert cs.state.changeset_len
 
 
@@ -1724,25 +1743,28 @@ def test_backoff(cs, recover):
 
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
-    if not recover:
-        # prevent reconnection
-        remote.creds = None
     remote.disconnect()
+    remote.creds = None
 
+    cs.start(until=lambda: cs.smgr.in_backoff, timeout=1)
+    cs.wait()
+
+    log.info("START TABLE\n%s", cs.state.pretty_print())
     log.info("DISCONNECTED")
 
     if recover:
-        cs.run(until=lambda: not cs.smgr.state.changeset_len, timeout=0.25)
-    else:
-        cs.run(until=lambda: cs.smgr.in_backoff, timeout=0.25)
+        remote.creds = "ok"
+        log.info("RECONNECT %s", cs.smgr.in_backoff)
+        cs.start(until=lambda: not cs.smgr.in_backoff, timeout=1)
+        cs.wait()
 
     log.info("END TABLE\n%s", cs.state.pretty_print())
 
     if recover:
-        assert not cs.smgr.in_backoff
+        assert not cs.in_backoff
+        assert cs.state.changeset_len
     else:
         assert cs.smgr.in_backoff
-        assert cs.state.changeset_len
 
 
 def test_cs_prioritize(cs):
@@ -1862,7 +1884,8 @@ def test_hash_mess(cs, side_locked):
         with patch("cloudsync.tests.fixtures.mock_provider.CloudTemporaryError", new=_called):
             for locked in locks:
                 cs.providers[locked].locked_for_test.add(renamed_path[locked])
-            cs.run(until=lambda: _called.count > 0, timeout=1)  # type: ignore
+                log.info("lock set: %s", renamed_path[locked])
+            cs.run(until=lambda: _called.count > 0, timeout=2)  # type: ignore
             for locked in locks:
                 cs.providers[locked].locked_for_test.discard(renamed_path[locked])
 
@@ -2122,7 +2145,7 @@ def test_walk_carefully3(setup_offline_state):
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
 
-    cs.do()
+    cs.smgr.do()
 
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
@@ -2171,3 +2194,40 @@ def test_no_nsquare(cs):
 
     log.debug("APIC %s", apic)
     assert (apic[1] + apic[0]) < expect
+
+
+def test_two_level_rename(cs):
+    (local, remote) = cs.providers
+
+    ret = setup_remote_local(cs, "a/", "a/fa1", "a/fa2", "a/b/", "a/b/fb1", "a/b/fb2")
+
+    log.debug("setup ret == %s", ret)
+
+    (
+        (la, ra),
+        (la1, ra1),
+        (la2, ra2),
+        (lb, rb),
+        (lb1, rb1),
+        (lb2, rb1),
+    ) = get_infos(cs, ret)
+
+    
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    local.rename(lb.oid, "/local/a/c")
+    local.rename(la.oid, "/local/d")
+
+    cs.run(until=lambda: not cs.busy, timeout=3)
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    assert local.info_path("/local/d/c/fb1")
+    assert remote.info_path("/remote/d/c/fb1")
+    assert local.info_path("/local/d/c/fb2")
+    assert remote.info_path("/remote/d/c/fb2")
+
+    assert not any("conflicted" in e.path for e in local.walk("/local"))
+    assert not any("conflicted" in e.path for e in remote.walk("/remote"))
+
+

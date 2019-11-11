@@ -2,7 +2,10 @@ import os
 import logging
 from io import BytesIO
 from unittest.mock import patch
-from typing import Union, NamedTuple, Optional, Generator, TYPE_CHECKING, List, cast
+from typing import Union, Optional, Generator, TYPE_CHECKING, List, cast
+
+import threading
+import time
 
 import msgpack
 import pytest
@@ -269,6 +272,9 @@ def config_provider(request, provider_config):
     elif provider_config.name == "gdrive":
         from .providers.gdrive import gdrive_provider
         return gdrive_provider()
+    elif provider_config.name == "onedrive":
+        from .providers.onedrive import onedrive_provider
+        return onedrive_provider()
     elif provider_config.name == "dropbox":
         from .providers.dropbox import dropbox_provider
         return dropbox_provider()
@@ -276,7 +282,7 @@ def config_provider(request, provider_config):
         assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
 
-known_providers = ('gdrive', 'external', 'dropbox', 'mock')
+known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'onedrive')
 
 
 def configs_from_name(name):
@@ -374,6 +380,14 @@ def test_connect(provider):
     assert provider.connected
 
 
+def test_info_root(provider):
+    info = provider.info_path("/")
+
+    assert info
+    assert info.oid
+    assert info.path == "/"
+
+
 def test_create_upload_download(provider):
     dat = os.urandom(32)
 
@@ -394,6 +408,7 @@ def test_create_upload_download(provider):
 
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
+    assert info1.hash == provider.hash_data(data())
 
     assert provider.exists_path(dest)
 
@@ -459,13 +474,20 @@ def test_rename(provider):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
-   
     # move to sub
     dest = provider.temp_name("movy")
     sub_file_name = os.urandom(16).hex()
     sub_file_path3 = provider.join(sub_folder_path2, sub_file_name)
     info1 = provider.create(dest, data())
-    provider.rename(info1.oid, sub_file_path3)
+    new_oid = provider.rename(info1.oid, sub_file_path3)
+
+    # dup rename file
+    provider.rename(new_oid, sub_file_path3)
+
+    # dup rename folder
+    sfp2 = provider.info_path(sub_folder_path2)
+    provider.rename(sfp2.oid, sub_folder_path2)
+
 
 def test_mkdir(provider):
     dat = os.urandom(32)
@@ -541,14 +563,17 @@ def check_event_path(event: Event, provider, target_path):
 def test_event_basic(provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest2")
 
     provider.prime_events()
 
-    log.debug("create event")
+    log.debug("create events")
     info1 = provider.create(dest, temp, None)
+    info2 = provider.mkdir(dest2)
     assert info1 is not None  # TODO: check info1 for more things
 
     received_event = None
+    received_event2 = None
     event_count = 0
     done = False
 
@@ -564,9 +589,14 @@ def test_event_basic(provider):
             if e.path == dest:
                 received_event = e
                 event_count += 1
-                done = True
 
-    assert event_count == 1
+            if e.path == dest2:
+                received_event2 = e
+                event_count += 1
+
+            done = event_count == 2
+
+    assert done
     assert received_event is not None
     assert received_event.oid
     path = received_event.path
@@ -576,14 +606,18 @@ def test_event_basic(provider):
     assert received_event.mtime
     assert received_event.exists
     deleted_oid = received_event.oid
+    deleted_oid2 = received_event2.oid
+    path2 = provider.info_oid(received_event2.oid).path
 
     log.debug("delete event")
 
     provider.delete(oid=deleted_oid)
     provider.delete(oid=deleted_oid)  # Tests that deleting a non-existing file does not raise a FNFE
+    provider.delete(oid=deleted_oid2)  # Tests that deleting a non-existing file does not raise a FNFE
 
     received_event = None
-    for e in provider.events_poll(until=lambda: received_event is not None):
+    received_event2 = None
+    for e in provider.events_poll(until=lambda: received_event is not None and received_event2 is not None):
         log.debug("event %s", e)
         if e.exists and e.path is None:
             info2 = provider.info_oid(e.oid)
@@ -598,8 +632,11 @@ def test_event_basic(provider):
         log.debug("event %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
             received_event = e
+        if (not e.exists and e.oid == deleted_oid2) or (e.path and path2 in e.path):
+            received_event2 = e
 
     assert received_event is not None
+    assert received_event2 is not None
     assert received_event.oid
     assert not received_event.exists
     if received_event.path is not None:
@@ -721,6 +758,39 @@ def test_event_rename(provider):
         assert info1.oid in seen
 
 
+def test_event_longpoll(provider):
+    temp = BytesIO(os.urandom(32))
+    dest = provider.temp_name("dest")
+
+    provider.prime_events()
+
+    received_event = None
+
+    def waiter():
+        nonlocal received_event
+        timeout = time.monotonic() + provider.event_timeout
+        while time.monotonic() < timeout:
+            for e in provider.events_poll(until=lambda: received_event):
+                if e.exists:
+                    if not e.path:
+                        info = provider.info_oid(e.oid)
+                        if info:
+                            e.path = info.path
+
+                    if e.path == dest:
+                        received_event = e
+                        return
+
+    t = threading.Thread(target=waiter)
+    t.start()
+
+    log.debug("create event")
+    provider.create(dest, temp, None)
+
+    t.join(timeout=provider.event_timeout)
+
+    assert received_event
+
 def test_api_failure(provider):
     # assert that the cloud
     # a) uses an api function
@@ -738,6 +808,10 @@ def test_api_failure(provider):
 def test_file_not_found(provider):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
+    import faulthandler
+    import signal
+    import sys
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr)
     dat = os.urandom(32)
 
     def data():
@@ -1231,6 +1305,7 @@ def test_listdir(provider):
     contents = [x.name for x in provider.listdir(outer_oid)]
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
+    log.info("contents %s", contents)
     assert sorted(contents) == sorted(expected)
 
 
@@ -1401,11 +1476,14 @@ def test_large_file_support(provider):
 
 def test_special_characters(provider):
     fname = ""
+    additional_invalid_characters = getattr(provider, "additional_invalid_characters", "")
     for i in range(32, 127):
         char = str(chr(i))
         if char in (provider.sep, provider.alt_sep):
             continue
         if char in """<>:"/\\|?*""":
+            continue
+        if char in additional_invalid_characters:
             continue
         fname = fname + str(chr(i))
     fname = "/fn-" + fname
@@ -1432,6 +1510,7 @@ def test_special_characters(provider):
     assert dirinfo.oid == diroid
     newfname2 = provider.join(dirname, fname2)
     new_oid2 = provider.rename(new_oid, newfname2)
+    test_newfname2 = provider.info_oid(new_oid2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
 

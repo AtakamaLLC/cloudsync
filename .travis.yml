@@ -20,7 +20,13 @@ jobs:
       script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
-        - ./test_providers.sh
+        - ./test_providers.sh gdrive
+      python:
+        - '3.6'
+    - script:
+          # only run tests if the interface or any implementations change
+          # todo: move providers to their own individual repos/projects with a plugin model
+        - ./test_providers.sh "dropbox or onedrive"
       python:
         - '3.6'
     - stage: deploy
