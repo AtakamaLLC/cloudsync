@@ -8,7 +8,13 @@ httplib2
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+
 # dropbox provider
 dropbox
+
 # box provider
 boxsdk
+
+# onedrive provider
+# apparently onedrivesdk v2 is deprecated, so install the older one? Jeez. Plus v2 pkg fails with an error on install...
+onedrivesdk<2

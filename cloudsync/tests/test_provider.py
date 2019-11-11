@@ -272,6 +272,9 @@ def config_provider(request, provider_config):
     elif provider_config.name == "gdrive":
         from .providers.gdrive import gdrive_provider
         return gdrive_provider()
+    elif provider_config.name == "onedrive":
+        from .providers.onedrive import onedrive_provider
+        return onedrive_provider()
     elif provider_config.name == "dropbox":
         from .providers.dropbox import dropbox_provider
         return dropbox_provider()
@@ -282,7 +285,7 @@ def config_provider(request, provider_config):
         assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
 
-known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'box')
+known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'onedrive', 'box')
 
 
 def configs_from_name(name):
@@ -380,6 +383,14 @@ def test_connect(provider):
     assert provider.connected
 
 
+def test_info_root(provider):
+    info = provider.info_path("/")
+
+    assert info
+    assert info.oid
+    assert info.path == "/"
+
+
 def test_create_upload_download(provider):
     dat = os.urandom(32)
 
@@ -400,6 +411,7 @@ def test_create_upload_download(provider):
 
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
+    assert info1.hash == provider.hash_data(data())
 
     assert provider.exists_path(dest)
 
@@ -465,7 +477,6 @@ def test_rename(provider):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
-   
     # move to sub
     dest = provider.temp_name("movy")
     sub_file_name = os.urandom(16).hex()
@@ -800,6 +811,10 @@ def test_api_failure(provider):
 def test_file_not_found(provider):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
+    import faulthandler
+    import signal
+    import sys
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr)
     dat = os.urandom(32)
 
     def data():
@@ -1293,6 +1308,7 @@ def test_listdir(provider):
     contents = [x.name for x in provider.listdir(outer_oid)]
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
+    log.info("contents %s", contents)
     assert sorted(contents) == sorted(expected)
 
 
@@ -1436,11 +1452,14 @@ def test_large_file_support(provider):
 
 def test_special_characters(provider):
     fname = ""
+    additional_invalid_characters = getattr(provider, "additional_invalid_characters", "")
     for i in range(32, 127):
         char = str(chr(i))
         if char in (provider.sep, provider.alt_sep):
             continue
         if char in """<>:"/\\|?*""":
+            continue
+        if char in additional_invalid_characters:
             continue
         fname = fname + str(chr(i))
     fname = "/fn-" + fname
@@ -1467,6 +1486,7 @@ def test_special_characters(provider):
     assert dirinfo.oid == diroid
     newfname2 = provider.join(dirname, fname2)
     new_oid2 = provider.rename(new_oid, newfname2)
+    test_newfname2 = provider.info_oid(new_oid2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
 
