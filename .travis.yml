@@ -16,15 +16,14 @@ jobs:
       python:
         - '3.6'
         - '3.7'
-    - stage: integ1
+    - stage: integ
       script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
         - ./test_providers.sh gdrive
       python:
         - '3.6'
-    - stage: integ2
-      script:
+    - script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
         - ./test_providers.sh "dropbox or onedrive"
