@@ -12,13 +12,13 @@ from cloudsync.utils import debug_args
 
 from cloudsync.oauth import OAuthConfig
 
-from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError
-from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor
+from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError
+from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor, Event
 
 log = logging.getLogger(__name__)
 
 
-class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
+class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
 
@@ -89,6 +89,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
 
     def get_quota(self):
         user = self.client.user(user_id='me').get()
+
         logging.error(dir(user))
 
         res = {
@@ -142,7 +143,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
         if not self.connected:
             self.connect(self.__creds)
 
-    def _api(self, resource, method, *args, **kwargs):  # pylint: disable=arguments-differ
+    def _api(self, method, *args, **kwargs):  # pylint: disable=arguments-differ
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
 
         with self.mutex:
@@ -150,7 +151,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
                 raise CloudDisconnectedError("currently disconnected")
 
             try:
-                return getattr(self.client, method)(*args, **kwargs)
+                return getattr(self.client, method)(*args, **kwargs).get()
                 # TODO add an exception for when the key is expired
                 #       also create a provider test that verifies the behavior when the api_key goes bad
                 #       to verify that the callback for the refresh_token is called when it changes
@@ -178,16 +179,20 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
     def current_cursor(self) -> Cursor:
         pass
 
-    def events(self) -> Generator["Event", None, None]:
+    @current_cursor.setter
+    def current_cursor(self, val: Cursor) -> None:  # pylint: disable=no-self-use, unused-argument
+        pass
+
+    def events(self) -> Generator[Event, None, None]:
         pass
 
     def walk(self, path, since=None):
         pass
 
-    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
+    def upload(self, oid, file_like, metadata=None) -> OInfo:
         pass
 
-    def create(self, path, file_like, metadata=None) -> 'OInfo':
+    def create(self, path, file_like, metadata=None) -> OInfo:
         pass
 
     def download(self, oid, file_like):
@@ -215,7 +220,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes
         pass
 
     def info_path(self, path: str) -> Optional[OInfo]:
-        pass
+        return None
 
     def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         pass
