@@ -1378,6 +1378,33 @@ def test_rename_case_change(provider, otype):
         assert infopl.path == temp_nameu
 
 
+def test_report_info(provider):
+    temp_name = provider.temp_name()
+
+    u1 = provider.get_quota()["used"]
+
+    provider.create(temp_name, BytesIO(b"test"))
+
+    pinfo2 = provider.get_quota()
+
+    # note this may be memoized (gdrive does this internally)
+    # so there is no guarantee that the used != 0 afer create
+    # or that creating a file increases used
+    # so providers need to implement this *at least* for create
+    # otherwise this info is not helpful for uploads
+    # todo: more extensive provider requirements on cached quotas
+
+    assert pinfo2['used'] > 0
+    assert pinfo2['limit'] > 0
+    assert pinfo2['used'] > u1
+
+    login = pinfo2.get('login')
+
+    # most providers give this info, but for some it's not relevant, so just limit this to the ones that do
+    if provider.name in ("gdrive", "dropbox", "mock"):
+        assert login
+
+
 def test_quota_limit(mock_provider):
     mock_provider.set_quota(1024)
     mock_provider.create("/foo", BytesIO(b'0' * 1024))
