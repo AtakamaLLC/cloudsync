@@ -5,15 +5,24 @@ from ..tests.fixtures.mock_provider import MockProvider
 
 try:
     from .dropbox import DropboxProvider
-except Exception:
-    pass
+except Exception as e:
+    ex = e
+
+    def DropboxProvider(*a, **k):
+        raise ex
 
 try:
     from .onedrive import OneDriveProvider
-except Exception:
-    pass
+except Exception as e:
+    ex = e
+
+    def OneDriveProvider(*a, **k):
+        raise ex
 
 try:
     from .gdrive import GDriveProvider
-except Exception:
-    pass
+except Exception as e:
+    ex = e
+
+    def GDriveProvider(*a, **k):
+        raise ex
