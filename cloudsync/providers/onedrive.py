@@ -92,10 +92,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
 
-        try:
-            asyncio.get_event_loop()
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
+        self.ensure_event_loop()
 
         client = onedrivesdk.get_default_client(
             client_id=self._oauth_config.app_id, scopes=self._scopes)
@@ -113,6 +110,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                  }
 
         return creds
+
+    @staticmethod
+    def ensure_event_loop():
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
 
     def _get_url(self, api_path):
         api_path = api_path.lstrip("/")
@@ -186,6 +190,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
             assert creds.get("refresh")
 
+            self.ensure_event_loop()
+            
             with self._api(needs_client=False):
                 http_provider = onedrivesdk.HttpProvider()
                 auth_provider = onedrivesdk.AuthProvider(
