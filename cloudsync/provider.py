@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import re
+import os
 import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
@@ -42,7 +43,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         #   that is unique to each login, so that connecting to this provider
         #   under multiple userid's will produce different connection_id's. One
         #   suggestion is to just set the connection_id to the user's login_id
-        self.connection_id = "connected"
+        # if connection ids are reused, it's possible that existing cursors can be loaded
+        # for different providers.
+        # this could cause issues if cursors are not uuids
+        self.connection_id = os.urandom(16).hex()
         self.__creds = creds
 
     def reconnect(self):
