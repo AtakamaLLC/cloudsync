@@ -100,6 +100,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         auth_url = client.auth_provider.get_auth_url(self._redirect_uri)
 
         # this will block until we have the code
+        # this is not interruptable and must be replaced
+        # todo: replace with more standard oauth lib
         auth_code = GetAuthCodeServer.get_auth_code(auth_url, self._redirect_uri)
 
         client.auth_provider.authenticate(auth_code, self._redirect_uri, self._oauth_config.app_secret)

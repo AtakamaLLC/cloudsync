@@ -160,7 +160,7 @@ class DropboxProvider(Provider):
 
         return url
 
-    def interrupt_oauth(self):
+    def interrupt_auth(self):
         if not self._oauth_config.manual_mode:
             self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
         self._flow = None
