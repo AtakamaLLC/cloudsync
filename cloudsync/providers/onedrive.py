@@ -172,7 +172,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         res = {
             'used': dat["quota"]["total"]-dat["quota"]["remaining"],
-            'total': dat["quota"]["total"],
+            'limit': dat["quota"]["total"],
             'login': dat["owner"]["user"]["displayName"],
             'uid': dat['id']
         }

@@ -33,10 +33,10 @@ class EventManager(Runnable):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
         assert self.provider.connection_id
-        self.label = f"{self.provider.name}:{self.provider.connection_id}"
+        self.label: str = f"{self.provider.name}:{self.provider.connection_id}"
         self.events = Muxer(provider.events, restart=True)
-        self.state = state
-        self.side = side
+        self.state: 'SyncState' = state
+        self.side: int = side
         self._cursor_tag: str = self.label + "_cursor"
 
         self.walk_one_time = None
