@@ -1,7 +1,7 @@
 import os
 import random
 import pytest
-from cloudsync.exceptions import CloudFileNotFoundError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudTokenError
 from cloudsync.providers.gdrive import GDriveProvider
 
 
@@ -46,7 +46,7 @@ def cloudsync_provider():
     gdrive_provider()
 
 
-def connect_test(want_oauth: bool):
+def connect_test(want_oauth: bool, interrupt=True):
     creds = gdrive_creds()
     if not creds:
         pytest.skip('requires gdrive token')
@@ -54,6 +54,11 @@ def connect_test(want_oauth: bool):
         creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
     gd = GDriveProvider(app_id=app_id(), app_secret=app_secret())
+    if interrupt:
+        assert want_oauth
+        import time
+        import threading
+        threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()
     gd.connect(creds)
     assert gd.client
     gd.get_quota()
@@ -72,3 +77,8 @@ def test_connect():
 @pytest.mark.manual
 def test_oauth_connect():
     connect_test(True)
+
+@pytest.mark.manual
+def test_oauth_interrup():
+    with pytest.raises(CloudTokenError):
+        connect_test(True, interrupt=True)

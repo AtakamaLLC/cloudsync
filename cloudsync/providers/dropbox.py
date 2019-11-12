@@ -161,10 +161,11 @@ class DropboxProvider(Provider):
         return url
 
     def interrupt_auth(self):
-        if not self._oauth_config.manual_mode:
+        log.error("oauth failure, interrupted")
+        self._oauth_done.set()
+        if not self._oauth_config.manual_mode and self._oauth_config.oauth_redir_server:
             self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
         self._flow = None
-        self._oauth_done.clear()
 
     def _on_oauth_success(self, auth_dict):
         if auth_dict and 'state' in auth_dict and isinstance(auth_dict['state'], list):
@@ -226,7 +227,9 @@ class DropboxProvider(Provider):
             if not self.client:
                 if creds:
                     self.__creds = creds
-                api_key = creds.get('key', None)
+                    api_key = creds.get('key', None)
+                else:
+                    api_key = None
 
                 if not api_key:
                     raise CloudTokenError()

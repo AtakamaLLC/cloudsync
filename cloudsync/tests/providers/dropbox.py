@@ -51,7 +51,7 @@ def cloudsync_provider():
     return dropbox_provider()
 
 
-def connect_test(want_oauth: bool, creds=None):
+def connect_test(want_oauth: bool, creds=None, interrupt=False):
     if creds is None:
         creds = dropbox_creds()
     # if not creds:
@@ -65,6 +65,11 @@ def connect_test(want_oauth: bool, creds=None):
     except CloudTokenError:
         if not want_oauth:
             raise
+
+        if interrupt:
+            import time
+            import threading
+            threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()
         creds = gd.authenticate()
         gd.connect(creds)
 
@@ -76,7 +81,6 @@ def connect_test(want_oauth: bool, creds=None):
             gd.delete(info.oid)
     except CloudFileNotFoundError:
         pass
-    return gd.api_key
 
 
 def test_connect():
@@ -86,6 +90,12 @@ def test_connect():
 @pytest.mark.manual
 def test_oauth_connect():
     connect_test(True)
+
+
+@pytest.mark.manual
+def test_oauth_interrup():
+    with pytest.raises(CloudTokenError):
+        connect_test(True, interrupt=True)
 
 
 @pytest.mark.manual
