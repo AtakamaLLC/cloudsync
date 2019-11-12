@@ -20,6 +20,7 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
     def log_message(self, unused_format, *args):
         pass
 
+
 class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
     pass
 
@@ -113,6 +114,7 @@ class ApiServer:
         """Get my ip address"""
         return self.__server.server_name
 
+
     def uri(self, path):
         """Make a URI pointing at myself"""
         if path[0] == "/":
@@ -128,6 +130,7 @@ class ApiServer:
             pass
 
     def __del__(self):
+        log.debug("automatically shutting down")
         self.shutdown()
 
     def shutdown(self):
@@ -144,7 +147,12 @@ class ApiServer:
     def __call__(self, env, start_response):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
         with self.__shutdown_lock:
             if self.__shutting_down:
-                raise ConnectionAbortedError('Cannot handle request while shutting down')
+                url = env.get('PATH_INFO', '/')
+                log.error("Ignoring URI hit during shutdown %s", url)
+                start_response("500 Aborted", [('Content-Type', 'text/plain')])
+                yield bytes("Aborted", "utf-8")
+                return
+
             content = b"{}"
             length = env.get("CONTENT_LENGTH", 0)
             if length:
