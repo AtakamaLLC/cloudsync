@@ -23,9 +23,9 @@ import arrow
 # from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 # from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
-import onedrivesdk
-from onedrivesdk.helpers import GetAuthCodeServer
-from onedrivesdk.error import OneDriveError
+import onedrivesdk_fork as onedrivesdk
+from onedrivesdk_fork.helpers import GetAuthCodeServer
+from onedrivesdk_fork.error import OneDriveError
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
