@@ -561,8 +561,8 @@ def check_event_path(event: Event, provider, target_path):
             if event.exists:
                 raise
 
-## event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 
+# event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 def test_event_basic(provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
@@ -1488,6 +1488,7 @@ def test_special_characters(provider):
     new_oid2 = provider.rename(new_oid, newfname2)
     test_newfname2 = provider.info_oid(new_oid2)
     newfname2info = provider.info_path(newfname2)
+    assert newfname2info
     assert newfname2info.oid == new_oid2
 
 
