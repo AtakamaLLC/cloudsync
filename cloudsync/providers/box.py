@@ -19,7 +19,7 @@ from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo
 from cloudsync.oauth import OAuthConfig
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudException
+    CloudFileExistsError, CloudException, CloudCursorError
 from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor, Event
 
 log = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
 
+        self.__cursor = None
         self.__client = None
         self.api_key = None
         self.refresh_token = None
@@ -228,15 +229,26 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     @property
     def latest_cursor(self):
-        raise NotImplementedError()
+        with self._api() as client:
+            res = str(client.events().get_latest_stream_position())
+            if res:
+                return res
+            else:
+                return None
 
     @property
     def current_cursor(self) -> Cursor:
-        raise NotImplementedError()
+        if not self.__cursor:
+            self.__cursor = self.latest_cursor
+        return self.__cursor
 
     @current_cursor.setter
     def current_cursor(self, val: Cursor) -> None:  # pylint: disable=no-self-use, unused-argument
-        raise NotImplementedError
+        if val is None:
+            val = self.latest_cursor
+        if not isinstance(val, str) and val is not None:
+            raise CloudCursorError(val)
+        self.__cursor = val
 
     def events(self) -> Generator[Event, None, None]:
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
