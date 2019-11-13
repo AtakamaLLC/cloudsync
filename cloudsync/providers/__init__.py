@@ -8,7 +8,7 @@ try:
 except Exception as e:
     ex = e
 
-    def DropboxProvider(*a, **k):
+    def DropboxProvider(*a, **k):           # type: ignore
         raise ex
 
 try:
@@ -16,7 +16,7 @@ try:
 except Exception as e:
     ex = e
 
-    def OneDriveProvider(*a, **k):
+    def OneDriveProvider(*a, **k):          # type: ignore
         raise ex
 
 try:
@@ -24,5 +24,5 @@ try:
 except Exception as e:
     ex = e
 
-    def GDriveProvider(*a, **k):
+    def GDriveProvider(*a, **k):            # type: ignore
         raise ex
