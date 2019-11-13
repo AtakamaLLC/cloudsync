@@ -15,13 +15,7 @@ import urllib.parse
 import requests
 
 import arrow
-# from googleapiclient.discovery import build   # pylint: disable=import-error
-# from googleapiclient.errors import HttpError  # pylint: disable=import-error
-# from httplib2 import Http, HttpLib2Error
-# from oauth2client import client         # pylint: disable=import-error
-# from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
-# from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
-# from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
+import webbrowser
 
 import onedrivesdk
 from onedrivesdk.helpers import GetAuthCodeServer
@@ -56,6 +50,9 @@ class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-metho
         super().__init__(*a, **kws)
         self.pid = pid
 
+def open_url(url):
+    webbrowser.open(url)
+
 
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
@@ -88,14 +85,27 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     # noinspection PyProtectedMember
     def authenticate(self):  # One Drive
-        assert self._oauth_config.app_id
+        if not self._oauth_config.app_id:
+            raise CloudTokenError("app id not set")
 
         log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
 
         self.ensure_event_loop()
 
+        authorization_base_url = "https://login.live.com/oauth20_authorize.srf"
+        token_url = "https://login.live.com/oauth20_token.srf"i
+        session = OAuth2Session(self.self._oauth_config.app_id, 
+                scope=self._scopes, redirect_uri=self._redirect_uri)
+
         client = onedrivesdk.get_default_client(
             client_id=self._oauth_config.app_id, scopes=self._scopes)
+
+        authorization_url, state = client.authorization_url(authorization_base_url)
+
+        token = outlook.fetch_token(token_url,client_secret=client_secret,authorization_response=redirect_response)
+
+
+        from requests_oauthlib import OAuth2Session
 
         auth_url = client.auth_provider.get_auth_url(self._redirect_uri)
 
@@ -186,11 +196,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def connect(self, creds):
         if not self.__client:
+            if not creds:
+                raise CloudTokenError("no credentials")
             log.debug('Connecting to One Drive')
             assert self._oauth_config.app_id
             assert self._oauth_config.app_secret
-
-            assert creds.get("refresh")
+            if not creds.get("refresh"):
+                raise CloudTokenError("no refresh token, refusing connection")
 
             self.ensure_event_loop()
             

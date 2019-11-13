@@ -3,7 +3,7 @@ import pytest
 import random
 
 from cloudsync.providers import OneDriveProvider
-from cloudsync.exceptions import CloudFileNotFoundError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudTokenError
 from cloudsync.oauth import OAuthConfig
 
 def onedrive_creds():
@@ -50,6 +50,15 @@ def test_oauth_connect():
     prov.connect(creds)
     assert prov.connected
     prov.get_quota()
+
+@pytest.mark.manual
+def test_oauth_interrup():
+    prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+    import time
+    import threading
+    threading.Thread(target=lambda: (time.sleep(0.5), prov.interrupt_auth()), daemon=True).start()
+    with pytest.raises(CloudTokenError):
+        creds = prov.authenticate()
 
 def test_env_connect():
     prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
