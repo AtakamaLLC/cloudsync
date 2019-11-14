@@ -29,11 +29,14 @@ def bad_dropbox_creds():
 
     return creds
 
+
 def app_id():
     return os.environ.get("DROPBOX_APP_ID", None)
 
 def app_secret():
     return os.environ.get("DROPBOX_APP_SECRET", None)
+
+PORT_RANGE = (52400, 54250)
 
 def dropbox_provider():
     cls = DropboxProvider
@@ -43,7 +46,7 @@ def dropbox_provider():
     cls.event_sleep = 2             # type: ignore
     cls.creds = dropbox_creds()     # type: ignore
 
-    return cls(app_id=app_id(), app_secret=app_secret())
+    return cls(OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE))
 
 
 @pytest.fixture
@@ -59,7 +62,7 @@ def connect_test(want_oauth: bool, creds=None, interrupt=False):
     if want_oauth:
         creds.pop("key", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = DropboxProvider(app_id=app_id(), app_secret=app_secret())
+    gd = dropbox_provider()
     try:
         gd.connect(creds)
     except CloudTokenError:

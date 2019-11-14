@@ -43,6 +43,9 @@ def onedrive_provider():
 
 # this seems generic enough now it could use a provider class fixture and be moved to the provider tests
 
+def onedrive_oauth_config():
+    return OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE)
+
 @pytest.mark.manual
 def test_oauth_connect():
     prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))

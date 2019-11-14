@@ -16,6 +16,8 @@ import requests
 
 log = logging.getLogger(__name__)
 
+### GENERIC THREADED API SERVER
+
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
     def log_message(self, unused_format, *args):
         pass
@@ -115,11 +117,12 @@ class ApiServer:
         return self.__server.server_name
 
 
-    def uri(self, path):
+    def uri(self, path="/", hostname=None):
         """Make a URI pointing at myself"""
         if path[0] == "/":
             path = path[1:]
-        uri = "http://" + self.__addr + ":" + str(self.port()) + "/" + path
+        hostname = hostname or self.__addr
+        uri = "http://" + hostname + ":" + str(self.port()) + "/" + path
         return uri
 
     def serve_forever(self):

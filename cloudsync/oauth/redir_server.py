@@ -3,7 +3,7 @@ import sys
 import socket
 import threading
 import errno
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, Union, Tuple
 # from src import config
 from .apiserver import ApiServer
 
@@ -27,23 +27,32 @@ class OAuthBadTokenException(Exception):
 
 
 class OAuthRedirServer:
-    PORT_MIN = 52400
-    PORT_MAX = 52450
     GUI_TIMEOUT = 15
 
-    def __init__(self, *, html_generator: Callable[[bool, str], str] = None):
+    def __init__(self, *, html_generator: Callable[[bool, str], str] = None, 
+            port_range: Tuple[int, int] = None, 
+            host_name: str = None):
         self.__html_response_generator = html_generator
+        self.__port_range = port_range
+
+        # generally 127.0.0.1 is better than "localhost", since it cannot
+        # be accidentally or malicuously overridden in a config file
+        # however, some providers (Onedrive) do not allow it
+
+        self.__host_name = host_name or "127.0.0.1"
+
         self.__on_success: Optional[Callable[[Any], None]] = None
         self.__on_failure: Optional[Callable[[str], None]] = None
         self.__api_server: Optional[ApiServer] = None
         self.__thread: Optional[threading.Thread] = None
         self.__running = False
+        self.event = threading.Event()
 
     @property
     def running(self):
         return self.__running
 
-    def run(self, on_success: Callable[[Any], None], on_failure: Callable[[str], None], use_predefined_ports=False):
+    def run(self, on_success: Callable[[Any], None], on_failure: Callable[[str], None]):
         if self.__running:
             raise RuntimeError('OAuth server was run() twice')
         if not on_success:
@@ -53,16 +62,21 @@ class OAuthRedirServer:
         self.__on_success = on_success
         self.__on_failure = on_failure
 
+        self.event.clear()
         log.debug('Creating oauth redir server')
         self.__running = True
-        if use_predefined_ports:
-            # Some providers (Dropbox) don't allow us to just use localhost
+        if self.__port_range:
+            try:
+                (self.port_min, self.port_max) = self.__port_range
+            except TypeError:
+                pass
+            # Some providers (Dropbox, Onedrive) don't allow us to just use localhost
             #  redirect. For these providers, we define a range of
-            #  127.0.0.1:(PORT_MIN..PORT_MAX) as valid redir URLs
-            for port in range(self.PORT_MIN, self.PORT_MAX):
+            #  host_name:(port_min, port_max) as valid redir URLs
+            for port in range(self.port_min, self.port_max):
                 try:
                     if _is_windows():
-                        # Windows is dumb and will be weird if we just try to
+                        # Windows will be weird if we just try to
                         #  connect to the port directly. Check to see if the
                         #  port is responsive before claiming it as our own
                         try:
@@ -70,7 +84,6 @@ class OAuthRedirServer:
                             continue
                         except socket.timeout:
                             pass
-
                     log.debug('Attempting to start api server on port %d', port)
                     self.__api_server = ApiServer('127.0.0.1', port)
                     break
@@ -79,9 +92,9 @@ class OAuthRedirServer:
         else:
             self.__api_server = ApiServer('127.0.0.1', 0)
         if not self.__api_server:
-            raise OSError(errno.EADDRINUSE, "Unable to open any port in range 52400-52405")
+            raise OSError(errno.EADDRINUSE, "Unable to open any port in range %s-%s" % (self.port_min, (self.port_max)))
 
-        self.__api_server.add_route('/auth/', self.auth_redir_success, content_type='text/html')
+        self.__api_server.add_route('/', self.auth_redir_success, content_type='text/html')
         self.__api_server.add_route('/favicon.ico', lambda x, y: "", content_type='text/html')
 
         self.__thread = threading.Thread(target=self.__api_server.serve_forever,
@@ -113,23 +126,32 @@ class OAuthRedirServer:
     def auth_success(self):
         if self.__html_response_generator:
             return self.__html_response_generator(True, '')
+        self.event.set()
         return "OAuth Success"
 
     def auth_failure(self, msg):
         if self.__html_response_generator:
             return self.__html_response_generator(False, msg)
+        self.event.set()
         return "OAuth Failure:" + msg
 
     def shutdown(self):
         if self.__api_server and self.__running:
-            self.__api_server.shutdown()
+            try:
+                self.__api_server.shutdown()
+            except Exception:
+                log.exception("failed to shutdown")
             self.__running = False
             self.__on_success = None
             self.__on_failure = None
+        self.event.set()
         self.__thread = None
 
-    def uri(self, *args, **kwargs):
-        return self.__api_server.uri(*args, **kwargs)
+    def wait(self):
+        self.event.wait()
+
+    def uri(self):
+        return self.__api_server.uri("/", self.__host_name)
 
     def port(self):
         return self.__api_server.port()

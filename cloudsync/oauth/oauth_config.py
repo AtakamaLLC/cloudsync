@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 from .redir_server import OAuthRedirServer
 
@@ -11,27 +11,43 @@ log = logging.getLogger(__name__)
 # applications can derive from this class and provide appropriate defaults
 
 class OAuthConfig:
-    def __init__(self, *, app_id: str = None, app_secret: str = None, manual_mode: bool = False, oauth_redir_server: Optional[OAuthRedirServer] = None):
+    def __init__(self, *, app_id: str, app_secret: str, 
+            manual_mode: bool = False, 
+            redirect_server: Optional[OAuthRedirServer] = None, 
+            port_range: Tuple[int, int] = None,
+            host_name: str = None):
         """
         There are two ways to create an OAuthConfig object: by providing a OAuthRedirServer or by providing the
-        success and failure callbacks, as well as changing the `use_predefined_ports` parameter if desired.
-        :param manual_mode:
-        :param oauth_redir_server:
+        success and failure callbacks, as well as the port and host configs
+        :param app_id          
+        :param app_secret          
+        :param manual_mode          
+        :param redirect_server (if none, one will be created for you)
+        :param port_range (defaults to 'any port')
+        :param host_name (defaults to 127.0.0.1)
         """
 
         self.app_id = app_id
         self.app_secret = app_secret
-
         self.manual_mode = manual_mode
-        self._oauth_redir_server = oauth_redir_server
-        if self.manual_mode and self._oauth_redir_server:
+        self._redirect_server = redirect_server
+
+        if self.manual_mode and self._redirect_server:
             raise ValueError('Cannot use both manual mode and an oauth server')
-        if not self.manual_mode and not self._oauth_redir_server:
-            self._oauth_redir_server = OAuthRedirServer(html_generator=self._gen_html_response)
+
+        if not self.manual_mode and not self._redirect_server:
+            self._redirect_server = OAuthRedirServer(html_generator=self._gen_html_response, 
+                                                        port_range=port_range, host_name=host_name)
+
+    def wait():
+        self._redirect_server.wait()
+
+    def shutdown():
+        self._redirect_server.shutdown()
 
     @property
-    def oauth_redir_server(self) -> Optional[OAuthRedirServer]:
-        return self._oauth_redir_server
+    def redirect_uri(self) -> str:
+        return self._redirect_server.uri()
 
     def _gen_html_response(self, success: bool, err_msg: str):
         if success:
