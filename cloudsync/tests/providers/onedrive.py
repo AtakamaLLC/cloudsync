@@ -44,11 +44,11 @@ def onedrive_provider():
 # this seems generic enough now it could use a provider class fixture and be moved to the provider tests
 
 def onedrive_oauth_config():
-    return OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE)
+    return OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE, host_name="localhost")
 
 @pytest.mark.manual
 def test_oauth_connect():
-    prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+    prov = onedrive_provider()
     creds = prov.authenticate()
     prov.connect(creds)
     assert prov.connected
@@ -56,7 +56,7 @@ def test_oauth_connect():
 
 @pytest.mark.manual
 def test_oauth_interrup():
-    prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+    prov = onedrive_provider()
     import time
     import threading
     threading.Thread(target=lambda: (time.sleep(0.5), prov.interrupt_auth()), daemon=True).start()
@@ -64,7 +64,7 @@ def test_oauth_interrup():
         creds = prov.authenticate()
 
 def test_env_connect():
-    prov = OneDriveProvider(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
+    prov = onedrive_provider()
     creds = onedrive_creds()
     prov.connect(creds)
     assert prov.connected

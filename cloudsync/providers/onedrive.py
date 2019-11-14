@@ -17,9 +17,9 @@ import requests
 import arrow
 import webbrowser
 
-import onedrivesdk
-from onedrivesdk.helpers import GetAuthCodeServer
-from onedrivesdk.error import OneDriveError
+import onedrivesdk_fork as onedrivesdk
+from onedrivesdk_fork.helpers import GetAuthCodeServer
+from onedrivesdk_fork.error import OneDriveError
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \

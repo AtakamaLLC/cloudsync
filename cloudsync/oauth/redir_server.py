@@ -147,10 +147,11 @@ class OAuthRedirServer:
         self.event.set()
         self.__thread = None
 
-    def wait(self):
-        self.event.wait()
+    def wait(self, timeout=None):
+        self.event.wait(timeout=timeout)
 
     def uri(self):
+        log.error(self.__host_name)
         return self.__api_server.uri("/", self.__host_name)
 
     def port(self):

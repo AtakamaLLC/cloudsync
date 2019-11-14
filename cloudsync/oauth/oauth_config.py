@@ -36,13 +36,17 @@ class OAuthConfig:
             raise ValueError('Cannot use both manual mode and an oauth server')
 
         if not self.manual_mode and not self._redirect_server:
+            log.error("HERE!!! %s %s", host_name, port_range)
             self._redirect_server = OAuthRedirServer(html_generator=self._gen_html_response, 
                                                         port_range=port_range, host_name=host_name)
 
-    def wait():
-        self._redirect_server.wait()
+    def start_server(self, *, on_success, on_failure):
+        self._redirect_server.run(on_success=on_success, on_failure=on_failure)
 
-    def shutdown():
+    def wait(self, timeout=None):
+        self._redirect_server.wait(timeout=Timeout)
+
+    def shutdown(self):
         self._redirect_server.shutdown()
 
     @property
