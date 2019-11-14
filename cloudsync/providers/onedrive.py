@@ -12,13 +12,12 @@ import hashlib
 import json
 from typing import Generator, Optional, List, Dict, Any
 import urllib.parse
+import webbrowser
 import requests
 
 import arrow
-import webbrowser
 
 import onedrivesdk_fork as onedrivesdk
-from onedrivesdk_fork.helpers import GetAuthCodeServer
 from onedrivesdk_fork.error import OneDriveError
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
@@ -213,7 +212,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                             refresh_token=creds.get("refresh"),
                             access_token=creds.get("access", None),
                             redirect_uri=self._redirect_uri,  # pylint: disable=protected-access
-                            auth_server_url=self._token_url,
+                            auth_server_url=self._token_url,  # pylint: disable=protected-access
                             client_id=self._oauth_config.app_id,  # pylint: disable=protected-access
                             client_secret=self._oauth_config.app_secret,  # pylint: disable=protected-access
                         )

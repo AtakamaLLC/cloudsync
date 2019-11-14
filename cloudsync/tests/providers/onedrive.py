@@ -57,7 +57,7 @@ def test_oauth_interrup():
     prov = onedrive_provider()
     import time
     import threading
-    threading.Thread(target=lambda: (time.sleep(0.5), prov.interrupt_auth()), daemon=True).start()
+    threading.Thread(target=lambda: (time.sleep(0.5), prov.interrupt_auth()), daemon=True).start()   # type: ignore
     with pytest.raises(CloudTokenError):
         creds = prov.authenticate()
 

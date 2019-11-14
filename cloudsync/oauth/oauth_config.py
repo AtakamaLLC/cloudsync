@@ -1,9 +1,9 @@
 import logging
 from typing import Optional, Tuple
 import webbrowser
+from requests_oauthlib import OAuth2Session
 
 from .redir_server import OAuthRedirServer
-from requests_oauthlib import OAuth2Session
 
 __all__ = ["OAuthConfig"]
 
@@ -15,7 +15,8 @@ log = logging.getLogger(__name__)
 # this class delibarately not strict, since it can contain provider-specific configuration
 # applications can derive from this class and provide appropriate defaults
 
-class OAuthError(Exception): pass
+class OAuthError(Exception): 
+    pass
 
 class OAuthToken:
     def __init__(self, data):
@@ -72,15 +73,15 @@ class OAuthConfig:
         """
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)
-        self.authorization_url, state = self._session.authorization_url(auth_url)
+        self.authorization_url, _unused_state = self._session.authorization_url(auth_url)
         log.debug("start oauth url %s, redir %s, appid %s", self.authorization_url, self.redirect_uri, self.app_id)
         webbrowser.open(self.authorization_url)
 
-    def wait_auth(self, token_url, **kwargs):
+    def wait_auth(self, token_url, timeout=None, **kwargs):
         """
         Returns an OAuthToken object, or raises a OAuthError 
         """
-       if not self.wait_success():
+        if not self.wait_success(timeout):
             if self.failure_info:
                 raise OAuthError(self.failure_info)
             raise OAuthError("Oauth interrupted")
@@ -147,8 +148,8 @@ class OAuthConfig:
             return self.failure_message(err_msg)
 
     # override this to save creds on refresh
-    def token_changed(self, creds: OAuthToken):
-        ....
+    def token_changed(self, creds: OAuthToken):     # pylint: disable=unused-argument, no-self-use
+        ...
 
     # override this to make a nicer message on success
     @staticmethod

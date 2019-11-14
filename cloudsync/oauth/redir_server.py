@@ -3,7 +3,7 @@ import sys
 import socket
 import threading
 import errno
-from typing import Callable, Any, Optional, Union, Tuple
+from typing import Callable, Any, Optional, Tuple
 # from src import config
 from .apiserver import ApiServer
 
@@ -18,7 +18,7 @@ __all__ = ['OAuthRedirServer']
 def _is_windows():
     return sys.platform in ("win32", "cygwin")
 
-class OAuthRedirServer:
+class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
     GUI_TIMEOUT = 15
 
     def __init__(self, *, html_generator: Callable[[bool, str], str] = None, 
@@ -39,7 +39,9 @@ class OAuthRedirServer:
         self.__thread: Optional[threading.Thread] = None
         self.__running = False
         self.event = threading.Event()
-
+        self.success_code = None
+        self.failure_info = None
+        
     @property
     def running(self):
         return self.__running
@@ -57,13 +59,13 @@ class OAuthRedirServer:
         self.__running = True
         if self.__port_range:
             try:
-                (self.port_min, self.port_max) = self.__port_range
+                (port_min, port_max) = self.__port_range
             except TypeError:
                 pass
             # Some providers (Dropbox, Onedrive) don't allow us to just use localhost
             #  redirect. For these providers, we define a range of
             #  host_name:(port_min, port_max) as valid redir URLs
-            for port in range(self.port_min, self.port_max):
+            for port in range(port_min, port_max):
                 try:
                     if _is_windows():
                         # Windows will be weird if we just try to
@@ -82,7 +84,7 @@ class OAuthRedirServer:
         else:
             self.__api_server = ApiServer('127.0.0.1', 0)
         if not self.__api_server:
-            raise OSError(errno.EADDRINUSE, "Unable to open any port in range %s-%s" % (self.port_min, (self.port_max)))
+            raise OSError(errno.EADDRINUSE, "Unable to open any port in range %s-%s" % (port_min, (port_max)))
 
         self.__api_server.add_route('/', self.auth_redir_success, content_type='text/html')
         self.__api_server.add_route('/auth', self.auth_redir_success, content_type='text/html')
@@ -93,7 +95,7 @@ class OAuthRedirServer:
         self.__thread.start()
         log.info('Listening on %s', self.uri())
 
-    def auth_redir_success(self, env, info):
+    def auth_redir_success(self, _env, info):
         err = ""
         if info and ('error' in info or 'error_description' in info):
             log.debug("auth error")

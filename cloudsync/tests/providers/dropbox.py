@@ -72,7 +72,7 @@ def connect_test(want_oauth: bool, creds=None, interrupt=False):
         if interrupt:
             import time
             import threading
-            threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()
+            threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()  # type: ignore
         creds = gd.authenticate()
         gd.connect(creds)
 
