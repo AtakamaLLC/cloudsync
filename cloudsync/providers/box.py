@@ -4,6 +4,7 @@ import json
 import webbrowser
 import hashlib
 import time
+import arrow
 
 from typing import Optional, Generator, Union
 
@@ -31,9 +32,11 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 #   add caching for the object id's and types
 
 
-
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     additional_invalid_characters = ''
+    events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
+                       'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
+
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
 
@@ -225,7 +228,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     @property
     def name(self):
-        raise NotImplementedError()
+        return 'box'
 
     @property
     def latest_cursor(self):
@@ -252,7 +255,36 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def events(self) -> Generator[Event, None, None]:
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
-        raise NotImplementedError
+        stream_position = self.current_cursor
+        while True:
+            with self._api() as client:
+                response = client.events().get_events(limit=100, stream_position=stream_position)
+                new_position = response.get('next_stream_position')
+                if len(response.get('entries')) == 0:
+                    break
+                for change in (i for i in response.get('entries') if i.get('event_type')):
+                    log.debug("got event %s", change)
+                    log.debug(f"event type is {change.get('event_type')}")
+                    ts = arrow.get(change.get('created_at')).float_timestamp
+                    change_source = change.get('source')
+                    if isinstance(change_source, box_item):
+                        otype = DIRECTORY if type(change_source) is box_folder else FILE
+                        oid = change_source.id
+                        path = self._get_path(change_source)
+                        ohash = change_source.sha1 if type(change_source) is box_file else None
+                        exists = change_source.trashed_at is None
+                    else:
+                        continue
+
+                    event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_position)
+
+                    yield event
+
+                if new_position and stream_position and new_position != stream_position:
+                    self.__cursor = new_position
+                stream_position = new_position
+
+
 
     # noinspection DuplicatedCode
     def _walk(self, path, oid):

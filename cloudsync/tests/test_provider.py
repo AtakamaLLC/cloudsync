@@ -74,7 +74,7 @@ class ProviderHelper(ProviderBase):
 
     def events(self) -> Generator[Event, None, None]:
         for e in self.prov.events():
-            if self.__filter_root(e):
+            if self.__filter_root(e) or not e.exists:
                 yield e
 
     def walk(self, path, since=None):
@@ -577,7 +577,8 @@ def test_event_basic(provider):
 
     received_event = None
     received_event2 = None
-    event_count = 0
+    event_count1 = 0
+    event_count2 = 0
     done = False
 
     for e in provider.events_poll(until=lambda: done):
@@ -591,13 +592,13 @@ def test_event_basic(provider):
 
             if e.path == dest:
                 received_event = e
-                event_count += 1
+                event_count1 += 1
 
             if e.path == dest2:
                 received_event2 = e
-                event_count += 1
+                event_count2 += 1
 
-            done = event_count == 2
+            done = event_count1 > 0 and event_count2 > 0
 
     assert done
     assert received_event is not None
@@ -642,7 +643,7 @@ def test_event_basic(provider):
     assert received_event2 is not None
     assert received_event.oid
     assert not received_event.exists
-    if received_event.path is not None:
+    if received_event.path is not None and received_event.exists:
         assert received_event.path == dest
     assert received_event.oid == deleted_oid
     assert received_event.mtime
@@ -682,7 +683,7 @@ def test_event_del_create(provider):
         if e.oid == info1.oid:
             if e.exists:
                 saw_first_create = True
-                if saw_first_delete and not provider.oid_is_path:
+                if saw_first_delete and provider.oid_is_path:
                     log.debug("disordered!")
                     disordered = True
             else:
