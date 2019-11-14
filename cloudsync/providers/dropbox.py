@@ -96,7 +96,7 @@ class DropboxProvider(Provider):
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id: str = None, app_secret: str = None):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
         self.__cursor: str = None
@@ -109,8 +109,7 @@ class DropboxProvider(Provider):
         self.mutex = threading.RLock()
         self.longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
-        self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
-        self._oauth_done = threading.Event()
+        self._oauth_config = oauth_config
 
         self.connection_id: str = None
         self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
@@ -124,47 +123,41 @@ class DropboxProvider(Provider):
 
     def initialize(self):
         self._csrf = u_b64enc(urandom(32))
-        key = self._oauth_config.app_id
+        appid = self._oauth_config.app_id
         secret = self._oauth_config.app_secret
-        log.debug('Initializing Dropbox with manual mode=%s', self._oauth_config.manual_mode)
+        log.debug('Initializing Dropbox. manual_mode=%s', self._oauth_config.manual_mode)
+        if not appid and secret:
+            raise CloudTokenError("require app key and secret")
         if not self._oauth_config.manual_mode:
             try:
-                self._oauth_config.oauth_redir_server.run(
+                self._oauth_config.start_server(
                     on_success=self._on_oauth_success,
                     on_failure=self._on_oauth_failure,
-                    use_predefined_ports=True,
                 )
-                if not key and secret:
-                    raise ValueError("require app key and secret")
-                self._flow = DropboxOAuth2Flow(consumer_key=key,
+                self._flow = DropboxOAuth2Flow(consumer_key=appid,
                                                consumer_secret=secret,
-                                               redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'),
+                                               redirect_uri=self._oauth_config.redirect_uri + "auth/",
                                                session=self._session,
                                                csrf_token_session_key=self._csrf,
                                                locale=None)
-            except OSError:
-                log.exception('Unable to use redir server. Falling back to manual mode')
-                self._oauth_config.manual_mode = False
+            except Exception as e:
+                log.exception('Unable to start oauth')
+                raise CloudTokenError("failed to start oauth: %s" % repr(e))
         else:
-            if not key and secret:
-                raise ValueError("require app key and secret")
-            self._flow = DropboxOAuth2Flow(consumer_key=key,
+            self._flow = DropboxOAuth2Flow(consumer_key=appid,
                                            consumer_secret=secret,
                                            redirect_uri=self._redir,
                                            session=self._session,
                                            csrf_token_session_key=self._csrf,
                                            locale=None)
         url = self._flow.start()
-        self._oauth_done.clear()
         webbrowser.open(url)
 
         return url
 
     def interrupt_auth(self):
         log.error("oauth failure, interrupted")
-        self._oauth_done.set()
-        if not self._oauth_config.manual_mode and self._oauth_config.oauth_redir_server:
-            self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
+        self._oauth_config.shutdown()  # ApiServer shutdown does not throw  exceptions
         self._flow = None
 
     def _on_oauth_success(self, auth_dict):
@@ -173,23 +166,20 @@ class DropboxProvider(Provider):
         try:
             res: OAuth2FlowResult = self._flow.finish(auth_dict)
             self.__creds = {"key": res.access_token}
-            self._oauth_done.set()
         except Exception:
             log.exception('Authentication failed')
             raise
 
     def _on_oauth_failure(self, err):
         log.error("oauth failure: %s", err)
-        self._oauth_done.set()
 
     def authenticate(self):
         try:
             self.initialize()
-            self._oauth_done.wait()
+            self._oauth_config.wait_success()
             return self.__creds
         finally:
-            if not self._oauth_config.manual_mode:
-                self._oauth_config.oauth_redir_server.shutdown()
+            self._oauth_config.shutdown()
 
     def get_quota(self):
         return self.__memoize_quota()
@@ -242,11 +232,16 @@ class DropboxProvider(Provider):
                 info = self.__memoize_quota()
                 self.connection_id = info['uid']
                 assert self.connection_id
+            except CloudTokenError:
+                raise
             except Exception as e:
                 self.disconnect()
                 if isinstance(e, exceptions.AuthError):
                     log.debug("auth error connecting %s", e)
-                    raise CloudTokenError()
+                    raise CloudTokenError(str(e))
+                if isinstance(e, exceptions.BadInputError):
+                    log.debug("auth error connecting %s", e)
+                    raise CloudTokenError(str(e))
                 log.exception("error connecting %s", e)
                 raise CloudDisconnectedError()
 

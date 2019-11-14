@@ -37,7 +37,7 @@ def test_oauth_redir_server():
     on_success = Mock()
     on_failure = Mock()
 
-    srv.run(on_success=on_success, on_failure=on_failure, use_predefined_ports=False)
+    srv.run(on_success=on_success, on_failure=on_failure)
     port = srv.port()
 
     def send_req():

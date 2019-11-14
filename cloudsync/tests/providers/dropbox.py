@@ -29,11 +29,14 @@ def bad_dropbox_creds():
 
     return creds
 
+
 def app_id():
     return os.environ.get("DROPBOX_APP_ID", None)
 
 def app_secret():
     return os.environ.get("DROPBOX_APP_SECRET", None)
+
+PORT_RANGE = (52400, 54250)
 
 def dropbox_provider():
     cls = DropboxProvider
@@ -43,7 +46,7 @@ def dropbox_provider():
     cls.event_sleep = 2             # type: ignore
     cls.creds = dropbox_creds()     # type: ignore
 
-    return cls(app_id=app_id(), app_secret=app_secret())
+    return cls(OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE))
 
 
 @pytest.fixture
@@ -59,7 +62,7 @@ def connect_test(want_oauth: bool, creds=None, interrupt=False):
     if want_oauth:
         creds.pop("key", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
-    gd = DropboxProvider(app_id=app_id(), app_secret=app_secret())
+    gd = dropbox_provider()
     try:
         gd.connect(creds)
     except CloudTokenError:
@@ -69,7 +72,7 @@ def connect_test(want_oauth: bool, creds=None, interrupt=False):
         if interrupt:
             import time
             import threading
-            threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()
+            threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()  # type: ignore
         creds = gd.authenticate()
         gd.connect(creds)
 
@@ -81,6 +84,8 @@ def connect_test(want_oauth: bool, creds=None, interrupt=False):
             gd.delete(info.oid)
     except CloudFileNotFoundError:
         pass
+
+    return creds
 
 
 def test_connect():
@@ -100,9 +105,9 @@ def test_oauth_interrup():
 
 @pytest.mark.manual
 def test_oauth_connect_given_bad_creds():
-    api_key = connect_test(True, bad_dropbox_creds())
+    creds = connect_test(True, bad_dropbox_creds())
 
-    bad_api_key = "x" + api_key[1:]
+    creds["key"] += "x"
 
     with pytest.raises(CloudTokenError):
-        connect_test(False, {"key": bad_api_key})
+        connect_test(False, creds)
