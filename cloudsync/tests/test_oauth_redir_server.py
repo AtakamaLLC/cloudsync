@@ -5,6 +5,7 @@ import requests
 from unittest.mock import Mock, patch
 
 from cloudsync.oauth import OAuthRedirServer
+from cloudsync.oauth import OAuthConfig, OAuthToken
 from cloudsync.oauth.apiserver import ApiServer
 
 log = logging.getLogger(__name__)
