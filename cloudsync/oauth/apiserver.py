@@ -119,7 +119,6 @@ class ApiServer:
 
     def uri(self, path="/", hostname=None):
         """Make a URI pointing at myself"""
-        log.error(hostname)
         if path[0] == "/":
             path = path[1:]
         hostname = hostname or self.__addr

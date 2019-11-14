@@ -94,12 +94,13 @@ class OAuthRedirServer:
             raise OSError(errno.EADDRINUSE, "Unable to open any port in range %s-%s" % (self.port_min, (self.port_max)))
 
         self.__api_server.add_route('/', self.auth_redir_success, content_type='text/html')
+        self.__api_server.add_route('/auth', self.auth_redir_success, content_type='text/html')
         self.__api_server.add_route('/favicon.ico', lambda x, y: "", content_type='text/html')
 
         self.__thread = threading.Thread(target=self.__api_server.serve_forever,
                                          daemon=True)
         self.__thread.start()
-        log.info('Listening on %s', self.__api_server.uri('/auth/'))
+        log.info('Listening on %s', self.uri())
 
     def auth_redir_success(self, env, info):
         err = ""
@@ -156,7 +157,6 @@ class OAuthRedirServer:
         self.event.wait(timeout=timeout)
 
     def uri(self):
-        log.error(self.__host_name)
         return self.__api_server.uri("/", self.__host_name)
 
     def port(self):

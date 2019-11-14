@@ -138,7 +138,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def authenticate(self):
         try:
             self.initialize()
-            self._oauth_config.wait()
+            self._oauth_config.wait_success()
             return {"refresh_token": self.refresh_token,
                     "api_key": self.api_key,
                     }

@@ -136,7 +136,7 @@ class DropboxProvider(Provider):
                 )
                 self._flow = DropboxOAuth2Flow(consumer_key=appid,
                                                consumer_secret=secret,
-                                               redirect_uri=self._oauth_config.redirect_uri,
+                                               redirect_uri=self._oauth_config.redirect_uri + "/auth/",
                                                session=self._session,
                                                csrf_token_session_key=self._csrf,
                                                locale=None)
@@ -176,7 +176,7 @@ class DropboxProvider(Provider):
     def authenticate(self):
         try:
             self.initialize()
-            self._oauth_config.wait()
+            self._oauth_config.wait_success()
             return self.__creds
         finally:
             self._oauth_config.shutdown()

@@ -15,6 +15,8 @@ log = logging.getLogger(__name__)
 # this class delibarately not strict, since it can contain provider-specific configuration
 # applications can derive from this class and provide appropriate defaults
 
+class OAuthError(Exception): pass
+
 class OAuthToken:
     def __init__(self, data):
         self.access_token = data["access_token"]
@@ -70,11 +72,18 @@ class OAuthConfig:
         webbrowser.open(self.authorization_url)
 
     def wait_auth(self, token_url, **kwargs):
-        self.wait_success()
+        if not self.wait_success():
+            if self.failure_info:
+                raise OAuthError(self.failure_info)
+            raise OAuthError("Oauth interrupted")
+
         return OAuthToken(self._session.fetch_token(token_url,
                 client_secret=self.app_secret,
                 code=self.success_code,
                 **kwargs))
+
+    def refresh(self, refresh_url, **extra):
+        return OAuthToken(self._session.refresh_token(refresh_url, **extra))
 
     @property
     def success_code(self):
@@ -89,6 +98,8 @@ class OAuthConfig:
 
     def wait_success(self, timeout=None):
         self._redirect_server.wait(timeout=timeout)
+        self._redirect_server.shutdown()
+        return bool(self._redirect_server.success_code)
 
     def shutdown(self):
         self._redirect_server.shutdown()

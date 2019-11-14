@@ -62,6 +62,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     name = 'OneDrive'
     _scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
     _base_url = 'https://api.onedrive.com/v1.0/'
+    _token_url = "https://login.live.com/oauth20_token.srf"
+    _auth_url = "https://login.live.com/oauth20_authorize.srf"
     additional_invalid_characters = '#'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
@@ -83,6 +85,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def get_display_name(self):  # One Drive
         return self.name
 
+    def interrupt_auth(self):
+        self._oauth_config.shutdown()
+
     # noinspection PyProtectedMember
     def authenticate(self):
         if not self._oauth_config.app_id:
@@ -90,15 +95,21 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
 
-        authorization_base_url = "https://login.live.com/oauth20_authorize.srf"
-        token_url = "https://login.live.com/oauth20_token.srf"
 
-        self._oauth_config.start_auth(authorization_base_url, self._scopes)
-        token = self._oauth_config.wait_auth(token_url)
+        try:
+            self._oauth_config.start_auth(self._auth_url, self._scopes)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
+
+        try:
+            token = self._oauth_config.wait_auth(self._token_url)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
 
         creds = {"access": token.access_token, 
                  "refresh": token.refresh_token,
-                 "url": self._oauth_config.authorization_url,
                  }
 
         return creds
@@ -202,7 +213,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                             refresh_token=creds.get("refresh"),
                             access_token=creds.get("access", None),
                             redirect_uri=self._redirect_uri,  # pylint: disable=protected-access
-                            auth_server_url=creds.get("url"),
+                            auth_server_url=self._token_url,
                             client_id=self._oauth_config.app_id,  # pylint: disable=protected-access
                             client_secret=self._oauth_config.app_secret,  # pylint: disable=protected-access
                         )
