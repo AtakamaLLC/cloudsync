@@ -55,14 +55,13 @@ class OAuthRedirServer:
     def run(self, on_success: Callable[[Any], None], on_failure: Callable[[str], None]):
         if self.__running:
             raise RuntimeError('OAuth server was run() twice')
-        if not on_success:
-            raise ValueError('A valid on_success(...) callback is required')
-        if not on_failure:
-            raise ValueError('A valid on_failure(...) callback is required')
         self.__on_success = on_success
         self.__on_failure = on_failure
 
         self.event.clear()
+        self.success_code = None
+        self.success_state = None
+        self.failure_info = None
         log.debug('Creating oauth redir server')
         self.__running = True
         if self.__port_range:
@@ -103,17 +102,23 @@ class OAuthRedirServer:
         log.info('Listening on %s', self.__api_server.uri('/auth/'))
 
     def auth_redir_success(self, env, info):
-        log.debug('In auth_redir_success with env=%s, info=%s', env, info)
         err = ""
         if info and ('error' in info or 'error_description' in info):
+            log.debug("auth error")
             err = info['error'] if 'error' in info else \
                 info['error_description'][0]
             if isinstance(err, list):
                 err = err[0]
-            self.__on_failure(err)
+            self.failure_info = err
+            if self.__on_failure:
+                self.__on_failure(err)
             return self.auth_failure(err)
         try:
-            self.__on_success(info)
+            log.debug("auth success")
+            self.success_code = info["code"][0]
+            self.success_state = info["state"][0]
+            if self.__on_success:
+                self.__on_success(info)
         except OAuthFlowException:
             log.warning('Got a page request when not in flow', exc_info=True)
             err = "No pending OAuth. This can happen if you refreshed this tab. "
@@ -124,18 +129,19 @@ class OAuthRedirServer:
         return self.auth_failure(err) if err else self.auth_success()
 
     def auth_success(self):
+        self.event.set()
         if self.__html_response_generator:
             return self.__html_response_generator(True, '')
-        self.event.set()
         return "OAuth Success"
 
     def auth_failure(self, msg):
+        self.event.set()
         if self.__html_response_generator:
             return self.__html_response_generator(False, msg)
-        self.event.set()
         return "OAuth Failure:" + msg
 
     def shutdown(self):
+        self.event.set()
         if self.__api_server and self.__running:
             try:
                 self.__api_server.shutdown()
@@ -144,7 +150,6 @@ class OAuthRedirServer:
             self.__running = False
             self.__on_success = None
             self.__on_failure = None
-        self.event.set()
         self.__thread = None
 
     def wait(self, timeout=None):

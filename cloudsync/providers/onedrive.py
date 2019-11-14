@@ -83,58 +83,22 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def get_display_name(self):  # One Drive
         return self.name
 
-    def _on_oauth_success(self, auth_dict):
-        log.error(auth_dict)
-        self._oauth_code = auth_dict
-        log.error(auth_dict)
-        if auth_dict and 'state' in auth_dict and isinstance(auth_dict['state'], list):
-            auth_dict['state'] = auth_dict['state'][0]
-        try:
-            res: OAuth2FlowResult = self._flow.finish(auth_dict)
-        except Exception:
-            log.exception('Authentication failed')
-            raise
-
-    def _on_oauth_failure(self, err):
-        log.error(err)
-        log.error("oauth failure: %s", err)
-
     # noinspection PyProtectedMember
-    def authenticate(self):  # One Drive
+    def authenticate(self):
         if not self._oauth_config.app_id:
             raise CloudTokenError("app id not set")
-
-        self._oauth_config.start_server(
-                    on_success=self._on_oauth_success,
-                    on_failure=self._on_oauth_failure,
-                )
-
-        self._redirect_uri = self._oauth_config.redirect_uri
 
         log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
 
         authorization_base_url = "https://login.live.com/oauth20_authorize.srf"
         token_url = "https://login.live.com/oauth20_token.srf"
 
-        from requests_oauthlib import OAuth2Session
-        oauth = OAuth2Session(self._oauth_config.app_id, 
-                scope=self._scopes, redirect_uri=self._redirect_uri)
+        self._oauth_config.start_auth(authorization_base_url, self._scopes)
+        token = self._oauth_config.wait_auth(token_url)
 
-        authorization_url, state = oauth.authorization_url(authorization_base_url)
-
-        open_url(authorization_url)
-
-        self._oauth_config.wait()
-
-        token = oauth.fetch_token(token_url, 
-                client_secret=self._oauth_config.app_secret,
-                authorization_response=self._oauth_code)
-
-        log.error(token)
-
-        creds = {"access": "", 
-                 "refresh": "",
-                 "url": authorization_url,
+        creds = {"access": token.access_token, 
+                 "refresh": token.refresh_token,
+                 "url": self._oauth_config.authorization_url,
                  }
 
         return creds

@@ -29,6 +29,7 @@ def app_id():
 def app_secret():
     return os.environ.get("ONEDRIVE_APP_SECRET", None)
 
+PORT_RANGE = 54200, 54210 
 def onedrive_provider():
 
     cls = OneDriveProvider
@@ -38,13 +39,10 @@ def onedrive_provider():
     cls.event_sleep = 2                     # type: ignore
     cls.creds = onedrive_creds()              # type: ignore
 
-    return cls(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
-
+    config = OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE, host_name="localhost")
+    return cls(config)
 
 # this seems generic enough now it could use a provider class fixture and be moved to the provider tests
-
-def onedrive_oauth_config():
-    return OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE, host_name="localhost")
 
 @pytest.mark.manual
 def test_oauth_connect():
