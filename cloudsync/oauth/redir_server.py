@@ -39,9 +39,9 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.__thread: Optional[threading.Thread] = None
         self.__running = False
         self.event = threading.Event()
-        self.success_code = None
-        self.failure_info = None
-        
+        self.success_code: str = None
+        self.failure_info: str = None
+
     @property
     def running(self):
         return self.__running
@@ -52,9 +52,9 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.__on_success = on_success
         self.__on_failure = on_failure
 
-        self.event.clear()
         self.success_code = None
         self.failure_info = None
+        self.event.clear()
         log.debug('Creating oauth redir server')
         self.__running = True
         if self.__port_range:

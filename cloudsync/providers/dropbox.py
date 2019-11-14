@@ -170,7 +170,8 @@ class DropboxProvider(Provider):
             log.exception('Authentication failed')
             raise
 
-    def _on_oauth_failure(self, err):
+    @staticmethod
+    def _on_oauth_failure(err):
         log.error("oauth failure: %s", err)
 
     def authenticate(self):

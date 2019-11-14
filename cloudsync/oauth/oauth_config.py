@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 class OAuthError(Exception): 
     pass
 
-class OAuthToken:
+class OAuthToken:       # pylint: disable=too-few-public-methods
     def __init__(self, data):
         self.access_token = data["access_token"]
         self.token_type = data["token_type"]
@@ -28,16 +28,16 @@ class OAuthToken:
 
 class OAuthConfig:
     def __init__(self, *, app_id: str, app_secret: str, 
-            manual_mode: bool = False, 
-            redirect_server: Optional[OAuthRedirServer] = None, 
-            port_range: Tuple[int, int] = None,
-            host_name: str = None):
+                 manual_mode: bool = False, 
+                 redirect_server: Optional[OAuthRedirServer] = None, 
+                 port_range: Tuple[int, int] = None,
+                 host_name: str = None):
         """
         There are two ways to create an OAuthConfig object: by providing a OAuthRedirServer or by providing the
         success and failure callbacks, as well as the port and host configs
-        :param app_id          
-        :param app_secret          
-        :param manual_mode          
+        :param app_id
+        :param app_secret
+        :param manual_mode
         :param redirect_server (if none, one will be created for you)
         :param port_range (defaults to 'any port')
         :param host_name (defaults to 127.0.0.1)
@@ -51,7 +51,9 @@ class OAuthConfig:
         self.app_secret = app_secret
         self.manual_mode = manual_mode
         self.authorization_url = None
-        
+        self._session: OAuth2Session = None
+        self._token: OAuthToken = None
+
         self._redirect_server = redirect_server
 
         if manual_mode and self._redirect_server:
@@ -81,6 +83,8 @@ class OAuthConfig:
         """
         Returns an OAuthToken object, or raises a OAuthError 
         """
+        assert self._session
+
         if not self.wait_success(timeout):
             if self.failure_info:
                 raise OAuthError(self.failure_info)
@@ -93,13 +97,18 @@ class OAuthConfig:
         self.token_changed(self._token)
         return self._token
 
-    def refresh(self, refresh_url, **extra):
+    def refresh(self, refresh_url, token=None, scope=None, **extra):
         """
         Given a refresh url (often the same as token_url), will refresh the token
         Call this when your provider raises an exception implying your token has expired
         Or, you could just call it before the expiration
         """
-        self._token = OAuthToken(self._session.refresh_token(refresh_url, **extra))
+        assert self._session or scope
+        if not self._session and scope:
+            self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri)
+        if isinstance(token, OAuthToken):
+            token = token.refresh_token
+        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
         self.token_changed(self._token)
         return self._token
 
@@ -115,6 +124,7 @@ class OAuthConfig:
         """
         Start the redirect server in a thread
         """
+        assert self._redirect_server
         self._redirect_server.run(on_success=on_success, on_failure=on_failure)
 
     def wait_success(self, timeout=None):
@@ -122,6 +132,7 @@ class OAuthConfig:
         Wait for the redirect server, return true if it succeeded
         Shut down the server
         """
+        assert self._redirect_server
         try:
             self._redirect_server.wait(timeout=timeout)
             return bool(self._redirect_server.success_code)
@@ -132,6 +143,7 @@ class OAuthConfig:
         """
         Stop the redirect server, and interrupt/fail any ongoing oauth
         """
+        assert self._redirect_server
         self._redirect_server.shutdown()
 
     @property
@@ -139,6 +151,7 @@ class OAuthConfig:
         """
         Get the redirect server's uri
         """
+        assert self._redirect_server
         return self._redirect_server.uri()
 
     def _gen_html_response(self, success: bool, err_msg: str):
