@@ -808,10 +808,6 @@ def test_api_failure(provider):
 def test_file_not_found(provider):
     # Test that operations on nonexistent file system objects raise CloudFileNotFoundError
     # when appropriate, and don't when inappropriate
-    import faulthandler
-    import signal
-    import sys
-    faulthandler.register(signal.SIGUSR1, file=sys.stderr)
     dat = os.urandom(32)
 
     def data():
