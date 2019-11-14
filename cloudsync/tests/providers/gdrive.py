@@ -46,7 +46,7 @@ def cloudsync_provider():
     gdrive_provider()
 
 
-def connect_test(want_oauth: bool, interrupt=True):
+def connect_test(want_oauth: bool, interrupt=False):
     creds = gdrive_creds()
     if not creds:
         pytest.skip('requires gdrive token')
@@ -54,12 +54,20 @@ def connect_test(want_oauth: bool, interrupt=True):
         creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
     sync_root = "/" + os.urandom(16).hex()
     gd = GDriveProvider(app_id=app_id(), app_secret=app_secret())
-    if interrupt:
-        assert want_oauth
-        import time
-        import threading
-        threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()
-    gd.connect(creds)
+
+    try:
+        gd.connect(creds)
+    except CloudTokenError:
+        if not want_oauth:
+            raise
+        if interrupt:
+            assert want_oauth
+            import time
+            import threading
+            threading.Thread(target=lambda: (time.sleep(0.5), gd.interrupt_auth()), daemon=True).start()       
+        creds = gd.authenticate()
+        gd.connect(creds)
+
     assert gd.client
     gd.get_quota()
     try:

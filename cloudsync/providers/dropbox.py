@@ -136,7 +136,7 @@ class DropboxProvider(Provider):
                 )
                 self._flow = DropboxOAuth2Flow(consumer_key=appid,
                                                consumer_secret=secret,
-                                               redirect_uri=self._oauth_config.redirect_uri + "/auth/",
+                                               redirect_uri=self._oauth_config.redirect_uri + "auth/",
                                                session=self._session,
                                                csrf_token_session_key=self._csrf,
                                                locale=None)
@@ -232,11 +232,16 @@ class DropboxProvider(Provider):
                 info = self.__memoize_quota()
                 self.connection_id = info['uid']
                 assert self.connection_id
+            except CloudTokenError:
+                raise
             except Exception as e:
                 self.disconnect()
                 if isinstance(e, exceptions.AuthError):
                     log.debug("auth error connecting %s", e)
-                    raise CloudTokenError()
+                    raise CloudTokenError(str(e))
+                if isinstance(e, exceptions.BadInputError):
+                    log.debug("auth error connecting %s", e)
+                    raise CloudTokenError(str(e))
                 log.exception("error connecting %s", e)
                 raise CloudDisconnectedError()
 

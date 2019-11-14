@@ -85,6 +85,8 @@ def connect_test(want_oauth: bool, creds=None, interrupt=False):
     except CloudFileNotFoundError:
         pass
 
+    return creds
+
 
 def test_connect():
     connect_test(False)
@@ -103,9 +105,9 @@ def test_oauth_interrup():
 
 @pytest.mark.manual
 def test_oauth_connect_given_bad_creds():
-    api_key = connect_test(True, bad_dropbox_creds())
+    creds = connect_test(True, bad_dropbox_creds())
 
-    bad_api_key = "x" + api_key[1:]
+    creds["key"] += "x"
 
     with pytest.raises(CloudTokenError):
-        connect_test(False, {"key": bad_api_key})
+        connect_test(False, creds)

@@ -60,7 +60,6 @@ class OAuthRedirServer:
 
         self.event.clear()
         self.success_code = None
-        self.success_state = None
         self.failure_info = None
         log.debug('Creating oauth redir server')
         self.__running = True
@@ -117,7 +116,6 @@ class OAuthRedirServer:
         try:
             log.debug("auth success")
             self.success_code = info["code"][0]
-            self.success_state = info["state"][0]
             if self.__on_success:
                 self.__on_success(info)
         except OAuthFlowException:

@@ -65,6 +65,11 @@ class OAuthConfig:
 
 
     def start_auth(self, auth_url, scope=None, **kwargs):
+        """
+        Call this if you want oauth to be handled for you
+        This starts a server, pops a browser.
+        Do some stuff, then follow with wait_auth() to wait
+        """
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)
         self.authorization_url, state = self._session.authorization_url(auth_url)
@@ -72,18 +77,30 @@ class OAuthConfig:
         webbrowser.open(self.authorization_url)
 
     def wait_auth(self, token_url, **kwargs):
-        if not self.wait_success():
+        """
+        Returns an OAuthToken object, or raises a OAuthError 
+        """
+       if not self.wait_success():
             if self.failure_info:
                 raise OAuthError(self.failure_info)
             raise OAuthError("Oauth interrupted")
 
-        return OAuthToken(self._session.fetch_token(token_url,
+        self._token = OAuthToken(self._session.fetch_token(token_url,
                 client_secret=self.app_secret,
                 code=self.success_code,
                 **kwargs))
+        self.token_changed(self._token)
+        return self._token
 
     def refresh(self, refresh_url, **extra):
-        return OAuthToken(self._session.refresh_token(refresh_url, **extra))
+        """
+        Given a refresh url (often the same as token_url), will refresh the token
+        Call this when your provider raises an exception implying your token has expired
+        Or, you could just call it before the expiration
+        """
+        self._token = OAuthToken(self._session.refresh_token(refresh_url, **extra))
+        self.token_changed(self._token)
+        return self._token
 
     @property
     def success_code(self):
@@ -94,18 +111,33 @@ class OAuthConfig:
         return self._redirect_server.failure_info
 
     def start_server(self, *, on_success=None, on_failure=None):
+        """
+        Start the redirect server in a thread
+        """
         self._redirect_server.run(on_success=on_success, on_failure=on_failure)
 
     def wait_success(self, timeout=None):
-        self._redirect_server.wait(timeout=timeout)
-        self._redirect_server.shutdown()
-        return bool(self._redirect_server.success_code)
+        """
+        Wait for the redirect server, return true if it succeeded
+        Shut down the server
+        """
+        try:
+            self._redirect_server.wait(timeout=timeout)
+            return bool(self._redirect_server.success_code)
+        finally:
+            self.shutdown()
 
     def shutdown(self):
+        """
+        Stop the redirect server, and interrupt/fail any ongoing oauth
+        """
         self._redirect_server.shutdown()
 
     @property
     def redirect_uri(self) -> str:
+        """
+        Get the redirect server's uri
+        """
         return self._redirect_server.uri()
 
     def _gen_html_response(self, success: bool, err_msg: str):
@@ -114,10 +146,16 @@ class OAuthConfig:
         else:
             return self.failure_message(err_msg)
 
+    # override this to save creds on refresh
+    def token_changed(self, creds: OAuthToken):
+        ....
+
+    # override this to make a nicer message on success
     @staticmethod
     def success_message() -> str:
         return 'OAuth succeeded!'
 
+    # override this to make a nicer message on failure
     @staticmethod
     def failure_message(error_str: str) -> str:
         return 'OAuth failed: {}'.format(error_str)
