@@ -5,7 +5,7 @@ from requests_oauthlib import OAuth2Session
 
 from .redir_server import OAuthRedirServer
 
-__all__ = ["OAuthConfig"]
+__all__ = ["OAuthConfig", "OAuthToken", "OAuthError"]
 
 # don't log tokens
 logging.getLogger("requests_oauthlib").setLevel(logging.INFO)
