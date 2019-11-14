@@ -9,7 +9,7 @@ from .apiserver import ApiServer
 
 log = logging.getLogger(__name__)
 
-__all__ = ['OAuthFlowException', 'OAuthBadTokenException', 'OAuthRedirServer']
+__all__ = ['OAuthRedirServer']
 
 # todo: use https://requests-oauthlib.readthedocs.io/en/latest/oauth2_workflow.html#web-application-flow
 # then provide tools to that provider-writers don't have to do much to get their app-specific oauth to work other than
@@ -17,14 +17,6 @@ __all__ = ['OAuthFlowException', 'OAuthBadTokenException', 'OAuthRedirServer']
 
 def _is_windows():
     return sys.platform in ("win32", "cygwin")
-
-class OAuthFlowException(Exception):
-    pass
-
-
-class OAuthBadTokenException(Exception):
-    pass
-
 
 class OAuthRedirServer:
     GUI_TIMEOUT = 15
@@ -118,12 +110,10 @@ class OAuthRedirServer:
             self.success_code = info["code"][0]
             if self.__on_success:
                 self.__on_success(info)
-        except OAuthFlowException:
-            log.warning('Got a page request when not in flow', exc_info=True)
-            err = "No pending OAuth. This can happen if you refreshed this tab. "
         except Exception as e:
             log.exception('Failed to authenticate')
             err = 'Unknown error: %s' % e
+            self.failure_info = err
 
         return self.auth_failure(err) if err else self.auth_success()
 
