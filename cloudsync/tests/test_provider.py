@@ -11,7 +11,7 @@ import msgpack
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -1547,3 +1547,29 @@ def test_cursor_error_during_listdir(provider):
     with pytest.raises(CloudTemporaryError):
         _ = next(it)
 
+
+@pytest.mark.manual
+def test_authenticate(provider):
+    provider.disconnect()
+    creds = provider.authenticate()
+    provider.connect(creds)
+
+    modded = False
+    for k, v in creds.items():
+        if type(v) is str:
+            creds[k] = creds[k] + "junk"
+            modded = True
+
+    if modded:
+        provider.disconnect()
+        with pytest.raises(CloudTokenError):
+            provider.connect(creds)
+
+
+@pytest.mark.manual
+def test_interrupt_auth(provider):
+    import time
+    import threading
+    threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
+    with pytest.raises(CloudTokenError):
+        provider.authenticate()

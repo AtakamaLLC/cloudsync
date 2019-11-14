@@ -42,28 +42,3 @@ def onedrive_provider():
     config = OAuthConfig(app_id=app_id(), app_secret=app_secret(), port_range=PORT_RANGE, host_name="localhost")
     return cls(config)
 
-# this seems generic enough now it could use a provider class fixture and be moved to the provider tests
-
-@pytest.mark.manual
-def test_oauth_connect():
-    prov = onedrive_provider()
-    creds = prov.authenticate()
-    prov.connect(creds)
-    assert prov.connected
-    prov.get_quota()
-
-@pytest.mark.manual
-def test_oauth_interrup():
-    prov = onedrive_provider()
-    import time
-    import threading
-    threading.Thread(target=lambda: (time.sleep(0.5), prov.interrupt_auth()), daemon=True).start()   # type: ignore
-    with pytest.raises(CloudTokenError):
-        creds = prov.authenticate()
-
-def test_env_connect():
-    prov = onedrive_provider()
-    creds = onedrive_creds()
-    prov.connect(creds)
-    assert prov.connected
-    prov.get_quota()
