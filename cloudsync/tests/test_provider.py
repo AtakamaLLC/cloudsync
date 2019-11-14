@@ -1549,7 +1549,11 @@ def test_cursor_error_during_listdir(provider):
 
 
 @pytest.mark.manual
-def test_authenticate(provider):
+def test_authenticate(config_provider):
+    provider = ProviderHelper(config_provider)
+    if not provider.creds:
+        pytest.skip("provider doesn't support auth")
+
     provider.disconnect()
     creds = provider.authenticate()
     provider.connect(creds)
@@ -1567,7 +1571,11 @@ def test_authenticate(provider):
 
 
 @pytest.mark.manual
-def test_interrupt_auth(provider):
+def test_interrupt_auth(config_provider):
+    provider = ProviderHelper(config_provider)
+    if not provider.creds:
+        pytest.skip("provider doesn't support auth")
+
     import time
     import threading
     threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
