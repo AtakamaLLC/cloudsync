@@ -3,6 +3,12 @@ from enum import Enum
 from dataclasses import dataclass
 
 
+# these are not really local or remote
+# but it's easier to reason about using these labels
+LOCAL = 0
+REMOTE = 1
+
+
 class OType(Enum):
     DIRECTORY = "dir"
     FILE = "file"

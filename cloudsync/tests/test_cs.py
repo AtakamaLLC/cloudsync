@@ -9,6 +9,7 @@ from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
 from cloudsync.types import IgnoreReason
+from cloudsync.notification import Notification, NotificationType
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -2156,6 +2157,48 @@ def test_walk_carefully3(setup_offline_state):
     b = BytesIO()
     cs.providers[LOCAL].download_path("/local/stuff1", b)
     assert b.getvalue() == b"changed-while-stopped"
+
+
+def test_notify_bad_name(cs):
+    setup_remote_local(cs)
+    called = False
+
+    def _handle(e: Notification):
+        nonlocal called
+        if e.ntype == NotificationType.FILE_NAME_ERROR:
+            called = True
+    cs.handle_notification = _handle
+
+    local, remote = cs.providers
+    remote.forbidden_chars = ['`']
+    local.create('/local/bad`.txt', BytesIO(b'data'))
+    cs.start(until=lambda: called, timeout=2)  # Need to use start() because the notification manager do() blocks
+    log.debug("Now waiting")
+    cs.wait()
+    assert called
+    cs.stop()
+
+
+def test_notify_disconnect(cs):
+    setup_remote_local(cs)
+    called = False
+
+    def _handle(e: Notification):
+        nonlocal called
+        if e.ntype == NotificationType.DISCONNECTED_ERROR:
+            called = True
+    cs.handle_notification = _handle
+
+    local, remote = cs.providers
+    remote.forbidden_chars = ['`']
+    local.create('/local/bad.txt', BytesIO(b'data'))
+    cs.providers[0].disconnect()
+    cs.providers[0].reconnect = lambda: None  # TODO: Revisit this after authorization has been redesigned
+    cs.start(until=lambda: called, timeout=2)  # Need to use start() because the notification manager do() blocks
+    log.debug("Now waiting")
+    cs.wait()
+    assert called
+    cs.stop()
 
 
 def test_no_nsquare(cs):

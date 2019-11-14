@@ -7,10 +7,12 @@ from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursor
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType, DIRECTORY
+from .notification import SourceEnum
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
     from cloudsync import Provider
+    from cloudsync.notification import NotificationManager
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +31,9 @@ class Event:
 
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
-    def __init__(self, provider: "Provider", state: "SyncState", side: int, walk_root: Optional[str] = None, reauth: Callable[[], None] = None):
+    def __init__(self, provider: "Provider", state: "SyncState", side: int,
+                 notification_manager: Optional["NotificationManager"] = None,
+                 walk_root: Optional[str] = None, reauth: Callable[[], None] = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
         assert self.provider.connection_id
@@ -38,6 +42,7 @@ class EventManager(Runnable):
         self.state: 'SyncState' = state
         self.side: int = side
         self._cursor_tag: str = self.label + "_cursor"
+        self.__nmgr = notification_manager
 
         self.walk_one_time = None
         self._walk_tag: str = None
@@ -89,15 +94,19 @@ class EventManager(Runnable):
             self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError) as e:
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
+            if self.__nmgr:
+                self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
             self.backoff()
         except CloudCursorError as e:
             log.exception("Cursor error... resetting cursor. %s", e)
             self.provider.current_cursor = self.provider.latest_cursor
             self._save_current_cursor()
-        except CloudTokenError:
+        except CloudTokenError as e:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
-            self.reauthenticate()
+            if self.__nmgr:
+                self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
+            self.reauthenticate()  # TODO: Remove this and only reauthenticate when the user chooses to do so
 
     def _do_unsafe(self):
         if self.walk_one_time:

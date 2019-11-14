@@ -21,17 +21,16 @@ from typing import Union, Sequence
 import msgpack
 from pystrict import strict
 
-from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason
+from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMOTE
 from cloudsync.types import OType
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
 if TYPE_CHECKING:
     from cloudsync import Provider
 
-
 log = logging.getLogger(__name__)
 
-__all__ = ['SyncState', 'SyncEntry', 'Storage', 'LOCAL', 'REMOTE', 'FILE', 'DIRECTORY', 'UNKNOWN']
+__all__ = ['SyncState', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 # safe ternary, don't allow traditional comparisons
 
@@ -144,12 +143,6 @@ class SideState():
             except Exception as e:  # any exceptions here are pointless
                 log.warning("exception unlinking %s", e)
                 self.temp_file = None
-
-
-# these are not really local or remote
-# but it's easier to reason about using these labels
-LOCAL = 0
-REMOTE = 1
 
 
 def other_side(index):
