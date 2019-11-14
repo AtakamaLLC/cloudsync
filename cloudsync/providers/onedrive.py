@@ -224,7 +224,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         scopes=self._scopes)
 
                 auth_provider.load_session()
-                auth_provider.refresh_token()
+                try:
+                    auth_provider.refresh_token()
+                except Exception as e:
+                    log.error(e)
+                    raise CloudTokenError(str(e))
                 self.__client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
                 self.__client.item = self.__client.item  # satisfies a lint confusion
                 self.__creds = creds

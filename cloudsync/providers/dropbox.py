@@ -177,8 +177,10 @@ class DropboxProvider(Provider):
     def authenticate(self):
         try:
             self.initialize()
-            self._oauth_config.wait_success()
-            return self.__creds
+            if self._oauth_config.wait_success():
+                return self.__creds
+            msg = self._oauth_config.failure_info
+            raise CloudTokenError(msg)
         finally:
             self._oauth_config.shutdown()
 
