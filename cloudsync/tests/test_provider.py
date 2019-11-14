@@ -1550,7 +1550,7 @@ def test_cursor_error_during_listdir(provider):
 
 @pytest.mark.manual
 def test_authenticate(config_provider):
-    provider = ProviderHelper(config_provider)
+    provider = ProviderHelper(config_provider)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
 
@@ -1572,7 +1572,7 @@ def test_authenticate(config_provider):
 
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
-    provider = ProviderHelper(config_provider)
+    provider = ProviderHelper(config_provider)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
 
