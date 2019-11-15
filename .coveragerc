@@ -1,7 +1,6 @@
 [run]
 branch=True
 omit = 
-    cloudsync/tests/* 
     cloudsync/providers/*
 
 [report]
