@@ -36,6 +36,9 @@ jobs:
       script: 
         - ./deploy.sh
 
+after_success:
+    - ./coverage.sh
+      
 branches:
     only:
     - master
