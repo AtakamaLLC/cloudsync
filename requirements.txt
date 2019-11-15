@@ -11,3 +11,4 @@ google-auth-oauthlib
 # dropbox provider
 dropbox
 onedrivesdk_fork
+requests_oauthlib
