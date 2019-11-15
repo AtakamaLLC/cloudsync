@@ -84,18 +84,20 @@ class OAuthConfig:
         Returns an OAuthToken object, or raises a OAuthError 
         """
         assert self._session
+        try:
+            if not self.wait_success(timeout):
+                if self.failure_info:
+                    raise OAuthError(self.failure_info)
+                raise OAuthError("Oauth interrupted")
 
-        if not self.wait_success(timeout):
-            if self.failure_info:
-                raise OAuthError(self.failure_info)
-            raise OAuthError("Oauth interrupted")
-
-        self._token = OAuthToken(self._session.fetch_token(token_url,
-                client_secret=self.app_secret,
-                code=self.success_code,
-                **kwargs))
-        self.token_changed(self._token)
-        return self._token
+            self._token = OAuthToken(self._session.fetch_token(token_url,
+                    client_secret=self.app_secret,
+                    code=self.success_code,
+                    **kwargs))
+            self.token_changed(self._token)
+            return self._token
+        finally:
+            self.shutdown()
 
     def refresh(self, refresh_url, token=None, scope=None, **extra):
         """

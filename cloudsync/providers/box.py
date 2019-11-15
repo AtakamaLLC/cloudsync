@@ -36,6 +36,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     additional_invalid_characters = ''
     events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                        'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
+    _auth_url = 'https://account.box.com/api/oauth2/authorize'
+    _token_url = "https://api.box.com/oauth2/token"
+    _scopes = []
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -61,16 +64,18 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._oauth_config.store_refresh_token(refresh_token)
 
     def initialize(self):
+        assert self._oauth_config.app_id
         logging.error('initializing')
         if not self._oauth_config.manual_mode:
             try:
                 logging.error('try auth')
-                self._oauth_config.oauth_redir_server.run(
+                self._oauth_config.start_server(
                     on_success=self._on_oauth_success,
                     on_failure=self._on_oauth_failure,
                 )
-                url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.oauth_redir_server.uri('/auth/'))
-                logging.error(self._oauth_config.oauth_redir_server.uri('/auth/'))
+                # todo get rid of the 'auth/' nonsense from all providers
+                url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.redirect_uri)
+                logging.error(self._oauth_config.redirect_uri)
                 webbrowser.open(url)
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
@@ -97,14 +102,15 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     def authenticate(self):
         logging.error('authenticating')
         try:
-            self.initialize()
-            self._oauth_done.wait()
-            return {"refresh_token": self.refresh_token,
-                    "api_key": self.api_key,
-                    }
-        finally:
-            if not self._oauth_config.manual_mode:
-                self._oauth_config.oauth_redir_server.shutdown()
+            self._oauth_config.start_auth(self._auth_url, self._scopes)
+            token = self._oauth_config.wait_auth(self._token_url)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
+
+        creds = {"api_key": token.access_token,
+                 "refresh_token": token.refresh_token,
+                 }
 
     def get_quota(self):
         user = self.client.user(user_id='me').get()

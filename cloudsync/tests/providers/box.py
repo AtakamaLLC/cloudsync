@@ -28,11 +28,11 @@ def on_success(auth_dict=None):
 
 
 def app_id():
-    return os.environ.get("BOX_CLIENT_ID", None)
+    return os.environ.get("BOX_APP_ID", None)
 
 
 def app_secret():
-    return os.environ.get("BOX_CLIENT_SECRET", None)
+    return os.environ.get("BOX_APP_SECRET", None)
 
 
 def box_provider():
