@@ -15,3 +15,8 @@ dropbox
 boxsdk
 # onedrive provider
 onedrivesdk_fork
+# box provider with jwt support
+boxsdk[jwt]
+# onedrive provider
+# apparently onedrivesdk v2 is deprecated, so install the older one? Jeez. Plus v2 pkg fails with an error on install...
+onedrivesdk<2

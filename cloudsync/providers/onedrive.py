@@ -107,7 +107,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.error("oauth error %s", e)
             raise CloudTokenError(str(e))
 
-        creds = {"access": token.access_token, 
+        creds = {"access": token.access_token,
                  "refresh": token.refresh_token,
                  }
 
@@ -181,7 +181,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return res
 
-    def reconnect(self): 
+    def reconnect(self):
         self.connect(self.__creds)
 
     def connect(self, creds):
@@ -273,7 +273,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if e.code == "accessDenied":
                     raise CloudFileExistsError(str(e))
             except Exception:
-                pass
+                return False  # False allows the exit handler to act as normal, which does not swallow the exception
 
     @property
     def root_id(self):
