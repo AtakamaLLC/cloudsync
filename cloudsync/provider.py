@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
-import os
 import re
+import os
 import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
-from cloudsync.types import OInfo, DIRECTORY, DirInfo
+from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
 if TYPE_CHECKING:
     from .event import Event
@@ -24,20 +24,28 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     oid_is_path: bool = False
     case_sensitive: bool = True
     win_paths: bool = False
-    connection_id: Optional[str] = None
     default_sleep: float = 0.01
-    __creds: None
+    connection_id: str = None
+    __creds: Optional[Any] = None
 
     @abstractmethod
     def _api(self, *args, **kwargs):
         ...
 
+    def get_quota(self) -> dict:    # pylint: disable=no-self-use
+        """Returns a dict with of used (bytes), limit (bytes), optional login, and possibly other provider-specific info
+        """
+        return {"used": 0.0, "limit": 0.0, "login": None}
+
     def connect(self, creds):
         # some providers don't need connections, so just don't implement/overload this method
         # providers who implement connections need to set the connection_id to a value
-        #   that is unique to each connection, so that connecting to this provider
+        #   that is unique to each login, so that connecting to this provider
         #   under multiple userid's will produce different connection_id's. One
         #   suggestion is to just set the connection_id to the user's login_id
+        # if connection ids are reused, it's possible that existing cursors can be loaded
+        # for different providers.
+        # this could cause issues if cursors are not uuids
         self.connection_id = os.urandom(16).hex()
         self.__creds = creds
 
@@ -59,6 +67,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         # implement this method for providers that need authentication
         pass
 
+    # todo: remove this, caller should serialize, handle errors with better UI, etc.
+    # this helper function is just incorrect
     def connect_or_authenticate(self, creds):
         # This won't attempt oauth unless the specific failure to connect is an authentication error
         try:
@@ -67,6 +77,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             creds = self.authenticate()  # pylint: disable=assignment-from-no-return
             self.connect(creds)
         return creds
+
+    def interrupt_auth(self):
+        # interrupt/stop a blocking authentication call
+        raise NotImplementedError()
 
     @property
     @abstractmethod

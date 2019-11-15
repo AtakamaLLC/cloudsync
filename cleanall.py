@@ -1,17 +1,12 @@
 from cloudsync import *
 
-from cloudsync.tests.providers.gdrive import gdrive_creds
-from cloudsync.tests.providers.dropbox import dropbox_creds
+from cloudsync.tests.providers.gdrive import gdrive_provider
+from cloudsync.tests.providers.dropbox import dropbox_provider
 
-from cloudsync.providers.gdrive import GDriveProvider
-from cloudsync.providers.dropbox import DropboxProvider
-
-gd = GDriveProvider()
-gd.connect(gdrive_creds())
+gd = gdrive_provider()
 gd.name = "gdrive"
 
-db = DropboxProvider()
-db.connect(dropbox_creds())
+db = dropbox_provider()
 db.name = "dropbox"
 
 
@@ -38,6 +33,7 @@ def _rmtree(prov, oid, path):
 threads = []
 
 for prov in (gd, db):
+    prov.connect(prov.creds)
     def run(prov):
         print(prov.name, "start")
         oid = prov.info_path("/").oid

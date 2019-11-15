@@ -11,7 +11,7 @@ import msgpack
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError
+from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -272,6 +272,9 @@ def config_provider(request, provider_config):
     elif provider_config.name == "gdrive":
         from .providers.gdrive import gdrive_provider
         return gdrive_provider()
+    elif provider_config.name == "onedrive":
+        from .providers.onedrive import onedrive_provider
+        return onedrive_provider()
     elif provider_config.name == "dropbox":
         from .providers.dropbox import dropbox_provider
         return dropbox_provider()
@@ -282,7 +285,7 @@ def config_provider(request, provider_config):
         assert False, "Must provide a valid --provider name or use the -p <plugin>"
 
 
-known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'box')
+known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'box', 'onedrive')
 
 
 def configs_from_name(name):
@@ -380,6 +383,14 @@ def test_connect(provider):
     assert provider.connected
 
 
+def test_info_root(provider):
+    info = provider.info_path("/")
+
+    assert info
+    assert info.oid
+    assert info.path == "/"
+
+
 def test_create_upload_download(provider):
     dat = os.urandom(32)
 
@@ -400,6 +411,7 @@ def test_create_upload_download(provider):
 
     assert info1.oid == info2.oid
     assert info1.hash == info2.hash
+    assert info1.hash == provider.hash_data(data())
 
     assert provider.exists_path(dest)
 
@@ -465,7 +477,6 @@ def test_rename(provider):
         assert not provider.exists_oid(file_info.oid)
         assert not provider.exists_oid(sub_file_info.oid)
 
-   
     # move to sub
     dest = provider.temp_name("movy")
     sub_file_name = os.urandom(16).hex()
@@ -1293,6 +1304,7 @@ def test_listdir(provider):
     contents = [x.name for x in provider.listdir(outer_oid)]
     assert len(contents) == 3
     expected = ["file1", "file2", temp_name[1:]]
+    log.info("contents %s", contents)
     assert sorted(contents) == sorted(expected)
 
 
@@ -1363,6 +1375,33 @@ def test_rename_case_change(provider, otype):
     else:
         assert infopl
         assert infopl.path == temp_nameu
+
+
+def test_report_info(provider):
+    temp_name = provider.temp_name()
+
+    u1 = provider.get_quota()["used"]
+
+    provider.create(temp_name, BytesIO(b"test"))
+
+    pinfo2 = provider.get_quota()
+
+    # note this may be memoized (gdrive does this internally)
+    # so there is no guarantee that the used != 0 afer create
+    # or that creating a file increases used
+    # so providers need to implement this *at least* for create
+    # otherwise this info is not helpful for uploads
+    # todo: more extensive provider requirements on cached quotas
+
+    assert pinfo2['used'] > 0
+    assert pinfo2['limit'] > 0
+    assert pinfo2['used'] > u1
+
+    login = pinfo2.get('login')
+
+    # most providers give this info, but for some it's not relevant, so just limit this to the ones that do
+    if provider.name in ("gdrive", "dropbox", "mock"):
+        assert login
 
 
 def test_quota_limit(mock_provider):
@@ -1436,11 +1475,14 @@ def test_large_file_support(provider):
 
 def test_special_characters(provider):
     fname = ""
+    additional_invalid_characters = getattr(provider, "additional_invalid_characters", "")
     for i in range(32, 127):
         char = str(chr(i))
         if char in (provider.sep, provider.alt_sep):
             continue
         if char in """<>:"/\\|?*""":
+            continue
+        if char in additional_invalid_characters:
             continue
         fname = fname + str(chr(i))
     fname = "/fn-" + fname
@@ -1467,6 +1509,7 @@ def test_special_characters(provider):
     assert dirinfo.oid == diroid
     newfname2 = provider.join(dirname, fname2)
     new_oid2 = provider.rename(new_oid, newfname2)
+    test_newfname2 = provider.info_oid(new_oid2)
     newfname2info = provider.info_path(newfname2)
     assert newfname2info.oid == new_oid2
 
@@ -1507,3 +1550,37 @@ def test_cursor_error_during_listdir(provider):
     with pytest.raises(CloudTemporaryError):
         _ = next(it)
 
+
+@pytest.mark.manual
+def test_authenticate(config_provider):
+    provider = ProviderHelper(config_provider)      # type: ignore
+    if not provider.creds:
+        pytest.skip("provider doesn't support auth")
+
+    provider.disconnect()
+    creds = provider.authenticate()
+    provider.connect(creds)
+
+    modded = False
+    for k, v in creds.items():
+        if type(v) is str:
+            creds[k] = creds[k] + "junk"
+            modded = True
+
+    if modded:
+        provider.disconnect()
+        with pytest.raises(CloudTokenError):
+            provider.connect(creds)
+
+
+@pytest.mark.manual
+def test_interrupt_auth(config_provider):
+    provider = ProviderHelper(config_provider)      # type: ignore
+    if not provider.creds:
+        pytest.skip("provider doesn't support auth")
+
+    import time
+    import threading
+    threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
+    with pytest.raises(CloudTokenError):
+        provider.authenticate()

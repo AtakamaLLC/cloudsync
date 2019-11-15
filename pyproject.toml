@@ -14,12 +14,13 @@ classifiers=["Intended Audience :: Developers",
     "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires = ["arrow", "oauth2client", "dataclasses", "pystrict", "msgpack"]
+requires = ["arrow", "dataclasses", "pystrict", "msgpack", "requests_oauthlib"]
 requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]
-dropbox = [ "dropbox" ]
-gdrive = [ "httplib2", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib", ]
+dropbox = [ "dropbox", ]
+gdrive = [ "httplib2", "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib", "oauth2client" ]
+onedrive = [ "onedrivesdk_fork", ]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
