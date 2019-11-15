@@ -111,34 +111,3 @@ class Runnable(ABC):
         if self.thread:
             self.thread.join()
 
-
-def test_runnable():
-    class TestRun(Runnable):
-        def __init__(self):
-            self.cleaned = False
-            self.called = 0
-
-        def do(self):
-            self.called += 1
-
-        def done(self):
-            self.cleaned = True
-
-    testrun = TestRun()
-
-    testrun.run(timeout=0.02, sleep=0.001)
-
-    assert testrun.called
-
-    testrun.called = 0
-
-    testrun.run(until=lambda: testrun.called == 1)
-
-    assert testrun.called == 1
-
-    thread = threading.Thread(target=testrun.run)
-    thread.start()
-    testrun.stop()
-    thread.join(timeout=1)
-
-    assert testrun.stopped == 1
