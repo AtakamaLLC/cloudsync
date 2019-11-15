@@ -1,0 +1,11 @@
+[run]
+branch=True
+omit = cloudsync/tests/* 
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    assert
+    if __name__ == __main__:
+
