@@ -58,10 +58,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         log.debug('Creating oauth redir server')
         self.__running = True
         if self.__port_range:
-            try:
-                (port_min, port_max) = self.__port_range
-            except TypeError:
-                pass
+            (port_min, port_max) = self.__port_range
             # Some providers (Dropbox, Onedrive) don't allow us to just use localhost
             #  redirect. For these providers, we define a range of
             #  host_name:(port_min, port_max) as valid redir URLs
