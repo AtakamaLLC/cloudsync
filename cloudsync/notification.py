@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 class NotificationType(enum.Enum):
     # These types roughly correspond to the exceptions defined in exceptions.py
     STARTED = 'started'
+    CONNECTED = 'connected'
     STOPPED = 'stopped'
     FILE_NAME_ERROR = 'file_name_error'
     OUT_OF_SPACE_ERROR = 'out_of_space_error'

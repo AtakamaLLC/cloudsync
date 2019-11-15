@@ -212,7 +212,7 @@ class DropboxProvider(Provider):
         return res
 
     def reconnect(self):
-        self.connect_or_authenticate(self.__creds)
+        self.connect(self.__creds)
 
     def connect(self, creds):
         log.debug('Connecting to dropbox')
