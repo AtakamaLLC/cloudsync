@@ -65,37 +65,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._oauth_config = oauth_config
 
     def _store_refresh_token(self, access_token, refresh_token):
-        self._oauth_config.token_changed(OAuthToken(refresh_token=refresh_token, access_token=access_token))
-
-    def initialize(self):
-        logging.error('initializing')
-        if not self._oauth_config.manual_mode:
-            try:
-                logging.error('try auth')
-                self._oauth_config.oauth_redir_server.run(
-                    on_success=self._on_oauth_success,
-                    on_failure=self._on_oauth_failure,
-                )
-                url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.oauth_redir_server.uri('/auth/'))
-                logging.error(self._oauth_config.oauth_redir_server.uri('/auth/'))
-                webbrowser.open(url)
-            except OSError:
-                log.exception('Unable to use redir server. Falling back to manual mode')
-                self._oauth_config.manual_mode = False
-
-        self._oauth_done.clear()
-
-    def interrupt_oauth(self):
-        raise NotImplementedError
-
-    def _on_oauth_success(self, auth_dict):
-        assert self._csrf_token == auth_dict['state'][0]  # checks for csrf attack, what state am i in?
-        try:
-            self.api_key, self.refresh_token = self._flow.authenticate(auth_dict['code'])
-            self._oauth_done.set()
-        except Exception:
-            log.exception('Authentication failed')
-            raise
+        self.__creds = {"api_key": access_token,
+                        "refresh_token": refresh_token,
+                       }
+        self._oauth_config.creds_changed(self.__creds)
 
     def interrupt_auth(self):
         self._oauth_config.shutdown()
@@ -110,8 +83,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudTokenError(str(e))
 
         return {"api_key": token.access_token,
-                 "refresh_token": token.refresh_token,
-                 }
+                "refresh_token": token.refresh_token,
+               }
 
     def get_quota(self):
         user = self.client.user(user_id='me').get()

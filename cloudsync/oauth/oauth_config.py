@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 import webbrowser
 from requests_oauthlib import OAuth2Session
 
@@ -98,7 +98,6 @@ class OAuthConfig:
                     client_secret=self.app_secret,
                     code=self.success_code,
                     **kwargs))
-            self.token_changed(self._token.access, self._token.refresh)
             return self._token
         finally:
             self.shutdown()
@@ -115,7 +114,6 @@ class OAuthConfig:
         if isinstance(token, OAuthToken):
             token = token.refresh_token
         self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
-        self.token_changed(self._token.access, self._token.refresh)
         return self._token
 
     @property
@@ -167,8 +165,8 @@ class OAuthConfig:
             return self.failure_message(err_msg)
 
     # override this to save creds on refresh
-    def token_changed(self, creds: OAuthToken):     # pylint: disable=unused-argument, no-self-use
-        log.warning("refresh token will not be saved, implement OAuthConfig.token_changed to save it.")
+    def creds_changed(self, creds: Any):     # pylint: disable=unused-argument, no-self-use
+        log.warning("creds will not be saved, implement OAuthConfig.creds_changed to save it.")
 
     # override this to make a nicer message on success
     @staticmethod
