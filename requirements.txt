@@ -3,6 +3,8 @@ arrow
 msgpack
 dataclasses
 requests_oauthlib
+oauth2client<4.0.0
+requests
 # gdrive provider
 oauth2client<4.0.0
 httplib2
@@ -12,11 +14,6 @@ google-auth-oauthlib
 # dropbox provider
 dropbox
 # box provider
-boxsdk
-# onedrive provider
-onedrivesdk_fork
-# box provider with jwt support
 boxsdk[jwt]
 # onedrive provider
-# apparently onedrivesdk v2 is deprecated, so install the older one? Jeez. Plus v2 pkg fails with an error on install...
-onedrivesdk<2
+onedrivesdk_fork

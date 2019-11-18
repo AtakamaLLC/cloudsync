@@ -5,10 +5,11 @@ import webbrowser
 import hashlib
 import time
 import arrow
+import requests
 
 from typing import Optional, Generator, Union
 
-from boxsdk import OAuth2, Client, JWTAuth
+from boxsdk import Client, JWTAuth, OAuth2
 from boxsdk.object.item import Item as box_item
 from boxsdk.object.folder import Folder as box_folder
 from boxsdk.object.file import File as box_file
@@ -37,24 +38,31 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                        'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
+    _auth_url = 'https://account.box.com/api/oauth2/authorize'
+    _token_url = "https://api.box.com/oauth2/token"
+    _scopes = []
+    base_box_url = 'https://api.box.com/2.0'
+    events_endpoint = '/events'
+    long_poll_timeout = 120
+
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
 
         self.__cursor = None
         self.__client = None
+        self.__long_poll_config = None
+        self.__long_poll_session = requests.Session()
+
+        self.__polling_found_zero = threading.Event()
+        self.__long_polling_stopped = threading.Event()
+        self.__long_polling_stopped.set()
+        self.__event_thread = threading.Thread(target=self._long_poll)
+
         self.api_key = None
         self.refresh_token = None
         self.mutex = threading.RLock()
 
-        # dont make this null maybe? raise a value exception
         self._oauth_config = oauth_config
-        self._oauth_done = threading.Event()
-        self._csrf_token = None
-        self._session = None
-        self._flow = OAuth2(client_id=self._oauth_config.app_id,
-                            client_secret=self._oauth_config.app_secret,
-                            store_tokens=self._store_refresh_token
-                            )
 
     def _store_refresh_token(self, access_token, refresh_token):
         self._oauth_config.token_changed(OAuthToken(refresh_token=refresh_token, access_token=access_token))
@@ -89,21 +97,21 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             log.exception('Authentication failed')
             raise
 
-    def _on_oauth_failure(self, err):
-        log.error("oauth failure: %s", err)
-        self._oauth_done.set()
+    def interrupt_auth(self):
+        self._oauth_config.shutdown()
 
     def authenticate(self):
         logging.error('authenticating')
         try:
-            self.initialize()
-            self._oauth_done.wait()
-            return {"refresh_token": self.refresh_token,
-                    "api_key": self.api_key,
-                    }
-        finally:
-            if not self._oauth_config.manual_mode:
-                self._oauth_config.oauth_redir_server.shutdown()
+            self._oauth_config.start_auth(self._auth_url, self._scopes)
+            token = self._oauth_config.wait_auth(self._token_url, include_client_id=True)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
+
+        return {"api_key": token.access_token,
+                 "refresh_token": token.refresh_token,
+                 }
 
     def get_quota(self):
         user = self.client.user(user_id='me').get()
@@ -126,7 +134,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
             jwt_token = creds.get('jwt_token')
             api_key = creds.get('api_key', self.api_key)
-            refresh_token = creds.get('refresh_token', self.api_key)
+            refresh_token = creds.get('refresh_token', None)
 
             if not jwt_token:
                 if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or api_key)):
@@ -139,14 +147,22 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         sdk = JWTAuth.from_settings_dictionary(jwt_dict)
                         self.__client = Client(sdk)
                     else:
+                        if not refresh_token:
+                            raise CloudTokenError("Missing refresh token")
                         box_session = Session()
                         box_kwargs = box_session.get_constructor_kwargs()
-                        # box_kwargs['default_network_request_kwargs']['auto_session_renewal'] = False
-                        self._session = AuthorizedSession(self._flow, **box_kwargs)
-                        self.__client = Client(self._flow, self._session)
+                        box_oauth = OAuth2(client_id=self._oauth_config.app_id,
+                                           client_secret=self._oauth_config.app_secret,
+                                           access_token=self.__creds["api_key"],
+                                           refresh_token=self.__creds["refresh_token"],
+                                           store_tokens=self._store_refresh_token)
+
+                        box_session = AuthorizedSession(box_oauth, **box_kwargs)
+                        self.__client = Client(box_oauth, box_session)
                 with self._api() as client:
                     self.connection_id = client.user(user_id='me').get().id
             except BoxException:
+                log.exception("Error during connect")
                 self.disconnect()
                 raise CloudTokenError()
         else:
@@ -252,15 +268,54 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudCursorError(val)
         self.__cursor = val
 
+    def _long_poll(self):
+        self.__polling_found_zero.wait()
+        if not self.__long_poll_config:
+            headers = {'Authorization': f'Bearer {self.api_key}'}
+            long_poll_server_response = \
+                self.__long_poll_session.options(self.base_box_url + self.events_endpoint, headers=headers)
+            long_poll_server_response.json().get('entries')[0]
+            server_json = long_poll_server_response.json().get('entries')[0]
+            self.__long_poll_config = {
+                "url": server_json.get('url'),
+                "retries_remaining": server_json.get('max_retries'),
+                "retry_timeout": server_json.get('retry_timeout')
+            }
+        try:
+            self.__long_polling_stopped.clear()
+            server_config = self.__long_poll_config
+            response = self.__long_poll_session.get(server_config.get('url'),
+                                                    timeout=self.long_poll_timeout)  # long poll
+            if response.get('message') == 'new_change':
+                self.__polling_found_zero.clear()
+                self.__long_polling_stopped.set()
+                return True
+            else:
+                self.__polling_found_zero.clear()
+                self.__long_polling_stopped.set()
+                return False
+        except requests.exceptions.ReadTimeout:  # need new long poll server:
+            log.debug('Timeout during long poll')
+        except Exception as e:
+            log.error('Got a gorram error', e)
+        finally:
+            server_config['retries_remaining'] = server_config['retries_remaining'] - 1
+            self.__long_poll_config = server_config if server_config.get('retries_remaining') else None
+
+        self.__polling_found_zero.clear()
+        self.__long_polling_stopped.set()
+        return False
+
     def events(self) -> Generator[Event, None, None]:
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
         stream_position = self.current_cursor
         while True:
+            self.__long_polling_stopped.wait()  # make it go one more time
             with self._api() as client:
                 response = client.events().get_events(limit=100, stream_position=stream_position)
                 new_position = response.get('next_stream_position')
                 if len(response.get('entries')) == 0:
-                    break
+                    self.__polling_found_zero.set()
                 for change in (i for i in response.get('entries') if i.get('event_type')):
                     log.debug("got event %s", change)
                     log.debug(f"event type is {change.get('event_type')}")

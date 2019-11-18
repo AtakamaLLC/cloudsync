@@ -18,13 +18,17 @@ log = logging.getLogger(__name__)
 class OAuthError(Exception): 
     pass
 
+
 class OAuthToken:       # pylint: disable=too-few-public-methods
-    def __init__(self, data):
+    def __init__(self, data=None, **kwargs):
+        if data is None:
+            data = kwargs
         self.access_token = data["access_token"]
         self.token_type = data["token_type"]
         self.expires_in = data.get("expires_in")
         self.refresh_token = data.get("refresh_token")
         self.scope = data.get("scope")
+
 
 class OAuthConfig:
     def __init__(self, *, app_id: str, app_secret: str, 
@@ -84,18 +88,20 @@ class OAuthConfig:
         Returns an OAuthToken object, or raises a OAuthError 
         """
         assert self._session
+        try:
+            if not self.wait_success(timeout):
+                if self.failure_info:
+                    raise OAuthError(self.failure_info)
+                raise OAuthError("Oauth interrupted")
 
-        if not self.wait_success(timeout):
-            if self.failure_info:
-                raise OAuthError(self.failure_info)
-            raise OAuthError("Oauth interrupted")
-
-        self._token = OAuthToken(self._session.fetch_token(token_url,
-                client_secret=self.app_secret,
-                code=self.success_code,
-                **kwargs))
-        self.token_changed(self._token)
-        return self._token
+            self._token = OAuthToken(self._session.fetch_token(token_url,
+                    client_secret=self.app_secret,
+                    code=self.success_code,
+                    **kwargs))
+            self.token_changed(self._token.access, self._token.refresh)
+            return self._token
+        finally:
+            self.shutdown()
 
     def refresh(self, refresh_url, token=None, scope=None, **extra):
         """
@@ -109,7 +115,7 @@ class OAuthConfig:
         if isinstance(token, OAuthToken):
             token = token.refresh_token
         self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
-        self.token_changed(self._token)
+        self.token_changed(self._token.access, self._token.refresh)
         return self._token
 
     @property
@@ -173,4 +179,3 @@ class OAuthConfig:
     @staticmethod
     def failure_message(error_str: str) -> str:
         return 'OAuth failed: {}'.format(error_str)
-
