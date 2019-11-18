@@ -94,7 +94,7 @@ class OAuthConfig:
                     client_secret=self.app_secret,
                     code=self.success_code,
                     **kwargs))
-            self.token_changed(self._token)
+            self.token_changed(self._token.access, self._token.refresh)
             return self._token
         finally:
             self.shutdown()
@@ -111,7 +111,7 @@ class OAuthConfig:
         if isinstance(token, OAuthToken):
             token = token.refresh_token
         self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
-        self.token_changed(self._token)
+        self.token_changed(self._token.access, self._token.refresh)
         return self._token
 
     @property
@@ -163,7 +163,7 @@ class OAuthConfig:
             return self.failure_message(err_msg)
 
     # override this to save creds on refresh
-    def token_changed(self, creds: OAuthToken):     # pylint: disable=unused-argument, no-self-use
+    def token_changed(self, access: str, refresh: str):     # pylint: disable=unused-argument, no-self-use
         ...
 
     # override this to make a nicer message on success

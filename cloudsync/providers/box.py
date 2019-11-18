@@ -8,7 +8,7 @@ import arrow
 
 from typing import Optional, Generator, Union
 
-from boxsdk import OAuth2, Client, JWTAuth
+from boxsdk import Client, JWTAuth, OAuth2
 from boxsdk.object.item import Item as box_item
 from boxsdk.object.folder import Folder as box_folder
 from boxsdk.object.file import File as box_file
@@ -51,64 +51,23 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
         # dont make this null maybe? raise a value exception
         self._oauth_config = oauth_config
-        self._oauth_done = threading.Event()
-        self._csrf_token = None
-        self._session = None
-        self._flow = OAuth2(client_id=self._oauth_config.app_id,
-                            client_secret=self._oauth_config.app_secret,
-                            store_tokens=self._store_refresh_token
-                            )
 
-    def _store_refresh_token(self, access_token, refresh_token):
-        _ = access_token
-        self._oauth_config.store_refresh_token(refresh_token)
+    def _store_refresh_token(self, access, refresh):
+        self._oauth_config.token_changed(access, refresh)
 
-    def initialize(self):
-        assert self._oauth_config.app_id
-        logging.error('initializing')
-        if not self._oauth_config.manual_mode:
-            try:
-                logging.error('try auth')
-                self._oauth_config.start_server(
-                    on_success=self._on_oauth_success,
-                    on_failure=self._on_oauth_failure,
-                )
-                # todo get rid of the 'auth/' nonsense from all providers
-                url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.redirect_uri)
-                logging.error(self._oauth_config.redirect_uri)
-                webbrowser.open(url)
-            except OSError:
-                log.exception('Unable to use redir server. Falling back to manual mode')
-                self._oauth_config.manual_mode = False
-
-        self._oauth_done.clear()
-
-    def interrupt_oauth(self):
-        raise NotImplementedError
-
-    def _on_oauth_success(self, auth_dict):
-        assert self._csrf_token == auth_dict['state'][0]  # checks for csrf attack, what state am i in?
-        try:
-            self.api_key, self.refresh_token = self._flow.authenticate(auth_dict['code'])
-            self._oauth_done.set()
-        except Exception:
-            log.exception('Authentication failed')
-            raise
-
-    def _on_oauth_failure(self, err):
-        log.error("oauth failure: %s", err)
-        self._oauth_done.set()
+    def interrupt_auth(self):
+        self._oauth_config.shutdown()
 
     def authenticate(self):
         logging.error('authenticating')
         try:
             self._oauth_config.start_auth(self._auth_url, self._scopes)
-            token = self._oauth_config.wait_auth(self._token_url)
+            token = self._oauth_config.wait_auth(self._token_url, include_client_id=True)
         except Exception as e:
             log.error("oauth error %s", e)
             raise CloudTokenError(str(e))
 
-        creds = {"api_key": token.access_token,
+        return {"api_key": token.access_token,
                  "refresh_token": token.refresh_token,
                  }
 
@@ -133,7 +92,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
             jwt_token = creds.get('jwt_token')
             api_key = creds.get('api_key', self.api_key)
-            refresh_token = creds.get('refresh_token', self.api_key)
+            refresh_token = creds.get('refresh_token', None)
 
             if not jwt_token:
                 if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or api_key)):
@@ -146,14 +105,22 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         sdk = JWTAuth.from_settings_dictionary(jwt_dict)
                         self.__client = Client(sdk)
                     else:
+                        if not refresh_token:
+                            raise CloudTokenError("Missing refresh token")
                         box_session = Session()
                         box_kwargs = box_session.get_constructor_kwargs()
-                        # box_kwargs['default_network_request_kwargs']['auto_session_renewal'] = False
-                        self._session = AuthorizedSession(self._flow, **box_kwargs)
-                        self.__client = Client(self._flow, self._session)
+                        box_oauth = OAuth2(client_id=self._oauth_config.app_id,
+                            client_secret=self._oauth_config.app_secret,
+                            access_token=self.__creds["api_key"],
+                            refresh_token=self.__creds["refresh_token"],
+                            store_tokens=self._store_refresh_token
+                            )
+                        box_session = AuthorizedSession(box_oauth, **box_kwargs)
+                        self.__client = Client(box_oauth, box_session)
                 with self._api() as client:
                     self.connection_id = client.user(user_id='me').get().id
             except BoxException:
+                log.exception("Error during connect")
                 self.disconnect()
                 raise CloudTokenError()
         else:
