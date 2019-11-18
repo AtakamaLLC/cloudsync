@@ -67,6 +67,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         # implement this method for providers that need authentication
         pass
 
+    # todo: remove this, caller should serialize, handle errors with better UI, etc.
+    # this helper function is just incorrect
     def connect_or_authenticate(self, creds):
         # This won't attempt oauth unless the specific failure to connect is an authentication error
         try:
@@ -75,6 +77,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             creds = self.authenticate()  # pylint: disable=assignment-from-no-return
             self.connect(creds)
         return creds
+
+    def interrupt_auth(self):
+        # interrupt/stop a blocking authentication call
+        raise NotImplementedError()
 
     @property
     @abstractmethod

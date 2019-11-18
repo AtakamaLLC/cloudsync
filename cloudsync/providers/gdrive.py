@@ -92,14 +92,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def initialize(self):
         if not self._oauth_config.manual_mode:
             try:
-                self._oauth_config.oauth_redir_server.run(
+                self._oauth_config.start_server(
                     on_success=self._on_oauth_success,
                     on_failure=self._on_oauth_failure,
                 )
                 self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
                                                  client_secret=self._oauth_config.app_secret,
                                                  scope=self._scope,
-                                                 redirect_uri=self._oauth_config.oauth_redir_server.uri('/auth/'))
+                                                 redirect_uri=self._oauth_config.redirect_uri)
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
                 self._oauth_config.manual_mode = False
@@ -116,11 +116,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return url
 
-    def interrupt_oauth(self):
-        if not self._oauth_config.manual_mode:
-            self._oauth_config.oauth_redir_server.shutdown()  # ApiServer shutdown does not throw  exceptions
+    def interrupt_auth(self):
+        self._oauth_config.shutdown()  # ApiServer shutdown does not throw exceptions
         self._flow = None
-        self._oauth_done.clear()
 
     def _on_oauth_success(self, auth_dict):
         auth_string = auth_dict['code'][0]
@@ -140,13 +138,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def authenticate(self):
         try:
             self.initialize()
-            self._oauth_done.wait()
+            if not self._oauth_config.wait_success():
+                raise CloudTokenError(self._oauth_config.failure_info)
+
             return {"refresh_token": self.refresh_token,
                     "api_key": self.api_key,
                     }
         finally:
-            if not self._oauth_config.manual_mode:
-                self._oauth_config.oauth_redir_server.shutdown()
+            self._oauth_config.shutdown()
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):

@@ -6,3 +6,5 @@ pytest-cov
 pylint
 mypy
 flaky>=3.6
+coverage
+codecov

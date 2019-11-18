@@ -12,19 +12,12 @@ import hashlib
 import json
 from typing import Generator, Optional, List, Dict, Any
 import urllib.parse
+import webbrowser
 import requests
 
 import arrow
-# from googleapiclient.discovery import build   # pylint: disable=import-error
-# from googleapiclient.errors import HttpError  # pylint: disable=import-error
-# from httplib2 import Http, HttpLib2Error
-# from oauth2client import client         # pylint: disable=import-error
-# from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
-# from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
-# from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
 import onedrivesdk_fork as onedrivesdk
-from onedrivesdk_fork.helpers import GetAuthCodeServer
 from onedrivesdk_fork.error import OneDriveError
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
@@ -56,6 +49,9 @@ class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-metho
         super().__init__(*a, **kws)
         self.pid = pid
 
+def open_url(url):
+    webbrowser.open(url)
+
 
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
@@ -65,6 +61,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     name = 'OneDrive'
     _scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
     _base_url = 'https://api.onedrive.com/v1.0/'
+    _token_url = "https://login.live.com/oauth20_token.srf"
+    _auth_url = "https://login.live.com/oauth20_authorize.srf"
     additional_invalid_characters = '#'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
@@ -76,8 +74,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.mutex = threading.RLock()
         self._oauth_config = oauth_config
 
-        # TODO pick a port...just like dropbox
-        self._redirect_uri = 'http://localhost:8080/'
+        self._oauth_done = threading.Event()
+        self._redirect_uri = None
 
     @property
     def connected(self):  # One Drive
@@ -86,27 +84,31 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def get_display_name(self):  # One Drive
         return self.name
 
+    def interrupt_auth(self):
+        self._oauth_config.shutdown()
+
     # noinspection PyProtectedMember
-    def authenticate(self):  # One Drive
-        assert self._oauth_config.app_id
+    def authenticate(self):
+        if not self._oauth_config.app_id:
+            raise CloudTokenError("app id not set")
 
         log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
 
-        self.ensure_event_loop()
 
-        client = onedrivesdk.get_default_client(
-            client_id=self._oauth_config.app_id, scopes=self._scopes)
+        try:
+            self._oauth_config.start_auth(self._auth_url, self._scopes)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
 
-        auth_url = client.auth_provider.get_auth_url(self._redirect_uri)
+        try:
+            token = self._oauth_config.wait_auth(self._token_url)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
 
-        # this will block until we have the code
-        auth_code = GetAuthCodeServer.get_auth_code(auth_url, self._redirect_uri)
-
-        client.auth_provider.authenticate(auth_code, self._redirect_uri, self._oauth_config.app_secret)
-
-        creds = {"access": client.auth_provider.access_token, 
-                 "refresh": client.auth_provider._session.refresh_token,  # pylint: disable=protected-access
-                 "url": client.auth_provider._session.auth_server_url,  # pylint: disable=protected-access
+        creds = {"access": token.access_token, 
+                 "refresh": token.refresh_token,
                  }
 
         return creds
@@ -184,11 +186,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def connect(self, creds):
         if not self.__client:
+            if not creds:
+                raise CloudTokenError("no credentials")
             log.debug('Connecting to One Drive')
-            assert self._oauth_config.app_id
-            assert self._oauth_config.app_secret
-
-            assert creds.get("refresh")
+            if not creds.get("refresh"):
+                raise CloudTokenError("no refresh token, refusing connection")
 
             self.ensure_event_loop()
             
@@ -198,7 +200,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         http_provider=http_provider,
                         client_id=self._oauth_config.app_id,
                         scopes=self._scopes)
-                auth_provider.get_auth_url(self._redirect_uri)
 
                 class MySession(onedrivesdk.session.Session):
                     def __init__(self, **kws):  # pylint: disable=super-init-not-called
@@ -211,7 +212,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                             refresh_token=creds.get("refresh"),
                             access_token=creds.get("access", None),
                             redirect_uri=self._redirect_uri,  # pylint: disable=protected-access
-                            auth_server_url=creds.get("url"),
+                            auth_server_url=self._token_url,  # pylint: disable=protected-access
                             client_id=self._oauth_config.app_id,  # pylint: disable=protected-access
                             client_secret=self._oauth_config.app_secret,  # pylint: disable=protected-access
                         )
@@ -223,7 +224,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         scopes=self._scopes)
 
                 auth_provider.load_session()
-                auth_provider.refresh_token()
+                try:
+                    auth_provider.refresh_token()
+                except Exception as e:
+                    log.error(e)
+                    raise CloudTokenError(str(e))
                 self.__client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
                 self.__client.item = self.__client.item  # satisfies a lint confusion
                 self.__creds = creds
