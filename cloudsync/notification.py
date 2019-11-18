@@ -61,6 +61,8 @@ class NotificationManager(Runnable):
             self.notify(Notification(source, NotificationType.TOKEN_ERROR, path))
         elif isinstance(e, CloudFileNameError):
             self.notify(Notification(source, NotificationType.FILE_NAME_ERROR, path))
+        else:
+            log.warning("Unexpected cloud exception: %s (type %s)", e, type(e))
 
     def notify(self, e: Notification):
         self.__queue.put(e)

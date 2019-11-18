@@ -7,7 +7,7 @@ from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursor
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType, DIRECTORY
-from .notification import SourceEnum, Notification, NotificationType
+from .notification import SourceEnum
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
@@ -70,12 +70,7 @@ class EventManager(Runnable):
         self.max_backoff = provider.default_sleep * 4
         self.mult_backoff = 2
 
-        reauthenticate = reauth or self.__reauth
-
-        def reauth_wrapper(*args, **kwargs):
-            reauthenticate(*args, **kwargs)
-            self.__nmgr.notify(Notification(SourceEnum(self.side), NotificationType.CONNECTED, None))
-        self.reauthenticate = reauth_wrapper
+        self.reauthenticate = reauth or self.__reauth
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
