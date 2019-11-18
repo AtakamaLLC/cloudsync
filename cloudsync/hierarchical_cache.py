@@ -4,7 +4,7 @@ import logging
 class Node:
     def __init__(self, oid, name):
         self.oid = oid
-        self.parents = {}
+        self.parents = []
         self.name = name
 
     def add_parent(self, parent_node, name):
@@ -16,8 +16,8 @@ class DirNode(Node):
         super().__init__(*args)
         self.children = {}
 
-    def add_child(self, child_node, name):
-        self.children[name] = child_node
+    def add_child(self, child_node):
+        self.children += [child_node]
 
 
 class FileNode(Node):
@@ -35,17 +35,20 @@ class HierarchicalCache:
         parent_path, node_name = new_path.rsplit(self.sep, 1)
         if parent_path == '':
             parent_path = '/'
-        logging.error(parent_path)
+
         parent_node = self.get_node_by_path(parent_path)
         if parent_node is None:
             raise KeyError('Parent must be added before child can be added')
+
         new_node = node(new_oid, node_name)
         parent_node.children[node_name] = new_node
-        new_node.parents[parent_node.name] = parent_node
+        new_node.parents += [parent_node]
         self.oid_to_nodes[new_oid] = new_node
+        return new_node
 
-    def make_directory(self, new_path, *args):
-        self.__make_node(new_path.rstrip(self.sep), *args, DirNode)
+    def make_directory(self, new_path, new_oid, *args):
+        new_node = self.__make_node(new_path.rstrip(self.sep), new_oid, *args, DirNode)
+        self.oid_to_nodes[new_oid] = new_node
 
     def make_file(self, *args):
         self.__make_node(*args, FileNode)
@@ -61,8 +64,8 @@ class HierarchicalCache:
         parent_node.children.pop(remove_node_name)
         self.oid_to_nodes.pop(node_to_remove.oid)
 
-    def rename(self, old_path, new_path):
-        pass
+    def rename(self, oid, new_path):
+        raise NotImplementedError
 
     def get_node_by_path(self, path_to_object):
         def _path_to_oid(_path_to_object, node):
@@ -87,7 +90,16 @@ class HierarchicalCache:
         return node.oid if node else None
 
     def oid_to_path(self, oid):
-        pass
+        node = self.oid_to_nodes.get(oid)
+        if not node:
+            return None
+
+        def backtrace_path(current_node):
+            if current_node.oid == self.nodes_root.oid:
+                return ''
+            return backtrace_path(current_node.parents[0]) + self.sep + current_node.name
+        return backtrace_path(node)
+
 
     def __iter__(self):
         pass
