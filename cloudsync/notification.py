@@ -16,7 +16,6 @@ class NotificationType(enum.Enum):
     STOPPED = 'stopped'
     FILE_NAME_ERROR = 'file_name_error'
     OUT_OF_SPACE_ERROR = 'out_of_space_error'
-    TOKEN_ERROR = 'token_error'
     DISCONNECTED_ERROR = 'disconnected_error'
 
 
@@ -57,12 +56,10 @@ class NotificationManager(Runnable):
             self.notify(Notification(source, NotificationType.DISCONNECTED_ERROR, path))
         elif isinstance(e, CloudOutOfSpaceError):
             self.notify(Notification(source, NotificationType.OUT_OF_SPACE_ERROR, path))
-        elif isinstance(e, CloudTokenError):
-            self.notify(Notification(source, NotificationType.TOKEN_ERROR, path))
         elif isinstance(e, CloudFileNameError):
             self.notify(Notification(source, NotificationType.FILE_NAME_ERROR, path))
         else:
-            log.warning("Unexpected cloud exception: %s (type %s)", e, type(e))
+            log.debug("Encountered a cloud exception: %s (type %s)", e, type(e))
 
     def notify(self, e: Notification):
         self.__queue.put(e)
