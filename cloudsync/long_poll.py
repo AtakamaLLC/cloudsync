@@ -1,40 +1,43 @@
 import threading
 import logging
 import time
-from abc import ABC, abstractmethod
-from cloudsync import Runnable
-from typing import Callable
+from cloudsync import Runnable, Event
+from typing import Callable, Generator, Optional, Tuple
+log = logging.getLogger(__name__)
 
 
 class LongPollManager(Runnable):
     long_poll_timeout = 120
 
-    def __init__(self, short_poll: Callable[[], Generator[Event, None, None]], long_poll: Callable[Optional[int], Generator[Event, None, None]]):
-        self.__requires_short_poll = threading.Event()
-
-        self.new_events_found = False
-        self._parent = parent
+    def __init__(self, short_poll: Callable[[], Generator[Event, None, None]],
+                 long_poll: Callable[[Optional[int]], Generator[Event, None, None]]):
+        self.__provider_events_pending = threading.Event()
         self.short_poll = short_poll
-        self.long_poll: Callable[Tuple[int], Generator[Event, None, None]] = long_poll
+        self.long_poll = long_poll
 
-    def _short_poll(self) -> Generator[Event, None, None]:
-        self.__requires_short_poll.wait()
+    def __call__(self) -> Generator[Event, None, None]:
+        log.debug("waiting for events")
+        self.__provider_events_pending.wait()
+        log.debug("done waiting for events")
+        self.__provider_events_pending.clear()
         has_items = True
         while has_items:
             has_items = False
+            log.debug("about to short poll")
             for event in self.short_poll():
+                log.debug("short poll returned an event, yielding %s", event)
                 has_items = True
                 yield event
 
     def do(self):
         while True:
             try:
+                log.debug("about to long poll")
                 self.long_poll(self.long_poll_timeout)
-                self.__requires_short_poll.set()  # don't condition on long_poll(), we run if there's a timeout or event
+                log.debug("long poll finished, about to check events")
+                self.__provider_events_pending.set()  # don't condition on long_poll(), we run if there's a timeout or event
+                log.debug("events check complete")
             except Exception as e:
-                logging.debug('Unhandled exception during long poll %s', e)
+                log.exception('Unhandled exception during long poll %s', e)
                 time.sleep(15)
-
-    def __call__(self, *args, **kwargs):
-        yield from self._short_poll()
 

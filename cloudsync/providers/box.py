@@ -53,20 +53,14 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__long_poll_config = {}
         self.__long_poll_session = requests.Session()
 
-        self.__polling_found_zero = threading.Event()
-        self.__long_polling_stopped = threading.Event()
-        self.__long_polling_stopped.set()
-        self.__event_thread = threading.Thread(target=self._long_poll, name='long_polling')
-        self.__event_thread.start()
-
         self.api_key = None
         self.refresh_token = None
         self.mutex = threading.RLock()
 
         self._oauth_config = oauth_config
         self._long_poll_manager = LongPollManager(self.short_poll, self.long_poll)
-        self._long_poll_manager.start()
         self.events = self._long_poll_manager
+        self._long_poll_manager.start()
 
     def _store_refresh_token(self, access_token, refresh_token):
         self.__creds = {"api_key": access_token,
@@ -123,6 +117,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         jwt_dict = json.loads(jwt_token)
                         sdk = JWTAuth.from_settings_dictionary(jwt_dict)
                         self.__client = Client(sdk)
+                        self.__creds['api_key'] = sdk.access_token
                     else:
                         if not refresh_token:
                             raise CloudTokenError("Missing refresh token")
@@ -254,26 +249,33 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     #             log.error("long poll loop got unhandled exception %s", e)
     #             time.sleep(15)
     def long_poll(self, timeout=long_poll_timeout):
+        log.debug("inside long_poll")
         try:
             if self.__long_poll_config.get('retries_remaining', 0) < 1:
-                headers = {'Authorization': f'Bearer {self.api_key}'}
+                log.debug("creds = %s", self.__creds)
+                headers = {'Authorization': 'Bearer %s' % (self.__creds['api_key'], )}
+                log.debug("headers: %s", headers)
                 srv_resp = self.__long_poll_session.options(self.base_box_url + self.events_endpoint,
                                                             headers=headers)
+                log.debug("response content is %s, %s", srv_resp.status_code, srv_resp.content)
+                if not (200 <= srv_resp.status_code < 300):
+                    raise CloudTokenError
                 server_json = srv_resp.json().get('entries')[0]
                 self.__long_poll_config = {
                     "url": server_json.get('url'),
                     "retries_remaining": server_json.get('max_retries'),
                     "retry_timeout": server_json.get('retry_timeout')
                 }
-            srv_resp = self.__long_poll_session.get(self.__long_poll_config.get('url'),
+            srv_resp: requests.Response = self.__long_poll_session.get(self.__long_poll_config.get('url'),
                                                     timeout=timeout)  # long poll
+            log.debug("server message is %s", srv_resp.get('message'))
             return srv_resp.get('message') == 'new_change'
         except requests.exceptions.ReadTimeout:  # need new long poll server:
             log.debug('Timeout during long poll')
             return False
         # TODO except boxerror.too_many_retries (or whatever the exception is called)
         finally:
-            self.__long_poll_config['retries_remaining'] = self.__long_poll_config['retries_remaining'] - 1
+            self.__long_poll_config['retries_remaining'] = self.__long_poll_config.get('retries_remaining', 1) - 1
 
     def events(self) -> Generator[Event, None, None]:
         pass
@@ -282,12 +284,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
         stream_position = self.current_cursor
         while True:
-            self.__long_polling_stopped.wait(timeout=120)  # timeout avoids the need to short poll an extra time
+            log.debug("inside short_poll()", change)
             with self._api() as client:
                 response = client.events().get_events(limit=100, stream_position=stream_position)
                 new_position = response.get('next_stream_position')
-                if len(response.get('entries')) == 0:
-                    self.__polling_found_zero.set()
                 for change in (i for i in response.get('entries') if i.get('event_type')):
                     log.debug("got event %s", change)
                     log.debug("event type is %s", change.get('event_type'))
