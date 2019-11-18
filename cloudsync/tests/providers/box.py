@@ -55,7 +55,7 @@ def cloudsync_provider():
 def connect_test(want_oauth: bool):
     creds = box_creds()
     if want_oauth:
-        creds.pop("refresh_token", None)  # triggers oauth to get a new refresh token
+        creds = {}
     elif not creds:
         pytest.skip('requires box token')
     sync_root = "/" + os.urandom(16).hex()
@@ -68,15 +68,6 @@ def connect_test(want_oauth: bool):
         creds = box.authenticate()
         logging.error(f'creds are {creds}')
         box.connect(creds)
-
-    assert box.client
-    box.get_quota()
-    try:
-        info = box.info_path(sync_root)
-        if info and info.oid:
-            box.delete(info.oid)
-    except CloudFileNotFoundError:
-        pass
 
 def test_connect():
     connect_test(False)

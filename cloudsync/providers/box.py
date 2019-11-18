@@ -65,12 +65,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if not self._oauth_config.manual_mode:
             try:
                 logging.error('try auth')
-                self._oauth_config.oauth_redir_server.run(
+                self._oauth_config.start_server(
                     on_success=self._on_oauth_success,
                     on_failure=self._on_oauth_failure,
                 )
-                url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.oauth_redir_server.uri('/auth/'))
-                logging.error(self._oauth_config.oauth_redir_server.uri('/auth/'))
+                url, self._csrf_token = self._flow.get_authorization_url(redirect_url=self._oauth_config.redirect_uri + "auth/")
                 webbrowser.open(url)
             except OSError:
                 log.exception('Unable to use redir server. Falling back to manual mode')
@@ -104,7 +103,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     }
         finally:
             if not self._oauth_config.manual_mode:
-                self._oauth_config.oauth_redir_server.shutdown()
+                self._oauth_config.shutdown()
 
     def get_quota(self):
         user = self.client.user(user_id='me').get()
@@ -115,7 +114,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             'used': user.space_used,
             'total': user.space_amount,
             'login': user.login,
-            'uid': user.id
         }
         logging.error(res)
         return res
