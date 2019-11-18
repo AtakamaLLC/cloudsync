@@ -162,7 +162,7 @@ class OAuthConfig:
 
     # override this to save creds on refresh
     def token_changed(self, creds: OAuthToken):     # pylint: disable=unused-argument, no-self-use
-        ...
+        log.warning("refresh token will not be saved, implement OAuthConfig.token_changed to save it.")
 
     # override this to make a nicer message on success
     @staticmethod
@@ -174,7 +174,3 @@ class OAuthConfig:
     def failure_message(error_str: str) -> str:
         return 'OAuth failed: {}'.format(error_str)
 
-    @staticmethod
-    def store_refresh_token(token: str):
-        _ = token
-        log.warning("refresh token will not be saved, implement OAuthConfig.store_refresh_token to save it.")

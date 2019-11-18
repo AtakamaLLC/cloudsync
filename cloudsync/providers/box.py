@@ -17,7 +17,7 @@ from boxsdk.session.session import Session, AuthorizedSession
 from cloudsync.utils import debug_args
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 
-from cloudsync.oauth import OAuthConfig
+from cloudsync.oauth import OAuthConfig, OAuthToken
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
     CloudFileExistsError, CloudException, CloudCursorError
@@ -57,8 +57,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                             )
 
     def _store_refresh_token(self, access_token, refresh_token):
-        _ = access_token
-        self._oauth_config.store_refresh_token(refresh_token)
+        self._oauth_config.token_changed(OAuthToken(refresh_token=refresh_token, access_token=access_token))
 
     def initialize(self):
         logging.error('initializing')
