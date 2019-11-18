@@ -67,6 +67,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         # implement this method for providers that need authentication
         pass
 
+    def interrupt_auth(self):
+        # interrupt/stop a blocking authentication call
+        raise NotImplementedError()
+
     @property
     @abstractmethod
     def name(self):
