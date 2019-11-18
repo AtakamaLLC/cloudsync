@@ -18,7 +18,7 @@ from boxsdk.session.session import Session, AuthorizedSession
 from cloudsync.utils import debug_args
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 
-from cloudsync.oauth import OAuthConfig
+from cloudsync.oauth import OAuthConfig, OAuthToken
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
     CloudFileExistsError, CloudException, CloudCursorError
@@ -68,8 +68,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._long_poll_manager.start()
         self.events = self._long_poll_manager
 
-    def _store_refresh_token(self, access, refresh):
-        self._oauth_config.token_changed(access, refresh)
+    def _store_refresh_token(self, access_token, refresh_token):
+        self.__creds = {"api_key": access_token,
+                        "refresh_token": refresh_token,
+                       }
+        self._oauth_config.creds_changed(self.__creds)
 
     def interrupt_auth(self):
         self._oauth_config.shutdown()
@@ -84,22 +87,22 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudTokenError(str(e))
 
         return {"api_key": token.access_token,
-                 "refresh_token": token.refresh_token,
-                 }
+                "refresh_token": token.refresh_token,
+               }
 
     def get_quota(self):
-        user = self.client.user(user_id='me').get()
+        with self._api() as client:
+            user = client.user(user_id='me').get()
 
-        logging.error(dir(user))
+            logging.error(dir(user))
 
-        res = {
-            'used': user.space_used,
-            'total': user.space_amount,
-            'login': user.login,
-            'uid': user.id
-        }
-        logging.error(res)
-        return res
+            res = {
+                'used': user.space_used,
+                'limit': user.space_amount,
+                'login': user.login,
+            }
+            log.debug("quota %s", res)
+            return res
 
     def connect(self, creds):
         log.debug('Connecting to box')
@@ -126,11 +129,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         box_session = Session()
                         box_kwargs = box_session.get_constructor_kwargs()
                         box_oauth = OAuth2(client_id=self._oauth_config.app_id,
-                            client_secret=self._oauth_config.app_secret,
-                            access_token=self.__creds["api_key"],
-                            refresh_token=self.__creds["refresh_token"],
-                            store_tokens=self._store_refresh_token
-                            )
+                                           client_secret=self._oauth_config.app_secret,
+                                           access_token=self.__creds["api_key"],
+                                           refresh_token=self.__creds["refresh_token"],
+                                           store_tokens=self._store_refresh_token)
+
                         box_session = AuthorizedSession(box_oauth, **box_kwargs)
                         self.__client = Client(box_oauth, box_session)
                 with self._api() as client:
@@ -139,9 +142,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 log.exception("Error during connect")
                 self.disconnect()
                 raise CloudTokenError()
-        else:
-            # TODO: reconnect, and also call the callback for saving the new refresh token
-            raise NotImplementedError
 
     def disconnect(self):
         self.__client = None
