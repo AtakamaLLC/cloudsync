@@ -138,9 +138,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 log.exception("Error during connect")
                 self.disconnect()
                 raise CloudTokenError()
-        else:
-            # TODO: reconnect, and also call the callback for saving the new refresh token
-            raise NotImplementedError
 
     def disconnect(self):
         self.__client = None
