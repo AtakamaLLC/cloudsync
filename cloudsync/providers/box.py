@@ -5,6 +5,7 @@ import webbrowser
 import hashlib
 import time
 import arrow
+import requests
 
 from typing import Optional, Generator, Union
 
@@ -36,20 +37,31 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     additional_invalid_characters = ''
     events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                        'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
+
     _auth_url = 'https://account.box.com/api/oauth2/authorize'
     _token_url = "https://api.box.com/oauth2/token"
     _scopes = []
+    base_box_url = 'https://api.box.com/2.0'
+    events_endpoint = '/events'
+    long_poll_timeout = 120
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
 
         self.__cursor = None
         self.__client = None
+        self.__long_poll_config = None
+        self.__long_poll_session = requests.Session()
+
+        self.__polling_found_zero = threading.Event()
+        self.__long_polling_stopped = threading.Event()
+        self.__long_polling_stopped.set()
+        self.__event_thread = threading.Thread(target=self._long_poll)
+
         self.api_key = None
         self.refresh_token = None
         self.mutex = threading.RLock()
 
-        # dont make this null maybe? raise a value exception
         self._oauth_config = oauth_config
 
     def _store_refresh_token(self, access, refresh):
@@ -226,15 +238,54 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudCursorError(val)
         self.__cursor = val
 
+    def _long_poll(self):
+        self.__polling_found_zero.wait()
+        if not self.__long_poll_config:
+            headers = {'Authorization': f'Bearer {self.api_key}'}
+            long_poll_server_response = \
+                self.__long_poll_session.options(self.base_box_url + self.events_endpoint, headers=headers)
+            long_poll_server_response.json().get('entries')[0]
+            server_json = long_poll_server_response.json().get('entries')[0]
+            self.__long_poll_config = {
+                "url": server_json.get('url'),
+                "retries_remaining": server_json.get('max_retries'),
+                "retry_timeout": server_json.get('retry_timeout')
+            }
+        try:
+            self.__long_polling_stopped.clear()
+            server_config = self.__long_poll_config
+            response = self.__long_poll_session.get(server_config.get('url'),
+                                                    timeout=self.long_poll_timeout)  # long poll
+            if response.get('message') == 'new_change':
+                self.__polling_found_zero.clear()
+                self.__long_polling_stopped.set()
+                return True
+            else:
+                self.__polling_found_zero.clear()
+                self.__long_polling_stopped.set()
+                return False
+        except requests.exceptions.ReadTimeout:  # need new long poll server:
+            log.debug('Timeout during long poll')
+        except Exception as e:
+            log.error('Got a gorram error', e)
+        finally:
+            server_config['retries_remaining'] = server_config['retries_remaining'] - 1
+            self.__long_poll_config = server_config if server_config.get('retries_remaining') else None
+
+        self.__polling_found_zero.clear()
+        self.__long_polling_stopped.set()
+        return False
+
     def events(self) -> Generator[Event, None, None]:
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
         stream_position = self.current_cursor
         while True:
+            self.__long_polling_stopped.wait()  # make it go one more time
             with self._api() as client:
                 response = client.events().get_events(limit=100, stream_position=stream_position)
                 new_position = response.get('next_stream_position')
                 if len(response.get('entries')) == 0:
-                    break
+                    self.__polling_found_zero.set()
                 for change in (i for i in response.get('entries') if i.get('event_type')):
                     log.debug("got event %s", change)
                     log.debug(f"event type is {change.get('event_type')}")

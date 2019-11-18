@@ -3,6 +3,8 @@ arrow
 msgpack
 dataclasses
 requests_oauthlib
+oauth2client<4.0.0
+requests
 # gdrive provider
 oauth2client<4.0.0
 httplib2
