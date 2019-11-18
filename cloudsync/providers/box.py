@@ -22,7 +22,7 @@ from cloudsync.oauth import OAuthConfig
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
     CloudFileExistsError, CloudException, CloudCursorError
-from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor, Event
+from cloudsync import Provider, OInfo, Hash, DirInfo, Cursor, Event, LongPollManager
 
 log = logging.getLogger(__name__)
 logging.getLogger('boxsdk.network.default_network').setLevel(logging.ERROR)
@@ -50,19 +50,23 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
         self.__cursor = None
         self.__client = None
-        self.__long_poll_config = None
+        self.__long_poll_config = {}
         self.__long_poll_session = requests.Session()
 
         self.__polling_found_zero = threading.Event()
         self.__long_polling_stopped = threading.Event()
         self.__long_polling_stopped.set()
-        self.__event_thread = threading.Thread(target=self._long_poll)
+        self.__event_thread = threading.Thread(target=self._long_poll, name='long_polling')
+        self.__event_thread.start()
 
         self.api_key = None
         self.refresh_token = None
         self.mutex = threading.RLock()
 
         self._oauth_config = oauth_config
+        self._long_poll_manager = LongPollManager(self.short_poll, self.long_poll)
+        self._long_poll_manager.start()
+        self.events = self._long_poll_manager
 
     def _store_refresh_token(self, access, refresh):
         self._oauth_config.token_changed(access, refresh)
@@ -238,49 +242,47 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudCursorError(val)
         self.__cursor = val
 
-    def _long_poll(self):
-        self.__polling_found_zero.wait()
-        if not self.__long_poll_config:
-            headers = {'Authorization': f'Bearer {self.api_key}'}
-            long_poll_server_response = \
-                self.__long_poll_session.options(self.base_box_url + self.events_endpoint, headers=headers)
-            long_poll_server_response.json().get('entries')[0]
-            server_json = long_poll_server_response.json().get('entries')[0]
-            self.__long_poll_config = {
-                "url": server_json.get('url'),
-                "retries_remaining": server_json.get('max_retries'),
-                "retry_timeout": server_json.get('retry_timeout')
-            }
+    # def _long_poll_loop_test(self):
+    #     while True:
+    #         try:
+    #             self.__polling_found_zero.wait()
+    #             change_found = self._long_poll(self.long_poll_timeout)
+    #             if change_found:
+    #                 self.__polling_found_zero.clear()
+    #                 self.__long_polling_stopped.set()
+    #         except Exception as e:
+    #             log.error("long poll loop got unhandled exception %s", e)
+    #             time.sleep(15)
+    def long_poll(self, timeout=long_poll_timeout):
         try:
-            self.__long_polling_stopped.clear()
-            server_config = self.__long_poll_config
-            response = self.__long_poll_session.get(server_config.get('url'),
-                                                    timeout=self.long_poll_timeout)  # long poll
-            if response.get('message') == 'new_change':
-                self.__polling_found_zero.clear()
-                self.__long_polling_stopped.set()
-                return True
-            else:
-                self.__polling_found_zero.clear()
-                self.__long_polling_stopped.set()
-                return False
+            if self.__long_poll_config.get('retries_remaining', 0) < 1:
+                headers = {'Authorization': f'Bearer {self.api_key}'}
+                srv_resp = self.__long_poll_session.options(self.base_box_url + self.events_endpoint,
+                                                            headers=headers)
+                server_json = srv_resp.json().get('entries')[0]
+                self.__long_poll_config = {
+                    "url": server_json.get('url'),
+                    "retries_remaining": server_json.get('max_retries'),
+                    "retry_timeout": server_json.get('retry_timeout')
+                }
+            srv_resp = self.__long_poll_session.get(self.__long_poll_config.get('url'),
+                                                    timeout=timeout)  # long poll
+            return srv_resp.get('message') == 'new_change'
         except requests.exceptions.ReadTimeout:  # need new long poll server:
             log.debug('Timeout during long poll')
-        except Exception as e:
-            log.error('Got a gorram error', e)
+            return False
+        # TODO except boxerror.too_many_retries (or whatever the exception is called)
         finally:
-            server_config['retries_remaining'] = server_config['retries_remaining'] - 1
-            self.__long_poll_config = server_config if server_config.get('retries_remaining') else None
-
-        self.__polling_found_zero.clear()
-        self.__long_polling_stopped.set()
-        return False
+            self.__long_poll_config['retries_remaining'] = self.__long_poll_config['retries_remaining'] - 1
 
     def events(self) -> Generator[Event, None, None]:
+        pass
+
+    def short_poll(self) -> Generator[Event, None, None]:
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
         stream_position = self.current_cursor
         while True:
-            self.__long_polling_stopped.wait()  # make it go one more time
+            self.__long_polling_stopped.wait(timeout=120)  # timeout avoids the need to short poll an extra time
             with self._api() as client:
                 response = client.events().get_events(limit=100, stream_position=stream_position)
                 new_position = response.get('next_stream_position')
@@ -288,7 +290,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     self.__polling_found_zero.set()
                 for change in (i for i in response.get('entries') if i.get('event_type')):
                     log.debug("got event %s", change)
-                    log.debug(f"event type is {change.get('event_type')}")
+                    log.debug("event type is %s", change.get('event_type'))
                     ts = arrow.get(change.get('created_at')).float_timestamp
                     change_source = change.get('source')
                     if isinstance(change_source, box_item):
@@ -307,8 +309,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 if new_position and stream_position and new_position != stream_position:
                     self.__cursor = new_position
                 stream_position = new_position
-
-
 
     # noinspection DuplicatedCode
     def _walk(self, path, oid):
