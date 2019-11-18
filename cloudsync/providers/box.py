@@ -87,17 +87,18 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                }
 
     def get_quota(self):
-        user = self.client.user(user_id='me').get()
+        with self._api() as client:
+            user = client.user(user_id='me').get()
 
-        logging.error(dir(user))
+            logging.error(dir(user))
 
-        res = {
-            'used': user.space_used,
-            'total': user.space_amount,
-            'login': user.login,
-        }
-        logging.error(res)
-        return res
+            res = {
+                'used': user.space_used,
+                'limit': user.space_amount,
+                'login': user.login,
+            }
+            log.debug("quota %s", res)
+            return res
 
     def connect(self, creds):
         log.debug('Connecting to box')
