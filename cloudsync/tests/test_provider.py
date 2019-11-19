@@ -1455,9 +1455,14 @@ class FakeFile:
         return self.loc
 
 
-@pytest.mark.manual
 def test_large_file_support(provider):
-    target_size = 30 * 1000 * 1000
+    # fix multipart upload size to something small
+    if not provider.large_file_size:
+        pytest.skip("provider doesn't need multipart tests")
+
+    provider.large_file_size = 4 * 1024 * 1024
+    provider.upload_block_size = 1 * 1024 * 1024
+    target_size = 5 * 1024 * 1024
     fh = FakeFile(target_size, repeat=b'0')
     provider.create("/foo", fh)
     info = provider.info_path("/foo")

@@ -25,6 +25,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True
     win_paths: bool = False
     default_sleep: float = 0.01
+    large_file_size: int = 0
+    upload_block_size: int = 0
     connection_id: str = None
     __creds: Optional[Any] = None
 

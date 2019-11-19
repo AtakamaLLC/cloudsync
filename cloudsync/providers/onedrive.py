@@ -31,8 +31,6 @@ from cloudsync.utils import debug_sig, disable_log_multiline
 class OneDriveFileDoneError(Exception):
     pass
 
-_UPLOAD_FRAGMENT_SIZE = 4 * 1024 * 1024
-
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
@@ -66,6 +64,8 @@ def flsize(file_like):
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
+    large_file_size = 4 * 1024 * 1024
+    upload_block_size = 4 * 1024 * 1024
 
     provider = 'onedrive'
     name = 'OneDrive'
@@ -439,7 +439,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         size = flsize(file_like)
-        if size <= _UPLOAD_FRAGMENT_SIZE:
+        if size <= self.large_file_size:
             with self._api() as client:
                 req = client.item(drive='me', id=oid).content.request()
                 req.method = "PUT"
@@ -466,7 +466,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         size = flsize(file_like)
 
         # TODO switch to directapi
-        if size <= _UPLOAD_FRAGMENT_SIZE:
+        if size <= self.large_file_size:
             with self._api() as client:
                 req: onedrivesdk.ItemContentRequest = client.item(drive='me', id=pid).children[base].content.request()
                 req.method = "PUT"
@@ -482,7 +482,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         r = self._direct_api("post", "%s/createUploadSession" % drive_path, json={"item": {"@microsoft.graph.conflictBehavior": conflict}})
         upload_url = r["uploadUrl"]
 
-        data = file_like.read(_UPLOAD_FRAGMENT_SIZE)
+        data = file_like.read(self.upload_block_size)
 
         cbfrom = 0
         while data:
@@ -490,7 +490,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             cbto = cbfrom + clen - 1     # inclusive content byte range
             cbrange = "bytes %s-%s/%s" % (cbfrom, cbto, size)
             r = self._direct_api("put", url=upload_url, data=data, headers={"Content-Length": clen, "Content-Range": cbrange})
-            data = file_like.read(_UPLOAD_FRAGMENT_SIZE)
+            data = file_like.read(self.upload_block_size)
             cbfrom = cbto + 1
         return r
 
