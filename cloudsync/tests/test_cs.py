@@ -2274,7 +2274,7 @@ def test_two_level_rename(cs):
 
 
 def test_reconn_after_disconn():
-    (local, remote) = MockProvider(0, 0), MockProvider(0, 0)
+    (local, remote) = MockProvider(False, False), MockProvider(False, False)
     remote.disconnect()
     remote.creds = None
     cs = CloudSyncMixin((local, remote), roots, storage=None, sleep=None)
@@ -2287,7 +2287,7 @@ def test_reconn_after_disconn():
         nonlocal called
         if e.ntype == NotificationType.DISCONNECTED_ERROR:
             called = True
-    cs.handle_notification = _handle
+    cs.handle_notification = _handle        # type: ignore
 
     assert not remote.connected
 
@@ -2299,7 +2299,7 @@ def test_reconn_after_disconn():
     assert not remote.connected
 
     # syncs on reconnect
-    remote.creds = "ok"
+    remote.creds = {"ok":"ok"}
     remote.reconnect()
 
     # yay
