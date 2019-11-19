@@ -110,7 +110,6 @@ class DropboxProvider(Provider):
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config
 
-        self.connection_id: str = None
         self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
 
     @property
@@ -213,7 +212,7 @@ class DropboxProvider(Provider):
     def reconnect(self):
         self.connect(self.__creds)
 
-    def connect(self, creds):
+    def connect_impl(self, creds):
         log.debug('Connecting to dropbox')
         with self.mutex:
             if not self.client:
@@ -232,8 +231,7 @@ class DropboxProvider(Provider):
             try:
                 self.__memoize_quota.clear()
                 info = self.__memoize_quota()
-                self.connection_id = info['uid']
-                assert self.connection_id
+                return info['uid']
             except CloudTokenError:
                 raise
             except Exception as e:

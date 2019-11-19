@@ -173,7 +173,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def reconnect(self):
         self.connect(self.__creds)
 
-    def connect(self, creds):
+    def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
             api_key = creds.get('api_key', self.api_key)
@@ -214,11 +214,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     # Seeing some intermittent SSL failures that resolve on retry
                     log.warning('Retrying intermittent SSLError')
                     quota = self.get_quota()
-                self.connection_id = quota['login']
+                return quota['login']
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
-        return self.client
 
     @staticmethod
     def _get_reason_from_http_error(e):

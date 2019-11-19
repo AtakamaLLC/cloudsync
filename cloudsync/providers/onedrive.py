@@ -199,10 +199,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return res
 
-    def reconnect(self): 
+    def reconnect(self):
         self.connect(self.__creds)
 
-    def connect(self, creds):
+    def connect_impl(self, creds):
         if not self.__client:
             if not creds:
                 raise CloudTokenError("no credentials")
@@ -211,7 +211,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudTokenError("no refresh token, refusing connection")
 
             self.ensure_event_loop()
-            
+
             with self._api(needs_client=False):
                 http_provider = onedrivesdk.HttpProvider()
                 auth_provider = onedrivesdk.AuthProvider(
@@ -251,9 +251,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.__client.item = self.__client.item  # satisfies a lint confusion
                 self.__creds = creds
 
-        if not self.connection_id:
-            q = self.get_quota()
-            self.connection_id = q["uid"]
+        q = self.get_quota()
+        return q["uid"]
 
     def _api(self, *args, **kwargs):
         needs_client = kwargs.get('needs_client', None)

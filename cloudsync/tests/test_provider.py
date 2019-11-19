@@ -226,6 +226,14 @@ class ProviderHelper(ProviderBase):
     def current_cursor(self, val):
         self.prov.current_cursor = val
 
+    @property
+    def connection_id(self):
+        return self.prov.connection_id
+
+    @connection_id.setter
+    def connection_id(self, val):
+        self.prov.connection_id = val
+
 
 def mixin_provider(prov):
     assert prov
@@ -379,6 +387,14 @@ def test_connect(provider):
     # todo: maybe assert provider.creds here... because creds should probably be a fcs of provider
     provider.reconnect()
     assert provider.connected
+    assert provider.connection_id
+    provider.disconnect()
+    provider.connection_id = "invalid"
+    log.info("reset %s == %s", provider, provider.connection_id)
+    with pytest.raises(CloudTokenError):
+        provider.reconnect()
+    provider.connection_id = None
+    provider.reconnect()
 
 
 def test_info_root(provider):

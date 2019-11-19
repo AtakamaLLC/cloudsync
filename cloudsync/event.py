@@ -68,7 +68,7 @@ class EventManager(Runnable):
                 self.state.storage_update_data(self._cursor_tag, self.cursor)
 
         self.min_backoff = provider.default_sleep / 10
-        self.max_backoff = provider.default_sleep * 4
+        self.max_backoff = provider.default_sleep * 10
         self.mult_backoff = 2
 
         self.reauthenticate = reauth or self.__reauth
