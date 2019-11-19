@@ -135,7 +135,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         with self._api() as client:
             return client.base_url + api_path
 
-    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=too-many-branches
+    # names of args are compat with requests module
+    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=too-many-branches, redefined-outer-name
         assert path or url
         if not url:
             url = self._get_url(path)
@@ -148,8 +149,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                       'content-type': 'application/json'}
             if headers:
                 head.update(headers)
-            for k in head.keys():
-                head[k]=str(head[k])
+            for k in head:
+                head[k] = str(head[k])
             req = getattr(requests, action)(
                 url,
                 stream=stream,
@@ -446,7 +447,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 item = onedrivesdk.Item(json.loads(resp.content))
                 return self._info_item(item)
         else:
-            item_dict = self.upload_large("drive/items/%s" % oid, file_like, "replace")
+            _unused_resp = self.upload_large("drive/items/%s" % oid, file_like, "replace")
+            # todo: maybe use the returned item dict to speed this up
             return self.info_oid(oid)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
