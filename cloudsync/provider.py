@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
 if TYPE_CHECKING:
     from .event import Event
 
@@ -26,7 +26,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False
     default_sleep: float = 0.01
     connection_id: str = None
+    name: str = None
     __creds: Optional[Any] = None
+    __connected = False
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -37,6 +39,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         return {"used": 0.0, "limit": 0.0, "login": None}
 
+    def connect_impl(self, creds):
+        return self.connection_id or os.urandom(16).hex()
+
     def connect(self, creds):
         # some providers don't need connections, so just don't implement/overload this method
         # providers who implement connections need to set the connection_id to a value
@@ -44,24 +49,30 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         #   under multiple userid's will produce different connection_id's. One
         #   suggestion is to just set the connection_id to the user's login_id
         # if connection ids are reused, it's possible that existing cursors can be loaded
-        # for different providers.
-        # this could cause issues if cursors are not uuids
-        self.connection_id = os.urandom(16).hex()
+        # for different provider instances
+        log.debug("connect %s (%s)", self.name, self.connection_id)
+        new_id = self.connect_impl(creds)
+        if self.connection_id:
+            if self.connection_id != new_id:
+                raise CloudTokenError("Cannot connect with mismatched credentials")
+        else:
+            self.connection_id = new_id
         self.__creds = creds
+        self.__connected = True
 
     def reconnect(self):
         # reuse existing credentials and reconnect
         # raises: CloudDisconnectedError on failure
-        if not self.connected:
+        if not self.__connected:
             self.connect(self.__creds)
 
     def disconnect(self):
         # disconnect from cloud
-        self.connection_id = None
+        self.__connected = False
 
     @property
     def connected(self):
-        return self.connection_id is not None
+        return self.connection_id is not None and self.__connected
 
     def authenticate(self):
         # implement this method for providers that need authentication

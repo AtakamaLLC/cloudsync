@@ -127,12 +127,19 @@ class MockProvider(Provider):
         self.uses_cursor = True
         self.forbidden_chars: list = []
 
+    def connect_impl(self, creds):
+        if self.connection_id is None or self.connection_id == "invalid":
+            return os.urandom(16).hex()
+        return self.connection_id
+
     def disconnect(self):
         self.connected = False
+        super().disconnect()
 
     def reconnect(self):
         if not self.creds:
             raise CloudTokenError()
+        super().reconnect()
         self.connected = True
 
     def _register_event(self, action, target_object, prior_oid=None):
