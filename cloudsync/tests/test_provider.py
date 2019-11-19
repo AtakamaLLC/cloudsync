@@ -1,5 +1,6 @@
 import os
 import logging
+import io
 from io import BytesIO
 from unittest.mock import patch
 from typing import Union, Optional, Generator, TYPE_CHECKING, List, cast
@@ -1378,6 +1379,7 @@ def test_report_info(provider):
     temp_name = provider.temp_name()
 
     u1 = provider.get_quota()["used"]
+    log.info("used %s", u1)
 
     provider.create(temp_name, BytesIO(b"test"))
 
@@ -1394,10 +1396,12 @@ def test_report_info(provider):
     assert pinfo2['limit'] > 0
     assert pinfo2['used'] > u1
 
+    log.info("info %s", pinfo2)
+
     login = pinfo2.get('login')
 
     # most providers give this info, but for some it's not relevant, so just limit this to the ones that do
-    if provider.name in ("gdrive", "dropbox", "mock"):
+    if provider.name in ("gdrive", "dropbox", "mock", "onedrive", "box"):
         assert login
 
 
@@ -1417,10 +1421,10 @@ class FakeFile:
         self.closed = False
 
     def fileno(self):
-        raise OSError()
+        raise io.UnsupportedOperation()
 
     def write(self, data):
-        raise OSError()
+        raise io.UnsupportedOperation()
 
     def read(self, size=None):
         if size is None:
@@ -1451,13 +1455,20 @@ class FakeFile:
         return self.loc
 
 
-@pytest.mark.manual
 def test_large_file_support(provider):
-    target_size = 30 * 1000 * 1000
+    # fix multipart upload size to something small
+    if not provider.large_file_size:
+        pytest.skip("provider doesn't need multipart tests")
+
+    provider.large_file_size = 4 * 1024 * 1024
+    provider.upload_block_size = 1 * 1024 * 1024
+    target_size = 5 * 1024 * 1024
     fh = FakeFile(target_size, repeat=b'0')
     provider.create("/foo", fh)
     info = provider.info_path("/foo")
     assert info
+    fh = FakeFile(target_size, repeat=b'1')
+    provider.upload(info.oid, fh)
     log.debug("info=%s", info)
     root_info = provider.info_path("/")
     assert root_info
@@ -1465,6 +1476,8 @@ def test_large_file_support(provider):
     log.debug("dir_list=%s", dir_list)
     new_fh = BytesIO()
     provider.download_path("/foo", new_fh)
+    new_fh.seek(0)
+    assert new_fh.read(10) == b'1111111111'
     new_fh.seek(0, SEEK_END)
     new_len = new_fh.tell()
     assert new_len == target_size
