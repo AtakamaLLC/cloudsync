@@ -43,6 +43,7 @@ class EventManager(Runnable):
         self.side: int = side
         self._cursor_tag: str = self.label + "_cursor"
         self.__nmgr = notification_manager
+        self.need_auth = False
 
         self.walk_one_time = None
         self._walk_tag: str = None
@@ -88,6 +89,12 @@ class EventManager(Runnable):
     def do(self):
         self.events.shutdown = False
         try:
+            if self.need_auth:
+                creds = self.reauthenticate()
+                if creds:
+                    self.provider.connect(creds)
+                self.need_auth = False
+
             if not self.provider.connected:
                 log.info("reconnect to %s", self.provider.name)
                 self.provider.reconnect()
@@ -104,7 +111,7 @@ class EventManager(Runnable):
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
-            self.reauthenticate()
+            self.need_auth = True
 
     def _do_unsafe(self):
         if self.walk_one_time:
