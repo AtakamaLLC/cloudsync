@@ -26,7 +26,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False
     default_sleep: float = 0.01
     connection_id: str = None
-    name: str = None
     __creds: Optional[Any] = None
     __connected = False
 
@@ -39,7 +38,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         return {"used": 0.0, "limit": 0.0, "login": None}
 
-    def connect_impl(self, creds):
+    def connect_impl(self, creds):  # pylint: disable=unused-argument
         return self.connection_id or os.urandom(16).hex()
 
     def connect(self, creds):
