@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
 if TYPE_CHECKING:
     from .event import Event
 
@@ -66,17 +66,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def authenticate(self):
         # implement this method for providers that need authentication
         pass
-
-    # todo: remove this, caller should serialize, handle errors with better UI, etc.
-    # this helper function is just incorrect
-    def connect_or_authenticate(self, creds):
-        # This won't attempt oauth unless the specific failure to connect is an authentication error
-        try:
-            self.connect(creds)
-        except CloudTokenError:
-            creds = self.authenticate()  # pylint: disable=assignment-from-no-return
-            self.connect(creds)
-        return creds
 
     def interrupt_auth(self):
         # interrupt/stop a blocking authentication call

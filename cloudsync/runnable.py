@@ -98,7 +98,7 @@ class Runnable(ABC):
         self.wake()
         self.__shutdown = forever
         if self.thread:
-            self.thread.join()
+            self.wait()
             self.thread = None
         elif forever:
             self.done()
