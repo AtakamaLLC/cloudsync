@@ -165,7 +165,7 @@ class ApiServer:
                 info = urlparse.parse_qs(content)
                 for k in info:
                     if len(info[k]) == 1 and type(info[k]) is list:
-                        info[k] = info[k][0]
+                        info[k] = info[k][0]        # type:ignore
             else:
                 if content:
                     try:
