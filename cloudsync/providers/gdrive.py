@@ -218,6 +218,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             except HttpAccessTokenRefreshError:
                 self.disconnect()
                 raise CloudTokenError()
+        return self.connection_id
 
     @staticmethod
     def _get_reason_from_http_error(e):

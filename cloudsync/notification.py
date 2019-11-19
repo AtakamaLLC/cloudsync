@@ -4,7 +4,7 @@ import queue
 import enum
 from dataclasses import dataclass
 from cloudsync.runnable import Runnable
-from cloudsync.types import LOCAL, REMOTE
+import cloudsync.types as typ
 from cloudsync.exceptions import *  # pylint: disable=unused-wildcard-import,wildcard-import
 log = logging.getLogger(__name__)
 
@@ -20,8 +20,8 @@ class NotificationType(enum.Enum):
 
 
 class SourceEnum(enum.Enum):
-    LOCAL = LOCAL
-    REMOTE = REMOTE
+    LOCAL = typ.LOCAL
+    REMOTE = typ.REMOTE
     SYNC = 2
 
 

@@ -34,7 +34,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     # this is guaranteed to remain the same between logins, and guaranteed to be unique per login
     connection_id: str = None
-    name: str = None
     __creds: Optional[Any] = None
     __connected = False
 
@@ -47,7 +46,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         return {"used": 0.0, "limit": 0.0, "login": None}
 
-    def connect_impl(self, creds):
+    def connect_impl(self, creds):  # pylint: disable=unused-argument
         return self.connection_id or os.urandom(16).hex()
 
     def connect(self, creds):

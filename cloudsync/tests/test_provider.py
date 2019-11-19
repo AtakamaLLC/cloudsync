@@ -226,12 +226,12 @@ class ProviderHelper(ProviderBase):
     def current_cursor(self, val):
         self.prov.current_cursor = val
 
-    @property
-    def connection_id(self):
+    @property                           # type: ignore
+    def connection_id(self) -> str:     # type: ignore
         return self.prov.connection_id
 
     @connection_id.setter
-    def connection_id(self, val):
+    def connection_id(self, val: str):  # type: ignore
         self.prov.connection_id = val
 
 
