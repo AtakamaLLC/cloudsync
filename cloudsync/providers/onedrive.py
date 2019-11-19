@@ -54,7 +54,7 @@ def open_url(url):
     webbrowser.open(url)
 
 
-def flsize(file_like):
+def _get_size_and_seek0(file_like):
     file_like.seek(0, os.SEEK_END)
     size = file_like.tell()
     file_like.seek(0)
@@ -438,7 +438,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         yield from self._walk(path, info.oid)
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
-        size = flsize(file_like)
+        size = _get_size_and_seek0(file_like)
         if size <= self.large_file_size:
             with self._api() as client:
                 req = client.item(drive='me', id=oid).content.request()
@@ -463,7 +463,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         pid = self.get_parent_id(path=path)
         _, base = self.split(path)
-        size = flsize(file_like)
+        size = _get_size_and_seek0(file_like)
 
         # TODO switch to directapi
         if size <= self.large_file_size:
@@ -478,7 +478,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return self._info_from_rest(r, root=self.dirname(path))
 
     def upload_large(self, drive_path, file_like, conflict):
-        size = flsize(file_like)
+        size = _get_size_and_seek0(file_like)
         r = self._direct_api("post", "%s/createUploadSession" % drive_path, json={"item": {"@microsoft.graph.conflictBehavior": conflict}})
         upload_url = r["uploadUrl"]
 
