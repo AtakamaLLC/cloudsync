@@ -2255,7 +2255,6 @@ def test_two_level_rename(cs):
         (lb2, rb1),
     ) = get_infos(cs, ret)
 
-    
     log.info("TABLE 0\n%s", cs.state.pretty_print())
 
     local.rename(lb.oid, "/local/a/c")
@@ -2274,3 +2273,35 @@ def test_two_level_rename(cs):
     assert not any("conflicted" in e.path for e in remote.walk("/remote"))
 
 
+def test_reconn_after_disconn():
+    (local, remote) = MockProvider(0, 0), MockProvider(0, 0)
+    remote.disconnect()
+    remote.creds = None
+    cs = CloudSyncMixin((local, remote), roots, storage=None, sleep=None)
+    local.mkdir("/local")
+
+    # this forces the remote to fail connections forever
+    called = False
+
+    def _handle(e: Notification):
+        nonlocal called
+        if e.ntype == NotificationType.DISCONNECTED_ERROR:
+            called = True
+    cs.handle_notification = _handle
+
+    assert not remote.connected
+
+    # it's ok to start a cs this way
+    cs.start()
+    cs.wait_until(lambda: called)
+
+    # still ok....
+    assert not remote.connected
+
+    # syncs on reconnect
+    remote.creds = "ok"
+    remote.reconnect()
+
+    # yay
+    cs.wait_until_found((REMOTE, "/remote"))
+    cs.stop()
