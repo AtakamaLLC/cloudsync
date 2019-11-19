@@ -158,15 +158,22 @@ class ApiServer:
 
             content = b"{}"
             length = env.get("CONTENT_LENGTH", 0)
+            content_type = env.get('CONTENT_TYPE')
             if length:
                 content = env['wsgi.input'].read(int(length))
-            if content:
-                try:
-                    info = json.loads(content)
-                except Exception:
-                    raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
+            if content_type.startswith('application/x-www-form-urlencoded'):
+                info = urlparse.parse_qs(content)
+                for k in info:
+                    if len(info[k]) == 1 and type(info[k]) is list:
+                        info[k] = info[k][0]        # type:ignore
             else:
-                info = {}
+                if content:
+                    try:
+                        info = json.loads(content)
+                    except Exception:
+                        raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
+                else:
+                    info = {}
 
             url = '<unknown>'
             try:

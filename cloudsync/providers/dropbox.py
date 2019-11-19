@@ -90,9 +90,8 @@ class _FolderIterator:
 class DropboxProvider(Provider):
     case_sensitive = False
     default_sleep = 15
-
-    _max_simple_upload_size = 15 * 1024 * 1024
-    _upload_block_size = 10 * 1024 * 1024
+    large_file_size = 15 * 1024 * 1024
+    upload_block_size = 10 * 1024 * 1024
     name = "Dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
@@ -212,7 +211,7 @@ class DropboxProvider(Provider):
         return res
 
     def reconnect(self):
-        self.connect_or_authenticate(self.__creds)
+        self.connect(self.__creds)
 
     def connect(self, creds):
         log.debug('Connecting to dropbox')
@@ -520,14 +519,14 @@ class DropboxProvider(Provider):
         size = file_like.tell()
         file_like.seek(0)
 
-        if size < self._max_simple_upload_size:
+        if size < self.large_file_size:
             res = self._api('files_upload', file_like.read(),
                             oid, mode=files.WriteMode('overwrite'))
         else:
             cursor = None
 
             while True:
-                data = file_like.read(self._upload_block_size)
+                data = file_like.read(self.upload_block_size)
                 if not data:
                     if cursor:
                         local_mtime = arrow.get(metadata.get('mtime', time.time())).datetime
@@ -562,7 +561,7 @@ class DropboxProvider(Provider):
         if not ok:
             raise CloudFileNotFoundError()
         res, content = ok
-        for data in content.iter_content(self._upload_block_size):
+        for data in content.iter_content(self.upload_block_size):
             file_like.write(data)
         return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
 
