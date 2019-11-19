@@ -25,8 +25,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True
     win_paths: bool = False
     default_sleep: float = 0.01
+
+    # these are defined here for testing purposes only
+    # providers setting these values will have them overridden and used for
+    # multipart upload tests
     large_file_size: int = 0
     upload_block_size: int = 0
+
+    # this is guaranteed to remain the same between logins, and guaranteed to be unique per login
     connection_id: str = None
     __creds: Optional[Any] = None
 
