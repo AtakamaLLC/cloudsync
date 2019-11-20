@@ -104,11 +104,14 @@ class OAuthConfig:
         Or, you could just call it before the expiration
         """
         assert self._session or scope
+
+        kws = {**extra}
+
         if not self._session and scope:
-            self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri)
-        if isinstance(token, OAuthToken):
-            token = token.refresh_token
-        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
+            self._session = OAuth2Session(client_id=self.app_id, scope=scope)
+        kws["client_id"] = self.app_id
+        kws["client_secret"] = self.app_secret
+        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **kws))
         self.token_changed(self._token)
         return self._token
 

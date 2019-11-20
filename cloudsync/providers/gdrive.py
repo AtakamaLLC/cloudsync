@@ -9,12 +9,12 @@ import json
 from typing import Generator, Optional, List, Dict, Any, Tuple
 
 import arrow
+import google.oauth2.credentials
 from googleapiclient.discovery import build   # pylint: disable=import-error
 from googleapiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
-
 
 from cloudsync.utils import debug_args, memoize, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
@@ -71,8 +71,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.__cursor: str = None
         self.__creds = None
         self.client = None
-        self.api_key = None
-        self.refresh_token = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
@@ -127,11 +125,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.connect(self.__creds)
 
     def connect(self, creds):
-        log.debug('Connecting to googledrive %s', creds)
+        log.debug('Connecting to googledrive')
         if not self.client:
-            api_key = creds.get('api_key', self.api_key)
-            refresh_token = creds.get('refresh_token', self.refresh_token)
-            self.__creds = creds
+            api_key = creds.get('api_key')
+            refresh_token = creds.get('refresh_token')
 
             if not refresh_token:
                 raise CloudTokenError("acquire a token using authenticate() first")
@@ -139,25 +136,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             kwargs = {}
 
             try:
-                with self.mutex:
-                    creds = client.GoogleCredentials(access_token=api_key,
-                                                     client_id=self._oauth_config.app_id,
-                                                     client_secret=self._oauth_config.app_secret,
-                                                     refresh_token=refresh_token,
-                                                     token_expiry=None,
-                                                     token_uri=self._token_url,
-                                                     user_agent=self.user_agent)
-                    creds.refresh(Http())
-                    self.client = build(
-                        'drive', 'v3', http=creds.authorize(Http()))
-                    kwargs['api_key'] = creds.access_token
-
-                if getattr(creds, 'refresh_token', None):
-                    refresh_token = creds.refresh_token
-
-                self.refresh_token = refresh_token
-                self.api_key = api_key
-
+                new = self._oauth_config.refresh(self._token_url, refresh_token, scope=self._scopes)
+                creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._scopes)
+                self.client = build(
+                    'drive', 'v3', credentials=creds)
                 try:
                     self.get_quota.clear()          # pylint: disable=no-member
                     quota = self.get_quota()
@@ -166,9 +148,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     log.warning('Retrying intermittent SSLError')
                     quota = self.get_quota()
                 self.connection_id = quota['login']
-            except HttpAccessTokenRefreshError:
+                self.__creds = creds
+            except Exception as e:
                 self.disconnect()
-                raise CloudTokenError()
+                raise CloudTokenError(str(e))
         return self.client
 
     @staticmethod
