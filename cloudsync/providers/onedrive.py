@@ -85,7 +85,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self._oauth_config = oauth_config
 
         self._oauth_done = threading.Event()
-        self._redirect_uri = None
 
     @property
     def connected(self):  # One Drive
@@ -101,9 +100,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def authenticate(self):
         if not self._oauth_config.app_id:
             raise CloudTokenError("app id not set")
-
-        log.debug("redir %s, appid %s", self._redirect_uri, self._oauth_config.app_id)
-
 
         try:
             self._oauth_config.start_auth(self._auth_url, self._scopes)
@@ -229,7 +225,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         return MySession(
                             refresh_token=creds.get("refresh"),
                             access_token=creds.get("access", None),
-                            redirect_uri=self._redirect_uri,  # pylint: disable=protected-access
+                            redirect_uri=None,  # pylint: disable=protected-access
                             auth_server_url=self._token_url,  # pylint: disable=protected-access
                             client_id=self._oauth_config.app_id,  # pylint: disable=protected-access
                             client_secret=self._oauth_config.app_secret,  # pylint: disable=protected-access

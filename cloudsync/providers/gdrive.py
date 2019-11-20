@@ -58,11 +58,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     provider = 'googledrive'
     name = 'Google Drive'
-    _scope = ['https://www.googleapis.com/auth/drive',
+    _scopes = ['https://www.googleapis.com/auth/drive',
               'https://www.googleapis.com/auth/drive.activity.readonly'
               ]
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
-    _token_uri = 'https://accounts.google.com/o/oauth2/token'
+    _auth_url  = 'https://accounts.google.com/o/oauth2/v2/auth'
+    _token_url = 'https://www.googleapis.com/o/oauth2/v4/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
@@ -89,33 +90,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_display_name(self):
         return self.name
 
-    def initialize(self):
-        if not self._oauth_config.manual_mode:
-            try:
-                self._oauth_config.start_server(
-                    on_success=self._on_oauth_success,
-                    on_failure=self._on_oauth_failure,
-                )
-                self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
-                                                 client_secret=self._oauth_config.app_secret,
-                                                 scope=self._scope,
-                                                 redirect_uri=self._oauth_config.redirect_uri)
-            except OSError:
-                log.exception('Unable to use redir server. Falling back to manual mode')
-                self._oauth_config.manual_mode = False
-
-        if self._oauth_config.manual_mode:
-            self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
-                                             client_secret=self._oauth_config.app_secret,
-                                             scope=self._scope,
-                                             redirect_uri=self._redir)
-
-        url = self._flow.step1_get_authorize_url()
-        self._oauth_done.clear()
-        webbrowser.open(url)
-
-        return url
-
     def interrupt_auth(self):
         self._oauth_config.shutdown()  # ApiServer shutdown does not throw exceptions
         self._flow = None
@@ -137,15 +111,20 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def authenticate(self):
         try:
-            self.initialize()
-            if not self._oauth_config.wait_success():
-                raise CloudTokenError(self._oauth_config.failure_info)
+            self._oauth_config.start_auth(self._auth_url, self._scopes)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
 
-            return {"refresh_token": self.refresh_token,
-                    "api_key": self.api_key,
-                    }
-        finally:
-            self._oauth_config.shutdown()
+        try:
+            token = self._oauth_config.wait_auth(self._token_url)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            raise CloudTokenError(str(e))
+
+        return {"refresh_token": token.refresh_token,
+                "api_key": token.access_token,
+
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
