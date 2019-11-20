@@ -20,7 +20,7 @@ from cloudsync.utils import debug_args, memoize, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
-from cloudsync.oauth import OAuthConfig
+from cloudsync.oauth import OAuthConfig, OAuthError
 
 CACHE_QUOTA_TIME = 120
 
@@ -146,11 +146,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     quota = self.get_quota()
                 self.connection_id = quota['login']
                 self.__creds = creds
+            except OAuthError as e:
+                raise CloudTokenError(repr(e))
             except CloudTokenError:
                 raise
             except Exception as e:
                 self.disconnect()
-                raise CloudDisconnectedError(str(e))
+                raise CloudDisconnectedError(repr(e))
         return self.client
 
     @staticmethod
@@ -254,6 +256,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     @property
     def root_id(self):
+        log.debug("root id")
         if not self.__root_id:
             res = self._api('files', 'get',
                             fileId='root',
@@ -261,6 +264,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                             )
             self.__root_id = res['id']
             self._ids['/'] = self.__root_id
+            log.debug("got root id %s", res)
+        log.debug("root id %s", self.__root_id)
         return self.__root_id
 
     def disconnect(self):
@@ -630,6 +635,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def info_path(self, path: str) -> Optional[OInfo]:  # pylint: disable=too-many-locals
         if path == "/":
+            log.debug("info slash")
             return self.info_oid(self.root_id)
 
         try:
@@ -750,6 +756,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                             fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities, size',
                             )
         except CloudFileNotFoundError:
+            log.debug("info oid %s : not found", oid)
             return None
 
         log.debug("info oid %s", res)

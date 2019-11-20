@@ -31,7 +31,7 @@ else:
 
 
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov):
+    def __init__(self, prov, connect=True):
         self.api_retry = True
         self.prov = prov
 
@@ -43,14 +43,19 @@ class ProviderHelper(ProviderBase):
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
-        self.prov.connect(self.creds)
-        assert prov.connection_id
+        if connect:
+            self.prov.connect(self.creds)
+            assert prov.connection_id
+            self.make_root()
 
+    def make_root(self):
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
             self.test_root = "/" + os.urandom(16).hex()
-            self.prov.mkdir(self.test_root)
+   
+        log.debug("mkdir %s", self.test_root)
+        self.prov.mkdir(self.test_root)
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -1594,3 +1599,22 @@ def test_interrupt_auth(config_provider):
     threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
     with pytest.raises(CloudTokenError):
         provider.authenticate()
+
+
+@pytest.mark.notatest
+def test_infinite(config_provider):
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    if not provider.creds:
+        pytest.skip("provider doesn't support auth")
+    creds = provider.authenticate()
+    provider.connect(creds)
+    provider.make_root()
+    import time
+    try:
+        while True:
+            log.info("got %s", list(provider.listdir_path("/")))
+            time.sleep(5)
+    finally:
+        provider.delete(provider.test_root)
+        provider.disconnect()
+
