@@ -127,19 +127,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def connect(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
-            api_key = creds.get('api_key')
             refresh_token = creds.get('refresh_token')
 
             if not refresh_token:
                 raise CloudTokenError("acquire a token using authenticate() first")
 
-            kwargs = {}
-
             try:
                 new = self._oauth_config.refresh(self._token_url, refresh_token, scope=self._scopes)
-                creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._scopes)
+                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._scopes)
                 self.client = build(
-                    'drive', 'v3', credentials=creds)
+                    'drive', 'v3', credentials=google_creds)
                 try:
                     self.get_quota.clear()          # pylint: disable=no-member
                     quota = self.get_quota()
