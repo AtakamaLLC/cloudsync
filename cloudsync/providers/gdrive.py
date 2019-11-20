@@ -12,8 +12,6 @@ import arrow
 from googleapiclient.discovery import build   # pylint: disable=import-error
 from googleapiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import Http, HttpLib2Error
-from oauth2client import client         # pylint: disable=import-error
-from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
@@ -79,9 +77,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids: Dict[str, str] = {}
-        self._flow: OAuth2WebServerFlow = None
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
-        self._oauth_done = threading.Event()
 
     @property
     def connected(self):
@@ -92,33 +88,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def interrupt_auth(self):
         self._oauth_config.shutdown()  # ApiServer shutdown does not throw exceptions
-        self._flow = None
-
-    def _on_oauth_success(self, auth_dict):
-        auth_string = auth_dict['code'][0]
-        try:
-            res: OAuth2Credentials = self._flow.step2_exchange(auth_string)
-            self.refresh_token = res.refresh_token
-            self.api_key = res.access_token
-            self._oauth_done.set()
-        except Exception:
-            log.exception('Authentication failed')
-            raise
-
-    def _on_oauth_failure(self, err):
-        log.error("oauth failure: %s", err)
-        self._oauth_done.set()
 
     def authenticate(self):
-        log.debug("oauth start")
-
         try:
             self._oauth_config.start_auth(self._auth_url, self._scopes)
-        except Exception as e:
-            log.error("oauth error %s", e)
-            raise CloudTokenError(str(e))
-
-        try:
             token = self._oauth_config.wait_auth(self._token_url)
         except Exception as e:
             log.error("oauth error %s", e)
@@ -126,7 +99,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return {"refresh_token": token.refresh_token,
                 "api_key": token.access_token}
-
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
@@ -160,13 +132,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             api_key = creds.get('api_key', self.api_key)
             refresh_token = creds.get('refresh_token', self.refresh_token)
             self.__creds = creds
+
             if not refresh_token:
                 raise CloudTokenError("acquire a token using authenticate() first")
 
             kwargs = {}
-
-            if (not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
-                raise CloudTokenError("require app_id/secret or api_key")
 
             try:
                 with self.mutex:
