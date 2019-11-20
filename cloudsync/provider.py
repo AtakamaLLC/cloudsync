@@ -61,7 +61,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         new_id = self.connect_impl(creds)
         if self.connection_id:
             if self.connection_id != new_id:
-                raise CloudTokenError("Cannot connect with mismatched credentials: %s != %s", self.connection_id, new_id)
+                raise CloudTokenError("Cannot connect with mismatched credentials: %s != %s" % (self.connection_id, new_id))
         else:
             self.connection_id = new_id
         self.__creds = creds
