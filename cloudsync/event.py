@@ -45,8 +45,8 @@ class EventManager(Runnable):
         self.__nmgr = notification_manager
         self.need_auth = False
 
-        self.walk_one_time = None
-        self._walk_tag: str = None
+        self.walk_one_time: bool = False
+        self._walk_tag: Optional[str] = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         if self.cursor is not None:
@@ -111,7 +111,7 @@ class EventManager(Runnable):
             if self.walk_root:
                 self._walk_tag = self.label + "_walked_" + self.walk_root
                 if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                    self.walk_one_time = self.walk_root
+                    self.walk_one_time = self.walk_root is not None
 
             if self.cursor is None:
                 self.cursor = self.provider.current_cursor
