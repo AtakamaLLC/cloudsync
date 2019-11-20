@@ -153,6 +153,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         quota = res['storageQuota']
         user = res['user']
+        permission_id = user['permissionId']
         login = user['emailAddress']
 
         used = int(quota['usage'])
@@ -164,6 +165,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         maxup = int(quota.get('maxUploadSize', 0))
 
         return {
+            "permissionId": permission_id,
             "used": used,
             "limit": limit,
             "login": login,
@@ -214,8 +216,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     # Seeing some intermittent SSL failures that resolve on retry
                     log.warning('Retrying intermittent SSLError')
                     quota = self.get_quota()
-                return quota['login']
+                return quota['permissionId']
             except HttpAccessTokenRefreshError:
+                log.exception("HttpAccessTokenRefreshError")
                 self.disconnect()
                 raise CloudTokenError()
         return self.connection_id
