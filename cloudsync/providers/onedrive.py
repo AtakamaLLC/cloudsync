@@ -99,18 +99,21 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     # noinspection PyProtectedMember
     def authenticate(self):
         if not self._oauth_config.app_id:
+            self.disconnect()
             raise CloudTokenError("app id not set")
 
         try:
             self._oauth_config.start_auth(self._auth_url, self._scopes)
         except Exception as e:
             log.error("oauth error %s", e)
+            self.disconnect()
             raise CloudTokenError(str(e))
 
         try:
             token = self._oauth_config.wait_auth(self._token_url)
         except Exception as e:
             log.error("oauth error %s", e)
+            self.disconnect()
             raise CloudTokenError(str(e))
 
         creds = {"access": token.access_token, 
@@ -164,6 +167,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if req.status_code == 404:
                 raise CloudFileNotFoundError(emsg)
             if dat['error']['code'] == 'unauthenticated':
+                self.disconnect()
                 raise CloudTokenError(emsg)
             if dat['error']['code'] == 'itemNotFound':
                 raise CloudFileNotFoundError(emsg)
@@ -177,6 +181,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if dat['error']['code'] == 'invalidRequest':
                     # expected type to be folder
                     raise CloudFileExistsError(emsg)
+            self.disconnect()
             raise CloudDisconnectedError(emsg)
 
         if stream:

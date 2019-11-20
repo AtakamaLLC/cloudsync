@@ -125,6 +125,7 @@ class DropboxProvider(Provider):
         secret = self._oauth_config.app_secret
         log.debug('Initializing Dropbox. manual_mode=%s', self._oauth_config.manual_mode)
         if not appid and secret:
+            self.disconnect()
             raise CloudTokenError("require app key and secret")
         if not self._oauth_config.manual_mode:
             try:
@@ -140,6 +141,7 @@ class DropboxProvider(Provider):
                                                locale=None)
             except Exception as e:
                 log.exception('Unable to start oauth')
+                self.disconnect()
                 raise CloudTokenError("failed to start oauth: %s" % repr(e))
         else:
             self._flow = DropboxOAuth2Flow(consumer_key=appid,
@@ -178,6 +180,7 @@ class DropboxProvider(Provider):
             if self._oauth_config.wait_success():
                 return self.__creds
             msg = self._oauth_config.failure_info
+            self.disconnect()
             raise CloudTokenError(msg)
         finally:
             self._oauth_config.shutdown()
@@ -233,6 +236,7 @@ class DropboxProvider(Provider):
                 info = self.__memoize_quota()
                 return info['uid']
             except CloudTokenError:
+                self.disconnect()
                 raise
             except Exception as e:
                 self.disconnect()
@@ -264,6 +268,9 @@ class DropboxProvider(Provider):
 
             try:
                 return getattr(client, method)(*args, **kwargs)
+            except exceptions.AuthError:
+                self.disconnect()
+                raise CloudTokenError()
             except exceptions.ApiError as e:
                 inside_error: Union[files.LookupError, files.WriteError]
 

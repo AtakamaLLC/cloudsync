@@ -398,6 +398,7 @@ def test_connect(provider):
     log.info("reset %s == %s", provider, provider.connection_id)
     with pytest.raises(CloudTokenError):
         provider.reconnect()
+    assert not provider.connected
     provider.connection_id = None
     provider.reconnect()
 
@@ -1601,6 +1602,7 @@ def test_authenticate(config_provider):
         provider.disconnect()
         with pytest.raises(CloudTokenError):
             provider.connect(creds)
+        assert not provider.connected
 
 
 @pytest.mark.manual
@@ -1614,6 +1616,7 @@ def test_interrupt_auth(config_provider):
     threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
     with pytest.raises(CloudTokenError):
         provider.authenticate()
+    assert not provider.connected
 
 
 @pytest.fixture
@@ -1639,11 +1642,11 @@ def test_revoke_auth(config_provider, suspend_capture):
 
     with suspend_capture:
         input("PLEASE GO TO THE PROVIDER AND REVOKE ACCESS NOW")
-    
+
     with pytest.raises(CloudTokenError):
         # some providers cache connections, so this test may not work for everyone
         while True:
             log.error("sleep 5")
             time.sleep(5)
-            log.error("still connected %s", provider.prov.info_path("/"))
-
+            log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
+    assert not provider.connected

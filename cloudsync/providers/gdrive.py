@@ -93,6 +93,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             token = self._oauth_config.wait_auth(self._token_url)
         except Exception as e:
             log.error("oauth error %s", e)
+            self.disconnect()
             raise CloudTokenError(str(e))
 
         return {"refresh_token": token.refresh_token,
@@ -129,7 +130,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
-            refresh_token = creds.get('refresh_token')
+            refresh_token = creds and creds.get('refresh_token')
 
             if not refresh_token:
                 raise CloudTokenError("acquire a token using authenticate() first")
@@ -146,16 +147,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     # Seeing some intermittent SSL failures that resolve on retry
                     log.warning('Retrying intermittent SSLError')
                     quota = self.get_quota()
-                self.connection_id = quota['permissionId']
                 self.__creds = creds
+                return quota['permissionId']
             except OAuthError as e:
                 raise CloudTokenError(repr(e))
             except CloudTokenError:
                 raise
             except Exception as e:
-                self.disconnect()
                 raise CloudDisconnectedError(repr(e))
-        return self.client
+        return self.connection_id
 
     @staticmethod
     def _get_reason_from_http_error(e):
@@ -207,6 +207,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudTemporaryError(str(e))
                 raise
             except google.auth.exceptions.RefreshError:
+                self.disconnect()
                 raise CloudTokenError("refresh error")
             except HttpError as e:
                 if str(e.resp.status) == '416':
@@ -229,6 +230,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudOutOfSpaceError("Storage storageQuotaExceeded")
 
                 if str(e.resp.status) == '401':
+                    self.disconnect()
                     raise CloudTokenError("Unauthorized %s" % reason)
 
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
@@ -580,8 +582,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 yield GDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
-        if self.exists_path(path):
-            info = self.info_path(path)
+        info = self.info_path(path)
+        if info:
             if info.otype == FILE:
                 raise CloudFileExistsError(path)
             log.debug("Skipped creating already existing folder: %s", path)

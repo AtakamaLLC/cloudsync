@@ -45,7 +45,7 @@ class EventManager(Runnable):
         self.__nmgr = notification_manager
         self.need_auth = False
 
-        self.walk_one_time: bool = False
+        self.walk_one_time: Optional[str] = None
         self._walk_tag: Optional[str] = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
@@ -59,7 +59,7 @@ class EventManager(Runnable):
 
         self.first_do = True
         self.walk_root = walk_root
-        self.walk_one_time = False
+        self.walk_one_time = None
 
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 10
@@ -83,6 +83,7 @@ class EventManager(Runnable):
     def do(self):
         self.events.shutdown = False
         try:
+            log.info('We are in do, %s', self.provider.name)
             if not self.provider.connected:
                 if self.need_auth:
                     log.warning("Need auth, calling reauthenticate")
@@ -111,7 +112,7 @@ class EventManager(Runnable):
             if self.walk_root:
                 self._walk_tag = self.label + "_walked_" + self.walk_root
                 if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                    self.walk_one_time = self.walk_root is not None
+                    self.walk_one_time = self.walk_root
 
             if self.cursor is None:
                 self.cursor = self.provider.current_cursor
@@ -125,7 +126,7 @@ class EventManager(Runnable):
             for event in self.provider.walk(self.walk_one_time):
                 self.process_event(event, from_walk=True)
             self.state.storage_update_data(self._walk_tag, time.time())
-            self.walk_one_time = False
+            self.walk_one_time = None
 
         for event in self.events:
             if not event:
