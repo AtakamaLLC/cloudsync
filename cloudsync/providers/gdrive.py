@@ -63,7 +63,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
               ]
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _auth_url  = 'https://accounts.google.com/o/oauth2/v2/auth'
-    _token_url = 'https://www.googleapis.com/o/oauth2/v4/token'
+    _token_url = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
@@ -110,6 +110,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._oauth_done.set()
 
     def authenticate(self):
+        log.debug("oauth start")
+
         try:
             self._oauth_config.start_auth(self._auth_url, self._scopes)
         except Exception as e:
@@ -123,7 +125,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             raise CloudTokenError(str(e))
 
         return {"refresh_token": token.refresh_token,
-                "api_key": token.access_token,
+                "api_key": token.access_token}
 
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
@@ -153,7 +155,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.connect(self.__creds)
 
     def connect(self, creds):
-        log.debug('Connecting to googledrive')
+        log.debug('Connecting to googledrive %s', creds)
         if not self.client:
             api_key = creds.get('api_key', self.api_key)
             refresh_token = creds.get('refresh_token', self.refresh_token)
@@ -173,7 +175,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                                                      client_secret=self._oauth_config.app_secret,
                                                      refresh_token=refresh_token,
                                                      token_expiry=None,
-                                                     token_uri=self._token_uri,
+                                                     token_uri=self._token_url,
                                                      user_agent=self.user_agent)
                     creds.refresh(Http())
                     self.client = build(
