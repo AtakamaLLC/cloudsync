@@ -40,6 +40,22 @@ def test_oauth(wb):
 
 
 @patch('webbrowser.open')
+def test_oauth_refresh(wb):
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+    t = TokenServer("127.0.0.1", 0)
+    threading.Thread(target=t.serve_forever, daemon=True).start()
+
+    token_url = t.uri("/token")
+
+    o = OAuthConfig(app_id="foo", app_secret="bar")
+    res = o.refresh(token_url, "token", ["scope"])
+
+    assert res.refresh_token == "r1"
+    assert res.expires_in == 340
+
+
+@patch('webbrowser.open')
 def test_oauth_interrupt(wb):
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
