@@ -1568,11 +1568,10 @@ def test_cursor_error_during_listdir(provider):
 
 @pytest.mark.manual
 def test_authenticate(config_provider):
-    provider = ProviderHelper(config_provider)      # type: ignore
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
 
-    provider.disconnect()
     creds = provider.authenticate()
     provider.connect(creds)
 
@@ -1590,7 +1589,7 @@ def test_authenticate(config_provider):
 
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
-    provider = ProviderHelper(config_provider)      # type: ignore
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
 
@@ -1601,20 +1600,34 @@ def test_interrupt_auth(config_provider):
         provider.authenticate()
 
 
-@pytest.mark.notatest
-def test_infinite(config_provider):
+@pytest.fixture
+def suspend_capture(pytestconfig):
+    class suspend_guard:
+        def __init__(self):
+            self.capmanager = pytestconfig.pluginmanager.getplugin('capturemanager')
+        def __enter__(self):
+            self.capmanager.suspend_global_capture(in_=True)
+        def __exit__(self, _1, _2, _3):
+            self.capmanager.resume_global_capture()
+
+    yield suspend_guard()
+
+
+@pytest.mark.manual
+def test_revoke_auth(config_provider, suspend_capture):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
     creds = provider.authenticate()
     provider.connect(creds)
-    provider.make_root()
-    import time
-    try:
+
+    with suspend_capture:
+        input("PLEASE GO TO THE PROVIDER AND REVOKE ACCESS NOW")
+    
+    with pytest.raises(CloudTokenError):
+        # some providers cache connections, so this test may not work for everyone
         while True:
-            log.info("got %s", list(provider.listdir_path("/")))
+            log.error("sleep 5")
             time.sleep(5)
-    finally:
-        provider.delete(provider.test_root)
-        provider.disconnect()
+            log.error("still connected %s", provider.prov.info_path("/"))
 
