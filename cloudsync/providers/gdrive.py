@@ -256,7 +256,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     @property
     def root_id(self):
-        log.debug("root id")
         if not self.__root_id:
             res = self._api('files', 'get',
                             fileId='root',
@@ -264,8 +263,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                             )
             self.__root_id = res['id']
             self._ids['/'] = self.__root_id
-            log.debug("got root id %s", res)
-        log.debug("root id %s", self.__root_id)
         return self.__root_id
 
     def disconnect(self):
@@ -635,7 +632,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def info_path(self, path: str) -> Optional[OInfo]:  # pylint: disable=too-many-locals
         if path == "/":
-            log.debug("info slash")
             return self.info_oid(self.root_id)
 
         try:
@@ -739,7 +735,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return None
         # expensive
         info.path = self._path_oid(oid, info, use_cache=use_cache)
-        log.debug("info oid ret: %s", info)
         return info
 
     @staticmethod

@@ -1,9 +1,15 @@
+# integration doesn't require patch coverage
+# since oauth code is still hard to test
+
+codecov:
+  require_ci_to_pass: no
+  
 coverage:
-  range: "80...100"
   status:
     project:
         default: yes
         base: pr
+        threshold: 1
     patch: 
-        default: yes
+        default: no
         base: pr
