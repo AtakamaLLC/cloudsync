@@ -20,11 +20,13 @@ from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig
-
-from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, LOCAL, REMOTE, UNKNOWN
+from cloudsync.notification import SourceEnum, Notification, NotificationType
+from cloudsync.types import LOCAL, REMOTE
+from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
+    from cloudsync.notification import NotificationManager
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +105,14 @@ class SyncManager(Runnable):
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
                  resolve_conflict: Callable,
+                 notification_manager: Optional['NotificationManager'] = None,
                  sleep: Optional[Tuple[float, float]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-
+        self.__nmgr = notification_manager
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -140,6 +143,8 @@ class SyncManager(Runnable):
                     self.sync(sync)
                     self.state.storage_commit()
                 except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError) as e:
+                    if self.__nmgr:
+                        self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
                     log.warning(
                         "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
                     self.backoff()
@@ -612,6 +617,8 @@ class SyncManager(Runnable):
         # pretend this sync translated as "None"
         log.warning("File name error: not creating '%s' on %s", translated_path, self.providers[synced].name)
         sync.ignore(IgnoreReason.IRRELEVANT)
+        if self.__nmgr:
+            self.__nmgr.notify(Notification(SourceEnum(synced), NotificationType.FILE_NAME_ERROR, translated_path))
 
     def __resolve_file_likes(self, side_states):
         class Guard:

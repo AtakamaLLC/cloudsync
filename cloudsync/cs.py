@@ -11,6 +11,7 @@ from .event import EventManager
 from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
+from .notification import NotificationManager, Notification, NotificationType, SourceEnum
 
 log = logging.getLogger(__name__)
 
@@ -34,13 +35,15 @@ class CloudSync(Runnable):
             sleep = (providers[0].default_sleep, providers[1].default_sleep)
         self.sleep = sleep
 
+        self.nmgr = NotificationManager(lambda n: self.handle_notification(n))  # pylint: disable=unnecessary-lambda
+
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
 
         # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through 
         state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
                 prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
-        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, sleep=sleep)
+        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
@@ -54,8 +57,8 @@ class CloudSync(Runnable):
             _roots = roots
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, _roots[0], reauth=lambda: self.authenticate(0)),
-            EventManager(smgr.providers[1], state, 1, _roots[1], reauth=lambda: self.authenticate(1))
+            EventManager(smgr.providers[0], state, 0, self.nmgr, _roots[0], reauth=lambda: self.authenticate(0)),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, _roots[1], reauth=lambda: self.authenticate(1))
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -193,16 +196,21 @@ class CloudSync(Runnable):
         self.sthread.start()
         self.ethreads[0].start()
         self.ethreads[1].start()
+        log.debug('Starting the notification manager')
+        self.nmgr.notify(Notification(SourceEnum.SYNC, NotificationType.STARTED, None))
+        self.nmgr.start(**kwargs)
 
     def stop(self, forever=True):
         log.info("stopping sync: %s", self.storage_label())
         self.smgr.stop(forever=forever)
         self.emgrs[0].stop(forever=forever)
         self.emgrs[1].stop(forever=forever)
+        self.nmgr.stop(forever=forever)
         if self.sthread:
             self.sthread.join()
             self.ethreads[0].join()
             self.ethreads[1].join()
+            self.nmgr.wait()  # TODO: wait() above instead of join()?
             self.sthread = None
 
     # for tests, make this manually runnable
@@ -230,8 +238,12 @@ class CloudSync(Runnable):
         self.smgr.done()
         self.emgrs[0].done()
         self.emgrs[1].done()
+        self.nmgr.done()
 
     def wait(self):
         self.sthread.join()
         self.ethreads[0].join()
         self.ethreads[1].join()
+
+    def handle_notification(self, notification):
+        pass
