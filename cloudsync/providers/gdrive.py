@@ -2,7 +2,6 @@ import io
 import time
 import logging
 import threading
-import webbrowser
 import hashlib
 from ssl import SSLError
 import json
@@ -10,9 +9,10 @@ from typing import Generator, Optional, List, Dict, Any, Tuple
 
 import arrow
 import google.oauth2.credentials
+import google.auth.exceptions
 from googleapiclient.discovery import build   # pylint: disable=import-error
 from googleapiclient.errors import HttpError  # pylint: disable=import-error
-from httplib2 import Http, HttpLib2Error
+from httplib2 import HttpLib2Error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
 
@@ -60,7 +60,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
               'https://www.googleapis.com/auth/drive.activity.readonly'
               ]
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
-    _auth_url  = 'https://accounts.google.com/o/oauth2/v2/auth'
+    _auth_url = 'https://accounts.google.com/o/oauth2/v2/auth'
     _token_url = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
@@ -146,9 +146,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     quota = self.get_quota()
                 self.connection_id = quota['login']
                 self.__creds = creds
+            except CloudTokenError:
+                raise
             except Exception as e:
                 self.disconnect()
-                raise CloudTokenError(str(e))
+                raise CloudDisconnectedError(str(e))
         return self.client
 
     @staticmethod
@@ -195,14 +197,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     ret = meth.execute()
                 log.debug("api: %s (%s) -> %s", method, debug_args(args, kwargs), ret)
                 return ret
-            except HttpAccessTokenRefreshError:
-                self.disconnect()
-                raise CloudTokenError()
             except SSLError as e:
                 if "WRONG_VERSION" in str(e):
                     # httplib2 used by google's api gives this weird error for no discernable reason
                     raise CloudTemporaryError(str(e))
                 raise
+            except google.auth.exceptions.RefreshError:
+                raise CloudTokenError("refresh error")
             except HttpError as e:
                 if str(e.resp.status) == '416':
                     raise GDriveFileDoneError()
@@ -222,6 +223,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
                 if str(e.resp.status) == '403' and str(reason) == 'storageQuotaExceeded':
                     raise CloudOutOfSpaceError("Storage storageQuotaExceeded")
+
+                if str(e.resp.status) == '401':
+                    raise CloudTokenError("Unauthorized %s" % reason)
 
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
