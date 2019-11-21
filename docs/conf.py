@@ -35,7 +35,7 @@ extensions = [
         'sphinx.ext.coverage',
 ]
 
-autodoc_mock_imports = ['pystrict',  'arrow', 'dataclasses', 'msgpack', 'requests_oauthlib', '_pytest']
+autodoc_mock_imports = ['pystrict', 'arrow', 'dataclasses', 'msgpack', 'requests_oauthlib', '_pytest']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -45,6 +45,8 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+
+master_doc = 'index'
 
 # -- Options for HTML output -------------------------------------------------
 
