@@ -1,12 +1,5 @@
-Classes And Methods
-===================
-
-.. automodule:: cloudsync
-
-.. autoclass:: cloudsync.CloudSync
-   :members:
-   :inherited-members:
-   :undoc-members:
+Classes: Provider,  OAuth, Runnable
+===============================================
 
 .. autoclass:: cloudsync.Provider
    :members:

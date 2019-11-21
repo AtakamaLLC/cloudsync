@@ -18,6 +18,9 @@ log = logging.getLogger(__name__)
 
 @strict # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
+    """
+    The main syncrhonization class used.
+    """
     def __init__(self,
                  providers: Tuple[Provider, Provider],
                  roots: Optional[Tuple[str, str]] = None,
@@ -68,6 +71,9 @@ class CloudSync(Runnable):
         self.test_mgr_order: List[int] = []
 
     def forget(self):
+        """
+        Forget and discard all state information, and drop any events in the queue.
+        """
         self.state.forget()
         self.emgrs[0].forget()
         self.emgrs[1].forget()
