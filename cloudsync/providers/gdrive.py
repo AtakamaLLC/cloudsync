@@ -2,27 +2,25 @@ import io
 import time
 import logging
 import threading
-import webbrowser
 import hashlib
 from ssl import SSLError
 import json
 from typing import Generator, Optional, List, Dict, Any, Tuple
 
 import arrow
+import google.oauth2.credentials
+import google.auth.exceptions
 from googleapiclient.discovery import build   # pylint: disable=import-error
 from googleapiclient.errors import HttpError  # pylint: disable=import-error
-from httplib2 import Http, HttpLib2Error
-from oauth2client import client         # pylint: disable=import-error
-from oauth2client.client import OAuth2WebServerFlow, HttpAccessTokenRefreshError, OAuth2Credentials  # pylint: disable=import-error
+from httplib2 import HttpLib2Error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload  # pylint: disable=import-error
-
 
 from cloudsync.utils import debug_args, memoize, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
-from cloudsync.oauth import OAuthConfig
+from cloudsync.oauth import OAuthConfig, OAuthError
 
 CACHE_QUOTA_TIME = 120
 
@@ -58,11 +56,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     provider = 'googledrive'
     name = 'Google Drive'
-    _scope = ['https://www.googleapis.com/auth/drive',
+    _scopes = ['https://www.googleapis.com/auth/drive',
               'https://www.googleapis.com/auth/drive.activity.readonly'
               ]
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
-    _token_uri = 'https://accounts.google.com/o/oauth2/token'
+    _auth_url = 'https://accounts.google.com/o/oauth2/v2/auth'
+    _token_url = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
@@ -72,15 +71,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.__cursor: str = None
         self.__creds = None
         self.client = None
-        self.api_key = None
-        self.refresh_token = None
         self.user_agent = 'cloudsync/1.0'
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids: Dict[str, str] = {}
-        self._flow: OAuth2WebServerFlow = None
         self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
-        self._oauth_done = threading.Event()
 
     @property
     def connected(self):
@@ -89,63 +84,20 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def get_display_name(self):
         return self.name
 
-    def initialize(self):
-        if not self._oauth_config.manual_mode:
-            try:
-                self._oauth_config.start_server(
-                    on_success=self._on_oauth_success,
-                    on_failure=self._on_oauth_failure,
-                )
-                self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
-                                                 client_secret=self._oauth_config.app_secret,
-                                                 scope=self._scope,
-                                                 redirect_uri=self._oauth_config.redirect_uri)
-            except OSError:
-                log.exception('Unable to use redir server. Falling back to manual mode')
-                self._oauth_config.manual_mode = False
-
-        if self._oauth_config.manual_mode:
-            self._flow = OAuth2WebServerFlow(client_id=self._oauth_config.app_id,
-                                             client_secret=self._oauth_config.app_secret,
-                                             scope=self._scope,
-                                             redirect_uri=self._redir)
-
-        url = self._flow.step1_get_authorize_url()
-        self._oauth_done.clear()
-        webbrowser.open(url)
-
-        return url
-
     def interrupt_auth(self):
         self._oauth_config.shutdown()  # ApiServer shutdown does not throw exceptions
-        self._flow = None
-
-    def _on_oauth_success(self, auth_dict):
-        auth_string = auth_dict['code'][0]
-        try:
-            res: OAuth2Credentials = self._flow.step2_exchange(auth_string)
-            self.refresh_token = res.refresh_token
-            self.api_key = res.access_token
-            self._oauth_done.set()
-        except Exception:
-            log.exception('Authentication failed')
-            raise
-
-    def _on_oauth_failure(self, err):
-        log.error("oauth failure: %s", err)
-        self._oauth_done.set()
 
     def authenticate(self):
         try:
-            self.initialize()
-            if not self._oauth_config.wait_success():
-                raise CloudTokenError(self._oauth_config.failure_info)
+            self._oauth_config.start_auth(self._auth_url, self._scopes)
+            token = self._oauth_config.wait_auth(self._token_url)
+        except Exception as e:
+            log.error("oauth error %s", e)
+            self.disconnect()
+            raise CloudTokenError(str(e))
 
-            return {"refresh_token": self.refresh_token,
-                    "api_key": self.api_key,
-                    }
-        finally:
-            self._oauth_config.shutdown()
+        return {"refresh_token": token.refresh_token,
+                "api_key": token.access_token}
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
@@ -153,6 +105,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         quota = res['storageQuota']
         user = res['user']
+        permission_id = user['permissionId']
         login = user['emailAddress']
 
         used = int(quota['usage'])
@@ -164,6 +117,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         maxup = int(quota.get('maxUploadSize', 0))
 
         return {
+            "permissionId": permission_id,
             "used": used,
             "limit": limit,
             "login": login,
@@ -176,37 +130,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client:
-            api_key = creds.get('api_key', self.api_key)
-            refresh_token = creds.get('refresh_token', self.refresh_token)
-            self.__creds = creds
+            refresh_token = creds and creds.get('refresh_token')
+
             if not refresh_token:
                 raise CloudTokenError("acquire a token using authenticate() first")
 
-            kwargs = {}
-
-            if (not self._oauth_config.app_id or not self._oauth_config.app_secret) and not api_key:
-                raise CloudTokenError("require app_id/secret or api_key")
-
             try:
-                with self.mutex:
-                    creds = client.GoogleCredentials(access_token=api_key,
-                                                     client_id=self._oauth_config.app_id,
-                                                     client_secret=self._oauth_config.app_secret,
-                                                     refresh_token=refresh_token,
-                                                     token_expiry=None,
-                                                     token_uri=self._token_uri,
-                                                     user_agent=self.user_agent)
-                    creds.refresh(Http())
-                    self.client = build(
-                        'drive', 'v3', http=creds.authorize(Http()))
-                    kwargs['api_key'] = creds.access_token
-
-                if getattr(creds, 'refresh_token', None):
-                    refresh_token = creds.refresh_token
-
-                self.refresh_token = refresh_token
-                self.api_key = api_key
-
+                new = self._oauth_config.refresh(self._token_url, refresh_token, scope=self._scopes)
+                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._scopes)
+                self.client = build(
+                    'drive', 'v3', credentials=google_creds)
                 try:
                     self.get_quota.clear()          # pylint: disable=no-member
                     quota = self.get_quota()
@@ -214,10 +147,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     # Seeing some intermittent SSL failures that resolve on retry
                     log.warning('Retrying intermittent SSLError')
                     quota = self.get_quota()
-                return quota['login']
-            except HttpAccessTokenRefreshError:
+                self.__creds = creds
+                return quota['permissionId']
+            except OAuthError as e:
                 self.disconnect()
-                raise CloudTokenError()
+                raise CloudTokenError(repr(e))
+            except CloudTokenError:
+                self.disconnect()
+                raise
+            except Exception as e:
+                raise CloudDisconnectedError(repr(e))
         return self.connection_id
 
     @staticmethod
@@ -264,14 +203,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     ret = meth.execute()
                 log.debug("api: %s (%s) -> %s", method, debug_args(args, kwargs), ret)
                 return ret
-            except HttpAccessTokenRefreshError:
-                self.disconnect()
-                raise CloudTokenError()
             except SSLError as e:
                 if "WRONG_VERSION" in str(e):
                     # httplib2 used by google's api gives this weird error for no discernable reason
                     raise CloudTemporaryError(str(e))
                 raise
+            except google.auth.exceptions.RefreshError:
+                self.disconnect()
+                raise CloudTokenError("refresh error")
             except HttpError as e:
                 if str(e.resp.status) == '416':
                     raise GDriveFileDoneError()
@@ -291,6 +230,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
                 if str(e.resp.status) == '403' and str(reason) == 'storageQuotaExceeded':
                     raise CloudOutOfSpaceError("Storage storageQuotaExceeded")
+
+                if str(e.resp.status) == '401':
+                    self.disconnect()
+                    raise CloudTokenError("Unauthorized %s" % reason)
 
                 if str(e.resp.status) == '403' and str(reason) == 'parentNotAFolder':
                     raise CloudFileExistsError("Parent Not A Folder")
@@ -641,8 +584,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 yield GDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
     def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
-        if self.exists_path(path):
-            info = self.info_path(path)
+        info = self.info_path(path)
+        if info:
             if info.otype == FILE:
                 raise CloudFileExistsError(path)
             log.debug("Skipped creating already existing folder: %s", path)
@@ -798,7 +741,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return None
         # expensive
         info.path = self._path_oid(oid, info, use_cache=use_cache)
-        log.debug("info oid ret: %s", info)
         return info
 
     @staticmethod
@@ -815,6 +757,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                             fields='name, md5Checksum, parents, mimeType, trashed, shared, capabilities, size',
                             )
         except CloudFileNotFoundError:
+            log.debug("info oid %s : not found", oid)
             return None
 
         log.debug("info oid %s", res)

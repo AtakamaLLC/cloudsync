@@ -1,5 +1,6 @@
 import os
 import logging
+import io
 from io import BytesIO
 from unittest.mock import patch
 from typing import Union, Optional, Generator, TYPE_CHECKING, List, cast
@@ -30,7 +31,7 @@ else:
 
 
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov):
+    def __init__(self, prov, connect=True):
         self.api_retry = True
         self.prov = prov
 
@@ -42,14 +43,19 @@ class ProviderHelper(ProviderBase):
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
-        self.prov.connect(self.creds)
-        assert prov.connection_id
+        if connect:
+            self.prov.connect(self.creds)
+            assert prov.connection_id
+            self.make_root()
 
+    def make_root(self):
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
             self.test_root = "/" + os.urandom(16).hex()
-            self.prov.mkdir(self.test_root)
+   
+        log.debug("mkdir %s", self.test_root)
+        self.prov.mkdir(self.test_root)
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -392,6 +398,7 @@ def test_connect(provider):
     log.info("reset %s == %s", provider, provider.connection_id)
     with pytest.raises(CloudTokenError):
         provider.reconnect()
+    assert not provider.connected
     provider.connection_id = None
     provider.reconnect()
 
@@ -1394,6 +1401,7 @@ def test_report_info(provider):
     temp_name = provider.temp_name()
 
     u1 = provider.get_quota()["used"]
+    log.info("used %s", u1)
 
     provider.create(temp_name, BytesIO(b"test"))
 
@@ -1410,10 +1418,12 @@ def test_report_info(provider):
     assert pinfo2['limit'] > 0
     assert pinfo2['used'] > u1
 
+    log.info("info %s", pinfo2)
+
     login = pinfo2.get('login')
 
     # most providers give this info, but for some it's not relevant, so just limit this to the ones that do
-    if provider.name in ("gdrive", "dropbox", "mock"):
+    if provider.name in ("gdrive", "dropbox", "mock", "onedrive", "box"):
         assert login
 
 
@@ -1433,10 +1443,10 @@ class FakeFile:
         self.closed = False
 
     def fileno(self):
-        raise OSError()
+        raise io.UnsupportedOperation()
 
     def write(self, data):
-        raise OSError()
+        raise io.UnsupportedOperation()
 
     def read(self, size=None):
         if size is None:
@@ -1467,13 +1477,20 @@ class FakeFile:
         return self.loc
 
 
-@pytest.mark.manual
 def test_large_file_support(provider):
-    target_size = 30 * 1000 * 1000
+    # fix multipart upload size to something small
+    if not provider.large_file_size:
+        pytest.skip("provider doesn't need multipart tests")
+
+    provider.large_file_size = 4 * 1024 * 1024
+    provider.upload_block_size = 1 * 1024 * 1024
+    target_size = 5 * 1024 * 1024
     fh = FakeFile(target_size, repeat=b'0')
     provider.create("/foo", fh)
     info = provider.info_path("/foo")
     assert info
+    fh = FakeFile(target_size, repeat=b'1')
+    provider.upload(info.oid, fh)
     log.debug("info=%s", info)
     root_info = provider.info_path("/")
     assert root_info
@@ -1481,6 +1498,8 @@ def test_large_file_support(provider):
     log.debug("dir_list=%s", dir_list)
     new_fh = BytesIO()
     provider.download_path("/foo", new_fh)
+    new_fh.seek(0)
+    assert new_fh.read(10) == b'1111111111'
     new_fh.seek(0, SEEK_END)
     new_len = new_fh.tell()
     assert new_len == target_size
@@ -1566,11 +1585,10 @@ def test_cursor_error_during_listdir(provider):
 
 @pytest.mark.manual
 def test_authenticate(config_provider):
-    provider = ProviderHelper(config_provider)      # type: ignore
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
 
-    provider.disconnect()
     creds = provider.authenticate()
     provider.connect(creds)
 
@@ -1584,11 +1602,12 @@ def test_authenticate(config_provider):
         provider.disconnect()
         with pytest.raises(CloudTokenError):
             provider.connect(creds)
+        assert not provider.connected
 
 
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
-    provider = ProviderHelper(config_provider)      # type: ignore
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
     if not provider.creds:
         pytest.skip("provider doesn't support auth")
 
@@ -1597,3 +1616,37 @@ def test_interrupt_auth(config_provider):
     threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
     with pytest.raises(CloudTokenError):
         provider.authenticate()
+    assert not provider.connected
+
+
+@pytest.fixture
+def suspend_capture(pytestconfig):
+    class suspend_guard:
+        def __init__(self):
+            self.capmanager = pytestconfig.pluginmanager.getplugin('capturemanager')
+        def __enter__(self):
+            self.capmanager.suspend_global_capture(in_=True)
+        def __exit__(self, _1, _2, _3):
+            self.capmanager.resume_global_capture()
+
+    yield suspend_guard()
+
+
+@pytest.mark.manual
+def test_revoke_auth(config_provider, suspend_capture):
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    if not provider.creds:
+        pytest.skip("provider doesn't support auth")
+    creds = provider.authenticate()
+    provider.connect(creds)
+
+    with suspend_capture:
+        input("PLEASE GO TO THE PROVIDER AND REVOKE ACCESS NOW")
+
+    with pytest.raises(CloudTokenError):
+        # some providers cache connections, so this test may not work for everyone
+        while True:
+            log.error("sleep 5")
+            time.sleep(5)
+            log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
+    assert not provider.connected

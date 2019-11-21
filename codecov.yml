@@ -1,0 +1,11 @@
+coverage:
+  status:
+    project:
+        default: yes
+        base: pr
+    patch: 
+        default: yes
+        base: pr
+ignore:
+    - "cloudsync/providers"
+    - "cloudsync/tests/providers"
