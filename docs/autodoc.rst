@@ -1,4 +1,4 @@
-Classes: Provider,  OAuth, Runnable
+Classes: Provider,  OAuth
 ===============================================
 
 .. autoclass:: cloudsync.Provider
@@ -6,10 +6,6 @@ Classes: Provider,  OAuth, Runnable
    :undoc-members:
 
 .. autoclass:: cloudsync.oauth.OAuthConfig
-   :members:
-   :undoc-members:
-
-.. autoclass:: cloudsync.Runnable
    :members:
    :undoc-members:
 
