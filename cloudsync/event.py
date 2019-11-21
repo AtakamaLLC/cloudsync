@@ -45,8 +45,6 @@ class EventManager(Runnable):
         self.__nmgr = notification_manager
         self.need_auth = False
 
-        self.walk_one_time: Optional[str] = None
-        self._walk_tag: Optional[str] = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         if self.cursor is not None:
@@ -57,9 +55,14 @@ class EventManager(Runnable):
                 log.exception("Cursor error... resetting cursor. %s", e)
                 self.cursor = None
 
-        self.first_do = True
         self.walk_root = walk_root
-        self.walk_one_time = None
+        self.need_walk = False
+        self._first_do = True
+        self._walk_tag: Optional[str] = None
+        if self.walk_root:
+            self._walk_tag = self.label + "_walked_" + self.walk_root
+            if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
+                self.need_walk = True
 
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 10
@@ -83,7 +86,6 @@ class EventManager(Runnable):
     def do(self):
         self.events.shutdown = False
         try:
-            log.info('We are in do, %s', self.provider.name)
             if not self.provider.connected:
                 if self.need_auth:
                     log.warning("Need auth, calling reauthenticate")
@@ -108,25 +110,20 @@ class EventManager(Runnable):
             self.need_auth = True
 
     def _do_unsafe(self):
-        if self.first_do:
-            if self.walk_root:
-                self._walk_tag = self.label + "_walked_" + self.walk_root
-                if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                    self.walk_one_time = self.walk_root
-
+        if self._first_do:
             if self.cursor is None:
                 self.cursor = self.provider.current_cursor
                 if self.cursor is not None:
                     self.state.storage_update_data(self._cursor_tag, self.cursor)
-        self.first_do = False
+        self._first_do = False
 
-        if self.walk_one_time:
+        if self.need_walk:
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_one_time)
-            for event in self.provider.walk(self.walk_one_time):
+                      self.provider.name, self.walk_root)
+            for event in self.provider.walk(self.walk_root):
                 self.process_event(event, from_walk=True)
             self.state.storage_update_data(self._walk_tag, time.time())
-            self.walk_one_time = None
+            self.need_walk = False
 
         for event in self.events:
             if not event:

@@ -950,6 +950,7 @@ def test_storage(storage):
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
+    cs1.do()
     old_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     assert old_cursor is not None
     log.debug("cursor=%s", old_cursor)
