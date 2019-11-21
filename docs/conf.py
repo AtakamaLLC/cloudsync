@@ -54,13 +54,9 @@ master_doc = 'index'
 # a list of builtin themes.
 
 html_theme = 'default'
-html_logo = 'logo.png'
+html_logo = '_static/logo.png'
 
 html_theme_options = {
-    'logo_name': True,
-    'description': 'Bidirectional cloud synchronization library',
-    'github_user': 'AtakamaLLC',
-    'github_repo': 'cloudsync',
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
