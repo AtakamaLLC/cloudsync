@@ -1,3 +1,6 @@
+#sphinx
+_build
+
 # coverage annotations
 *,cover
 

@@ -2,7 +2,7 @@
 [![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master)](https://travis-ci.com/AtakamaLLC/cloudsync)
 -->
 
-## cloudsync
+## cloudsync README
 
 Python Cloud Synchronization Library
 
