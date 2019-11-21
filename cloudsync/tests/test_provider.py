@@ -49,7 +49,9 @@ class ProviderHelper(ProviderBase):
             # if the provider class doesn't specify a testing root
             # then just make one up
             self.test_root = "/" + os.urandom(16).hex()
-            self.prov.mkdir(self.test_root)
+            id = self.prov.mkdir(self.test_root)
+            if not id:
+                log.error("no id returned from mkdir")
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -490,6 +492,7 @@ def test_rename(provider):
     # dup rename folder
     sfp2 = provider.info_path(sub_folder_path2)
     provider.rename(sfp2.oid, sub_folder_path2)
+    log.debug("finished rename test")
 
 
 def test_mkdir(provider):
@@ -622,7 +625,7 @@ def test_event_basic(provider):
     received_event = None
     received_event2 = None
     for e in provider.events_poll(until=lambda: received_event is not None and received_event2 is not None):
-        log.debug("event %s", e)
+        log.debug("event-before %s", e)
         if e.exists and e.path is None:
             info2 = provider.info_oid(e.oid)
             if info2:
@@ -633,7 +636,7 @@ def test_event_basic(provider):
 
         assert e.otype is not None
 
-        log.debug("event %s", e)
+        log.debug("event-after %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
             received_event = e
         if (not e.exists and e.oid == deleted_oid2) or (e.path and path2 in e.path):
@@ -1296,9 +1299,12 @@ def test_listdir(provider):
 
     assert provider.exists_path(outer)
     assert provider.exists_oid(outer_oid)
+    old_list = provider.listdir(outer_oid)
     inner = outer + temp_name
     inner_oid = provider.mkdir(inner)
     assert provider.exists_oid(inner_oid)
+    new_list = provider.listdir(outer_oid)
+    assert old_list != new_list  # confirm that the folder contents are not cached
     provider.create(outer + "/file1", BytesIO(b"hello"))
     provider.create(outer + "/file2", BytesIO(b"there"))
     provider.create(inner + "/file3", BytesIO(b"world"))
