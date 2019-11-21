@@ -35,6 +35,8 @@ extensions = [
         'sphinx.ext.coverage',
 ]
 
+autodoc_mock_imports = ['pystrict',  'arrow', 'dataclasses', 'msgpack', 'requests_oauthlib']
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
