@@ -54,8 +54,9 @@ master_doc = 'index'
 # a list of builtin themes.
 
 html_theme = 'default'
+html_logo = 'logo.png'
+
 html_theme_options = {
-    'logo': 'logo.png',
     'logo_name': True,
     'description': 'Bidirectional cloud synchronization library',
     'github_user': 'AtakamaLLC',
