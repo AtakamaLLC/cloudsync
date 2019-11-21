@@ -1,0 +1,5 @@
+site_name: cloudsync
+repo_url: https://github.com/AtakamaLLC/cloudsync
+nav:
+    - Home: index.rst
+docs_dir: docs
