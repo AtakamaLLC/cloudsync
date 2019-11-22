@@ -218,7 +218,7 @@ class DropboxProvider(Provider):
     def connect_impl(self, creds):
         log.debug('Connecting to dropbox')
         with self.mutex:
-            if not self.client:
+            if not self.client or creds != self.__creds:
                 if creds:
                     self.__creds = creds
                     api_key = creds.get('key', None)

@@ -204,7 +204,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.connect(self.__creds)
 
     def connect_impl(self, creds):
-        if not self.__client:
+        if not self.__client or creds != self.__creds:
             if not creds:
                 raise CloudTokenError("no credentials")
             log.debug('Connecting to One Drive')

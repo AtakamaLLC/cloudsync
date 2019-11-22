@@ -30,8 +30,7 @@ class GDriveFileDoneError(Exception):
 
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
-logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
-
+logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
 
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids: List[str] = []
@@ -129,7 +128,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
-        if not self.client:
+        if not self.client or creds != self.__creds:
             refresh_token = creds and creds.get('refresh_token')
 
             if not refresh_token:
