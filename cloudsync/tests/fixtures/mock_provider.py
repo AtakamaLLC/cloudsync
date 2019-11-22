@@ -11,7 +11,7 @@ from cloudsync.event import Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
-    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError
+    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError
 
 from cloudsync.utils import debug_sig
 
@@ -125,6 +125,7 @@ class MockProvider(Provider):
         if hash_func is None:
             self.hash_func = lambda a: md5(a).digest()
         self.uses_cursor = True
+        self.forbidden_chars: list = []
 
     def disconnect(self):
         self.connected = False
@@ -281,6 +282,9 @@ class MockProvider(Provider):
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         # TODO: store the metadata
+        for c in self.forbidden_chars:
+            if c in path:
+                raise CloudFileNameError()
         file = self._get_by_path(path)
         if file is not None and file.exists:
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
@@ -377,6 +381,9 @@ class MockProvider(Provider):
 
     def mkdir(self, path) -> str:
         self._verify_parent_folder_exists(path)
+        for c in self.forbidden_chars:
+            if c in path:
+                raise CloudFileNameError()
         file = self._get_by_path(path)
         if file and file.exists:
             if file.type == MockFSObject.FILE:

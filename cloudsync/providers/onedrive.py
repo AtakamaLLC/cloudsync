@@ -3,6 +3,7 @@
 # https://github.com/OneDrive/onedrive-sdk-python
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/msa-oauth?view=odsp-graph-online
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/app-registration?view=odsp-graph-online
+import os
 import time
 import logging
 from pprint import pformat
@@ -30,7 +31,6 @@ from cloudsync.utils import debug_sig, disable_log_multiline
 class OneDriveFileDoneError(Exception):
     pass
 
-
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
@@ -49,13 +49,23 @@ class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-metho
         super().__init__(*a, **kws)
         self.pid = pid
 
+
 def open_url(url):
     webbrowser.open(url)
+
+
+def _get_size_and_seek0(file_like):
+    file_like.seek(0, os.SEEK_END)
+    size = file_like.tell()
+    file_like.seek(0)
+    return size
 
 
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
+    large_file_size = 4 * 1024 * 1024
+    upload_block_size = 4 * 1024 * 1024
 
     provider = 'onedrive'
     name = 'OneDrive'
@@ -125,7 +135,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         with self._api() as client:
             return client.base_url + api_path
 
-    def _direct_api(self, action, path=None, *, url=None, stream=None):  # pylint: disable=too-many-branches
+    # names of args are compat with requests module
+    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=too-many-branches, redefined-outer-name
         assert path or url
         if not url:
             url = self._get_url(path)
@@ -133,17 +144,24 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if not url:
                 path = path.lstrip("/")
                 url = client.base_url + path
+            head = {
+                      'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
+                      'content-type': 'application/json'}
+            if headers:
+                head.update(headers)
+            for k in head:
+                head[k] = str(head[k])
             req = getattr(requests, action)(
                 url,
                 stream=stream,
-                headers={
-                    'Authorization': 'bearer {access_token}'.format(access_token=client.auth_provider.access_token),
-                    'content-type': 'application/json'})
+                headers=head,
+                json=json,
+                data=data)
 
         if req.status_code == 204:
             return {}
 
-        if req.status_code > 201:
+        if req.status_code > 202:
             dat = req.json()
             emsg = dat['error']['message']
             log.error("%s error %s (%s)", action, str(req.status_code)+" "+emsg, dat['error'])
@@ -420,13 +438,18 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         yield from self._walk(path, info.oid)
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
-        with self._api() as client:
-            req = client.item(drive='me', id=oid).content.request()
-            req.method = "PUT"
-            resp = req.send(data=file_like)
-            item = onedrivesdk.Item(json.loads(resp.content))
-
-        return self._info_item(item)
+        size = _get_size_and_seek0(file_like)
+        if size <= self.large_file_size:
+            with self._api() as client:
+                req = client.item(drive='me', id=oid).content.request()
+                req.method = "PUT"
+                resp = req.send(data=file_like)
+                item = onedrivesdk.Item(json.loads(resp.content))
+                return self._info_item(item)
+        else:
+            _unused_resp = self.upload_large("drive/items/%s" % oid, file_like, "replace")
+            # todo: maybe use the returned item dict to speed this up
+            return self.info_oid(oid)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
@@ -440,14 +463,37 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         pid = self.get_parent_id(path=path)
         _, base = self.split(path)
-        with self._api() as client:
-            # TODO switch to directapi
-            req: onedrivesdk.ItemContentRequest = client.item(drive='me', id=pid).children[base].content.request()
-            req.method = "PUT"
-            resp = req.send(data=file_like)
-            item = onedrivesdk.Item(json.loads(resp.content))
+        size = _get_size_and_seek0(file_like)
 
-        return self._info_item(item, path=path)
+        # TODO switch to directapi
+        if size <= self.large_file_size:
+            with self._api() as client:
+                req: onedrivesdk.ItemContentRequest = client.item(drive='me', id=pid).children[base].content.request()
+                req.method = "PUT"
+                resp = req.send(data=file_like)
+                item = onedrivesdk.Item(json.loads(resp.content))
+            return self._info_item(item, path=path)
+        else:
+            r = self.upload_large("drive/root:%s:" % path, file_like, conflict="fail")
+            return self._info_from_rest(r, root=self.dirname(path))
+
+    def upload_large(self, drive_path, file_like, conflict):
+        size = _get_size_and_seek0(file_like)
+        r = self._direct_api("post", "%s/createUploadSession" % drive_path, json={"item": {"@microsoft.graph.conflictBehavior": conflict}})
+        upload_url = r["uploadUrl"]
+
+        data = file_like.read(self.upload_block_size)
+
+        cbfrom = 0
+        while data:
+            clen = len(data)             # fragment content size
+            cbto = cbfrom + clen - 1     # inclusive content byte range
+            cbrange = "bytes %s-%s/%s" % (cbfrom, cbto, size)
+            r = self._direct_api("put", url=upload_url, data=data, headers={"Content-Length": clen, "Content-Range": cbrange})
+            data = file_like.read(self.upload_block_size)
+            cbfrom = cbto + 1
+        return r
+
 
     def download(self, oid, file_like):
         with self._api() as client:
