@@ -591,7 +591,7 @@ def test_create_node_over_existing_path_and_oid():
     assert cache.get_type(oid=a_oid) == DIRECTORY
 
 
-def check_structure(cache):
+def check_structure(cache: HierarchicalCache):
     #   todo: confirm that the internal structure of the cache is good
     #       check every node in the tree
     #           is in the oid_to_node dict if it has an oid,
@@ -599,5 +599,16 @@ def check_structure(cache):
     #           has an entry in it's parent's children dict under the correct name
     #       check every node in oid_to_node
     #           traverse the tree starting at the root all the way to the node
-    pass
+    for node in cache._walk(cache.root):
+        node = node[0]
+        node: Node
+        if node.oid:
+            assert cache._oid_to_node[node.oid] is node
+        if node is not cache.root:
+            parent_node = node.parent
+            assert node.parent
+            assert parent_node.children[node.name] is node
 
+    for node in cache._oid_to_node.values():
+        node: Node
+        assert cache.get_path(node.oid)
