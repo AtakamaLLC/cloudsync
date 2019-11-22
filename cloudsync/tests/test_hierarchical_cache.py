@@ -46,6 +46,7 @@ def test_create():
     a_file = cache.root.children['a.txt']
     assert(a_file.oid == a_oid)
     assert(a_file == cache._oid_to_node[a_oid])
+    check_structure(cache)
 
 
 def test_mkdir():
@@ -56,6 +57,7 @@ def test_mkdir():
     a_folder = cache.root.children['a']
     assert(a_folder.oid == a_oid)
     assert(a_folder == cache._oid_to_node[a_oid])
+    check_structure(cache)
 
 
 def test_delete():
@@ -73,6 +75,7 @@ def test_delete():
     assert a_node not in cache.root.children.values()
     assert b_node in cache._oid_to_node.values()
     assert b_node in cache.root.children.values()
+    check_structure(cache)
 
 
     # TODO: create a file in the dir and make sure it's also gone when we delete the file's parent folder
@@ -189,6 +192,7 @@ def test_rename(): #check tree for new path, list shouldnt change once the nodes
     check_results(cache, d_oid, '/d1', DIRECTORY, [], [])
     walk = ['/', '/a', '/b', '/b/c', '/b/c1', '/d1']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_rename_non_existent_oid():
@@ -207,6 +211,7 @@ def test_rename_non_existent_oid():
     cache.rename('/junk', '/a/b/c')
     walk = ['/', '/a', '/a/b']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_rename_to_non_existent_path():
@@ -221,6 +226,7 @@ def test_rename_to_non_existent_path():
 
     walk = ['/', '/junk', '/junk/a']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_rename_file_over_file():
@@ -239,6 +245,7 @@ def test_rename_file_over_file():
 
     walk = ['/', '/f1b']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_rename_file_over_folder():
@@ -257,6 +264,7 @@ def test_rename_file_over_folder():
     check_results(cache, oid_2a, '/d2b', FILE)
     walk = ['/', '/d2b']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_rename_folder_over_folder():
@@ -276,6 +284,7 @@ def test_rename_folder_over_folder():
     check_results(cache, oid_3a, '/d3b', DIRECTORY)
     walk = ['/', '/d3b', '/d3b/d3a_file']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_rename_folder_over_file():
@@ -295,6 +304,7 @@ def test_rename_folder_over_file():
 
     walk = ['/', '/f4b', '/f4b/d4a_file']
     check_walk(cache, walk)
+    check_structure(cache)
 
 
 def test_reuse_oid():
@@ -313,6 +323,7 @@ def test_reuse_oid():
     check_walk(cache, walk)
     check_results(cache, oid, '/c', FILE)
     assert cache.get_oid('/a') is None
+    check_structure(cache)
 
 
 def test_make_hierarchy():
@@ -347,6 +358,7 @@ def test_make_hierarchy():
     assert(b == cache._oid_to_node[b_oid])
     assert(c == cache._oid_to_node[c_oid])
     assert(d == cache._oid_to_node[d_oid])
+    check_structure(cache)
 
 
 def test_create_parent_is_a_file():
@@ -362,6 +374,7 @@ def test_create_parent_is_a_file():
     a_new_oid = cache.get_oid('/a')
     assert a_new_oid != a_oid
     assert a_new_oid is None
+    check_structure(cache)
 
 
 def test_create_parent_doesnt_exist():
@@ -370,6 +383,7 @@ def test_create_parent_doesnt_exist():
     cache.create('/a/b', b_oid)
     # confirm that /a was created as a folder
     check_results(cache, None, '/a', DIRECTORY, ['b'], [b_oid])
+    check_structure(cache)
 
 
 def confirm_gone(cache, oid=None, path=None):
@@ -395,6 +409,7 @@ def test_create_over_folder():
     check_results(cache, a2_oid, '/a', FILE)
     # confirm that the contents of the folder that disappeared are also gone
     confirm_gone(cache, b_oid, '/a/b')
+    check_structure(cache)
 
 
 def test_mkdir_parent_is_a_file():
@@ -410,6 +425,7 @@ def test_mkdir_parent_is_a_file():
     a_new_oid = cache.get_oid('/a')
     assert a_new_oid != a_oid
     assert a_new_oid is None
+    check_structure(cache)
 
 
 def test_mkdir_parent_doesnt_exist():
@@ -418,6 +434,7 @@ def test_mkdir_parent_doesnt_exist():
     cache.mkdir('/a/b', b_oid)
     # confirm that /a was created as a folder
     check_results(cache, None, '/a', DIRECTORY, ['b'], [b_oid])
+    check_structure(cache)
 
 
 def test_mkdir_over_file():
@@ -434,6 +451,7 @@ def test_mkdir_over_file():
     cache.create('/a/b', new_oid())
     # confirm b is cached
     assert cache.get_type(path='/a/b') == FILE
+    check_structure(cache)
 
 
 def test_path_to_oid_success():
@@ -556,6 +574,7 @@ def test_delete_folder_without_oid():
     cache.delete(path='/a')
     assert len(cache._oid_to_node) == 1
     assert list(cache._oid_to_node.keys())[0] == root_oid
+    check_structure(cache)
 
 
 def test_rename_folder_without_oid():
@@ -571,6 +590,7 @@ def test_rename_folder_without_oid():
     assert cache.get_type(path='/c/b') == FILE
     assert len(cache._oid_to_node) == 2  # rename doesn't change that, still 2
     assert list(cache._oid_to_node.keys())[0] == root_oid
+    check_structure(cache)
 
 
 def test_create_node_over_existing_path_and_oid():
@@ -589,6 +609,7 @@ def test_create_node_over_existing_path_and_oid():
     assert cache.get_type(path='/b') == DIRECTORY
     assert cache.get_type(oid=b_oid) is None
     assert cache.get_type(oid=a_oid) == DIRECTORY
+    check_structure(cache)
 
 
 def check_structure(cache: HierarchicalCache):

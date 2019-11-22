@@ -16,6 +16,8 @@ from boxsdk.object.file import File as box_file
 from boxsdk.object.event import Event as box_event
 from boxsdk.exception import BoxException, BoxAPIException  # , BoxAPIException, BoxNetworkException, BoxOAuthException
 from boxsdk.session.session import Session, AuthorizedSession
+
+from cloudsync.hierarchical_cache import HierarchicalCache
 from cloudsync.utils import debug_args
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 
@@ -64,6 +66,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._ids: Dict[str, str] = {}
         self.event_count = 0;
         self.__seen_events = {}
+        self.__cache = HierarchicalCache(self, 0)
 
     def _store_refresh_token(self, access_token, refresh_token):
         self.__creds = {"api_key": access_token,
@@ -316,6 +319,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 self.event_count += 1;
                 log.debug("got event #%s", self.event_count)
 
+                old_path = self.__cache.get_path(oid)
+                if old_path != path:
+                    self.__cache.delete(path=path)
+
                 yield event
 
             if new_position:  # todo: do we want to raise if we don't have a new position?
@@ -358,7 +365,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             # TODO: implement preflight_check on the upload_stream() call
             new_object: box_file = parent_object.upload_stream(file_stream=file_like, file_name=base)
             log.debug("caching id %s for file %s", new_object.object_id, path)
-            self._ids[path] = new_object.object_id
+            self.__cache.create(path, new_object.object_id)
             retval = self._get_oinfo(new_object, parent_path=parent)
             return retval
 
@@ -370,11 +377,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             box_object.download_to(writeable_stream=file_like)
 
     def rename(self, oid, path) -> str:
-        for curr_path, id in list(self._ids.items()):
-            if id == oid:
-                log.debug("removing cache entry for %s", curr_path)
-                self._ids.pop(curr_path);
-
         with self._api():
             box_object: box_file = self._get_box_object(oid=oid, object_type=NOTKNOWN)  # todo: get object_type from cache
             if box_object is None:
@@ -412,6 +414,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         raise CloudFileExistsError()
 
                 retval = box_object.move(parent_folder=new_parent_object, name=new_base)
+            self.__cache.rename(old_path, path)
             return retval.id
 
     def mkdir(self, path) -> str:
@@ -427,7 +430,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 if parent_object.object_type != 'folder':
                     raise CloudFileExistsError()
                 child_object: box_folder = parent_object.create_subfolder(base)
-                self._ids[path] = child_object.object_id;
+                self.__cache.mkdir(path, child_object.object_id)
 
                 # test1_object = self._get_box_object(oid=child_object.object_id, object_type=DIRECTORY);
                 # assert test1_object;
@@ -451,11 +454,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 return box_object.object_id
 
     def delete(self, oid):
-        for path, id in list(self._ids.items()):
-            if id == oid:
-                log.debug("removing cache entry for %s", path)
-                self._ids.pop(path);
-
         with self._api():
             box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN)  # todo: get type from cache
             if box_object is None:
@@ -464,6 +462,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 box_object.delete()
             else:
                 box_object.delete(recursive=False)
+        self.__cache.delete(oid=oid)
 
     def exists_oid(self, oid):
         try:
@@ -477,6 +476,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return False
 
     def exists_path(self, path) -> bool:
+        if self.__cache.get_type(path=path):
+            return True
         return self.info_path(path) is not None
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
@@ -577,6 +578,16 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 return self._get_oinfo(client.root_folder().get())
 
         box_object = self._get_box_object(path=path, object_type=NOTKNOWN)  # todo: get type from cache
+        if box_object._item_type is 'file':
+            self.__cache.create(path, box_object._object_id)
+        else:
+            self.__cache.mkdir(path, box_object._object_id)
+        for child in box_object.item_collection.get('entries', []):
+            child_path = self.join(path, child.name)
+            if child._item_type is 'file':
+                self.__cache.mkdir(child_path, child._object_id)
+            else:
+                self.__cache.create(child_path, child._object_id)
         parent, _ = self.split(path)
         return self._get_oinfo(box_object, parent_path=parent)
 
@@ -609,8 +620,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         # only call this function within another guard, and don't use the return value outside of that guard
         assert object_type is not None
         if path and not oid and False:
-            if self._ids.get(path):
-                oid = self._ids[path]
+            cached_oid = self.__cache.get_oid(path)
+            if cached_oid:
+                oid = cached_oid
                 log.debug("got cached id %s for %s", oid, path)
             else:
                 log.debug("couldn't get cached entry for %s\n%s", path, self._ids)
@@ -672,16 +684,28 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             if oinfo and not oinfo.path:
                 # expensive
                 oinfo.path = self._get_path(box_object)
+            if box_object._item_type is 'file':
+                self.__cache.create(oinfo.path, box_object._object_id)
+            else:
+                self.__cache.mkdir(oinfo.path, box_object._object_id)
+            for child in box_object.item_collection.get('entries', []):
+                child_path = self.join(oinfo.path, child.name)
+                if child._item_type is 'file':
+                    self.__cache.mkdir(child_path, child._object_id)
+                else:
+                    self.__cache.create(child_path, child._object_id)
             return oinfo
 
     def get_parent_id(self, path):
         if not path:
             return None
         parent, _ = self.split(path)
+        if parent == path:
+            return self.__cache.get_oid(parent)
         parent_info = self.info_path(parent)
         if not parent_info:
             raise CloudFileNotFoundError("parent %s must exist" % parent)
-        return parent_info.oid
+        return self.__cache.get_oid(parent_info.path)
 
     def refresh_api_key(self):
         # Use the refresh token to get a new api key and refresh token
