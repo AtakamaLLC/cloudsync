@@ -22,6 +22,20 @@ class Node:
         self._provider = provider
         self.children = {}
         self.type: OType = otype
+        self._memory_leak_register()
+
+    def __del__(self):
+        # this needs to be here because the tests would like to check for memory leaks, but you can't monkey patch
+        # the __del__ method... it's magical that way. so we define it in the class to call a method that does
+        # nothing, then we patch THAT one in the tests.
+        mlu = getattr(self, '_memory_leak_unregister')
+        mlu()
+
+    def _memory_leak_register(self):
+        pass
+
+    def _memory_leak_unregister(self):
+        pass
 
     @property
     def oid(self):
@@ -62,12 +76,19 @@ class HierarchicalCache:
 
         node.name = name
         node.parent = parent_node
+
+        self.delete(path=path)
+        if node.oid:
+            self.delete(oid=node.oid)
+
         parent_node.children[name] = node
 
-        if node.oid:
-            if self._oid_to_node.get(node.oid):
-                self.delete(node.oid)
-            self._oid_to_node[node.oid] = node
+        for current_node, current_path in self._walk(node):
+            if current_node.oid:
+                possible_conflict = self._oid_to_node.get(current_node.oid)
+                if id(possible_conflict) != id(current_node):
+                    self.delete(oid=current_node.oid)
+                self._oid_to_node[current_node.oid] = current_node
 
     def __make_node(self, otype: OType, path: str, oid: Optional[str], metadata: Optional[Dict[str, any]] = None):
         norm_path = self._provider.normalize_path(path)
@@ -79,37 +100,38 @@ class HierarchicalCache:
             log.warning("metadata for node does not match metadata fields template: %s %s!=%s",
                         norm_path, metadata.keys(), self._metadata_fields)
 
-        new_node = Node(self._provider, otype, oid, None, None, new_metadata)
+        _, name = self._provider.split(path)
+        new_node = Node(self._provider, otype, oid, name, None, new_metadata)
         self.__insert_node(new_node, norm_path)
         return new_node
 
-    def walk(self, oid: str = None, path: str = None, _node: Node = None) -> Generator[str, None, None]:
-        if not _node:
-            if oid:
-                _node = self._get_node(oid=oid)
-            elif path:
-                _node = self._get_node(path=path)
-            else:
-                _node = self.root
-        if _node is None:
-            return None
-        if path is None:
-            path = _node.full_path()
-        yield path
-        if _node.type == FILE:
+    def _walk(self, node: Node, path: str = None) -> Generator[Node, None, None]:
+        if not path:
+            path = node.full_path()
+        yield (node, path)
+        if node.type == FILE:
             return
-        for child_name, child_node in _node.children.items():
+        for child_name, child_node in node.children.items():
             child_path = self.join(path, child_name)
             if child_node.type == DIRECTORY:
-                yield from self.walk(_node=child_node, path=child_path)
+                yield from self._walk(child_node, child_path)
             else:
-                yield child_path
+                yield (child_node, child_path)
 
-    def listdir(self, oid: str = None, path: str = None):
+    def walk(self, *, oid: str = None, path: str = None) -> Generator[str, None, None]:
+        if not (oid or path):
+            path = self._provider.sep
+        node = self._get_node(oid=oid, path=path)
+        if node is None:
+            return None
+        for curr_node, curr_path in self._walk(node):
+            yield curr_path
+
+    def listdir(self, *, oid: str = None, path: str = None):
         node = self._get_node(oid=oid, path=path)
         if not node:
             return []
-        return [x.name for x in node.children]
+        return [x.name for x in node.children.values()]
 
     def mkdir(self, path: str, oid: Optional[str]):
         self._mkdir(path, oid)
@@ -124,11 +146,15 @@ class HierarchicalCache:
     def _create(self, path: str, oid: str):
         return self.__make_node(FILE, path, oid)
 
-    def delete(self, oid: str) -> Optional[Node]:
-        return self._delete(oid) is not None
+    def delete(self, *, oid: str = None, path: str = None):
+        node = self._get_node(oid=oid, path=path)
+        if node:
+            if node.type == DIRECTORY:
+                for child_node in list(node.children.values()):
+                    self.delete(oid=child_node.oid, path=child_node.full_path())
+            self._delete(node)
 
-    def _delete(self, oid: str) -> Optional[Node]:
-        remove_node = self._oid_to_node.get(oid)
+    def _delete(self, remove_node):
         if not remove_node or remove_node.oid == self.root.oid:
             return None
         node_deleted_from_parent = None
@@ -136,10 +162,20 @@ class HierarchicalCache:
             node_deleted_from_parent = remove_node.parent.children.pop(remove_node.name)
         except KeyError:
             pass
+
+        for curr_node, curr_path in self._walk(remove_node):
+            curr_node: Node
+            if curr_node.oid:
+                self._oid_to_node.pop(curr_node.oid, None)
+
         if node_deleted_from_parent:
             if id(node_deleted_from_parent) != id(remove_node):
+                if node_deleted_from_parent.oid is not None:
+                    self._oid_to_node.pop(node_deleted_from_parent.oid)
                 raise LookupError("Structure problem in hierarchical cache. %s != %s", node_deleted_from_parent, remove_node)
-            self._oid_to_node.pop(remove_node.oid)
+
+        remove_node.parent = None
+
         return remove_node
 
     def split(self, path: str) -> Tuple[str, str]:
@@ -149,16 +185,17 @@ class HierarchicalCache:
     def join(self, *paths):
         return self._provider.join(*paths)
 
-    def rename(self, oid: str, path: str) -> bool:
-        return self._rename(oid, path) is not None
+    def rename(self, old_path: str, new_path: str):
+        self._rename(old_path, new_path)
 
-    def _rename(self, oid: str, path: str) -> Optional[Node]:
-        if oid == self.root.oid:
+    def _rename(self, old_path: str, new_path: str) -> Optional[Node]:
+        if old_path in (self._provider.sep, self._provider.alt_sep):
             raise ValueError("cannot rename '%s'" % (self._provider.sep, ))
-        node = self._delete(oid)
-        if not node:
-            return None
-        self.__insert_node(node, path)
+        node = self._get_node(path=old_path)
+        self._delete(node)  # _delete will delete the parent but not the children
+        self.delete(path=new_path)  # renaming a nonexistent oid over an existing path should kick the target out of the tree
+        if node:
+            self.__insert_node(node, new_path)
         return node
 
     def _unsafe_path_to_node(self, path):
@@ -168,17 +205,7 @@ class HierarchicalCache:
         parent_node = self._unsafe_path_to_node(parent_path)
         return parent_node.children.get(name) if parent_node else None
 
-    # def _old_unsafe_path_to_node(self, path, node):
-    #     if self._provider.sep not in path:
-    #         return node.children.get(path)
-    #     next_node_name, next_path = path.split(self._provider.sep, 1)
-    #     logging.error(f'Path is {path}, next node name is {next_node_name}, next path is {next_path}')
-    #     next_node = node.children.get(next_node_name)
-    #     if next_node is None:
-    #         return None
-    #     return self._unsafe_path_to_node(next_path, next_node)
-
-    def _get_node(self, oid: str = None, path: str = None) -> Node:
+    def _get_node(self, *, oid: str = None, path: str = None) -> Node:
         if oid is not None:
             if oid == self.root.oid:
                 return self.root
@@ -193,29 +220,30 @@ class HierarchicalCache:
         else:
             raise ValueError('get_node requires an oid or path')
 
+    def set_oid(self, path: str, oid: str):
+        node = self._get_node(path=path)
+        if not node:
+            return
+        if node.oid != oid:
+            if node.oid:
+                self.delete(oid=oid)
+            node.oid = oid
+            self.__insert_node(node, path)
+
     def get_oid(self, path):
         node = self._get_node(path=path)
         return node.oid if node else None
 
-    # def _backtrace_path(self, current_node):
-    #     if current_node.oid == self.root.oid:
-    #         return ''
-    #     return self._backtrace_path(current_node.parent) + self.sep + current_node.name
-
     def get_path(self, oid):
         node = self._oid_to_node.get(oid)
-        if not node:
-            return None
-        return node.full_path()
+        return node.full_path() if node else None
 
-    def get_type(self, oid=None, path=None) -> Optional[OType]:
-        assert oid or path
-        if path and not oid:
-            oid = self.get_oid(path)
-        if not oid:
-            return None
-        node = self._oid_to_node.get(oid)
-        return node
+    def get_type(self, *, oid=None, path=None) -> Optional[OType]:
+        node = self._get_node(oid=oid, path=path)
+        return node.type if node else None
 
     def __iter__(self):
         return self.walk()
+
+    def __del__(self):
+        print("garbage collecting cache")
