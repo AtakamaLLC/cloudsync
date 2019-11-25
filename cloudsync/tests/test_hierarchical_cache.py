@@ -36,6 +36,7 @@ def test_walk():
     assert list(cache_walk) == target
     cache_walk = list(cache)
     assert list(cache_walk) == target
+    check_structure(cache)
 
 
 def test_create():
@@ -43,7 +44,7 @@ def test_create():
     a_oid = new_oid()
     cache.create('/a.txt', a_oid)
 
-    a_file = cache.root.children['a.txt']
+    a_file = cache._root.children['a.txt']
     assert(a_file.oid == a_oid)
     assert(a_file == cache._oid_to_node[a_oid])
     check_structure(cache)
@@ -54,7 +55,7 @@ def test_mkdir():
     a_oid = new_oid()
     cache.mkdir('/a', a_oid)
 
-    a_folder = cache.root.children['a']
+    a_folder = cache._root.children['a']
     assert(a_folder.oid == a_oid)
     assert(a_folder == cache._oid_to_node[a_oid])
     check_structure(cache)
@@ -68,25 +69,27 @@ def test_delete():
     a_oid = new_oid()
     cache.create('/b', new_oid())
     cache.mkdir('/a', a_oid)
-    a_node = cache.root.children['a']
-    b_node = cache.root.children['b']
+    a_node = cache._root.children['a']
+    b_node = cache._root.children['b']
     cache.delete(oid=a_oid)
     assert a_node not in cache._oid_to_node.values()
-    assert a_node not in cache.root.children.values()
+    assert a_node not in cache._root.children.values()
     assert b_node in cache._oid_to_node.values()
-    assert b_node in cache.root.children.values()
+    assert b_node in cache._root.children.values()
     check_structure(cache)
 
 
     # TODO: create a file in the dir and make sure it's also gone when we delete the file's parent folder
     a = cache.get_oid('/a')
     assert(a is None)
+    check_structure(cache)
 
 
 def test_delete_on_nonexistent():
     cache = new_cache()
     node_found = cache.delete(oid='nonexistent oid')
     assert not node_found
+    check_structure(cache)
 
 
 def test_delete_non_empty_folder():
@@ -126,6 +129,7 @@ def check_results(cache: HierarchicalCache, oid, path, otype, child_names=None, 
     if child_oids:
         found_oids = [x.oid for x in cache._get_node(oid=oid, path=path).children.values()]
         assert sorted(found_oids) == sorted(child_oids)
+    check_structure(cache)
 
 
 def test_rename(): #check tree for new path, list shouldnt change once the nodes are re setup, parents and children shifted
@@ -339,7 +343,7 @@ def test_make_hierarchy():
     cache.create('/a/b/c.txt', c_oid)
     cache.mkdir('/a/b/d', d_oid)
 
-    a = cache.root.children['a']
+    a = cache._root.children['a']
     assert(a.oid == a_oid)
     b = a.children['b']
     log.error("b=%s", b)
@@ -460,12 +464,14 @@ def test_path_to_oid_success():
     cache.mkdir('/a', a_oid)
     a = cache.get_oid('/a')
     assert(a == a_oid)
+    check_structure(cache)
 
 
 def test_path_to_oid_failure():
     cache = new_cache()
     a = cache.get_oid('/a')
     assert(a is None)
+    check_structure(cache)
 
 
 def test_oid_to_path_success():
@@ -474,92 +480,14 @@ def test_oid_to_path_success():
     cache.mkdir('/a', a_oid)
     a = cache.get_path(a_oid)
     assert(a == '/a')
+    check_structure(cache)
 
 
 def test_oid_to_path_failure():
     cache = new_cache()
     a = cache.get_oid('/nonexistent_path')
     assert(a is None)
-
-
-# def test_memory_leak():
-#     _test_memory_leak()
-#     print("done")
-#
-#
-# def _test_memory_leak():
-#     #  monkey-patch the __del__ method of Node, then delete paths from the cache and confirm that the __del__ method
-#     #   was called for all the nodes we expected to be deconstructed
-#
-#     if 'a' == 'b':
-#         # not sure if this is a good strategy:
-#         import gc
-#         print()
-#         gc.disable()
-#         gc.set_debug(gc.DEBUG_SAVEALL)
-#         # make a leak
-#         x = []
-#         x.append(x)
-#         looking_for = [id(x)]
-#         print("lost uncollectable object: ", id(x))
-#         del x
-#
-#         gc.collect()
-#         for y in gc.garbage:
-#             if id(y) in looking_for:
-#                 print("seen uncollectable object: ", id(y))
-#
-#     # method 2
-#     class EraseMe:
-#         pass
-#
-#     if "a" == "b": # also junk
-#         print("0------------------")
-#         # EraseMe.__class__.__del__ = lambda: print("1---------------------")
-#         a = EraseMe()
-#         a.__del__ = lambda: print("2---------------------")
-#         a.__dict__["__del__"] = lambda: print("3---------------------")
-#
-#         del a
-#
-#     registry = set()
-#
-#     def add_to_registry(node):
-#         print("init1 ", id(node))
-#         registry.add(node)
-#
-#     def del_from_registry(node):
-#         print("dele1 ", id(node))
-#         registry.discard(node)
-#
-#
-#
-#
-#     import gc
-#     import sys
-#     from types import FrameType
-#     from unittest.mock import patch
-#     print()
-#     gc.enable()
-#     a = patch.object(Node, '_memory_leak_register', lambda z: add_to_registry(z))
-#     b = patch.object(Node, '_memory_leak_unregister', lambda z: del_from_registry(z))
-#     a.start()
-#     b.start()
-#     test_delete()
-#     gc.collect()
-#     print("registry=", registry)
-#     for x in registry:
-#         print(f"{id(x)}: {x.full_path()}")
-#         refcount = 0
-#         for ref in gc.get_referrers(x):
-#             if id(ref) != id(registry):
-#                 refcount += 1
-#                 print(f" ref={type(ref)}:{ref}")
-#             if type(ref) is FrameType:
-#                 for fref in gc.get_referrers(ref):
-#                     print(f"    fref={type(fref)}:{fref}")
-#
-#         print(f"  refcount={refcount}")
+    check_structure(cache)
 
 
 def test_delete_folder_without_oid():
@@ -612,6 +540,15 @@ def test_create_node_over_existing_path_and_oid():
     check_structure(cache)
 
 
+def full_split(provider: Provider, path: str):
+    retval = []
+    while path not in ('', '/'):
+        parent, base = provider.split(path)
+        retval.insert(0, base)
+        path = parent
+    return retval
+
+
 def check_structure(cache: HierarchicalCache):
     #   todo: confirm that the internal structure of the cache is good
     #       check every node in the tree
@@ -620,16 +557,33 @@ def check_structure(cache: HierarchicalCache):
     #           has an entry in it's parent's children dict under the correct name
     #       check every node in oid_to_node
     #           traverse the tree starting at the root all the way to the node
-    for node in cache._walk(cache.root):
-        node = node[0]
+    for node, path in cache._walk(cache._root, '/'):
         node: Node
         if node.oid:
             assert cache._oid_to_node[node.oid] is node
-        if node is not cache.root:
+        if node is not cache._root:
             parent_node = node.parent
             assert node.parent
             assert parent_node.children[node.name] is node
+            assert path == node.full_path()  # compare walking the parents with walking the children
 
-    for node in cache._oid_to_node.values():
+    for oid, node in cache._oid_to_node.items():
         node: Node
-        assert cache.get_path(node.oid)
+        assert node.oid == oid
+        path = cache.get_path(node.oid)
+
+        # this reiterates the same check above for everything that's in the tree,
+        # but we retest anyway because this will help expose if any node is in oid_to_node
+        # but not also in the tree
+        parts = full_split(cache._provider, path)
+        log.debug("%s %s", path, parts)
+        currnode = cache._root
+        for part in parts[0:-1]:
+            assert part in currnode.children
+            currnode = currnode.children[part]
+            assert currnode.type == DIRECTORY
+        if node is not cache._root:
+            last_part = parts[-1]
+            currnode = currnode.children[last_part]
+            assert currnode.oid == oid  # check the key in oid_to_node
+            assert currnode is node  # checks that all the parents
