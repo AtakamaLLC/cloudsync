@@ -125,7 +125,7 @@ class SyncManager(Runnable):
 
         self.aging = max_sleep / 5                # how long before even trying to sync
         self.min_backoff = max_sleep / 10.0       # event sleep of 15 seconds == 1.5 second backoff on failures
-        self.max_backoff = max_sleep * 4.0        # escalating up to a 1 minute wait time
+        self.max_backoff = max_sleep * 10.0       # escalating up to a 3 minute wait time
         self.mult_backoff = 2
 
         assert len(self.providers) == 2

@@ -110,7 +110,6 @@ class DropboxProvider(Provider):
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config
 
-        self.connection_id: str = None
         self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
 
     @property
@@ -126,6 +125,7 @@ class DropboxProvider(Provider):
         secret = self._oauth_config.app_secret
         log.debug('Initializing Dropbox. manual_mode=%s', self._oauth_config.manual_mode)
         if not appid and secret:
+            self.disconnect()
             raise CloudTokenError("require app key and secret")
         if not self._oauth_config.manual_mode:
             try:
@@ -141,6 +141,7 @@ class DropboxProvider(Provider):
                                                locale=None)
             except Exception as e:
                 log.exception('Unable to start oauth')
+                self.disconnect()
                 raise CloudTokenError("failed to start oauth: %s" % repr(e))
         else:
             self._flow = DropboxOAuth2Flow(consumer_key=appid,
@@ -179,6 +180,7 @@ class DropboxProvider(Provider):
             if self._oauth_config.wait_success():
                 return self.__creds
             msg = self._oauth_config.failure_info
+            self.disconnect()
             raise CloudTokenError(msg)
         finally:
             self._oauth_config.shutdown()
@@ -213,10 +215,10 @@ class DropboxProvider(Provider):
     def reconnect(self):
         self.connect(self.__creds)
 
-    def connect(self, creds):
+    def connect_impl(self, creds):
         log.debug('Connecting to dropbox')
         with self.mutex:
-            if not self.client:
+            if not self.client or creds != self.__creds:
                 if creds:
                     self.__creds = creds
                     api_key = creds.get('key', None)
@@ -232,9 +234,9 @@ class DropboxProvider(Provider):
             try:
                 self.__memoize_quota.clear()
                 info = self.__memoize_quota()
-                self.connection_id = info['uid']
-                assert self.connection_id
+                return info['uid']
             except CloudTokenError:
+                self.disconnect()
                 raise
             except Exception as e:
                 self.disconnect()
@@ -266,6 +268,9 @@ class DropboxProvider(Provider):
 
             try:
                 return getattr(client, method)(*args, **kwargs)
+            except exceptions.AuthError:
+                self.disconnect()
+                raise CloudTokenError()
             except exceptions.ApiError as e:
                 inside_error: Union[files.LookupError, files.WriteError]
 

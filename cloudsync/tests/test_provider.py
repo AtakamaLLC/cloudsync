@@ -231,6 +231,14 @@ class ProviderHelper(ProviderBase):
     def current_cursor(self, val):
         self.prov.current_cursor = val
 
+    @property                           # type: ignore
+    def connection_id(self) -> str:     # type: ignore
+        return self.prov.connection_id
+
+    @connection_id.setter
+    def connection_id(self, val: str):  # type: ignore
+        self.prov.connection_id = val
+
 
 def mixin_provider(prov):
     assert prov
@@ -384,6 +392,15 @@ def test_connect(provider):
     # todo: maybe assert provider.creds here... because creds should probably be a fcs of provider
     provider.reconnect()
     assert provider.connected
+    assert provider.connection_id
+    provider.disconnect()
+    provider.connection_id = "invalid"
+    log.info("reset %s == %s", provider, provider.connection_id)
+    with pytest.raises(CloudTokenError):
+        provider.reconnect()
+    assert not provider.connected
+    provider.connection_id = None
+    provider.reconnect()
 
 
 def test_info_root(provider):
@@ -1585,6 +1602,7 @@ def test_authenticate(config_provider):
         provider.disconnect()
         with pytest.raises(CloudTokenError):
             provider.connect(creds)
+        assert not provider.connected
 
 
 @pytest.mark.manual
@@ -1598,6 +1616,7 @@ def test_interrupt_auth(config_provider):
     threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
     with pytest.raises(CloudTokenError):
         provider.authenticate()
+    assert not provider.connected
 
 
 @pytest.fixture
@@ -1623,11 +1642,11 @@ def test_revoke_auth(config_provider, suspend_capture):
 
     with suspend_capture:
         input("PLEASE GO TO THE PROVIDER AND REVOKE ACCESS NOW")
-    
+
     with pytest.raises(CloudTokenError):
         # some providers cache connections, so this test may not work for everyone
         while True:
             log.error("sleep 5")
             time.sleep(5)
-            log.error("still connected %s", provider.prov.info_path("/"))
-
+            log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
+    assert not provider.connected
