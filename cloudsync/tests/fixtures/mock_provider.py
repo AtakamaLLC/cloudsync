@@ -9,6 +9,7 @@ import pytest
 
 from cloudsync.event import Event
 from cloudsync.provider import Provider
+from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
     CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError
@@ -16,6 +17,7 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
+
 
 class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
@@ -509,9 +511,31 @@ def mock_provider_generator(request):
             request.param[0] if oid_is_path is None else oid_is_path,
             request.param[1] if case_sensitive is None else case_sensitive)
 
+
 @pytest.fixture
 def mock_provider_creator():
     return mock_provider_instance
+
+
+class MockPathCs(MockProvider):
+    name = "mock_path_cs"
+
+    def test_instance():
+        return MockProvider(oid_is_path=True, case_sensitive=True)
+
+
+register_provider(MockPathCs)
+
+
+class MockOidCs(MockProvider):
+    name = "mock_oid_cs"
+
+    def test_instance():
+        return MockProvider(oid_is_path=False, case_sensitive=True)
+
+
+register_provider(MockOidCs)
+
 
 def test_mock_basic():
     """

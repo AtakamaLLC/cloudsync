@@ -92,7 +92,7 @@ class DropboxProvider(Provider):
     default_sleep = 15
     large_file_size = 15 * 1024 * 1024
     upload_block_size = 10 * 1024 * 1024
-    name = "Dropbox"
+    name = "dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
@@ -696,3 +696,10 @@ class DropboxProvider(Provider):
             except CloudFileNotFoundError:
                 return None
         return OInfo(otype, oid, fhash, path)
+
+    @classmethod
+    def test_instance(cls):
+        return cls.oauth_test_instance(prefix="DROPBOX", token_sep=",", token_key="key", port_range=(52400, 54250))
+
+
+__cloudsync__ = DropboxProvider

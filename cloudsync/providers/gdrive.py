@@ -53,8 +53,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     case_sensitive = False
     default_sleep = 15
 
-    provider = 'googledrive'
-    name = 'Google Drive'
+    name = 'gdrive'
     _scopes = ['https://www.googleapis.com/auth/drive',
               'https://www.googleapis.com/auth/drive.activity.readonly'
               ]
@@ -775,3 +774,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             otype = FILE
 
         return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name, size=size)
+
+
+    @classmethod
+    def test_instance(cls):
+        return cls.oauth_test_intance(prefix="GDRIVE", token_delim=",")
+
+
+_cloudsync__ = GDriveProvider

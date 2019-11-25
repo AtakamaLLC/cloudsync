@@ -67,8 +67,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     large_file_size = 4 * 1024 * 1024
     upload_block_size = 4 * 1024 * 1024
 
-    provider = 'onedrive'
-    name = 'OneDrive'
+    name = 'onedrive'
     _scopes = ['wl.signin', 'wl.offline_access', 'onedrive.readwrite']
     _base_url = 'https://api.onedrive.com/v1.0/'
     _token_url = "https://login.live.com/oauth20_token.srf"
@@ -756,3 +755,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         for c in iter(lambda: file_like.read(32768), b''):
             md5.update(c)
         return md5.hexdigest().upper()
+
+
+__cloudsync__ = OneDriveProvider    

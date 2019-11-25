@@ -2,10 +2,12 @@ from abc import ABC, abstractmethod
 import re
 import os
 import logging
+import random
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.oauth import OAuthConfig
 if TYPE_CHECKING:
     from .event import Event
 
@@ -329,3 +331,37 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 # but this is a guess.  todo: scenarios that make this happen
                 raise CloudFileExistsError("f'ed up mkdir")
         return oid
+
+###################################################
+
+    @classmethod
+    def test_instance(cls):
+        """
+        Override to enable CI testing of your class, oauth_test_instance code for an example
+        """
+        cls.creds = None
+        cls.event_timeout = 0
+        cls.event_sleep = 0
+        return cls()
+
+    @classmethod
+    def oauth_test_instance(cls, prefix, token_key="refresh_token", token_sep="|", port_range=None):
+        """
+        Helper function for oauth providers.
+        Params:
+            prefix: environment varible prefix
+            token_key: creds dict key
+            token_sep: multi-env var token separator
+            port_range: if any, specify tuple
+        """
+
+        tokens = os.environ.get("%s_TOKEN" % prefix).split(token_sep)
+        port_range = port_range
+        creds = {
+            token_key: tokens[random.randrange(0, len(tokens))],
+        }
+        cls.creds = creds
+        return cls(OAuthConfig(
+            app_id=os.environ.get("%s_APP_ID" % prefix),
+            app_secret=os.environ.get("%s_APP_SECRET" % prefix), 
+            port_range=port_range))

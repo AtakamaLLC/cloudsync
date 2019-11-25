@@ -256,126 +256,46 @@ def provider_params():
     return None
 
 
-class ProviderConfig:
-    def __init__(self, name, param=(), param_id=None):
-        if param_id is None:
-            param_id = name
-        self.name = name
-        if name == "mock":
-            assert param
-        self.param = param
-        self.param_id = param_id
-
-    def __repr__(self):
-        return "%s(%s)" % (type(self), self.__dict__)
-
-
 @pytest.fixture
-def config_provider(request, provider_config):
-#    try:
-#        request.raiseerror("foo")
-#    except Exception as e:
-#        FixtureLookupError = type(e)
-
-    if provider_config.name == "external":
-        # if there's a fixture available, use it
-        return request.getfixturevalue("cloudsync_provider")
-        # deferring imports to prevent needing deps we don't want to require for everyone
-    elif provider_config.name == "mock":
-        return mock_provider_instance(*provider_config.param)
-    elif provider_config.name == "gdrive":
-        from .providers.gdrive import gdrive_provider
-        return gdrive_provider()
-    elif provider_config.name == "onedrive":
-        from .providers.onedrive import onedrive_provider
-        return onedrive_provider()
-    elif provider_config.name == "dropbox":
-        from .providers.dropbox import dropbox_provider
-        return dropbox_provider()
+def config_provider(request, provider_name):
+    if provider_name == "external":
+        yield request.getfixturevalue("cloudsync_provider")
     else:
-        assert False, "Must provide a valid --provider name or use the -p <plugin>"
-
-
-known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'onedrive')
-
-
-def configs_from_name(name):
-    provs: List[ProviderConfig] = []
-
-    if name == "mock":
-        provs += [ProviderConfig("mock", (False, True), "mock_oid_cs")]
-        provs += [ProviderConfig("mock", (True, True), "mock_path_cs")]
-    else:
-        provs += [ProviderConfig(name)]
-
-    return provs
-
-
-def configs_from_keyword(kw):
-    provs: List[ProviderConfig] = []
-    # crappy approximation of pytest evaluation routine, because
-    false = {}
-    for known_prov in known_providers:
-        false[known_prov] = False
-
-    ok: Union[bool, List[bool]]
-    for known_prov in known_providers:
-        if known_prov == kw or '[' + known_prov + ']' == kw:
-            ok = True
-        else:
-            ids = false.copy()
-            ids[known_prov] = True
-
-            try:
-                ok = eval(kw, {}, ids)
-            except NameError:
-                ok = False
-            except Exception as e:
-                log.error("%s %s", type(e), e)
-                ok = False
-            if type(ok) is list:
-                ok = any(cast(List[bool], ok))
-        if ok:
-            provs += configs_from_name(known_prov)
-    return provs
-
-
-_registered = False
-
-
-def pytest_generate_tests(metafunc):
-    global _registered
-    if not _registered:
-        for known_prov in known_providers:
-            metafunc.config.addinivalue_line(
-                "markers", known_prov
-            )
-        _registered = True
-
-    if "provider_config" in metafunc.fixturenames:
-        provs: List[ProviderConfig] = []
-
-        for e in metafunc.config.getoption("provider", []):
-            for n in e.split(","):
-                provs += configs_from_name(n)
-
-        if not provs:
-            kw = metafunc.config.getoption("keyword", "")
-            if kw:
-                provs += configs_from_keyword(kw)
-
-        if not provs:
-            provs += configs_from_name("mock")
-
-        ids = [p.param_id for p in provs]
-        marks = [pytest.param(p, marks=[getattr(pytest.mark, p.name)]) for p in provs]
-
-        metafunc.parametrize("provider_config", marks, ids=ids)
+        yield cloudsync.registry.provider_by_name(provider_name).test_instance()
 
 
 @pytest.fixture(name="provider")
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+from cloudsync.providers import *
+
+_registered = False
+def pytest_generate_tests(metafunc):
+    global _registered
+    if not _registered:
+        for known_prov in cloudsync.registry.known_providers():
+            metafunc.config.addinivalue_line(
+                "markers", known_prov
+            )
+        _registered = True
+        print("Known providers: ", cloudsync.registry.known_providers())
+
+    if "provider_name" in metafunc.fixturenames:
+        provs: List[str] = []
+
+        for e in metafunc.config.getoption("provider", []):
+            for n in e.split(","):
+                provs += [n]
+
+        if not provs:
+            provs += ["mock_oid_cs"]
+            provs += ["mock_path_cs"]
+
+        marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
+
+        metafunc.parametrize("provider_name", marks)
+
 
 
 def test_join(mock_provider):

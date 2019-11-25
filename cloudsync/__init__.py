@@ -37,3 +37,4 @@ from .sync import *
 from .exceptions import *
 from .types import *
 from .cs import *
+from .registry import *
