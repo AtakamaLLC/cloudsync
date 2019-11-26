@@ -699,7 +699,7 @@ class DropboxProvider(Provider):
 
     @classmethod
     def test_instance(cls):
-        return cls.oauth_test_instance(prefix="DROPBOX", token_sep=",", token_key="key", port_range=(52400, 54250))
+        return cls.oauth_test_instance(prefix="DROPBOX", token_key="key", port_range=(52400, 54250))
 
 
 __cloudsync__ = DropboxProvider
