@@ -258,9 +258,9 @@ def provider_params():
 
 @pytest.fixture
 def config_provider(request, provider_name):
-    if provider_name == "external":
+    try:
         yield request.getfixturevalue("cloudsync_provider")
-    else:
+    except:
         yield cloudsync.registry.provider_by_name(provider_name).test_instance()
 
 
@@ -286,7 +286,14 @@ def pytest_generate_tests(metafunc):
 
         for e in metafunc.config.getoption("provider", []):
             for n in e.split(","):
-                provs += [n.strip()]
+                n = n.strip()
+                if n:
+                    provs += [n]
+
+        for e in os.environ.get("CLOUDSYNC_TEST_PROVIDER", "").split(','):
+            e = e.strip()
+            if e:
+                provs += [e]
 
         kw = metafunc.config.getoption("keyword", "")
         if not provs and kw == "external":
