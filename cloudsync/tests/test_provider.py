@@ -286,7 +286,7 @@ def pytest_generate_tests(metafunc):
 
         for e in metafunc.config.getoption("provider", []):
             for n in e.split(","):
-                provs += [n]
+                provs += [n.strip()]
 
         if not provs:
             provs += ["mock_oid_cs"]
@@ -295,7 +295,6 @@ def pytest_generate_tests(metafunc):
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
 
         metafunc.parametrize("provider_name", marks)
-
 
 
 def test_join(mock_provider):
