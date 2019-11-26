@@ -1,4 +1,5 @@
 import os
+import logging
 import threading
 from unittest.mock import patch
 import requests
@@ -6,7 +7,11 @@ import pytest
 
 from cloudsync.oauth import OAuthConfig, OAuthError, OAuthProviderInfo
 from cloudsync.oauth.apiserver import ApiServer, api_route
+from cloudsync.exceptions import CloudTokenError
 from .fixtures import MockProvider
+
+log = logging.getLogger(__name__)
+
 
 class TokenServer(ApiServer):
     @api_route("/token")
@@ -105,6 +110,7 @@ def test_oauth_defaults(wb):
     assert inst.test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
 
     creds = None
+    creds_ex = None
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
     # this is a blocking function, set an event when creds are found
@@ -112,8 +118,13 @@ def test_oauth_defaults(wb):
 
     def auth():
         nonlocal creds
-        creds = inst.authenticate()
-        event.set()
+        nonlocal creds_ex
+        try:
+            creds = inst.authenticate()
+            event.set()
+        except Exception as e:
+            creds_ex = e
+            raise
     threading.Thread(target=auth, daemon=True).start()
 
     while True:
@@ -129,3 +140,20 @@ def test_oauth_defaults(wb):
     # click received, wait for token
     event.wait()
     assert creds
+
+    log.debug("test interrupt")
+    creds = None
+    th = threading.Thread(target=auth, daemon=True)
+    th.start()
+    while True:
+        try:
+            wb.assert_called_once()
+            inst.interrupt_auth()
+            break
+        except AssertionError:
+            # webbrowser not launched yet...
+            pass
+    th.join()
+
+    assert creds is None
+    assert type(creds_ex) is CloudTokenError
