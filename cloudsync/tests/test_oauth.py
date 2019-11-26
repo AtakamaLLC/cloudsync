@@ -89,6 +89,8 @@ def test_oauth_defaults(wb):
 
     # here's an oauth provider
     class Prov(MockProvider):
+        name = "TEST"
+
         def __init__(self, oc: OAuthConfig):
             self.oauth_config = oc
         oauth_info = OAuthProviderInfo(             # signal's oauth mode
@@ -97,10 +99,10 @@ def test_oauth_defaults(wb):
             scopes=[],
         )
 
-    inst = Prov.oauth_test_instance(prefix="TEST")
+    inst = Prov.test_instance()
     assert inst.oauth_config.app_id == "123"
     assert inst.oauth_config.app_secret == "456"
-    assert inst.creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
+    assert inst.test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
 
     creds = None
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'

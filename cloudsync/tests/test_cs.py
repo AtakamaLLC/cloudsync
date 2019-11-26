@@ -1746,7 +1746,7 @@ def test_backoff(cs, recover):
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
     remote.disconnect()
-    remote.creds = None
+    remote._creds = None
 
     cs.start(until=lambda: cs.smgr.in_backoff, timeout=1)
     cs.wait()
@@ -1755,7 +1755,7 @@ def test_backoff(cs, recover):
     log.info("DISCONNECTED")
 
     if recover:
-        remote.creds = "ok"
+        remote._creds = "ok"
         log.info("RECONNECT %s", cs.smgr.in_backoff)
         cs.start(until=lambda: not cs.smgr.in_backoff, timeout=1)
         cs.wait()
@@ -2277,7 +2277,7 @@ def test_two_level_rename(cs):
 def test_reconn_after_disconn():
     (local, remote) = MockProvider(False, False), MockProvider(False, False)
     remote.disconnect()
-    remote.creds = None
+    remote._creds = None
     cs = CloudSyncMixin((local, remote), roots, storage=None, sleep=None)
     local.mkdir("/local")
 
@@ -2300,7 +2300,7 @@ def test_reconn_after_disconn():
     assert not remote.connected
 
     # syncs on reconnect
-    remote.creds = {"ok":"ok"}
+    remote._creds = {"ok":"ok"}
     remote.reconnect()
 
     # yay

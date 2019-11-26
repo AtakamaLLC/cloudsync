@@ -91,7 +91,6 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 class MockProvider(Provider):
     default_sleep = 0.01
-    connected = True
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
@@ -119,10 +118,10 @@ class MockProvider(Provider):
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
         }
-        self.event_timeout = 1
-        self.event_sleep = 0.001
-        self.creds = {"key": "val"}
-        self.connect(self.creds)
+        self.test_event_timeout = 1
+        self.test_event_sleep = 0.001
+        self.test_creds = {"key": "val"}
+        self.connect(self.test_creds)
         self.hash_func = hash_func
         if hash_func is None:
             self.hash_func = lambda a: md5(a).digest()
@@ -130,19 +129,12 @@ class MockProvider(Provider):
         self.forbidden_chars: list = []
 
     def connect_impl(self, creds):
+        log.debug("connect mock prov creds : %s", creds)
+        if not creds:
+            raise CloudTokenError()
         if self.connection_id is None or self.connection_id == "invalid":
             return os.urandom(16).hex()
         return self.connection_id
-
-    def disconnect(self):
-        self.connected = False
-        super().disconnect()
-
-    def reconnect(self):
-        if not self.creds:
-            raise CloudTokenError()
-        super().reconnect()
-        self.connected = True
 
     def _register_event(self, action, target_object, prior_oid=None):
         event = MockEvent(action, target_object, prior_oid)
@@ -494,8 +486,8 @@ class MockProvider(Provider):
 
 def mock_provider_instance(*args, **kws):
     prov = MockProvider(*args, **kws)
-    prov.event_timeout = 1
-    prov.event_sleep = 0.001
+    prov.test_event_timeout = 1
+    prov.test_event_sleep = 0.001
     return prov
 
 
@@ -520,8 +512,8 @@ def mock_provider_creator():
 class MockPathCs(MockProvider):
     name = "mock_path_cs"
 
-    def test_instance():
-        return MockProvider(oid_is_path=True, case_sensitive=True)
+    def __init__(self):
+        super().__init__(oid_is_path=True, case_sensitive=True)
 
 
 register_provider(MockPathCs)
@@ -530,8 +522,8 @@ register_provider(MockPathCs)
 class MockOidCs(MockProvider):
     name = "mock_oid_cs"
 
-    def test_instance():
-        return MockProvider(oid_is_path=False, case_sensitive=True)
+    def __init__(self):
+        super().__init__(oid_is_path=True, case_sensitive=True)
 
 
 register_provider(MockOidCs)

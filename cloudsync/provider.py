@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 # mypy doesn't support cyclic definitions yet...
 Hash = Union[Dict[str, 'Hash'], Tuple['Hash', ...], str, int, bytes, float, None]          # type: ignore
 Cursor = Union[Dict[str, 'Cursor'], Tuple['Cursor', ...], str, int, bytes, float, None]    # type: ignore
-Creds = Union[Dict[str, 'Hash'], str, int, bytes, float, None]                             # type: ignore
+Creds = Dict[str, Union[str, int]]
 
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
@@ -32,6 +32,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     Some helpers are provided in this base class for oauth and  path manipulation.
     """
 
+    # pylint: disable=multiple-statements
+    name: str = None                        ; """Provider name"""
     sep: str = '/'                          ; """Path delimiter"""
     alt_sep: str = '\\'                     ; """Alternate path delimiter"""
     oid_is_path: bool = False               ; """Objects stored in cloud are only referenced by path"""
@@ -48,8 +50,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     upload_block_size: int = 0              ; """Used for testing providers with separate large file handling"""
 
     connection_id: str = None               ; """Must remain constant between logins and must be unique to the login"""
-    __creds: Optional[Any] = None           ; """Base class helpers to store creds"""
+    _creds: Optional[Any] = None           ; """Base class helpers to store creds"""
     __connected = False                     ; """Base class helper to fake a connection"""
+    # pylint: enable=multiple-statements
 
     @abstractmethod
     def _api(self, *args, **kwargs):
@@ -98,8 +101,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 raise CloudTokenError("Cannot connect with mismatched credentials")
         else:
             self.connection_id = new_id
-        self.__creds = creds
+        self._creds = creds
         self.__connected = True
+        assert self.connected
 
     def reconnect(self):
         """Reconnect to provider, using existing creds.
@@ -111,7 +115,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             CloudDisconnectedError on failure
         """
         if not self.__connected:
-            self.connect(self.__creds)
+            self.connect(self._creds)
 
     def disconnect(self):
         """Invalidates current connection, closes sockets, etc.
@@ -147,6 +151,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
             return {"refresh_token": token.refresh_token,
                     "access_token": token.access_token}
+        raise NotImplementedError()
 
     def interrupt_auth(self):
         """Iterrupt/stop a blocking authentication call."""
@@ -157,13 +162,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @property
     @abstractmethod
-    def name(self):
-        """Provider name, used by the registry to register a provider. Should be used in log lines."""
-        ...
-
-    @property
-    @abstractmethod
-    def latest_cursor(self):
+    def latest_cursor(self) -> Cursor:
         """Get the latest cursor as of now."""
         ...
 
@@ -428,12 +427,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         if cls.oauth_info is not None:
             # pull environment info based on class name prefix
-            return cls.oauth_test_instance(prefix=cls.name.upper())
+            return cls.oauth_test_instance(prefix=cls.name.upper())             # pylint: disable=no-member
         else:
             # no connection needed
-            cls.creds: Dict[str, str] = None
-            cls.event_timeout = 0
-            cls.event_sleep = 0
+            cls.test_creds: Dict[str, str] = None            # type: ignore
             return cls()
 
     @classmethod
@@ -448,12 +445,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
 
         tokens = os.environ.get("%s_TOKEN" % prefix).split(token_sep)
-        port_range = port_range
         creds = {
             token_key: tokens[random.randrange(0, len(tokens))],
         }
-        cls.creds = creds
-        return cls(OAuthConfig(
+        cls.test_creds = creds                                          # type: ignore
+        return cls(OAuthConfig(                                         # type: ignore
             app_id=os.environ.get("%s_APP_ID" % prefix),
             app_secret=os.environ.get("%s_APP_SECRET" % prefix),
             port_range=port_range))

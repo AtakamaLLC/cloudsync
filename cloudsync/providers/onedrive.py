@@ -80,7 +80,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
-        self.__creds: Optional[Dict[str, str]] = None
+        self._creds: Optional[Dict[str, str]] = None
         self.__cursor: Optional[str] = None
         self.__client: onedrivesdk.OneDriveClient = None
         self.__root_id: str = None
@@ -173,10 +173,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return res
 
     def reconnect(self):
-        self.connect(self.__creds)
+        self.connect(self._creds)
 
     def connect_impl(self, creds):
-        if not self.__client or creds != self.__creds:
+        if not self.__client or creds != self._creds:
             if not creds:
                 raise CloudTokenError("no credentials")
             log.debug('Connecting to One Drive')
@@ -222,7 +222,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     raise CloudTokenError(str(e))
                 self.__client = onedrivesdk.OneDriveClient(self._base_url, auth_provider, http_provider)
                 self.__client.item = self.__client.item  # satisfies a lint confusion
-                self.__creds = creds
+                self._creds = creds
 
         q = self.get_quota()
         return q["uid"]

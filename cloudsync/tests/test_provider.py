@@ -36,15 +36,15 @@ class ProviderHelper(ProviderBase):
         self.prov = prov
 
         self.test_root = getattr(self.prov, "test_root", None)
-        self.event_timeout = getattr(self.prov, "event_timeout", 20)
-        self.event_sleep = getattr(self.prov, "event_sleep", 1)
-        self.creds = getattr(self.prov, "creds", {})
+        self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
+        self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
+        self.test_creds = getattr(self.prov, "test_creds", {})
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
         if connect:
-            self.prov.connect(self.creds)
+            self.prov.connect(self.test_creds)
             assert prov.connection_id
             self.make_root()
 
@@ -53,7 +53,7 @@ class ProviderHelper(ProviderBase):
             # if the provider class doesn't specify a testing root
             # then just make one up
             self.test_root = "/" + os.urandom(16).hex()
-   
+
         log.debug("mkdir %s", self.test_root)
         self.prov.mkdir(self.test_root)
 
@@ -67,7 +67,7 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
+        for _ in time_helper(timeout=self.test_event_timeout, sleep=self.test_event_sleep, multiply=2):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
@@ -178,13 +178,13 @@ class ProviderHelper(ProviderBase):
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
-            timeout = self.event_timeout
+            timeout = self.test_event_timeout
 
         if timeout == 0:
             yield from self.events()
             return
 
-        for _ in time_helper(timeout, sleep=self.event_sleep, multiply=2):
+        for _ in time_helper(timeout, sleep=self.test_event_sleep, multiply=2):
             got = False
             for e in self.events():
                 yield e
@@ -322,7 +322,7 @@ def test_connect(provider):
     assert provider.connected
     provider.disconnect()
     assert not provider.connected
-    # todo: maybe assert provider.creds here... because creds should probably be a fcs of provider
+    log.info("recon")
     provider.reconnect()
     assert provider.connected
     assert provider.connection_id
@@ -617,7 +617,7 @@ def test_event_del_create(provider):
     saw_first_create = False
     disordered = False
     done = False
-    for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
+    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
         log.debug("event %s", e)
         # you might get events for the root folder here or other setup stuff
         path = e.path
@@ -681,7 +681,7 @@ def test_event_rename(provider):
     last_event = None
     second_to_last = None
     done = False
-    for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
+    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
         if provider.oid_is_path:
             assert e.path
         log.debug("event %s", e)
@@ -724,7 +724,7 @@ def test_event_longpoll(provider):
 
     def waiter():
         nonlocal received_event
-        timeout = time.monotonic() + provider.event_timeout
+        timeout = time.monotonic() + provider.test_event_timeout
         while time.monotonic() < timeout:
             for e in provider.events_poll(until=lambda: received_event):
                 if e.exists:
@@ -743,7 +743,7 @@ def test_event_longpoll(provider):
     log.debug("create event")
     provider.create(dest, temp, None)
 
-    t.join(timeout=provider.event_timeout)
+    t.join(timeout=provider.test_event_timeout)
 
     assert received_event
 
@@ -1331,6 +1331,7 @@ def test_rename_case_change(provider, otype):
 
 
 def test_report_info(provider):
+    assert provider.name
     temp_name = provider.temp_name()
 
     u1 = provider.get_quota()["used"]
@@ -1519,8 +1520,8 @@ def test_cursor_error_during_listdir(provider):
 @pytest.mark.manual
 def test_authenticate(config_provider):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.creds:
-        pytest.skip("provider doesn't support auth")
+    if not provider.test_creds:
+        pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
     provider.connect(creds)
@@ -1528,7 +1529,7 @@ def test_authenticate(config_provider):
     modded = False
     for k, v in creds.items():
         if type(v) is str:
-            creds[k] = creds[k] + "junk"
+            creds[k] = cast(str, creds[k]) + "junk"
             modded = True
 
     if modded:
@@ -1541,8 +1542,8 @@ def test_authenticate(config_provider):
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.creds:
-        pytest.skip("provider doesn't support auth")
+    if not provider.test_creds:
+        pytest.skip("provider doesn't support testing auth")
 
     import time
     import threading
@@ -1568,8 +1569,8 @@ def suspend_capture(pytestconfig):
 @pytest.mark.manual
 def test_revoke_auth(config_provider, suspend_capture):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.creds:
-        pytest.skip("provider doesn't support auth")
+    if not provider.test_creds:
+        pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
     provider.connect(creds)
 

@@ -165,7 +165,7 @@ class DropboxProvider(Provider):
             auth_dict['state'] = auth_dict['state'][0]
         try:
             res: OAuth2FlowResult = self._flow.finish(auth_dict)
-            self.__creds = {"key": res.access_token}
+            self._creds = {"key": res.access_token}
         except Exception:
             log.exception('Authentication failed')
             raise
@@ -220,7 +220,7 @@ class DropboxProvider(Provider):
         with self.mutex:
             if not self.client or creds != self.__creds:
                 if creds:
-                    self.__creds = creds
+                    self._creds = creds
                     api_key = creds.get('key', None)
                 else:
                     api_key = None

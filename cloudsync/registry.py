@@ -13,8 +13,8 @@ def discover_providers():
     for m in sys.modules:
         mod = sys.modules[m]
         if hasattr(mod, "__cloudsync__"):
-            if mod.__cloudsync__.name not in providers:
-                register_provider(mod.__cloudsync__)
+            if mod.__cloudsync__.name not in providers:             # type: ignore
+                register_provider(mod.__cloudsync__)                # type: ignore
 
 
 def provider_by_name(name):
