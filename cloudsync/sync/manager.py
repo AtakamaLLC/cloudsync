@@ -7,7 +7,7 @@ import shutil
 import hashlib
 import time
 
-from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, IO
+from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, cast, BinaryIO
 
 import msgpack
 from pystrict import strict
@@ -52,7 +52,7 @@ class ResolveFile():
         self.__temp_file = info.temp_file
         if self.otype == FILE:
             assert info.temp_file
-        self.__fh: IO = None
+        self.__fh: BinaryIO = None
 
     def download(self):
         if not os.path.exists(self.__temp_file):
@@ -83,7 +83,7 @@ class ResolveFile():
     def read(self, *a):
         return self.fh.read(*a)
 
-    def write(self, buf):  # we don't want this
+    def write(self, buf):
         raise NotImplementedError()
 
     def close(self):
@@ -750,7 +750,7 @@ class SyncManager(Runnable):
                     if not keep:
                         log.debug("not keeping side %s, simply uploading to replace with new contents", loser.side)
                         fh.seek(0)
-                        info2 = self.providers[loser.side].upload(loser.oid, fh)
+                        info2 = self.providers[loser.side].upload(loser.oid, cast(BinaryIO, fh))
                         loser.hash = info2.hash
                         loser.path = info2.path
                         assert info2.hash

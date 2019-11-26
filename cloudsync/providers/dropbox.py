@@ -92,14 +92,14 @@ class DropboxProvider(Provider):
     default_sleep = 15
     large_file_size = 15 * 1024 * 1024
     upload_block_size = 10 * 1024 * 1024
-    name = "Dropbox"
+    name = "dropbox"
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
         self.__cursor: str = None
-        self.__creds: Dict[str, str] = None
+        self._creds: Dict[str, str] = None
         self.client = None
         self.longpoll_client = None
         self._csrf: bytes = None
@@ -165,7 +165,7 @@ class DropboxProvider(Provider):
             auth_dict['state'] = auth_dict['state'][0]
         try:
             res: OAuth2FlowResult = self._flow.finish(auth_dict)
-            self.__creds = {"key": res.access_token}
+            self._creds = {"key": res.access_token}
         except Exception:
             log.exception('Authentication failed')
             raise
@@ -178,7 +178,7 @@ class DropboxProvider(Provider):
         try:
             self.initialize()
             if self._oauth_config.wait_success():
-                return self.__creds
+                return self._creds
             msg = self._oauth_config.failure_info
             self.disconnect()
             raise CloudTokenError(msg)
@@ -213,14 +213,14 @@ class DropboxProvider(Provider):
         return res
 
     def reconnect(self):
-        self.connect(self.__creds)
+        self.connect(self._creds)
 
     def connect_impl(self, creds):
         log.debug('Connecting to dropbox')
         with self.mutex:
-            if not self.client or creds != self.__creds:
+            if not self.client or creds != self._creds:
                 if creds:
-                    self.__creds = creds
+                    self._creds = creds
                     api_key = creds.get('key', None)
                 else:
                     api_key = None
@@ -480,8 +480,8 @@ class DropboxProvider(Provider):
         yield from self._listdir(oid, recursive=False)
 
     def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
-        info = self.info_oid(oid)
         try:
+            info = self.info_oid(oid)
             for res in _FolderIterator(self._api, oid, recursive=recursive):
                 if isinstance(res, files.DeletedMetadata):
                     continue
@@ -696,3 +696,10 @@ class DropboxProvider(Provider):
             except CloudFileNotFoundError:
                 return None
         return OInfo(otype, oid, fhash, path)
+
+    @classmethod
+    def test_instance(cls):
+        return cls.oauth_test_instance(prefix="DROPBOX", token_key="key", port_range=(52400, 54250))
+
+
+__cloudsync__ = DropboxProvider
