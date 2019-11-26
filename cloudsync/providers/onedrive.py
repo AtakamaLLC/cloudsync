@@ -70,7 +70,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     name = 'onedrive'
     _base_url = 'https://api.onedrive.com/v1.0/'
 
-    oauth_info = OAuthProviderInfo(
+    _oauth_info = OAuthProviderInfo(
         auth_url="https://login.live.com/oauth20_authorize.srf",
         token_url="https://login.live.com/oauth20_token.srf",
         scopes=['wl.signin', 'wl.offline_access', 'onedrive.readwrite'],
@@ -85,7 +85,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__client: onedrivesdk.OneDriveClient = None
         self.__root_id: str = None
         self.mutex = threading.RLock()
-        self.oauth_config = oauth_config
+        self._oauth_config = oauth_config
 
     @property
     def connected(self):  # One Drive
@@ -189,8 +189,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 http_provider = onedrivesdk.HttpProvider()
                 auth_provider = onedrivesdk.AuthProvider(
                         http_provider=http_provider,
-                        client_id=self.oauth_config.app_id,
-                        scopes=self.oauth_info.scopes)
+                        client_id=self._oauth_config.app_id,
+                        scopes=self._oauth_info.scopes)
 
                 class MySession(onedrivesdk.session.Session):
                     def __init__(self, **kws):  # pylint: disable=super-init-not-called
@@ -203,16 +203,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                             refresh_token=creds.get("refresh"),
                             access_token=creds.get("access", None),
                             redirect_uri=None,  # pylint: disable=protected-access
-                            auth_server_url=self.oauth_info.token_url,  # pylint: disable=protected-access
-                            client_id=self.oauth_config.app_id,  # pylint: disable=protected-access
-                            client_secret=self.oauth_config.app_secret,  # pylint: disable=protected-access
+                            auth_server_url=self._oauth_info.token_url,  # pylint: disable=protected-access
+                            client_id=self._oauth_config.app_id,  # pylint: disable=protected-access
+                            client_secret=self._oauth_config.app_secret,  # pylint: disable=protected-access
                         )
 
                 auth_provider = onedrivesdk.AuthProvider(
                         http_provider=http_provider,
-                        client_id=self.oauth_config.app_id,
+                        client_id=self._oauth_config.app_id,
                         session_type=MySession,
-                        scopes=self.oauth_info.scopes)
+                        scopes=self._oauth_info.scopes)
 
                 auth_provider.load_session()
                 try:

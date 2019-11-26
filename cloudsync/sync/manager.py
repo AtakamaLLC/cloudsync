@@ -80,10 +80,10 @@ class ResolveFile():
             log.debug("ResolveFile opening temp file %s for real file %s", self.__temp_file, self.path)
         return self.__fh
 
-    def read(self, *a):                 # pylint: disable=arguments-differ
+    def read(self, *a):
         return self.fh.read(*a)
 
-    def write(self, buf):               # pylint: disable=arguments-differ
+    def write(self, buf):
         raise NotImplementedError()
 
     def close(self):
@@ -92,7 +92,7 @@ class ResolveFile():
             log.debug("ResolveFile closing temp file %s for real file %s", self.__temp_file, self.path)
             self.__fh.close()
 
-    def seek(self, *a):                 # pylint: disable=arguments-differ
+    def seek(self, *a):
         return self.fh.seek(*a)
 
     def tell(self):

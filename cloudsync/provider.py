@@ -40,8 +40,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True             ; """Provider is case sensitive"""
     win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01             ; """Per event loop sleep time"""
-    oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
-    oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
+    _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
+    _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for
@@ -140,10 +140,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Raises:
                 CloudTokenError on failure
         """
-        if self.oauth_info:
+        if self._oauth_info:
             try:
-                self.oauth_config.start_auth(self.oauth_info.auth_url, self.oauth_info.scopes)
-                token = self.oauth_config.wait_auth(self.oauth_info.token_url)
+                self._oauth_config.start_auth(self._oauth_info.auth_url, self._oauth_info.scopes)
+                token = self._oauth_config.wait_auth(self._oauth_info.token_url)
             except Exception as e:
                 log.error("oauth error %s", e)
                 self.disconnect()
@@ -155,8 +155,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     def interrupt_auth(self):
         """Iterrupt/stop a blocking authentication call."""
-        if self.oauth_config:
-            self.oauth_config.shutdown()
+        if self._oauth_config:
+            self._oauth_config.shutdown()
         else:
             raise NotImplementedError()
 
@@ -425,7 +425,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Returns:
             Provider: an instance of an provider, with "creds" set to the creds blob
         """
-        if cls.oauth_info is not None:
+        if cls._oauth_info is not None:
             # pull environment info based on class name prefix
             return cls.oauth_test_instance(prefix=cls.name.upper())             # pylint: disable=no-member
         else:

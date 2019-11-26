@@ -1481,12 +1481,8 @@ def test_special_characters(provider):
 
 
 def test_cursor_error_during_listdir(provider):
-    # this test is only for dropbox
-    # todo: we need a better way to do this
-    # todo: we should probably have a factory for providers that produces wrapped or mixin
-    #       objects that contain higher level interfaces that handle things like this
     if provider.name != "dropbox":
-        return
+        pytest.skip("dropbox specific test")
 
     provider.current_cursor = provider.latest_cursor
 

@@ -54,7 +54,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     default_sleep = 15
 
     name = 'gdrive'
-    oauth_info = OAuthProviderInfo(
+    _oauth_info = OAuthProviderInfo(
         auth_url='https://accounts.google.com/o/oauth2/v2/auth',
         token_url='https://accounts.google.com/o/oauth2/token',
         scopes=['https://www.googleapis.com/auth/drive',
@@ -75,7 +75,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids: Dict[str, str] = {}
-        self.oauth_config = oauth_config
+        self._oauth_config = oauth_config
 
     @property
     def connected(self):
@@ -121,8 +121,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError("acquire a token using authenticate() first")
 
             try:
-                new = self.oauth_config.refresh(self.oauth_info.token_url, refresh_token, scope=self.oauth_info.scopes)
-                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self.oauth_info.scopes)
+                new = self._oauth_config.refresh(self._oauth_info.token_url, refresh_token, scope=self._oauth_info.scopes)
+                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._oauth_info.scopes)
                 self.client = build(
                     'drive', 'v3', credentials=google_creds)
                 try:
@@ -255,9 +255,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             self.__root_id = res['id']
             self._ids['/'] = self.__root_id
         return self.__root_id
-
-    def forget_creds(self):
-        self._creds = None
 
     def disconnect(self):
         self.client = None

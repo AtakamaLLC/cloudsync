@@ -99,7 +99,7 @@ class DropboxProvider(Provider):
         super().__init__()
         self.__root_id = None
         self.__cursor: str = None
-        self.__creds: Dict[str, str] = None
+        self._creds: Dict[str, str] = None
         self.client = None
         self.longpoll_client = None
         self._csrf: bytes = None
@@ -178,7 +178,7 @@ class DropboxProvider(Provider):
         try:
             self.initialize()
             if self._oauth_config.wait_success():
-                return self.__creds
+                return self._creds
             msg = self._oauth_config.failure_info
             self.disconnect()
             raise CloudTokenError(msg)
@@ -213,12 +213,12 @@ class DropboxProvider(Provider):
         return res
 
     def reconnect(self):
-        self.connect(self.__creds)
+        self.connect(self._creds)
 
     def connect_impl(self, creds):
         log.debug('Connecting to dropbox')
         with self.mutex:
-            if not self.client or creds != self.__creds:
+            if not self.client or creds != self._creds:
                 if creds:
                     self._creds = creds
                     api_key = creds.get('key', None)
@@ -482,9 +482,7 @@ class DropboxProvider(Provider):
     def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
         try:
             info = self.info_oid(oid)
-            log.debug("FOR LOOP")
             for res in _FolderIterator(self._api, oid, recursive=recursive):
-                log.debug("FOR LOOP 2")
                 if isinstance(res, files.DeletedMetadata):
                     continue
                 if isinstance(res, files.FolderMetadata):
@@ -499,7 +497,6 @@ class DropboxProvider(Provider):
                 if relative:
                     yield DirInfo(otype, oid, ohash, path, name=relative)
         except CloudCursorError as e:
-            log.debug("FOR LOOP FAIL")
             raise CloudTemporaryError("Cursor error %s during listdir" % e)
 
     def create(self, path: str, file_like, metadata=None) -> OInfo:

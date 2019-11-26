@@ -43,6 +43,11 @@ def test_oauth(wb):
     assert res.refresh_token == "r1"
     assert res.expires_in == 340
 
+    o.start_auth(auth_url)
+    requests.get(o.redirect_uri, params={"error": "erry"})
+    with pytest.raises(OAuthError):
+        res = o.wait_auth(token_url=token_url)
+
 
 @patch('webbrowser.open')
 def test_oauth_refresh(wb):
@@ -80,9 +85,6 @@ def test_oauth_interrupt(wb):
 
 @patch('webbrowser.open')
 def test_oauth_defaults(wb):
-    # this is not a very good test
-    # really, the test instances are tested in the manual mode oauth tests
-    # this is abstract-only testing mostly to explain what's going on
 
     # when CI testing, oauth providers stick tokens, ids, and secrets in the environment
     os.environ["TEST_APP_ID"] = "123"
@@ -97,18 +99,19 @@ def test_oauth_defaults(wb):
         name = "TEST"
 
         def __init__(self, oc: OAuthConfig):
-            self.oauth_config = oc
-        oauth_info = OAuthProviderInfo(             # signal's oauth mode
+            self._oauth_config = oc
+        _oauth_info = OAuthProviderInfo(             # signal's oauth mode
             auth_url=t.uri("/auth"),
             token_url=t.uri("/token"),
             scopes=[],
         )
 
     inst = Prov.test_instance()
-    assert inst.oauth_config.app_id == "123"
-    assert inst.oauth_config.app_secret == "456"
+    assert inst._oauth_config.app_id == "123"
+    assert inst._oauth_config.app_secret == "456"
     assert inst.test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
 
+    # actually test the instance
     creds = None
     creds_ex = None
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -131,7 +134,7 @@ def test_oauth_defaults(wb):
         try:
             wb.assert_called_once()
             # pretend user clicked ok
-            requests.get(inst.oauth_config.redirect_uri, params={"code": "cody"})
+            requests.get(inst._oauth_config.redirect_uri, params={"code": "cody"})
             break
         except AssertionError:
             # webbrowser not launched yet...

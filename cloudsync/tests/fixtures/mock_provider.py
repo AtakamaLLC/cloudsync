@@ -486,8 +486,6 @@ class MockProvider(Provider):
 
 def mock_provider_instance(*args, **kws):
     prov = MockProvider(*args, **kws)
-    prov.test_event_timeout = 1
-    prov.test_event_sleep = 0.001
     return prov
 
 
