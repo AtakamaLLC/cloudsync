@@ -288,6 +288,10 @@ def pytest_generate_tests(metafunc):
             for n in e.split(","):
                 provs += [n.strip()]
 
+        kw = metafunc.config.getoption("keyword", "")
+        if not provs and kw == "external":
+            provs += ["external"]
+
         if not provs:
             provs += ["mock_oid_cs"]
             provs += ["mock_path_cs"]
