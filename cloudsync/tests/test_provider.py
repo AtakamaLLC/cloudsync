@@ -1490,31 +1490,19 @@ def test_cursor_error_during_listdir(provider):
 
     provider.current_cursor = provider.latest_cursor
 
-    orig_ld = provider.listdir
-
-    should_raise = False
-
-    def new_ld(oid):
-        for e in orig_ld(oid):
-            if should_raise:
-                raise CloudCursorError("cursor error")
-            yield e
-
-    provider.new_ld()
-
     dir_name = provider.temp_name()
     dir_oid = provider.mkdir(dir_name)
     provider.create(dir_name + "/file1", BytesIO(b"hello"))
     provider.create(dir_name + "/file2", BytesIO(b"there"))
 
-    it = iter(provider.listdir(dir_oid))
-
-    _ = next(it)
-    should_raise = True
-
     # listdir should not accidentally raise a cursor error (dropbox uses cursors for listing folders)
+    def new_api(*a, **k):
+        raise CloudCursorError("cursor error")
+    orig_api = provider._api
+    provider._api = new_api
     with pytest.raises(CloudTemporaryError):
-        _ = next(it)
+        list(provider.listdir(dir_oid))
+    provider._api = orig_api
 
 
 @pytest.mark.manual

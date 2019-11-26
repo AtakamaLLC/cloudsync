@@ -480,9 +480,11 @@ class DropboxProvider(Provider):
         yield from self._listdir(oid, recursive=False)
 
     def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:
-        info = self.info_oid(oid)
         try:
+            info = self.info_oid(oid)
+            log.debug("FOR LOOP")
             for res in _FolderIterator(self._api, oid, recursive=recursive):
+                log.debug("FOR LOOP 2")
                 if isinstance(res, files.DeletedMetadata):
                     continue
                 if isinstance(res, files.FolderMetadata):
@@ -497,6 +499,7 @@ class DropboxProvider(Provider):
                 if relative:
                     yield DirInfo(otype, oid, ohash, path, name=relative)
         except CloudCursorError as e:
+            log.debug("FOR LOOP FAIL")
             raise CloudTemporaryError("Cursor error %s during listdir" % e)
 
     def create(self, path: str, file_like, metadata=None) -> OInfo:
