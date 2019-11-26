@@ -260,7 +260,10 @@ def provider_params():
 def config_provider(request, provider_name):
     try:
         yield request.getfixturevalue("cloudsync_provider")
-    except:
+    except Exception:
+        # this should be a _pytest.fixtures.FixtureLookupError
+        if provider_name == "external":
+            raise
         yield cloudsync.registry.provider_by_name(provider_name).test_instance()
 
 
