@@ -20,7 +20,7 @@ from cloudsync.utils import debug_args, memoize, debug_sig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, CloudTemporaryError, \
     CloudFileExistsError, CloudCursorError, CloudOutOfSpaceError
-from cloudsync.oauth import OAuthConfig, OAuthError
+from cloudsync.oauth import OAuthConfig, OAuthError, OAuthProviderInfo
 
 CACHE_QUOTA_TIME = 120
 
@@ -54,16 +54,18 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     default_sleep = 15
 
     name = 'gdrive'
-    _scopes = ['https://www.googleapis.com/auth/drive',
-              'https://www.googleapis.com/auth/drive.activity.readonly'
-              ]
+    oauth_info = OAuthProviderInfo(
+        auth_url='https://accounts.google.com/o/oauth2/v2/auth',
+        token_url='https://accounts.google.com/o/oauth2/token',
+        scopes=['https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/drive.activity.readonly'
+               ],
+    )
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
-    _auth_url = 'https://accounts.google.com/o/oauth2/v2/auth'
-    _token_url = 'https://accounts.google.com/o/oauth2/token'
     _folder_mime_type = 'application/vnd.google-apps.folder'
     _io_mime_type = 'application/octet-stream'
 
-    def __init__(self, oauth_config: Optional[OAuthConfig] = None, app_id: str = None, app_secret: str = None):
+    def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
         self.__cursor: str = None
@@ -73,7 +75,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids: Dict[str, str] = {}
-        self._oauth_config = oauth_config if oauth_config else OAuthConfig(app_id=app_id, app_secret=app_secret)
+        self.oauth_config = oauth_config
 
     @property
     def connected(self):
@@ -81,21 +83,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def get_display_name(self):
         return self.name
-
-    def interrupt_auth(self):
-        self._oauth_config.shutdown()  # ApiServer shutdown does not throw exceptions
-
-    def authenticate(self):
-        try:
-            self._oauth_config.start_auth(self._auth_url, self._scopes)
-            token = self._oauth_config.wait_auth(self._token_url)
-        except Exception as e:
-            log.error("oauth error %s", e)
-            self.disconnect()
-            raise CloudTokenError(str(e))
-
-        return {"refresh_token": token.refresh_token,
-                "api_key": token.access_token}
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
@@ -134,8 +121,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError("acquire a token using authenticate() first")
 
             try:
-                new = self._oauth_config.refresh(self._token_url, refresh_token, scope=self._scopes)
-                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._scopes)
+                new = self.oauth_config.refresh(self.oauth_info.token_url, refresh_token, scope=self.oauth_info.scopes)
+                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self.oauth_info.scopes)
                 self.client = build(
                     'drive', 'v3', credentials=google_creds)
                 try:
@@ -778,7 +765,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     @classmethod
     def test_instance(cls):
-        return cls.oauth_test_intance(prefix="GDRIVE", token_delim=",")
+        return cls.oauth_test_instance(prefix="GDRIVE", token_sep=",")
 
 
-_cloudsync__ = GDriveProvider
+__cloudsync__ = GDriveProvider
