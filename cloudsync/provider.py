@@ -140,6 +140,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Raises:
                 CloudTokenError on failure
         """
+        os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
         if self._oauth_info:
             try:
                 self._oauth_config.start_auth(self._oauth_info.auth_url, self._oauth_info.scopes)
@@ -434,7 +435,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return cls()
 
     @classmethod
-    def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None):
+    def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None, host_name=None):
         """Helper function for oauth providers.
 
         Args:
@@ -452,4 +453,5 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return cls(OAuthConfig(                                         # type: ignore
             app_id=os.environ.get("%s_APP_ID" % prefix),
             app_secret=os.environ.get("%s_APP_SECRET" % prefix),
+            host_name=host_name,
             port_range=port_range))

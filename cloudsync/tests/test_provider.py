@@ -1508,12 +1508,13 @@ def test_authenticate(config_provider):
         pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
+    log.info(creds);
     provider.connect(creds)
 
     modded = False
     for k, v in creds.items():
         if type(v) is str:
-            creds[k] = cast(str, creds[k]) + "junk"
+            creds[k] = cast(str, v) + "junk"
             modded = True
 
     if modded:
