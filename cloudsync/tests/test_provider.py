@@ -80,7 +80,6 @@ class ProviderHelper(ProviderBase):
     # TEST-ROOT WRAPPER
 
     def __getattr__(self, k):
-        log.info("GETATTR %s %s", k, self.prov)
         return getattr(self.prov, k)
 
     def events(self) -> Generator[Event, None, None]:

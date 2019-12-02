@@ -281,10 +281,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 # HELPER
     @classmethod
     def join(cls, *paths, ns_sep=None):
-        if ns_sep is None:
-            if cls.win_paths:
-                ns_sep = ":"
-
         res = ""
         rl: List[str] = []
         for path in paths:
@@ -305,7 +301,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         res = cls.sep.join(rl)
 
-        if (not ns_sep) or (ns_sep not in paths[0]):
+        if not cls.win_paths or res[1] != ':':
             res = cls.sep + res
 
         return res
