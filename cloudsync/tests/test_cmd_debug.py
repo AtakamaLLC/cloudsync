@@ -3,8 +3,9 @@ import sys
 import logging
 import pytest
 import json
+import os, tempfile
 
-from tempfile import NamedTemporaryFile
+
 from unittest.mock import MagicMock
 
 from cloudsync.command.debug import do_debug
@@ -13,6 +14,37 @@ from cloudsync import SqliteStorage, SyncState, LOCAL, FILE, IgnoreReason
 
 log = logging.getLogger()
 
+# from https://gist.github.com/earonesty/a052ce176e99d5a659472d0dab6ea361
+# windows compat
+
+class TemporaryFile:
+    def __init__(self, name, io, delete):
+        self.name = name
+        self.__io = io
+        self.__delete = delete
+
+    def __getattr__(self, k):
+        return getattr(self.__io, k)
+
+    def __del__(self):
+        if self.__delete:
+            try:
+                os.unlink(self.name)
+            except FileNotFoundError:
+                pass
+
+def NamedTemporaryFile(mode='w+b', bufsize=-1, suffix='', prefix='tmp', dir=None, delete=True):
+    if not dir:
+        dir = tempfile.gettempdir()
+    name = os.path.join(dir, prefix + os.urandom(32).hex() + suffix)
+    if mode is None:
+        return TemporaryFile(name, None, delete)
+    fh = open(name, "w+b", bufsize)
+    if mode != "w+b":
+        fh.close()
+        fh = open(name, mode)
+    return TemporaryFile(name, fh, delete)
+
 
 @pytest.mark.parametrize("arg_json", ["json", "nojson"])
 @pytest.mark.parametrize("arg_discard", ["discard", "nodiscard"])
@@ -20,7 +52,9 @@ def test_debug_mode(arg_json, arg_discard):
     arg_json = arg_json[0:1] != "no"
     arg_discard = arg_discard[0:1] != "no"
     providers = (MagicMock(), MagicMock())
-    with NamedTemporaryFile() as tf:
+
+    tf = NamedTemporaryFile(mode=None)
+    try:
         storage = SqliteStorage(tf.name)
         state = SyncState(providers, storage, tag="whatever")
         state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
@@ -61,5 +95,5 @@ def test_debug_mode(arg_json, arg_discard):
                 assert len(ret["whatever"]) == 2
             else:
                 assert len(ret["whatever"]) == 1
-
-
+    finally:
+        storage.close()

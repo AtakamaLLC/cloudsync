@@ -642,7 +642,7 @@ def test_event_del_create(provider):
         if e.oid == info1.oid:
             if e.exists:
                 saw_first_create = True
-                if saw_first_delete and provider.oid_is_path:
+                if saw_first_delete and not provider.oid_is_path:
                     log.debug("disordered!")
                     disordered = True
             else:

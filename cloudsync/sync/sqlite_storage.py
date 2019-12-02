@@ -9,10 +9,14 @@ log = logging.getLogger(__name__)
 class SqliteStorage(Storage):
     def __init__(self, filename: str):
         self._filename = filename
+        self.db = None
         self.db = self.__db_connect()
         self._ensure_table_exists()
 
     def __db_connect(self):
+        if self.db:
+            self.close()
+
         self.db = sqlite3.connect(self._filename,
                                   uri=self._filename.startswith('file:'),
                                   check_same_thread=self._filename == ":memory:",
@@ -85,3 +89,12 @@ class SqliteStorage(Storage):
         for row in db_cursor.fetchall():
             return row
         return None
+
+
+    def close(self):
+        try:
+            self.db.close()
+            self.db = None
+        except Exception as e:
+            pass
+
