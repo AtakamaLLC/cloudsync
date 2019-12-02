@@ -49,6 +49,10 @@ class ProviderHelper(ProviderBase):
             self.make_root()
 
     def make_root(self):
+        ns = self.prov.list_ns()
+        if ns:
+            self.prov.namespace = self.prov.test_namespace
+
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
@@ -76,6 +80,7 @@ class ProviderHelper(ProviderBase):
     # TEST-ROOT WRAPPER
 
     def __getattr__(self, k):
+        log.info("GETATTR %s %s", k, self.prov)
         return getattr(self.prov, k)
 
     def events(self) -> Generator[Event, None, None]:
@@ -136,7 +141,7 @@ class ProviderHelper(ProviderBase):
                 yield e
 
     def __add_root(self, path):
-        return self.join(self.test_root, path)
+        return self.prov.join(self.test_root, path)
 
     def __filter_root(self, obj):
         if hasattr(obj, "path"):
@@ -152,7 +157,7 @@ class ProviderHelper(ProviderBase):
                 # so isolation is not perfect
                 return True
 
-            if not self.is_subpath(self.test_root, raw_path):
+            if not self.prov.is_subpath(self.test_root, raw_path):
                 return False
 
             self.__strip_root(obj)
@@ -163,17 +168,17 @@ class ProviderHelper(ProviderBase):
         if hasattr(obj, "path"):
             path = obj.path
             if path:
-                relative = self.is_subpath(self.test_root, path)
+                relative = self.prov.is_subpath(self.test_root, path)
                 assert relative
                 path = relative
-                if not path.startswith(self.sep):
-                    path = self.sep + path
+                if not path.startswith(self.prov.sep):
+                    path = self.prov.sep + path
                 obj.path = path
         return obj
     # HELPERS
 
     def temp_name(self, name="tmp", *, folder=None):
-        fname = self.join(folder or self.sep, os.urandom(16).hex() + "." + name)
+        fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "." + name)
         return fname
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
@@ -617,8 +622,10 @@ def test_event_del_create(provider):
     saw_first_create = False
     disordered = False
     done = False
+    log.info("test oid 1 %s", info1.oid)
+    log.info("test oid 2 %s", info2.oid)
     for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
-        log.debug("event %s", e)
+        log.info("test event %s", e)
         # you might get events for the root folder here or other setup stuff
         path = e.path
         if not e.path:
@@ -635,7 +642,7 @@ def test_event_del_create(provider):
         if e.oid == info1.oid:
             if e.exists:
                 saw_first_create = True
-                if saw_first_delete and not provider.oid_is_path:
+                if saw_first_delete and provider.oid_is_path:
                     log.debug("disordered!")
                     disordered = True
             else:
@@ -652,12 +659,12 @@ def test_event_del_create(provider):
     assert last_event, "Event loop timed out before getting any events"
     assert done, "Event loop timed out after the delete, but before the create, " \
                  "saw_first_delete=%s, saw_first_create=%s, disordered=%s" % (saw_first_delete, saw_first_create, disordered)
-    assert last_event.exists is True
     # The provider may compress out the first create, or compress out the first create and delete, or deliver both
     # So, if we saw the first create, make sure we got the delete. If we didn't see the first create,
     # it doesn't matter if we saw the first delete.
     if saw_first_create:
         assert saw_first_delete
+    assert last_event.exists is True
     assert not disordered
 
 

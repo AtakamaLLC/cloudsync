@@ -40,6 +40,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True             ; """Provider is case sensitive"""
     win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01             ; """Per event loop sleep time"""
+    namespace = None                        ; """current namespace, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
@@ -260,6 +261,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Returns info for an object with specified oid, or None if not found"""
         ...
 
+    def list_ns(self) -> List[str]:
+        """Yield one entry for each namespace supported, or None if namespaces are not needed"""
+        return None
+
 # CONVENIENCE
     def download_path(self, path, io):
         info = self.info_path(path)
@@ -276,7 +281,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
 # HELPER
     @classmethod
-    def join(cls, *paths):
+    def join(cls, *paths, ns_sep=None):
+        if ns_sep is None:
+            if cls.win_paths:
+                ns_sep = ":"
+
         res = ""
         rl: List[str] = []
         for path in paths:
@@ -297,7 +306,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         res = cls.sep.join(rl)
 
-        if not cls.win_paths or res[1] != ':':
+        if (not ns_sep) or (ns_sep not in paths[0]):
             res = cls.sep + res
 
         return res
