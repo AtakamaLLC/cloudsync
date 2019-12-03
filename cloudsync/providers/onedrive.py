@@ -97,9 +97,12 @@ class OneDriveItem():
             ret = self.get()
             if ret:
                 prdrive_path = ret.parent_reference.path
-                unused_preamble, prpath = prdrive_path.split(":")
-                prpath = urllib.parse.unquote(prpath)
-                self.__path = self.__prov.join(prpath, ret.name)
+                if not prdrive_path:
+                    self.__path = "/"
+                else:
+                    unused_preamble, prpath = prdrive_path.split(":")
+                    prpath = urllib.parse.unquote(prpath)
+                    self.__path = self.__prov.join(prpath, ret.name)
         return self.__path
 
     def _sdk_item(self):
@@ -228,12 +231,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.error("%s error %s (%s)", action, str(req.status_code)+" "+emsg, dat['error'])
             if req.status_code == 404:
                 raise CloudFileNotFoundError(emsg)
-            if dat['error']['code'] == 'unauthenticated':
+            if dat['error']['code'] == ErrorCode.Unauthenticated:
                 self.disconnect()
                 raise CloudTokenError(emsg)
-            if dat['error']['code'] == 'itemNotFound':
+            if dat['error']['code'] == ErrorCode.ItemNotFound:
                 raise CloudFileNotFoundError(emsg)
-            if dat['error']['code'] in ('nameAlreadyExists', 'accessDenied'):
+            if dat['error']['code'] in (ErrorCode.NameAlreadyExists, ErrorCode.AccessDenied):
                 raise CloudFileExistsError(emsg)
             if req.status_code == 400:
                 if dat['error']['code'] == 'invalidRequest':
@@ -243,6 +246,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if dat['error']['code'] == 'invalidRequest':
                     # expected type to be folder
                     raise CloudFileExistsError(emsg)
+            if req.status_code in (429, 503):
+                raise CloudTemporaryError(emsg)
             self.disconnect()
             raise CloudDisconnectedError(emsg)
 
@@ -401,6 +406,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
             except OneDriveError as e:
+                if e.status_code in (429, 503):
+                    raise CloudTemporaryError(str(e))
                 if e.code == ErrorCode.Malformed:
                     raise CloudFileNotFoundError(str(e))
                 if e.code == ErrorCode.ItemNotFound:
@@ -418,10 +425,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     raise CloudTemporaryError(str(e))
             except Exception:
                 pass
-
-    @property
-    def root_id(self):
-        return "/"
 
     def disconnect(self):
         self.__client = None
@@ -721,7 +724,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         mtime = item["lastModifiedDateTime"]
         shared = False
         if "createdBy" in item:
-            shared = item["createdBy"]["user"]["id"] != self.connection_id
+            shared = bool(item.get("remoteItem"))
 
         return OneDriveInfo(oid=iid, otype=otype, hash=ohash, path=path, pid=pid, name=name,
                             mtime=mtime, shared=shared)
@@ -732,7 +735,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         res = self._direct_api("get", "%s/children" % api_path)
 
-        log.debug("listdir %s", res)
         idir = self.info_oid(oid)
         root = idir.path
 
@@ -741,6 +743,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         while items:
             for item in items:
+#                log.debug("listdir %s", item)
                 yield self._info_from_rest(item, root=root)
 
             items = []
