@@ -929,7 +929,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return "personal"
 
 class OneDriveBusinessTestProvider(OneDriveProvider):
-    name="testodbiz"
+    name = "testodbiz"
     
 register_provider(OneDriveBusinessTestProvider)
 
