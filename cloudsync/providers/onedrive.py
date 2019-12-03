@@ -406,7 +406,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                             raise Exception("no hash for file")
 
                     path = self._join_parent_reference_path_and_name(change['parentReference']['path'], change['name'])
-                    # path_slow = self._get_path(oid=oid)
+                    # path_slow = self._box_get_path(oid=oid)
                     # assert path == path_slow
 
                 event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
@@ -734,7 +734,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if item is not None:
                     return self._join_parent_reference_path_and_name(item.parent_reference.path, item.name)
 
-                raise ValueError("_get_path requires oid or item")
+                raise ValueError("_box_get_path requires oid or item")
         except CloudFileNotFoundError:
             return None
 

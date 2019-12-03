@@ -394,10 +394,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 for cpath, coid in self._ids.items():
                     if coid == oid:
                         if cpath != path:
-                            remove.append(cpath)
+                            remove.append(cpath)  # remove the event's item if it's path changed
 
                     if path and otype == DIRECTORY and self.is_subpath(path, cpath):
-                        remove.append(cpath)
+                        remove.append(cpath)  # if the event's item is a folder, uncache its children
 
                 for r in remove:
                     self._ids.pop(r, None)

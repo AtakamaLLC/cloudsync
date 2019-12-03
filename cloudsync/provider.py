@@ -175,6 +175,17 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError()
         return self.listdir(info.oid)
 
+    def rmtree(self, oid):
+        try:
+            for info in self.listdir(oid):
+                if info.otype == DIRECTORY:
+                    self.rmtree(info.oid)
+                else:
+                    self.delete(info.oid)
+            self.delete(oid)
+        except CloudFileNotFoundError:
+            pass
+
 
 # HELPER
     @classmethod

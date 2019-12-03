@@ -15,8 +15,7 @@ class Casing(Enum):
 
 class Node:
     def __init__(self, provider, otype: OType, oid, name, parent, metadata: Dict[str, any]):
-        self._oid = None
-        self.oid = oid
+        self._oid = oid
         self.parent = parent
         self.name = name
         self.metadata = metadata or {}
@@ -30,11 +29,12 @@ class Node:
 
     @oid.setter
     def oid(self, val):
-        if self._oid is not None and val is None:
-            log.error('what?')
+        assert self._oid is None or val is not None
         self._oid = val
 
     def full_path(self):
+        if self.parent is not None:
+            assert self.oid != self.parent.oid
         if self.parent is None:
             return self._provider.sep
         return self._provider.join(self.parent.full_path(), self.name)
@@ -75,7 +75,7 @@ class HierarchicalCache:
             return node.metadata
         return None
 
-    def set_metadata(self, metadata, path=None, oid=None):
+    def set_metadata(self, metadata, *, path=None, oid=None):
         self.check_metadata(metadata)
         node = self._get_node(path=path, oid=oid)
         if node:
@@ -101,6 +101,7 @@ class HierarchicalCache:
             old_metadata.update(metadata)
         else:
             self.set_metadata(metadata, path=path)
+        path = node.full_path()
 
     def __insert_node(self, node: Node, path: str):
         parent_path, name = self.split(path)
@@ -180,7 +181,9 @@ class HierarchicalCache:
         if node:
             # Recursively delete the children to ensure they are popped from the oid_to_node dict
             if node.type == DIRECTORY:
-                for child_node in list(node.children.values()):
+                children = list(node.children.values())
+                for child_node in children:
+                    log.debug("about to delete child %s", child_node.oid)
                     self.delete(oid=child_node.oid, path=child_node.full_path())
             self._delete(node)
 
@@ -228,7 +231,8 @@ class HierarchicalCache:
             self.__insert_node(node, new_path)
         return node
 
-    def _unsafe_path_to_node(self, path):
+    def _unsafe_path_to_node(self, path: str) -> Node:
+        # this method is "unsafe" because it depends on sanitizing the arguments
         if path in (self._provider.sep, self._provider.alt_sep):
             return self._root
         parent_path, name = self._provider.split(path)
@@ -250,15 +254,17 @@ class HierarchicalCache:
         else:
             raise ValueError('get_node requires an oid or path')
 
-    def set_oid(self, path: str, oid: str):
+    def set_oid(self, path: str, oid: str, otype: OType = None):
         node = self._get_node(path=path)
         if not node:
+            if otype:
+                self.__make_node(otype, path, oid)
             return
         if node.oid != oid:
             if node.oid:
                 self.delete(oid=oid)
-            node.oid = oid
             self.__insert_node(node, path)
+            node.oid = oid
 
     def get_oid(self, path):
         node = self._get_node(path=path)
