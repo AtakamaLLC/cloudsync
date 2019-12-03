@@ -260,7 +260,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Returns info for an object with specified oid, or None if not found"""
         ...
 
-    def list_ns(self) -> List[str]:
+    def list_ns(self) -> List[str]:                        # pylint: disable=no-self-use
         """Yield one entry for each namespace supported, or None if namespaces are not needed"""
         return None
 
@@ -277,10 +277,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError()
         return self.listdir(info.oid)
 
-
 # HELPER
     @classmethod
-    def join(cls, *paths, ns_sep=None):
+    def join(cls, *paths):
         res = ""
         rl: List[str] = []
         for path in paths:

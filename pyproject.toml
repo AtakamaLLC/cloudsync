@@ -21,7 +21,7 @@ requires-python = ">=3.6"
 dropbox = [ "dropbox", ]
 gdrive = [ "google-oauth", "google-auth-httplib2", "google-api-python-client" ]
 
-onedrive = [ "onedrivesdk_fork", ]
+onedrive = [ "onedrivesdk_fork", "quickxorhash"]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"

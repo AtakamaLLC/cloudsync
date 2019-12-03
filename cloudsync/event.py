@@ -90,7 +90,7 @@ class EventManager(Runnable):
                 if self.need_auth:
                     try:
                         # possibly this is a temporary loss of authorization
-                        self.reconnect()
+                        self.provider.reconnect()
                     except CloudTokenError:
                         log.warning("Need auth, calling reauthenticate")
                         self.reauthenticate()
