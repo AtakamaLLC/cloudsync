@@ -29,26 +29,20 @@ else:
     # but we can't actually derive from it or stuff will break
     ProviderBase = object
 
-class wrap_retry():                 # pylint: disable=too-few-public-methods
-    def __init__(self, func=None, *, count=4):
-        self.count = count
-        self.func = func
-
-    def __call__(self, prov, *args, **kwargs):
-        if self.func is None:
-            func = args[0]
-            return wrap_retry(func, count=self.count)
-       
+def wrap_retry(func):                 # pylint: disable=too-few-public-methods
+    count = 4
+    def wrapped(prov, *args, **kwargs):
         ex = None
-        for _ in range(self.count):
+        for _ in range(count):
             try:
-                return self.func(prov, *args, **kwargs)
+                return func(prov, *args, **kwargs)
             except CloudTemporaryError as e:
                 ex = e
             except CloudDisconnectedError as e:
                 prov.reconnect()
                 ex = e
         raise ex
+    return wrapped
 
 class ProviderHelper(ProviderBase):
     def __init__(self, prov, connect=True):
@@ -114,46 +108,58 @@ class ProviderHelper(ProviderBase):
             if self.__filter_root(e):
                 yield e
 
+    @wrap_retry
     def download(self, *args, **kwargs):
         return self.__strip_root(self.prov.download(*args, **kwargs))
 
+    @wrap_retry
     def download_path(self, path: str, *args, **kwargs):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.download_path(path, *args, **kwargs))
 
+    @wrap_retry
     def create(self, path, file_like, metadata=None):
         path = self.__add_root(path)
         log.debug("CREATE %s", path)
         return self.__strip_root(self.prov.create(path, file_like, metadata))
 
+    @wrap_retry
     def upload(self, *args, **kwargs):
         return self.__strip_root(self.prov.upload(*args, **kwargs))
 
+    @wrap_retry
     def rename(self, oid, path):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.rename(oid, path))
 
+    @wrap_retry
     def mkdir(self, path):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.mkdir(path))
 
+    @wrap_retry
     def delete(self, *args, **kwargs):
         return self.__strip_root(self.prov.delete(*args, **kwargs))
 
+    @wrap_retry
     def exists_oid(self, oid):
         return self.prov.exists_oid(oid)
 
+    @wrap_retry
     def exists_path(self, path):
         path = self.__add_root(path)
         return self.prov.exists_path(path)
 
+    @wrap_retry
     def info_path(self, path: str) -> Optional[OInfo]:
         path = self.__add_root(path)
         return self.__strip_root(self.prov.info_path(path))
 
+    @wrap_retry
     def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
+    @wrap_retry
     def listdir(self, oid):
         for e in self.prov.listdir(oid):
             if self.__filter_root(e):
