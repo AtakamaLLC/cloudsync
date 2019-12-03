@@ -239,11 +239,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if dat['error']['code'] in (ErrorCode.NameAlreadyExists, ErrorCode.AccessDenied):
                 raise CloudFileExistsError(emsg)
             if req.status_code == 400:
-                if dat['error']['code'] == 'invalidRequest':
+                if dat['error']['code'] == ErrorCode.InvalidRequest:
                     # invalid oid
                     raise CloudFileNotFoundError(emsg)
             if req.status_code == 405:
-                if dat['error']['code'] == 'invalidRequest':
+                if dat['error']['code'] == ErrorCode.InvalidRequest:
                     # expected type to be folder
                     raise CloudFileExistsError(emsg)
             if req.status_code in (429, 503):
@@ -414,7 +414,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     raise CloudFileNotFoundError(str(e))
                 if e.code == ErrorCode.NameAlreadyExists:
                     raise CloudFileExistsError(str(e))
-                if e.code == ErrorCode.InvalidRange:
+                if e.code == ErrorCode.InvalidRequest:
                     if e.status_code == 405:
                         raise CloudFileExistsError(str(e))
                     if e.status_code == 400:
