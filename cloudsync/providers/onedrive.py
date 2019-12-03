@@ -587,7 +587,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         # TODO switch to directapi
         if size <= self.large_file_size:
             with self._api() as client:
-                req: onedrivesdk.ItemContentRequest = self._get_item(client, pid).children[base].content.request()
+                req: onedrivesdk.ItemContentRequest = self._get_item(client, oid=pid).children[base].content.request()
                 req.method = "PUT"
                 resp = req.send(data=file_like)
                 item = onedrivesdk.Item(json.loads(resp.content))
@@ -618,7 +618,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def download(self, oid, file_like):
         with self._api() as client:
-            info = self._get_item(client, oid)
+            info = self._get_item(client, oid=oid)
             r = self._direct_api("get", info.api_path + "/content", stream=True)
             for chunk in r.iter_content(chunk_size=4096):
                 file_like.write(chunk)
@@ -628,7 +628,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         with self._api() as client:
             parent, base = self.split(path)
 
-            item = self._get_item(oid)
+            item = self._get_item(client, oid=oid)
             info = item.get()
 
             old_parent_id = info.parent_reference.id
@@ -751,14 +751,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         i.folder = f
 
         with self._api() as client:
-            item = self._get_item(client, pid).children.add(i)
+            item = self._get_item(client, oid=pid).children.add(i)
 
         return item.id
 
     def delete(self, oid):
         try:
             with self._api() as client:
-                item = self._get_item(client, oid).get()
+                item = self._get_item(client, oid=oid).get()
                 if not item:
                     log.debug("deleted non-existing oid %s", debug_sig(oid))
                     return  # file doesn't exist already...
@@ -866,7 +866,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         path = urllib.parse.unquote(path)
         return path
 
-    def _get_item(self, client, oid=None, path=None):
+    def _get_item(self, client, *, oid=None, path=None):
         assert client, "use within a with _api block or else issues"
         return OneDriveItem(self, oid=oid, path=path)
 
@@ -876,7 +876,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         try:
             with self._api() as client:
-                item = self._get_item(client, oid)
+                item = self._get_item(client, oid=oid)
 
                 if item is not None:
                     return item.path
@@ -891,7 +891,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def _info_oid(self, oid, path=None) -> Optional[OneDriveInfo]:
         try:
             with self._api() as client:
-                item = self._get_item(client, oid).get()
+                item = self._get_item(client, oid=oid).get()
             return self._info_item(item, path=path)
         except CloudFileNotFoundError:
             return None
