@@ -12,7 +12,7 @@ import msgpack
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
+from cloudsync import Event, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -29,6 +29,26 @@ else:
     # but we can't actually derive from it or stuff will break
     ProviderBase = object
 
+class wrap_retry():                 # pylint: disable=too-few-public-methods
+    def __init__(self, func=None, *, count=4):
+        self.count = count
+        self.func = func
+
+    def __call__(self, prov, *args, **kwargs):
+        if self.func is None:
+            func = args[0]
+            return wrap_retry(func, count=self.count)
+       
+        ex = None
+        for _ in range(self.count):
+            try:
+                return self.func(prov, *args, **kwargs)
+            except CloudTemporaryError as e:
+                ex = e
+            except CloudDisconnectedError as e:
+                prov.reconnect()
+                ex = e
+        raise ex
 
 class ProviderHelper(ProviderBase):
     def __init__(self, prov, connect=True):
