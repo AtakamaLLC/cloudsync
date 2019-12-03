@@ -131,24 +131,25 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 with self.mutex:
                     if jwt_token:
                         jwt_dict = json.loads(jwt_token)
-                        sdk = JWTAuth.from_settings_dictionary(jwt_dict)
-                        self.__client = Client(sdk)
+                        user_id = creds.get('user_id')
+                        auth = JWTAuth.from_settings_dictionary(jwt_dict, user=user_id)
+                        self.__client = Client(auth)
                     else:
                         if not refresh_token:
                             raise CloudTokenError("Missing refresh token")
                         box_session = Session()
                         box_kwargs = box_session.get_constructor_kwargs()
-                        box_oauth = OAuth2(client_id=self._oauth_config.app_id,
+                        auth = OAuth2(client_id=self._oauth_config.app_id,
                                            client_secret=self._oauth_config.app_secret,
                                            access_token=self.__creds["api_key"],
                                            refresh_token=self.__creds["refresh_token"],
                                            store_tokens=self._store_refresh_token)
 
-                        box_session = AuthorizedSession(box_oauth, **box_kwargs)
-                        self.__client = Client(box_oauth, box_session)
+                        box_session = AuthorizedSession(auth, **box_kwargs)
+                        self.__client = Client(auth, box_session)
                 with self._api() as client:
                     self.connection_id = client.user(user_id='me').get().id
-                    self.__api_key = sdk.access_token
+                    self.__api_key = auth.access_token
                     self._long_poll_manager.start()
             except BoxException:
                 log.exception("Error during connect")

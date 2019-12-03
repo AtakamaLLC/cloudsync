@@ -18,6 +18,7 @@ def box_creds():
 
     creds = {
         "jwt_token": tokens[random.randrange(0, len(tokens))],
+        "user_id": os.environ.get("BOX_USER_ID"),
     }
 
     return creds
@@ -68,6 +69,7 @@ def connect_test(want_oauth: bool):
         creds = box.authenticate()
         logging.error(f'creds are {creds}')
         box.connect(creds)
+
 
 def test_connect():
     connect_test(False)
