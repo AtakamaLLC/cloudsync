@@ -3,17 +3,18 @@ arrow
 msgpack
 dataclasses
 requests_oauthlib
-oauth2client<4.0.0
 requests
+
 # gdrive provider
-oauth2client<4.0.0
-httplib2
-google-api-python-client
+google-oauth
 google-auth-httplib2
-google-auth-oauthlib
+google-api-python-client
+
 # dropbox provider
 dropbox
+
 # box provider
 boxsdk[jwt]
+
 # onedrive provider
 onedrivesdk_fork

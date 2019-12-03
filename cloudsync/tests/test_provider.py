@@ -31,28 +31,31 @@ else:
 
 
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov):
+    def __init__(self, prov, connect=True):
         self.api_retry = True
         self.prov = prov
 
         self.test_root = getattr(self.prov, "test_root", None)
-        self.event_timeout = getattr(self.prov, "event_timeout", 20)
-        self.event_sleep = getattr(self.prov, "event_sleep", 1)
-        self.creds = getattr(self.prov, "creds", {})
+        self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
+        self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
+        self.test_creds = getattr(self.prov, "test_creds", {})
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
-        self.prov.connect(self.creds)
-        assert prov.connection_id
+        if connect:
+            self.prov.connect(self.test_creds)
+            assert prov.connection_id
+            self.make_root()
 
+    def make_root(self):
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
             self.test_root = "/" + os.urandom(16).hex()
-            self.test_root_id = self.prov.mkdir(self.test_root)
-            if not self.test_root_id:
-                log.error("no id returned from mkdir")
+        self.test_root_id = self.prov.mkdir(self.test_root)
+        if not self.test_root_id:
+            log.error("no id returned from mkdir")
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -64,7 +67,7 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self.event_timeout, sleep=self.event_sleep, multiply=2):
+        for _ in time_helper(timeout=self.test_event_timeout, sleep=self.test_event_sleep, multiply=2):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
@@ -180,13 +183,13 @@ class ProviderHelper(ProviderBase):
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
-            timeout = self.event_timeout
+            timeout = self.test_event_timeout
 
         if timeout == 0:
             yield from self.events()
             return
 
-        for _ in time_helper(timeout, sleep=self.event_sleep, multiply=2):
+        for _ in time_helper(timeout, sleep=self.test_event_sleep, multiply=2):
             got = False
             for e in self.events():
                 yield e
@@ -217,6 +220,14 @@ class ProviderHelper(ProviderBase):
     def current_cursor(self, val):
         self.prov.current_cursor = val
 
+    @property                           # type: ignore
+    def connection_id(self) -> str:     # type: ignore
+        return self.prov.connection_id
+
+    @connection_id.setter
+    def connection_id(self, val: str):  # type: ignore
+        self.prov.connection_id = val
+
 
 def mixin_provider(prov):
     assert prov
@@ -234,129 +245,59 @@ def provider_params():
     return None
 
 
-class ProviderConfig:
-    def __init__(self, name, param=(), param_id=None):
-        if param_id is None:
-            param_id = name
-        self.name = name
-        if name == "mock":
-            assert param
-        self.param = param
-        self.param_id = param_id
-
-    def __repr__(self):
-        return "%s(%s)" % (type(self), self.__dict__)
-
-
 @pytest.fixture
-def config_provider(request, provider_config):
-#    try:
-#        request.raiseerror("foo")
-#    except Exception as e:
-#        FixtureLookupError = type(e)
-
-    if provider_config.name == "external":
-        # if there's a fixture available, use it
-        return request.getfixturevalue("cloudsync_provider")
-        # deferring imports to prevent needing deps we don't want to require for everyone
-    elif provider_config.name == "mock":
-        return mock_provider_instance(*provider_config.param)
-    elif provider_config.name == "gdrive":
-        from .providers.gdrive import gdrive_provider
-        return gdrive_provider()
-    elif provider_config.name == "onedrive":
-        from .providers.onedrive import onedrive_provider
-        return onedrive_provider()
-    elif provider_config.name == "dropbox":
-        from .providers.dropbox import dropbox_provider
-        return dropbox_provider()
-    elif provider_config.name == "box":
-        from .providers.box import box_provider
-        return box_provider()
-    else:
-        assert False, "Must provide a valid --provider name or use the -p <plugin>"
-
-
-known_providers = ('gdrive', 'external', 'dropbox', 'mock', 'box', 'onedrive')
-
-
-def configs_from_name(name):
-    provs: List[ProviderConfig] = []
-
-    if name == "mock":
-        provs += [ProviderConfig("mock", (False, True), "mock_oid_cs")]
-        provs += [ProviderConfig("mock", (True, True), "mock_path_cs")]
-    else:
-        provs += [ProviderConfig(name)]
-
-    return provs
-
-
-def configs_from_keyword(kw):
-    provs: List[ProviderConfig] = []
-    # crappy approximation of pytest evaluation routine, because
-    false = {}
-    for known_prov in known_providers:
-        false[known_prov] = False
-
-    ok: Union[bool, List[bool]]
-    for known_prov in known_providers:
-        if known_prov == kw or '[' + known_prov + ']' == kw:
-            ok = True
-        else:
-            ids = false.copy()
-            ids[known_prov] = True
-
-            try:
-                ok = eval(kw, {}, ids)
-            except NameError:
-                ok = False
-            except Exception as e:
-                log.error("%s %s", type(e), e)
-                ok = False
-            if type(ok) is list:
-                ok = any(cast(List[bool], ok))
-        if ok:
-            provs += configs_from_name(known_prov)
-    return provs
-
-
-_registered = False
-
-
-def pytest_generate_tests(metafunc):
-    global _registered
-    if not _registered:
-        for known_prov in known_providers:
-            metafunc.config.addinivalue_line(
-                "markers", known_prov
-            )
-        _registered = True
-
-    if "provider_config" in metafunc.fixturenames:
-        provs: List[ProviderConfig] = []
-
-        for e in metafunc.config.getoption("provider", []):
-            for n in e.split(","):
-                provs += configs_from_name(n)
-
-        if not provs:
-            kw = metafunc.config.getoption("keyword", "")
-            if kw:
-                provs += configs_from_keyword(kw)
-
-        if not provs:
-            provs += configs_from_name("mock")
-
-        ids = [p.param_id for p in provs]
-        marks = [pytest.param(p, marks=[getattr(pytest.mark, p.name)]) for p in provs]
-
-        metafunc.parametrize("provider_config", marks, ids=ids)
+def config_provider(request, provider_name):
+    try:
+        yield request.getfixturevalue("cloudsync_provider")
+    except Exception:
+        # this should be a _pytest.fixtures.FixtureLookupError
+        if provider_name == "external":
+            raise
+        yield cloudsync.registry.provider_by_name(provider_name).test_instance()
 
 
 @pytest.fixture(name="provider")
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+from cloudsync.providers import *
+
+_registered = False
+def pytest_generate_tests(metafunc):
+    global _registered
+    if not _registered:
+        for known_prov in cloudsync.registry.known_providers():
+            metafunc.config.addinivalue_line(
+                "markers", known_prov
+            )
+        _registered = True
+        print("Known providers: ", cloudsync.registry.known_providers())
+
+    if "provider_name" in metafunc.fixturenames:
+        provs: List[str] = []
+
+        for e in metafunc.config.getoption("provider", []):
+            for n in e.split(","):
+                n = n.strip()
+                if n:
+                    provs += [n]
+
+        for e in os.environ.get("CLOUDSYNC_TEST_PROVIDER", "").split(','):
+            e = e.strip()
+            if e:
+                provs += [e]
+
+        kw = metafunc.config.getoption("keyword", "")
+        if not provs and kw == "external":
+            provs += ["external"]
+
+        if not provs:
+            provs += ["mock_oid_cs"]
+            provs += ["mock_path_cs"]
+
+        marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
+
+        metafunc.parametrize("provider_name", marks)
 
 
 def test_join(mock_provider):
@@ -370,9 +311,18 @@ def test_connect(provider):
     assert provider.connected
     provider.disconnect()
     assert not provider.connected
-    # todo: maybe assert provider.creds here... because creds should probably be a fcs of provider
+    log.info("recon")
     provider.reconnect()
     assert provider.connected
+    assert provider.connection_id
+    provider.disconnect()
+    provider.connection_id = "invalid"
+    log.info("reset %s == %s", provider, provider.connection_id)
+    with pytest.raises(CloudTokenError):
+        provider.reconnect()
+    assert not provider.connected
+    provider.connection_id = None
+    provider.reconnect()
 
 
 def test_info_root(provider):
@@ -675,7 +625,7 @@ def test_event_del_create(provider):
     saw_first_create = False
     disordered = False
     done = False
-    for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
+    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
         log.debug("event %s", e)
         # you might get events for the root folder here or other setup stuff
         path = e.path
@@ -739,7 +689,7 @@ def test_event_rename(provider):
     last_event = None
     second_to_last = None
     done = False
-    for e in provider.events_poll(provider.event_timeout * 2, until=lambda: done):
+    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
         if provider.oid_is_path:
             assert e.path
         log.debug("event %s", e)
@@ -782,7 +732,7 @@ def test_event_longpoll(provider):
 
     def waiter():
         nonlocal received_event
-        timeout = time.monotonic() + provider.event_timeout
+        timeout = time.monotonic() + provider.test_event_timeout
         while time.monotonic() < timeout:
             for e in provider.events_poll(until=lambda: received_event):
                 if e.exists:
@@ -801,7 +751,7 @@ def test_event_longpoll(provider):
     log.debug("create event")
     provider.create(dest, temp, None)
 
-    t.join(timeout=provider.event_timeout)
+    t.join(timeout=provider.test_event_timeout)
 
     assert received_event
 
@@ -1401,6 +1351,7 @@ def test_rename_case_change(provider, otype):
 
 
 def test_report_info(provider):
+    assert provider.name
     temp_name = provider.temp_name()
 
     u1 = provider.get_quota()["used"]
@@ -1553,75 +1504,60 @@ def test_special_characters(provider):
 
 
 def test_cursor_error_during_listdir(provider):
-    # this test is only for dropbox
-    # todo: we need a better way to do this
-    # todo: we should probably have a factory for providers that produces wrapped or mixin
-    #       objects that contain higher level interfaces that handle things like this
     if provider.name != "dropbox":
-        return
+        pytest.skip("dropbox specific test")
 
     provider.current_cursor = provider.latest_cursor
-
-    orig_ld = provider.listdir
-
-    should_raise = False
-
-    def new_ld(oid):
-        for e in orig_ld(oid):
-            if should_raise:
-                raise CloudCursorError("cursor error")
-            yield e
-
-    provider.new_ld()
 
     dir_name = provider.temp_name()
     dir_oid = provider.mkdir(dir_name)
     provider.create(dir_name + "/file1", BytesIO(b"hello"))
     provider.create(dir_name + "/file2", BytesIO(b"there"))
 
-    it = iter(provider.listdir(dir_oid))
-
-    _ = next(it)
-    should_raise = True
-
     # listdir should not accidentally raise a cursor error (dropbox uses cursors for listing folders)
+    def new_api(*a, **k):
+        raise CloudCursorError("cursor error")
+    orig_api = provider._api
+    provider._api = new_api
     with pytest.raises(CloudTemporaryError):
-        _ = next(it)
+        list(provider.listdir(dir_oid))
+    provider._api = orig_api
 
 
 @pytest.mark.manual
 def test_authenticate(config_provider):
-    provider = ProviderHelper(config_provider)      # type: ignore
-    if not provider.creds:
-        pytest.skip("provider doesn't support auth")
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    if not provider.test_creds:
+        pytest.skip("provider doesn't support testing auth")
 
-    provider.disconnect()
     creds = provider.authenticate()
     provider.connect(creds)
 
     modded = False
     for k, v in creds.items():
         if type(v) is str:
-            creds[k] = creds[k] + "junk"
+            creds[k] = cast(str, creds[k]) + "junk"
             modded = True
 
     if modded:
         provider.disconnect()
         with pytest.raises(CloudTokenError):
             provider.connect(creds)
+        assert not provider.connected
 
 
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
-    provider = ProviderHelper(config_provider)      # type: ignore
-    if not provider.creds:
-        pytest.skip("provider doesn't support auth")
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    if not provider.test_creds:
+        pytest.skip("provider doesn't support testing auth")
 
     import time
     import threading
     threading.Thread(target=lambda: (time.sleep(0.5), provider.interrupt_auth()), daemon=True).start()  # type: ignore
     with pytest.raises(CloudTokenError):
         provider.authenticate()
+    assert not provider.connected
 
 
 def test_exists_immediately(provider):
@@ -1656,3 +1592,37 @@ def test_exists_immediately(provider):
     oids = [i.oid for i in contents]
     assert file_info1.oid not in oids
     assert file_info2.oid in oids
+
+
+@pytest.fixture
+def suspend_capture(pytestconfig):
+    class suspend_guard:
+        def __init__(self):
+            self.capmanager = pytestconfig.pluginmanager.getplugin('capturemanager')
+        def __enter__(self):
+            self.capmanager.suspend_global_capture(in_=True)
+        def __exit__(self, _1, _2, _3):
+            self.capmanager.resume_global_capture()
+
+    yield suspend_guard()
+
+
+# noinspection PyUnreachableCode
+@pytest.mark.manual
+def test_revoke_auth(config_provider, suspend_capture):
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    if not provider.test_creds:
+        pytest.skip("provider doesn't support testing auth")
+    creds = provider.authenticate()
+    provider.connect(creds)
+
+    with suspend_capture:
+        input("PLEASE GO TO THE PROVIDER AND REVOKE ACCESS NOW")
+
+    with pytest.raises(CloudTokenError):
+        # some providers cache connections, so this test may not work for everyone
+        while True:
+            log.error("sleep 5")
+            time.sleep(5)
+            log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
+    assert not provider.connected

@@ -950,6 +950,7 @@ def test_storage(storage):
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
+    cs1.do()
     old_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     assert old_cursor is not None
     log.debug("cursor=%s", old_cursor)
@@ -1745,7 +1746,7 @@ def test_backoff(cs, recover):
     local.create("/local/foo", BytesIO(b'0' * 1025))
 
     remote.disconnect()
-    remote.creds = None
+    remote._creds = None
 
     cs.start(until=lambda: cs.smgr.in_backoff, timeout=1)
     cs.wait()
@@ -1754,7 +1755,7 @@ def test_backoff(cs, recover):
     log.info("DISCONNECTED")
 
     if recover:
-        remote.creds = "ok"
+        remote._creds = "ok"
         log.info("RECONNECT %s", cs.smgr.in_backoff)
         cs.start(until=lambda: not cs.smgr.in_backoff, timeout=1)
         cs.wait()
@@ -2255,7 +2256,6 @@ def test_two_level_rename(cs):
         (lb2, rb1),
     ) = get_infos(cs, ret)
 
-    
     log.info("TABLE 0\n%s", cs.state.pretty_print())
 
     local.rename(lb.oid, "/local/a/c")
@@ -2274,3 +2274,35 @@ def test_two_level_rename(cs):
     assert not any("conflicted" in e.path for e in remote.walk("/remote"))
 
 
+def test_reconn_after_disconn():
+    (local, remote) = MockProvider(False, False), MockProvider(False, False)
+    remote.disconnect()
+    remote._creds = None
+    cs = CloudSyncMixin((local, remote), roots, storage=None, sleep=None)
+    local.mkdir("/local")
+
+    # this forces the remote to fail connections forever
+    called = False
+
+    def _handle(e: Notification):
+        nonlocal called
+        if e.ntype == NotificationType.DISCONNECTED_ERROR:
+            called = True
+    cs.handle_notification = _handle        # type: ignore
+
+    assert not remote.connected
+
+    # it's ok to start a cs this way
+    cs.start()
+    cs.wait_until(lambda: called)
+
+    # still ok....
+    assert not remote.connected
+
+    # syncs on reconnect
+    remote._creds = {"ok":"ok"}
+    remote.reconnect()
+
+    # yay
+    cs.wait_until_found((REMOTE, "/remote"))
+    cs.stop()

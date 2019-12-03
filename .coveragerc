@@ -10,3 +10,6 @@ exclude_lines =
     assert
     if __name__ == __main__:
     log.debug
+    [.][.][.]
+    raise NotImplementedError
+    if __name__ == .__main__.:
