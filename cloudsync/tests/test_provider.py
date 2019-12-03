@@ -12,7 +12,7 @@ import msgpack
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
+from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -32,7 +32,7 @@ else:
 def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     count = 4
     def wrapped(prov, *args, **kwargs):
-        ex = None
+        ex: CloudException = None
         for _ in range(count):
             try:
                 return func(prov, *args, **kwargs)
