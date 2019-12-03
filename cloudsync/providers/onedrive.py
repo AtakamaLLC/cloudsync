@@ -20,11 +20,11 @@ import arrow
 import quickxorhash
 
 import onedrivesdk_fork as onedrivesdk
-from onedrivesdk_fork.error import OneDriveError
+from onedrivesdk_fork.error import OneDriveError, ErrorCode
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudCursorError
+    CloudFileExistsError, CloudCursorError, CloudTemporaryError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
@@ -98,6 +98,7 @@ class OneDriveItem():
             if ret:
                 prdrive_path = ret.parent_reference.path
                 unused_preamble, prpath = prdrive_path.split(":")
+                prpath = urllib.parse.unquote(prpath)
                 self.__path = self.__prov.join(prpath, ret.name)
         return self.__path
 
@@ -388,7 +389,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.mutex.__enter__()
         return self.__client
 
-    def __exit__(self, ty, ex, tb):
+    def __exit__(self, ty, ex, tb):                   # pylint:disable=too-many-branches
         self.mutex.__exit__(ty, ex, tb)
 
         if ex:
@@ -400,19 +401,21 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
             except OneDriveError as e:
-                if e.code == "itemNotFound":
+                if e.code == ErrorCode.Malformed:
                     raise CloudFileNotFoundError(str(e))
-                if e.code == "nameAlreadyExists":
+                if e.code == ErrorCode.ItemNotFound:
+                    raise CloudFileNotFoundError(str(e))
+                if e.code == ErrorCode.NameAlreadyExists:
                     raise CloudFileExistsError(str(e))
-                if e.code == "invalidRequest":
-                    if "expected type" in str(e).lower():
-                        # TODO this is a 405 error code, use that with directapi
+                if e.code == ErrorCode.InvalidRange:
+                    if e.status_code == 405:
                         raise CloudFileExistsError(str(e))
-                    if "handle is invalid" in str(e).lower():
-                        # TODO this is a 400 error code, use that with directapi
+                    if e.status_code == 400:
                         raise CloudFileNotFoundError(str(e))
-                if e.code == "accessDenied":
+                if e.code == ErrorCode.AccessDenied:
                     raise CloudFileExistsError(str(e))
+                if e.code == "UnknownError":
+                    raise CloudTemporaryError(str(e))
             except Exception:
                 pass
 
@@ -581,19 +584,28 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileExistsError()
 
         pid = self.get_parent_id(path=path)
-        _, base = self.split(path)
+        dirname, base = self.split(path)
         size = _get_size_and_seek0(file_like)
 
         # TODO switch to directapi
         if size <= self.large_file_size:
             with self._api() as client:
-                req: onedrivesdk.ItemContentRequest = self._get_item(client, oid=pid).children[base].content.request()
-                req.method = "PUT"
-                resp = req.send(data=file_like)
-                item = onedrivesdk.Item(json.loads(resp.content))
-            return self._info_item(item, path=path)
+                api_path = self._get_item(client, oid=pid).api_path
+                rename = None
+                name = urllib.parse.quote(base)
+                if '(' in path:
+                    rename = name 
+                    name = os.urandom(32).hex()
+
+                api_path += "/children/" + name + "/content"
+                r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
+                if rename:
+                    self.rename(r["id"], path)
+                    r["name"] = rename
+            return self._info_from_rest(r, root=dirname)
         else:
-            r = self.upload_large(self._get_item(client, path=path).api_path, file_like, conflict="fail")
+            with self._api() as client:
+                r = self.upload_large(self._get_item(client, path=path).api_path, file_like, conflict="fail")
             return self._info_from_rest(r, root=self.dirname(path))
 
     def upload_large(self, drive_path, file_like, conflict):
@@ -624,7 +636,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 file_like.write(chunk)
                 file_like.flush()
 
-    def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches
+    def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
         with self._api() as client:
             parent, base = self.split(path)
 
@@ -642,6 +654,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             try:
                 updated = False
                 if info.name != base:
+                    need_temp = False
+                    if info.name.lower() == base.lower():
+                        need_temp = True
+                    if need_temp:
+                        new_info.name = base + os.urandom(8).hex()
+                        item.update(new_info)
                     new_info.name = base
                     item.update(new_info)
                     updated = True
@@ -668,9 +686,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 except StopIteration:
                     pass  # Folder is empty, rename over is ok
 
-                log.debug("remove conflict out of the way")
+                if confl.oid == oid:
+                    raise
+                
+                log.debug("remove conflict out of the way : %s", e)
                 self.delete(confl.oid)
-
                 self.rename(oid, path)
 
         new_path = self._get_path(oid)
