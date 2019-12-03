@@ -11,7 +11,7 @@ import threading
 import asyncio
 import hashlib
 import json
-from typing import Generator, Optional, List, Dict, Any
+from typing import Generator, Optional, Dict, Any, Iterable, List, Union, cast
 import urllib.parse
 import webbrowser
 from base64 import urlsafe_b64decode, b64encode
@@ -169,7 +169,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.mutex = threading.RLock()
         self._oauth_config = oauth_config
         self.__team_id = None
-        self._namespace = None
+        self._namespace: str = None
         self._is_biz = None
         self.__drive_to_name: Dict[str, str] = None
         self.__name_to_drive: Dict[str, str] = None
@@ -288,7 +288,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__name_to_drive = {v:k for k, v in all_drives.items()}
 
         # default namespace to personal
-        self.namespace = "personal"
+        self._namespace = "personal"
 
     def get_drive_id(self):
         try:
@@ -458,12 +458,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             res = self._direct_api("get", url=page_token)
             delta_link = res.get('@odata.deltaLink')
             next_link = res.get('@odata.nextLink')
-            events: List = res.get('value')
+            events: Union[List, Iterable] = res.get('value')
             new_cursor = next_link or delta_link
 
             if not self._is_biz:
                 # events = sorted(events, key=lambda x: x["lastModifiedDateTime"]): # sorting by modtime also works
-                events = reversed(events)
+                events = reversed(cast(List, events))
 
             for change in events:
 #                with disable_log_multiline():
@@ -908,12 +908,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 h.update(c)
             return h.hexdigest().upper()
 
-    @property
-    def namespace(self):
+    @property                                # type: ignore
+    def namespace(self) -> str:              # type: ignore
         return self._namespace
 
     @namespace.setter
-    def namespace(self, ns):
+    def namespace(self, ns: str):
         self._namespace = ns
         dat = self._direct_api("get", "/drives/%s/" % self.get_drive_id())
         self._is_biz = dat["driveType"] != 'personal'
