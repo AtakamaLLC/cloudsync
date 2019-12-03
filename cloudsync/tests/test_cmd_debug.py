@@ -1,12 +1,13 @@
 import io
 import sys
 import logging
-import pytest
 import json
 import os, tempfile
-
+from typing import IO
 
 from unittest.mock import MagicMock
+
+import pytest
 
 from cloudsync.command.debug import do_debug
 
@@ -39,7 +40,7 @@ def NamedTemporaryFile(mode='w+b', bufsize=-1, suffix='', prefix='tmp', dir=None
     name = os.path.join(dir, prefix + os.urandom(32).hex() + suffix)
     if mode is None:
         return TemporaryFile(name, None, delete)
-    fh = open(name, "w+b", bufsize)
+    fh: IO = open(name, "w+b", bufsize)
     if mode != "w+b":
         fh.close()
         fh = open(name, mode)
@@ -86,7 +87,7 @@ def test_debug_mode(arg_json, arg_discard):
         assert "whatever"  in res
         assert "123" in res
 
-        if json:
+        if arg_json:
             log.info("json: %s", res)
             ret = json.loads(res)
             log.info("loaded: %s", ret)

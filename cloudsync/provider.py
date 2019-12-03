@@ -40,7 +40,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True             ; """Provider is case sensitive"""
     win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01             ; """Per event loop sleep time"""
-    namespace = None                        ; """current namespace, if needed """
+    _namespace: str = None                   ; """current namespace, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
@@ -260,9 +260,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Returns info for an object with specified oid, or None if not found"""
         ...
 
-    def list_ns(self) -> List[str]:
+    def list_ns(self) -> List[str]:                        # pylint: disable=no-self-use
         """Yield one entry for each namespace supported, or None if namespaces are not needed"""
         return None
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
+
 
 # CONVENIENCE
     def download_path(self, path, io):
@@ -277,10 +282,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError()
         return self.listdir(info.oid)
 
-
 # HELPER
     @classmethod
-    def join(cls, *paths, ns_sep=None):
+    def join(cls, *paths):
         res = ""
         rl: List[str] = []
         for path in paths:
