@@ -48,11 +48,6 @@ def box_provider():
     return cls(OAuthConfig(app_id=app_id(), app_secret=app_secret()))
 
 
-@pytest.fixture
-def cloudsync_provider():
-    box_provider()
-
-
 def connect_test(want_oauth: bool):
     creds = box_creds()
     if want_oauth:

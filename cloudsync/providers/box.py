@@ -56,6 +56,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     base_box_url = 'https://api.box.com/2.0'
     events_endpoint = '/events'
     long_poll_timeout = 120
+    name = 'box'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -114,7 +115,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             log.debug("quota %s", res)
             return res
 
-    def connect(self, creds):
+    def connect_impl(self, creds):
         log.debug('Connecting to box')
         if not self.__client:
             self.__creds = creds
@@ -147,23 +148,20 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
                         box_session = AuthorizedSession(auth, **box_kwargs)
                         self.__client = Client(auth, box_session)
-                with self._api() as client:
-                    self.connection_id = client.user(user_id='me').get().id
+                with self._api():
                     self.__api_key = auth.access_token
                     self._long_poll_manager.start()
             except BoxException:
                 log.exception("Error during connect")
                 self.disconnect()
                 raise CloudTokenError()
+        with self._api() as client:
+            return client.user(user_id='me').get().id
 
     def disconnect(self):
         self._long_poll_manager.stop()
         self.__client = None
         self.connection_id = None
-
-    def reconnect(self):
-        if not self.connected:
-            self.connect(self.__creds)
 
     # noinspection PyMethodParameters
     class Guard:
@@ -201,14 +199,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     pass
 
     def _api(self, *args, **kwargs) -> Guard:
-        needs_client = kwargs.get('needs_client', None)
+        needs_client = kwargs.get('needs_client', True)
         if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
         return self.Guard(self.__client, self)
-
-    @property
-    def name(self):
-        return 'box'
 
     @property
     def latest_cursor(self):
@@ -841,3 +835,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if oid is None and path is None:
             path = '/'
         self.__cache.delete(oid=oid, path=path)
+
+    @classmethod
+    def test_instance(cls):
+        return cls.oauth_test_instance(prefix=cls.name.upper(), token_key='jwt_token')
+
+
+__cloudsync__ = BoxProvider
