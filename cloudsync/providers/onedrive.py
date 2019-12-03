@@ -554,7 +554,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         size = _get_size_and_seek0(file_like)
         if size <= self.large_file_size:
             with self._api() as client:
-                req = self._get_item(client, oid).content.request()
+                req = self._get_item(client, oid=oid).content.request()
                 req.method = "PUT"
                 try:
                     resp = req.send(data=file_like)
