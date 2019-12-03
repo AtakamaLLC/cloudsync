@@ -27,7 +27,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
     CloudFileExistsError, CloudCursorError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.utils import debug_sig, disable_log_multiline
-
+from cloudsync.registry import register_provider
 
 class OneDriveFileDoneError(Exception):
     pass
@@ -952,5 +952,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @property
     def test_namespace(self):
         return "personal"
+
+class OneDriveBusinessTestProvider(OneDriveProvider):
+    name="testodbiz"
+    
+register_provider(OneDriveBusinessTestProvider)
 
 __cloudsync__ = OneDriveProvider
