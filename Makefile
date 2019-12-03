@@ -1,11 +1,16 @@
 SHELL := /bin/bash
+ifeq ($(OS),Windows_NT)
+	ENVBIN="scripts"
+else
+	ENVBIN="bin"
+endif
 
 env:
 	virtualenv env
 
 requirements: env
-	. env/bin/activate && pip install -r requirements-dev.txt
-	. env/bin/activate && pip install -r requirements.txt
+	. env/$(ENVBIN)/activate && pip install -r requirements-dev.txt
+	. env/$(ENVBIN)/activate && pip install -r requirements.txt
 
 lint: _lint
 	git fetch origin master
