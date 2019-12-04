@@ -293,6 +293,10 @@ class TestApiServer(unittest.TestCase):
             @api_route("/popup")
             def popup(self, ctx, unused_req):        # pylint: disable=no-self-use
                 raise ApiError(501, "BLAH")
+            @api_route(None)
+            def any(self, ctx, unused_req):        # pylint: disable=no-self-use
+                raise ApiError(502, json={"custom":"error"})
+
 
         httpd = MyServer('127.0.0.1', 0)
 
@@ -304,6 +308,10 @@ class TestApiServer(unittest.TestCase):
 
             response = requests.post(httpd.uri("/popup"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 501)
+
+            response = requests.post(httpd.uri("/sdjkfhsjklf"), data='{}', timeout=1)
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(response.json(), {"custom":"error"})
         finally:
             httpd.shutdown()
 
