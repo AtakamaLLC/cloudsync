@@ -38,7 +38,7 @@ def test_oauth(wb):
     o.start_auth(auth_url)
     wb.assert_called_once()
     requests.get(o.redirect_uri, params={"code": "cody"})
-    res = o.wait_auth(token_url=token_url)
+    res = o.wait_auth(token_url=token_url, timeout=5)
 
     assert res.refresh_token == "r1"
     assert res.expires_in == 340
@@ -46,7 +46,7 @@ def test_oauth(wb):
     o.start_auth(auth_url)
     requests.get(o.redirect_uri, params={"error": "erry"})
     with pytest.raises(OAuthError):
-        res = o.wait_auth(token_url=token_url)
+        res = o.wait_auth(token_url=token_url, timeout=5)
 
 
 @patch('webbrowser.open')
@@ -80,7 +80,7 @@ def test_oauth_interrupt(wb):
     wb.assert_called_once()
     o.shutdown()
     with pytest.raises(OAuthError):
-        o.wait_auth(token_url=token_url)
+        o.wait_auth(token_url=token_url, timeout=5)
 
 
 @patch('webbrowser.open')

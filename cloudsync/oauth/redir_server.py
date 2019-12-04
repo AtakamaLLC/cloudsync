@@ -19,8 +19,6 @@ def _is_windows():
     return sys.platform in ("win32", "cygwin")
 
 class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
-    GUI_TIMEOUT = 15
-
     def __init__(self, *, html_generator: Callable[[bool, str], str] = None, 
             port_range: Tuple[int, int] = None, 
             host_name: str = None):
