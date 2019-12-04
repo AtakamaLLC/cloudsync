@@ -575,8 +575,15 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 req.method = "PUT"
                 try:
                     resp = req.send(data=file_like)
-                except onedrivesdk.error.OneDriveError:
-                    resp = req.send(data=file_like)
+                except onedrivesdk.error.OneDriveError as e:
+                    if e.code == ErrorCode.NotSupported:
+                        raise CloudFileExistsError("Cannot upload to folder")
+                    if e.code == ErrorCode.ResourceModified:
+                        # onedrive ocassionally reports etag mismatch errors, even when there's no possibility of conflict
+                        # simply retrying here vastly reduces the number of false positive failures
+                        resp = req.send(data=file_like)
+                    else:
+                        raise
 
                 log.debug("RESP: %s", resp.content)
                 item = onedrivesdk.Item(json.loads(resp.content))
