@@ -811,7 +811,7 @@ def test_file_not_found(provider):
     provider.delete(test_folder_deleted_oid)
 
     test_path_made_up = provider.temp_name("dest2")  # Never created
-    test_oid_made_up = "never created"
+    test_oid_made_up = "nevercreated"
     # TODO: consider mocking info_path to always return None, and then call all the provider methods
     #  to see if they are handling the None, and not raising exceptions other than FNF
 
