@@ -69,7 +69,7 @@ def test_oauth_threaded(wb):
         threads.append(t)
 
     for t in threads:
-        t.join(timeout=2)
+        t.join(timeout=5)
 
     log.debug("errs %s", tfail)
     assert tpass == 4
