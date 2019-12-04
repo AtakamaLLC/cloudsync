@@ -238,6 +238,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudTokenError(emsg)
             if dat['error']['code'] == ErrorCode.ItemNotFound:
                 raise CloudFileNotFoundError(emsg)
+            if dat['error']['code'] == ErrorCode.ResourceModified:
+                raise CloudTemporaryError(emsg)
             if dat['error']['code'] in (ErrorCode.NameAlreadyExists, ErrorCode.AccessDenied):
                 raise CloudFileExistsError(emsg)
             if req.status_code == 400:
@@ -256,7 +258,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if stream:
             return req
         res = req.json()
-        log.debug("response %s", res)
+#        log.debug("response %s", res)
         return res
 
     def _set_drive_list(self):
@@ -419,6 +421,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     raise CloudFileNotFoundError(str(e))
                 if e.code == ErrorCode.ItemNotFound:
                     raise CloudFileNotFoundError(str(e))
+                if e.code == ErrorCode.ResourceModified:
+                    raise CloudTemporaryError(str(e))
                 if e.code == ErrorCode.NameAlreadyExists:
                     raise CloudFileExistsError(str(e))
                 if e.code == ErrorCode.InvalidRequest:
@@ -864,6 +868,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             i = self.info_path(ppath)
             if i:
                 ret = i.oid
+                if i.otype == FILE:
+                    raise CloudFileExistsError("file where a folder should be")
 
         if oid:
             i = self.info_oid(oid)
