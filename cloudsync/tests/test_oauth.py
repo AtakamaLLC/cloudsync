@@ -25,6 +25,7 @@ class TokenServer(ApiServer):
 
 
 @patch('webbrowser.open')
+@pytest.mark.repeat(4)
 def test_oauth(wb):
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -47,7 +48,6 @@ def test_oauth(wb):
     requests.get(o.redirect_uri, params={"error": "erry"})
     with pytest.raises(OAuthError):
         res = o.wait_auth(token_url=token_url)
-
 
 @patch('webbrowser.open')
 def test_oauth_refresh(wb):

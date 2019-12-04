@@ -1,6 +1,7 @@
 import logging
 import sys
 import socket
+import random
 import threading
 import errno
 from typing import Callable, Any, Optional, Tuple
@@ -41,6 +42,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.event = threading.Event()
         self.success_code: str = None
         self.failure_info: str = None
+        self._shuffle_ports: bool = True
 
     @property
     def running(self):
@@ -62,22 +64,28 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
             # Some providers (Dropbox, Onedrive) don't allow us to just use localhost
             #  redirect. For these providers, we define a range of
             #  host_name:(port_min, port_max) as valid redir URLs
-            for port in range(port_min, port_max):
+            ports = list(range(port_min, port_max))
+
+            # generally this is faster, but it can make testing falsely more forgiving
+            # so expose this for tests
+            if self._shuffle_ports:
+                random.shuffle(ports)
+
+            free = None
+            for port in ports:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+                if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                    # windows will allow reuse sometimes
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
                 try:
-                    if _is_windows():
-                        # Windows will be weird if we just try to
-                        #  connect to the port directly. Check to see if the
-                        #  port is responsive before claiming it as our own
-                        try:
-                            socket.create_connection(('127.0.0.1', port), 0.001)
-                            continue
-                        except socket.timeout:
-                            pass
-                    log.debug('Attempting to start api server on port %d', port)
-                    self.__api_server = ApiServer('127.0.0.1', port)
+                    sock.bind(('127.0.0.1', port))
+                    sock.close()
+                    free = port
                     break
                 except OSError:
                     pass
+            self.__api_server = ApiServer('127.0.0.1', free)
         else:
             self.__api_server = ApiServer('127.0.0.1', 0)
         if not self.__api_server:
