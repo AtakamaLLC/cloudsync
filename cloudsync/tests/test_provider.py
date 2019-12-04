@@ -135,8 +135,8 @@ class ProviderHelper(ProviderBase):
     def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
-    def listdir(self, oid):
-        for e in self.prov.listdir(oid):
+    def listdir(self, oid, page_size=None):
+        for e in self.prov.listdir(oid, page_size=page_size):
             if self.__filter_root(e):
                 yield e
 
@@ -1279,6 +1279,18 @@ def test_listdir(provider):
     expected = ["file1", "file2", temp_name[1:]]
     log.info("contents %s", contents)
     assert sorted(contents) == sorted(expected)
+
+
+def test_listdir_paginates(provider):
+    paginate_size = 5
+    for i in range(paginate_size):
+        provider.mkdir("/" + os.urandom(16).hex())
+    root_info = provider.info_path("/")
+    assert(len(list(provider.listdir(root_info.oid, page_size=paginate_size))) == paginate_size)
+
+    provider.mkdir("/" + os.urandom(16).hex())
+    root_info = provider.info_path("/")
+    assert(len(list(provider.listdir(root_info.oid, page_size=paginate_size))) == paginate_size + 1)
 
 
 def test_upload_to_a_path(provider):

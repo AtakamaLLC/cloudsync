@@ -476,7 +476,7 @@ class DropboxProvider(Provider):
     def walk(self, path, since=None):
         yield from self._events(None, path=path)
 
-    def listdir(self, oid) -> Generator[DirInfo, None, None]:
+    def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
         yield from self._listdir(oid, recursive=False)
 
     def _listdir(self, oid, *, recursive) -> Generator[DirInfo, None, None]:

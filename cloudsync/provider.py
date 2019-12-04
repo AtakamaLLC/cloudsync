@@ -235,7 +235,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self.info_path(path) is not None
 
     @abstractmethod
-    def listdir(self, oid) -> Generator[DirInfo, None, None]:
+    def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
         """Yield one entry for each file at the directory pointed to by the specified object id"""
         ...
 

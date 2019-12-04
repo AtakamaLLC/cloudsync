@@ -465,18 +465,20 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return True
         return self.info_path(path) is not None
 
-    def _box_get_items(self, box_object, path):
+    def _box_get_items(self, box_object, path, page_size=None):
+        if not page_size:
+            page_size = 5000
         with self._api():
             if box_object._item_type == 'file':
                 return []
             # entries = list(box_object.get_items(limit=5000, fields=['type', 'id', 'name', 'sha1']))
-            entries = list(box_object.get_items(limit=5000))
+            entries = list(box_object.get_items(limit=page_size))
             if not path:
                 path = self._box_get_path(box_object)
             self._cache_collection_entries(entries, path)
             return entries
 
-    def listdir(self, oid) -> Generator[DirInfo, None, None]:
+    def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
         # optionally takes a path, to make creating the OInfo cheaper, so that it doesn't need to figure out the path
         with self._api() as client:
             parent_object = self._get_box_object(oid=oid, object_type=DIRECTORY)
@@ -488,7 +490,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             # entries = parent_object.item_collection['entries']  # don't use this, new children may be missing
 
             # shitty attempt 2 that fails due to caching in the sdk:
-            entries = self._box_get_items(parent_object, parent_path)
+            entries = self._box_get_items(parent_object, parent_path, page_size=page_size)
             for entry in entries:
                 if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
                     raise NotImplementedError
