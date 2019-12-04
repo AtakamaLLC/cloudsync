@@ -234,6 +234,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if dat['error']['code'] == ErrorCode.Unauthenticated:
                 self.disconnect()
                 raise CloudTokenError(emsg)
+            if dat['error']['code'] == 'ErrorInsufficientPermissionsInAccessToken':
+                raise CloudTokenError(emsg)
             if dat['error']['code'] == ErrorCode.ItemNotFound:
                 raise CloudFileNotFoundError(emsg)
             if dat['error']['code'] in (ErrorCode.NameAlreadyExists, ErrorCode.AccessDenied):
@@ -308,12 +310,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         log.info("my drive %s", dat)
 
+        display_name = dat["owner"].get("user", {}).get("displayName")
+        if not display_name:
+            display_name = dat["owner"].get("group", {}).get("displayName")
+
         res = {
             'used': dat["quota"]["total"]-dat["quota"]["remaining"],
             'limit': dat["quota"]["total"],
-            'did': dat['id']                # drive id
+            'login': display_name,
+            'drive_id': dat['id'],                # drive id
         }
-       
+
         return res
 
     def reconnect(self):
@@ -382,7 +389,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             self._set_drive_list()
 
         q = self.get_quota()
-        return q["did"]
+        return q["drive_id"]
 
     def _api(self, *args, **kwargs):
         needs_client = kwargs.get('needs_client', None)
@@ -608,7 +615,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return self._info_from_rest(r, root=dirname)
         else:
             with self._api() as client:
-                r = self.upload_large(self._get_item(client, path=path).api_path, file_like, conflict="fail")
+                r = self.upload_large(self._get_item(client, path=path).api_path + ":", file_like, conflict="fail")
             return self._info_from_rest(r, root=self.dirname(path))
 
     def upload_large(self, drive_path, file_like, conflict):
@@ -914,7 +921,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def _info_oid(self, oid, path=None) -> Optional[OneDriveInfo]:
         try:
             with self._api() as client:
-                item = self._get_item(client, oid=oid).get()
+                try:
+                    item = self._get_item(client, oid=oid).get()
+                except OneDriveError as e:
+                    if e.code == 400:
+                        log.debug("malformed oid %s: %s", oid, e)
+                        # malformed oid == not found
+                        return None
+                    raise
             return self._info_item(item, path=path)
         except CloudFileNotFoundError:
             return None
