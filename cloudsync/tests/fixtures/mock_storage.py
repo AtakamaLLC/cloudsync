@@ -63,9 +63,10 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
             with self.top_lock:
                 tags = self.storage_dict.keys()
             for t in tags:
-                ret_all[t] = {}
                 lock, storage = self._get_internal_storage(t)
                 for k, v in storage.items():
+                    if t not in ret_all:
+                        ret_all[t] = {}
                     ret_all[t][k] = v
             return ret_all
 
