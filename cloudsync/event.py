@@ -93,7 +93,10 @@ class EventManager(Runnable):
                         self.provider.reconnect()
                     except CloudTokenError:
                         log.warning("Need auth, calling reauthenticate")
-                        self.reauthenticate()
+                        try:
+                            self.reauthenticate()
+                        except NotImplementedError:
+                            raise CloudTokenError("No auth method defined")
                     self.need_auth = False
                 else:
                     log.info("reconnect to %s", self.provider.name)
