@@ -109,9 +109,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             "max_upload": maxup
         }
 
-    def reconnect(self):
-        self.connect(self._creds)
-
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
         if not self.client or creds != self._creds:

@@ -69,7 +69,6 @@ class OAuthConfig:
             self._redirect_server = OAuthRedirServer(html_generator=self._gen_html_response, 
                                                      port_range=port_range, host_name=host_name)
 
-
     def start_auth(self, auth_url, scope=None, **kwargs):
         """
         Call this if you want oauth to be handled for you
@@ -108,9 +107,6 @@ class OAuthConfig:
         Or, you could just call it before the expiration
         """
         assert self._session or scope
-
-        kws = {**extra}
-
         if not self._session and scope:
             self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri)
         if isinstance(token, OAuthToken):
@@ -158,6 +154,8 @@ class OAuthConfig:
         Get the redirect server's uri
         """
         assert self._redirect_server
+        if not self._redirect_server.running:
+            return None
         return self._redirect_server.uri()
 
     def _gen_html_response(self, success: bool, err_msg: str):

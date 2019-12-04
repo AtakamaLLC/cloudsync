@@ -1,9 +1,9 @@
 import logging
-from typing import Dict, Optional, Tuple, Set, Generator, Union, Type
-from cloudsync.provider import Provider
-from cloudsync import OType, DIRECTORY, FILE
+from typing import Dict, Optional, Tuple, Generator, Type
 from enum import Enum
 import weakref
+from cloudsync.provider import Provider
+from cloudsync import OType, DIRECTORY, FILE
 
 log = logging.getLogger(__name__)
 
@@ -23,23 +23,31 @@ class Node:
         self.children = {}
         self.type: OType = otype
 
+    def check(self):
+        if self.parent:
+            if self.oid and self.oid == self.parent.oid:
+                log.error("oid=%s name=%s parent=-->%s<-- path=%s", self.oid, self.name, self.parent, "")
+            assert not self.oid or self.oid != self.parent.oid
+
     @property
     def oid(self):
         return self._oid
 
     @oid.setter
     def oid(self, val):
+        self.check()
         assert self._oid is None or val is not None
         self._oid = val
 
     def full_path(self):
-        if self.parent is not None:
-            assert self.oid != self.parent.oid
+        self.check()
         if self.parent is None:
             return self._provider.sep
         return self._provider.join(self.parent.full_path(), self.name)
 
     def add_child(self, child_node):
+        self.check()
+        child_node.check()
         assert self.type == DIRECTORY
         self.children += [child_node]
 
@@ -64,10 +72,10 @@ class HierarchicalCache:
             return
         for k, v in metadata.items():
             if k not in self._metadata_template:
-                raise ValueError("key %s:%s is in metadata, but not in the template", k, v)
+                raise ValueError("key %s:%s is in metadata, but not in the template" % (k, v))
             if not isinstance(v, self._metadata_template.get(k, None)):
-                raise ValueError("key %s:%s has the wrong type. provided %s, template has %s",
-                                 k, v, type(v), self._metadata_template.get(k, None))
+                raise ValueError("key %s:%s has the wrong type. provided %s, template has %s" %
+                                 (k, v, type(v), self._metadata_template.get(k, None)))
 
     def get_metadata(self, *, path=None, oid=None) -> any:
         node = self._get_node(path=path, oid=oid)
@@ -84,7 +92,7 @@ class HierarchicalCache:
     def update(self, path, otype, oid=None, metadata=None, keep=True):
         self._update(path=path, otype=otype, oid=oid, metadata=metadata, keep=keep)
 
-    def _update(self, path, otype, oid=None, metadata=None, keep=True):
+    def _update(self, path, otype, oid=None, metadata=None, keep=True) -> Node:
         metadata = metadata or {}
         self.check_metadata(metadata)
         node = self._get_node(path=path)
@@ -92,7 +100,7 @@ class HierarchicalCache:
             self._delete(remove_node=node)
             node = None
         if node is None:
-            self.__make_node(otype=otype, path=path, oid=oid, metadata=metadata)
+            node = self.__make_node(otype=otype, path=path, oid=oid, metadata=metadata)
             return node
         if oid or not keep:
             self.set_oid(path, oid)
@@ -101,7 +109,7 @@ class HierarchicalCache:
             old_metadata.update(metadata)
         else:
             self.set_metadata(metadata, path=path)
-        path = node.full_path()
+        return node
 
     def __insert_node(self, node: Node, path: str):
         parent_path, name = self.split(path)
@@ -119,7 +127,7 @@ class HierarchicalCache:
 
         parent_node.children[name] = node
 
-        for current_node, current_path in self._walk(node):
+        for current_node, _ignored_current_path in self._walk(node):
             if current_node.oid:
                 possible_conflict = self._oid_to_node.get(current_node.oid)
                 if id(possible_conflict) != id(current_node):
@@ -153,8 +161,8 @@ class HierarchicalCache:
             path = self._provider.sep
         node = self._get_node(oid=oid, path=path)
         if node is None:
-            return None
-        for curr_node, curr_path in self._walk(node):
+            return
+        for _ignored_curr_node, curr_path in self._walk(node):
             yield curr_path
 
     def listdir(self, *, oid: str = None, path: str = None):
@@ -196,7 +204,7 @@ class HierarchicalCache:
         except KeyError:
             pass
 
-        for curr_node, curr_path in self._walk(remove_node):
+        for curr_node, _ignored_curr_path in self._walk(remove_node):
             curr_node: Node
             if curr_node.oid:
                 self._oid_to_node.pop(curr_node.oid, None)
@@ -205,7 +213,8 @@ class HierarchicalCache:
             if id(node_deleted_from_parent) != id(remove_node):
                 if node_deleted_from_parent.oid is not None:
                     self._oid_to_node.pop(node_deleted_from_parent.oid)
-                raise LookupError("Structure problem in hierarchical cache. %s != %s", node_deleted_from_parent, remove_node)
+                raise LookupError("Structure problem in hierarchical cache. %s != %s" %
+                                  (node_deleted_from_parent, remove_node))
 
         remove_node.parent = None
 

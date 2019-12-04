@@ -264,6 +264,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     raise CloudFileExistsError(str(e))
             except Exception:
                 return False  # False allows the exit handler to act as normal, which does not swallow the exception
+        return None
 
     @property
     def root_id(self):

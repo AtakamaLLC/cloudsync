@@ -114,7 +114,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Raises:
             CloudDisconnectedError on failure
         """
-        if not self.__connected:
+        connected = self.__connected
+        if not connected:
             self.connect(self._creds)
 
     def disconnect(self):
@@ -443,6 +444,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             # no connection needed
             cls.test_creds: Dict[str, str] = None            # type: ignore
             return cls()
+
+    def _clear_cache(self):
+        # override this method if the provider implements a cache, to permit the internal cache to be cleared on demand
+        # the _clear_cache method in the subclass should return True
+        return False
 
     @classmethod
     def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None):

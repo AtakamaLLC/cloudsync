@@ -7,7 +7,7 @@ import time
 import arrow
 import requests
 
-from typing import Optional, Generator, Union, Dict, Tuple
+from typing import Optional, Generator, Dict, Tuple
 
 from boxsdk import Client, JWTAuth, OAuth2
 from boxsdk.object.item import Item as box_item
@@ -103,15 +103,17 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def get_quota(self):
         with self._api() as client:
-            user = client.user(user_id='me').get()
-
-            logging.error(dir(user))
-
+            url = client.user(user_id='me').get_url()
+            log.debug("url = %s", url)
+            user = client.make_request('GET', url).json()
+            log.debug("json resp = %s", user)
+            # {'type': 'user', 'id': '8506151483', 'name': 'Atakama JWT', 'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com', 'created_at': '2019-05-29T08:35:19-07:00', 'modified_at': '2019-12-04T10:39:14-08:00', 'language': 'en', 'timezone': 'America/Los_Angeles', 'space_amount': 10737418240, 'space_used': 5551989, 'max_upload_size': 5368709120, 'status': 'active', 'job_title': '', 'phone': '', 'address': '', 'avatar_url': 'https://app.box.com/api/avatar/large/8506151483', 'notification_email': []}
             res = {
-                'used': user.space_used,
-                'limit': user.space_amount,
-                'login': user.login,
+                'used': user['space_used'],
+                'limit': user['space_amount'],
+                'login': user['login'],
             }
+
             log.debug("quota %s", res)
             return res
 
@@ -159,6 +161,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return client.user(user_id='me').get().id
 
     def disconnect(self):
+        super().disconnect()
         self._long_poll_manager.stop()
         self.__client = None
         self.connection_id = None
@@ -189,6 +192,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         raise CloudFileNotFoundError()
                     elif e.status == 404 and e.code == 'trashed':
                         raise CloudFileNotFoundError()
+                    elif e.status == 405 and e.code == 'method_not_allowed':
+                        raise PermissionError()
                     elif e.status == 409 and e.code == 'item_name_in_use':
                         raise CloudFileExistsError()
                     else:
@@ -350,7 +355,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__cache.delete(path=path)
         try:
             with self._api():
-                box_object: box_file = self._get_box_object(oid=oid, object_type=NOTKNOWN)  # todo: get object_type from cache
+                box_object: box_file = self._get_box_object(oid=oid, object_type=NOTKNOWN, strict=False)  # todo: get object_type from cache
                 if box_object is None:
                     self.__cache.delete(oid=oid)
                     raise CloudFileNotFoundError()
@@ -369,7 +374,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         if box_object.object_type == 'file':
                             raise
                         # are we renaming a folder over another empty folder?
-                        box_conflict = self._get_box_object(path=path, object_type=NOTKNOWN)  # todo: get type from cache
+                        box_conflict = self._get_box_object(path=path, object_type=NOTKNOWN, strict=False)  # todo: get type from cache
                         if box_conflict is None:  # should't happen... we just got a FEx error, and we're not moving
                             raise
                         items = self._box_get_items(box_conflict, new_parent)
@@ -433,7 +438,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def delete(self, oid):
         with self._api():
-            box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN)  # todo: get type from cache
+            box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN, strict=False)  # todo: get type from cache
             if box_object is None:
                 return
             if box_object.object_type == 'file':
@@ -447,10 +452,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return True
         try:
             with self._api():
-                box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN)  # NOTKNOWN because it's not cached
+                box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN, strict=False)  # NOTKNOWN because it's not cached
                 if box_object is None:
                     return False
-                box_object.get()
+                box_object = self._unsafe_box_object_populate(box_object)
                 return True
         except CloudFileNotFoundError:
             return False
@@ -483,27 +488,28 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             # entries = parent_object.item_collection['entries']  # don't use this, new children may be missing
 
             # shitty attempt 2 that fails due to caching in the sdk:
-            # entries = self._box_get_items(parent_object, parent_path)
-            # for entry in entries:
-            #     if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
-            #         raise NotImplementedError
-            #         # retval = self._box_get_dirinfo_from_collection_entry(entry)
-            #     else:
-            #         retval = self._box_get_dirinfo(entry, parent_path)
-            #     if retval is not None:
-            #         yield retval
+            entries = self._box_get_items(parent_object, parent_path)
+            for entry in entries:
+                if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
+                    raise NotImplementedError
+                    # retval = self._box_get_dirinfo_from_collection_entry(entry)
+                else:
+                    retval = self._box_get_dirinfo(entry, parent_path)
+                if retval is not None:
+                    yield retval
 
             # attempt 3 that (hopefully) avoids those issues, and gets newly created items
             # see https://github.com/box/box-python-sdk#making-api-calls-manually
-            url = parent_object.get_url('items')
-            log.debug("url = %s", url)
-            json_response = client.make_request('GET', url).json()
-            log.debug("json resp = %s", json_response)
-            for entry in json_response['entries']:
-                log.debug("entry = %s", entry)
-                collection_entry = self._box_get_dirinfo_from_collection_entry(entry, parent_path)
-                log.debug("collection_entry = %s", collection_entry)
-                yield collection_entry
+
+            # url = parent_object.get_url('items')
+            # log.debug("url = %s", url)
+            # json_response = client.make_request('GET', url).json()
+            # log.debug("json resp = %s", json_response)
+            # for entry in json_response['entries']:
+            #     log.debug("entry = %s", entry)
+            #     collection_entry = self._box_get_dirinfo_from_collection_entry(entry, parent_path)
+            #     log.debug("collection_entry = %s", collection_entry)
+            #     yield collection_entry
 
     def hash_data(self, file_like) -> Hash:
         # get a hash from a filelike that's the same as the hash i natively use
@@ -532,6 +538,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 if cached_path:
                     return cached_path
             path_collection = None
+            if not hasattr(box_object, 'path_collection'):
+                box_object = self._unsafe_box_object_populate(box_object)
             if hasattr(box_object, 'path_collection'):
                 path_collection = box_object.path_collection
             if path_collection is not None:
@@ -549,7 +557,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             retval_list.append(base_name)
         return self.join(retval_list)
 
-    def _box_get_dirinfo(self, box_object: Union[box_file, box_folder], parent_path=None) -> Optional[DirInfo]:
+    def _box_get_dirinfo(self, box_object: box_item, parent_path=None) -> Optional[DirInfo]:
         with self._api():
             oinfo = self._box_get_oinfo(box_object, parent_path)
             if not oinfo.path:
@@ -561,7 +569,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 return retval
             return None
 
-    def _box_get_oinfo(self, box_object: Union[box_file, box_folder], parent_path=None, use_cache=True) -> Optional[OInfo]:
+    def _box_get_oinfo(self, box_object: box_item, parent_path=None, use_cache=True) -> Optional[OInfo]:
         if box_object is None:
             return None
 
@@ -618,7 +626,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         # size: int
         if path == "/" or path == '':
             with self._api() as client:
-                return self._box_get_oinfo(client.root_folder().get())
+                box_object = client.root_folder()
+                box_object = self._unsafe_box_object_populate(box_object)
+                return self._box_get_oinfo(box_object)
 
         cached_type = None
         cached_oid = None
@@ -646,8 +656,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return OInfo(dir_info.otype, dir_info.oid, dir_info.hash, dir_info.path, dir_info.size)
         return None
 
-    def _get_box_object(self, oid=None, path=None, object_type: OType = None, strict=True) -> Optional[Union[box_folder, box_file]]:
+    def _get_box_object(self, oid=None, path=None, object_type: OType = None, strict=True) -> Optional[box_item]:
         assert object_type is not None
+        assert not strict or object_type in (FILE, DIRECTORY)
         with self._api():
             try:
                 unsafe_box_object = self._unsafe_get_box_object(oid=oid, path=path, object_type=object_type, strict=strict)
@@ -719,7 +730,92 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
             return metadata, dir_info
 
-    def _unsafe_get_box_object(self, oid=None, path=None, object_type: OType = None, strict=True):
+    # noinspection PyTypeChecker
+    def _unsafe_box_object_populate(self, box_object: box_item) -> box_item:
+        with self._api():
+            retval: box_item = box_object.get()
+            return retval
+    
+    def _unsafe_get_box_object_from_path(self, path: str, object_type: OType, strict: bool, use_cache: bool) -> Optional[box_item]:
+        assert object_type in (FILE, DIRECTORY)
+        with self._api() as client:
+            if path in ('/', ''):
+                root: box_folder = client.root_folder()
+                root2 = self._unsafe_box_object_populate(root)
+                return root2
+            if use_cache:
+                cached_oid = self.__cache.get_oid(path)
+                if (cached_oid and False):  # TODO: put this back
+                    cached_type = self.__cache.get_type(path=path) or NOTKNOWN
+                    return self._get_box_object(oid=cached_oid, object_type=cached_type, strict=strict);
+            parent, base = self.split(path)
+            cached_parent_oid = None
+            if use_cache:
+                cached_parent_oid = self.__cache.get_oid(parent)
+            parent_object: Optional[box_folder] = None
+            if cached_parent_oid is not None:
+                parent_object = self._get_box_object(oid=cached_parent_oid, object_type=DIRECTORY, strict=strict)
+            else:
+                parent_object = self._get_box_object(path=parent, object_type=DIRECTORY, strict=strict)
+                if parent_object:
+                    self.__cache.set_oid(parent, parent_object.object_id, DIRECTORY)
+            if not parent_object:
+                return None
+            if parent_object.object_type != 'folder':
+                raise CloudFileExistsError
+            collection = parent_object.item_collection
+            collection_entries = list(collection['entries'])
+            entry, found_type = self.__look_for_name_in_collection_entries(base, collection_entries, object_type,
+                                                                           strict)
+            if not entry:
+                start = time.monotonic()
+                # the next line is very slow for big folders.
+                # limit=5000 speeds it up because it lowers the number of pages
+                # Is there a way to confirm the non-existence of a file that doesn't involve
+                # getting every item in the parent's folder? maybe limiting the fields would speed this up...
+                entries = self._box_get_items(parent_object, parent)
+                log.debug("done getting %s, %s", parent, time.monotonic() - start)
+                entry, found_type = self.__look_for_name_in_collection_entries(base, entries, object_type, strict)
+            if not entry:
+                raise CloudFileNotFoundError()
+            if strict and found_type != object_type:
+                raise CloudFileExistsError()
+            return self._get_box_object(oid=entry.object_id, object_type=found_type, strict=strict)
+
+    def _unsafe_get_box_object_from_oid(self, oid: str, object_type: OType, strict: bool, use_cache: bool) -> Optional[box_item]:
+        assert object_type in (FILE, DIRECTORY)
+        box_object = None
+        with self._api() as client:
+            try:
+                with self._api():
+                    if object_type == FILE:
+                        box_object = client.file(file_id=oid)
+                    if object_type == DIRECTORY:
+                        box_object = client.folder(folder_id=oid)
+                    if box_object:
+                        box_object = self._unsafe_box_object_populate(box_object)
+                    return box_object
+            except CloudFileNotFoundError:
+                pass
+            except CloudFileExistsError:
+                raise
+            except Exception as e:
+                log.exception(e)
+                raise
+
+            # try again with the other type
+            log.debug("Trying again")
+            if object_type == FILE:
+                box_object = client.folder(folder_id=oid)
+            if object_type == DIRECTORY:
+                box_object = client.file(file_id=oid)
+            box_object = self._unsafe_box_object_populate(box_object)  # should raise FNF if the object doesn't exists
+            if strict:  # if we are here, then the object exists and retval does not comply with "strict"
+                raise CloudFileExistsError()
+            return box_object
+
+    def _unsafe_get_box_object(self, oid: str = None, path: str = None, object_type: Optional[OType] = None,
+                               strict=True, use_cache=True):
         # this is unsafe because it returns an object that can hit the api outside of the guard
         # only call this function within another guard, and don't use the return value outside of that guard
         # update: the above comment is right, but we are using the return value outside of that guard
@@ -729,82 +825,21 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if object_type == NOTKNOWN:
             object_type = FILE
             strict = False
-        if path and not oid:
+        if use_cache and path and not oid:
             cached_oid = self.__cache.get_oid(path)
             if cached_oid:
                 oid = cached_oid
 
         assert oid is not None or path is not None
-        box_object = None
-        with self._api() as client:
+        with self._api():
             if oid is not None:
-                try:
-                    with self._api():
-                        if object_type == FILE:
-                            box_object = client.file(file_id=oid)
-                        if object_type == DIRECTORY:
-                            box_object = client.folder(folder_id=oid)
-                        get = box_object.get()
-                        return get
-                except CloudFileNotFoundError:
-                    pass
-                except CloudFileExistsError:
-                    raise
-                except Exception as e:
-                    log.exception(e)
-                    raise
-
-                # try again with the other type
-                log.debug("Trying again")
-                if object_type == FILE:
-                    box_object = client.folder(folder_id=oid)
-                if object_type == DIRECTORY:
-                    box_object = client.file(file_id=oid)
-                retval = box_object.get()
-                if strict and retval:
-                    raise CloudFileExistsError()
-                return retval
+                return self._unsafe_get_box_object_from_oid(oid, object_type, strict, use_cache)
             else:
-                if path == '/' or path == '':
-                    root: box_folder = client.root_folder()
-                    root2 = root.get()
-                    return root2
-                # if self.__cache.get_oid(path):
-                #     return self._get_box_object(oid=entry.object_id, object_type=found_type, strict=strict)
-
-                parent, base = self.split(path)
-                cached_parent_oid = self.__cache.get_oid(parent)
-                if cached_parent_oid is not None:
-                    parent_object: box_folder = self._get_box_object(oid=cached_parent_oid, object_type=DIRECTORY)
-                else:
-                    parent_object: box_folder = self._get_box_object(path=parent, object_type=DIRECTORY)
-                    if parent_object:
-                        self.__cache.set_oid(parent, parent_object.object_id, DIRECTORY)
-                if not parent_object:
-                    return None
-                if parent_object.object_type != 'folder':
-                    raise CloudFileExistsError
-                collection = parent_object.item_collection
-                collection_entries = list(collection['entries'])
-                entry, found_type = self.__look_for_name_in_collection_entries(base, collection_entries, object_type, strict)
-                if not entry:
-                    start = time.monotonic()
-                    # the next line is very slow for big folders.
-                    # limit=5000 speeds it up because it lowers the number of pages
-                    # Is there a way to confirm the non-existence of a file that doesn't involve
-                    # getting every item in the parent's folder? maybe limiting the fields would speed this up...
-                    entries = self._box_get_items(parent_object, parent)
-                    log.debug("done getting %s, %s", parent, time.monotonic() - start)
-                    entry, found_type = self.__look_for_name_in_collection_entries(base, collection_entries, object_type, strict)
-                if not entry:
-                    raise CloudFileNotFoundError()
-                if strict and found_type != object_type:
-                    raise CloudFileExistsError()
-                return self._get_box_object(oid=entry.object_id, object_type=found_type, strict=strict)
+                return self._unsafe_get_box_object_from_path(path, object_type, strict, use_cache)
 
     def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         with self._api():
-            box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN)  # todo: get type from cache
+            box_object = self._get_box_object(oid=oid, object_type=NOTKNOWN, strict=False)  # todo: get type from cache
             oinfo = self._box_get_oinfo(box_object, use_cache=use_cache)
             if oinfo:
                 if not oinfo.path:
@@ -835,6 +870,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if oid is None and path is None:
             path = '/'
         self.__cache.delete(oid=oid, path=path)
+        return True
 
     @classmethod
     def test_instance(cls):

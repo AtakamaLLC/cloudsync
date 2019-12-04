@@ -206,7 +206,7 @@ class ProviderHelper(ProviderBase):
             pass
 
     def test_cleanup(self, timeout=None, until=None):
-        info = self.prov.info_path(self.test_root)
+        info = self.prov.info_path(self.test_root, use_cache=False)
         self.__cleanup(info.oid)
 
     def prime_events(self):
@@ -1357,7 +1357,9 @@ def test_report_info(provider):
     u1 = provider.get_quota()["used"]
     log.info("used %s", u1)
 
-    provider.create(temp_name, BytesIO(b"test"))
+    provider.create(temp_name, BytesIO(b"t;lksjdf;lkajsd;lfkja;lsdkjf;laskjdf;laksjdf;lkjasdf;lkjas;ldkfja;lskdjf;laskdjf;laksjdf;lkajsdf;lkjasdf;lkjasd;lfkja;lsdkjf;laskdjf;laskdjf;laskdjf;laksjdf;laksjdf;laksjdf;laksjdf;laksjdf;laskfdjest"))
+
+    time.sleep(10)
 
     pinfo2 = provider.get_quota()
 
@@ -1368,11 +1370,11 @@ def test_report_info(provider):
     # otherwise this info is not helpful for uploads
     # todo: more extensive provider requirements on cached quotas
 
+    log.info("info %s", pinfo2)
+
     assert pinfo2['used'] > 0
     assert pinfo2['limit'] > 0
     assert pinfo2['used'] > u1
-
-    log.info("info %s", pinfo2)
 
     login = pinfo2.get('login')
 
@@ -1561,10 +1563,10 @@ def test_interrupt_auth(config_provider):
 
 
 def test_exists_immediately(provider):
-    if not hasattr(provider.prov, '_clear_cache'):
+    if not provider.prov._clear_cache():
         raise pytest.skip("test only runs if provider implements _clear_cache method")
     root_oid = provider.info_path('/').oid
-    dir_name = provider.temp_name()
+    dir_name = "testdir"  # provider.temp_name()
     file_name1 = dir_name + "/file1"
     file_name2 = dir_name + "/file2"
 
