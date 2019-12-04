@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 class TokenServer(ApiServer):
     @api_route("/token")
-    def token(ctx, req):
+    def token(self, ctx, req):
         return {
             "token_type": "bearer",
             "refresh_token": "r1",

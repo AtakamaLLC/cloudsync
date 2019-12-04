@@ -256,7 +256,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if stream:
             return req
         res = req.json()
-#        log.debug("response %s", res)
+        log.debug("response %s", res)
         return res
 
     def _set_drive_list(self):

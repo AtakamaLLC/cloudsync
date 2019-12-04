@@ -85,14 +85,14 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
 
         self.__api_server.add_route('/', self.auth_redir_success, content_type='text/html')
         self.__api_server.add_route('/auth', self.auth_redir_success, content_type='text/html')
-        self.__api_server.add_route('/favicon.ico', lambda x, y: "", content_type='text/html')
+        self.__api_server.add_route('/favicon.ico', lambda s, x, y: "", content_type='text/html')
 
         self.__thread = threading.Thread(target=self.__api_server.serve_forever,
                                          daemon=True)
         self.__thread.start()
         log.info('Listening on %s', self.uri())
 
-    def auth_redir_success(self, _env, info):
+    def auth_redir_success(self, _srv, _env, info):
         err = ""
         if info and ('error' in info or 'error_description' in info):
             log.debug("auth error")

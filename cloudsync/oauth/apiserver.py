@@ -9,7 +9,7 @@ import urllib.parse as urlparse
 import threading
 import logging
 from enum import Enum
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Tuple, Any
 
 import unittest
 import requests
@@ -34,11 +34,12 @@ class ApiServerLogLevel(Enum):
 
 
 class ApiError(Exception):
-    def __init__(self, code, msg=None, desc=None):
+    def __init__(self, code, msg=None, desc=None, json=None):       # pylint: disable=redefined-outer-name
         super().__init__()
         self.code = code
         self.msg = str(msg) or "UNKNOWN"
         self.desc = desc
+        self.json = json
 
     def __str__(self):
         return f"{self.code}, {self.msg}"
@@ -159,6 +160,7 @@ class ApiServer:
             content = b"{}"
             length = env.get("CONTENT_LENGTH", 0)
             content_type = env.get('CONTENT_TYPE')
+            info: Dict[str, Any]
             if length:
                 content = env['wsgi.input'].read(int(length))
             if content_type.startswith('application/x-www-form-urlencoded'):
@@ -170,6 +172,8 @@ class ApiServer:
                 if content:
                     try:
                         info = json.loads(content)
+                        if type(info) != dict:
+                            info = {"content": info}
                     except Exception:
                         raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
                 else:
@@ -187,12 +191,14 @@ class ApiServer:
                     if url[-1] == "/":
                         tmp = url[0:-1]
                         handler_tmp = self.__routes.get(tmp)
-                    if not handler_tmp:
-                        m = re.match(r"(.*?/)[^/]+$", url)
-                        if m:
-                            # adding a route "/" handles /foo
-                            # adding a route "/foo/bar/" handles /foo/bar/baz
-                            handler_tmp = self.__routes.get(m[1])
+                if not handler_tmp:
+                    m = re.match(r"(.*?/)[^/]+$", url)
+                    if m:
+                        # adding a route "/" handles /foo
+                        # adding a route "/foo/bar/" handles /foo/bar/baz
+                        handler_tmp = self.__routes.get(m[1])
+                if not handler_tmp:
+                    handler_tmp = self.__routes.get(None)
 
                 query = env.get('QUERY_STRING')
 
@@ -206,7 +212,7 @@ class ApiServer:
                 if handler_tmp:
                     handler, content_type = handler_tmp
                     try:
-                        response = handler(env, info)
+                        response = handler(self, env, info)
                         if response is None:
                             response = ""
                         if isinstance(response, dict):
@@ -221,14 +227,18 @@ class ApiServer:
                     except ConnectionAbortedError as e:
                         log.error("GET %s : ERROR : %s", url, e)
                     except Exception as e:
+                        log.exception("")
                         raise ApiError(500, type(e).__name__ + " : " + str(e), traceback.format_exc())
                 else:
                     raise ApiError(404, f"No handler for {url}")
             except ApiError as e:
                 try:
-                    log.error("GET %s : ERROR : %s", url, e)
+                    log.info("GET %s : ERROR : %s", url, e)
 
-                    response = json.dumps({"code": e.code, "msg": e.msg, "desc": e.desc})
+                    if e.json:
+                        response = json.dumps(e.json)
+                    else:
+                        response = json.dumps({"code": e.code, "msg": e.msg, "desc": e.desc})
                     start_response(str(e.code) + ' ' + sanitize_for_status(e.msg),
                                    [('Content-Type', 'application/json'), ("Content-Length", str(len(response)))])
                     yield bytes(response, "utf-8")
@@ -245,17 +255,17 @@ class TestApiServer(unittest.TestCase):
     def test_basic(self):
         class MyServer(ApiServer):
             @api_route("/popup")
-            def popup(ctx, req):        # pylint: disable=no-self-argument,no-self-use
+            def popup(self, unused_ctx, req):        # pylint: disable=no-self-use
                 return "HERE" + str(req)
 
             @api_route("/json")
-            def json(ctx, req):         # pylint: disable=no-self-argument,no-self-use
+            def json(self, unused_ctx, req):         # pylint: disable=no-self-use
                 _ = req
                 return {"obj": 1}
 
         httpd = MyServer('127.0.0.1', 0)
 
-        httpd.add_route("/foo", lambda ctx, x: "FOO" + x["x"][0])
+        httpd.add_route("/foo", lambda srv, ctx, x: "FOO" + x["x"][0])
 
         try:
             print("serving on ", httpd.address(), httpd.port())
@@ -264,19 +274,24 @@ class TestApiServer(unittest.TestCase):
 
             response = requests.post(httpd.uri("/popup"), data='{}', timeout=1)
             self.assertEqual(response.text, "HERE{}")
+            self.assertEqual(response.headers["content-type"], "application/json")
 
             response = requests.post(httpd.uri("/notfound"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 404)
 
             response = requests.get(httpd.uri("/foo?x=4"), timeout=1)
             self.assertEqual(response.text, "FOO4")
+            httpd.add_route(None, lambda srv, ctx, x: "NOTFOUNDY", content_type='text/plain')
+            response = requests.get(httpd.uri("sd;lfjksdfkl;j"), timeout=1)
+            self.assertEqual(response.text, "NOTFOUNDY")
+            self.assertEqual(response.headers["content-type"], "text/plain")
         finally:
             httpd.shutdown()
 
     def test_error(self):
         class MyServer(ApiServer):
             @api_route("/popup")
-            def popup(ctx, unused_req):        # pylint: disable=no-self-argument,no-self-use
+            def popup(self, ctx, unused_req):        # pylint: disable=no-self-use
                 raise ApiError(501, "BLAH")
 
         httpd = MyServer('127.0.0.1', 0)
