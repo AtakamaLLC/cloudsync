@@ -617,7 +617,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def forget(self):
         storage_dict = self._storage.read_all(cast(str, self._tag))
         for eid, _ in storage_dict.items():
-            log.debug("FORGETTING %s", eid)
             self._storage.delete(self._tag, eid)
 
     def updated(self, ent, side, key, val):     # pylint: disable=too-many-branches
