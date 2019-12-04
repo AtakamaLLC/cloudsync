@@ -529,7 +529,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return oid
 
-    def listdir(self, oid) -> Generator[GDriveInfo, None, None]:
+    def listdir(self, oid, page_size=None) -> Generator[GDriveInfo, None, None]:
         query = f"'{oid}' in parents"
         try:
             res = self._api('files', 'list',

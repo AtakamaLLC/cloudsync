@@ -268,7 +268,7 @@ class MockProvider(Provider):
         self._register_event(MockEvent.ACTION_UPDATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
-    def listdir(self, oid) -> Generator[DirInfo, None, None]:
+    def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
         folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockFSObject.DIR):
             raise CloudFileNotFoundError(oid)

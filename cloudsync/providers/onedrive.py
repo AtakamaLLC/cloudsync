@@ -559,7 +559,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return OneDriveInfo(oid=oid, otype=otype, hash=ohash, path=path, pid=pid, name=name,
                             mtime=mtime, shared=shared)
 
-    def listdir(self, oid) -> Generator[OneDriveInfo, None, None]:
+    def listdir(self, oid, page_size=None) -> Generator[OneDriveInfo, None, None]:
 
         res = self._direct_api("get", "drive/items/%s/children" % oid)
 
