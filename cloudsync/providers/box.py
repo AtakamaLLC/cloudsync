@@ -76,7 +76,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._ids: Dict[str, str] = {}
         self.__seen_events = {}
         metadata_template = {"hash": str, "mtime": int, "readonly": bool, "shared": bool, "size": int}
-        self.__cache = HierarchicalCache(self, 0, metadata_template)
+        # TODO: hardcoding '0' as the root oid seems fishy... we should be *asking* for the root oid,
+        #   but we can't here, because we aren't connected. we could delay creating the cache, but what
+        #   a logistical nightmire that is...
+        self.__cache = HierarchicalCache(self, '0', metadata_template)
         self.__root_id = None
 
     def _store_refresh_token(self, access_token, refresh_token):
@@ -637,16 +640,16 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             cached_oid = self.__cache.get_oid(path=path)
             log.debug("cached oid = %s", cached_oid)
 
-        if cached_type:
-            metadata = self.__cache.get_metadata(path=path)
-            if metadata:
-                ohash = metadata.get("hash")
-                size = metadata.get("size")
-                if cached_oid and ohash and size:
-                    return OInfo(cached_type, cached_oid, ohash, path, size)
+            if cached_type:
+                metadata = self.__cache.get_metadata(path=path)
+                if metadata:
+                    ohash = metadata.get("hash")
+                    size = metadata.get("size")
+                    if cached_oid and ohash and size:
+                        return OInfo(cached_type, cached_oid, ohash, path, size)
 
         log.debug("getting box object for %s:%s", cached_oid, path)
-        box_object = self._get_box_object(oid=cached_oid, path=path, object_type=cached_type or NOTKNOWN, strict=False)
+        box_object = self._get_box_object(oid=cached_oid, path=path, object_type=cached_type or NOTKNOWN, strict=False, use_cache=use_cache)
         log.debug("got box object for %s:%s %s", cached_oid, path, box_object)
         parent, _ = self.split(path)
         _, dir_info = self.__box_cache_object(box_object)
@@ -656,12 +659,12 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return OInfo(dir_info.otype, dir_info.oid, dir_info.hash, dir_info.path, dir_info.size)
         return None
 
-    def _get_box_object(self, oid=None, path=None, object_type: OType = None, strict=True) -> Optional[box_item]:
+    def _get_box_object(self, oid=None, path=None, object_type: OType = None, strict=True, use_cache=True) -> Optional[box_item]:
         assert object_type is not None
         assert not strict or object_type in (FILE, DIRECTORY)
         with self._api():
             try:
-                unsafe_box_object = self._unsafe_get_box_object(oid=oid, path=path, object_type=object_type, strict=strict)
+                unsafe_box_object = self._unsafe_get_box_object(oid=oid, path=path, object_type=object_type, strict=strict, use_cache=use_cache)
                 retval = unsafe_box_object
                 return retval
             except CloudFileNotFoundError:
@@ -703,7 +706,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         for entry in entries:
             self.__box_cache_object(entry, self.join(parent_path, entry.name))
 
-    def __box_cache_object(self, box_object: box_folder, path=None) -> Tuple[Optional[Dict], Optional[DirInfo]]:
+    def __box_cache_object(self, box_object: box_item, path=None) -> Tuple[Optional[Dict], Optional[DirInfo]]:
         with self._api():
             if not box_object:
                 if path:
@@ -745,9 +748,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 return root2
             if use_cache:
                 cached_oid = self.__cache.get_oid(path)
-                if (cached_oid and False):  # TODO: put this back
+                if cached_oid:
                     cached_type = self.__cache.get_type(path=path) or NOTKNOWN
-                    return self._get_box_object(oid=cached_oid, object_type=cached_type, strict=strict);
+                    return self._get_box_object(oid=cached_oid, object_type=cached_type, strict=strict, use_cache=use_cache)
             parent, base = self.split(path)
             cached_parent_oid = None
             if use_cache:
@@ -782,7 +785,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 raise CloudFileExistsError()
             return self._get_box_object(oid=entry.object_id, object_type=found_type, strict=strict)
 
-    def _unsafe_get_box_object_from_oid(self, oid: str, object_type: OType, strict: bool, use_cache: bool) -> Optional[box_item]:
+    def _unsafe_get_box_object_from_oid(self, oid: str, object_type: OType, strict: bool) \
+            -> Optional[box_item]:
         assert object_type in (FILE, DIRECTORY)
         box_object = None
         with self._api() as client:
@@ -833,7 +837,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         assert oid is not None or path is not None
         with self._api():
             if oid is not None:
-                return self._unsafe_get_box_object_from_oid(oid, object_type, strict, use_cache)
+                return self._unsafe_get_box_object_from_oid(oid, object_type, strict)  # no cache use, so no use_cache arg
             else:
                 return self._unsafe_get_box_object_from_path(path, object_type, strict, use_cache)
 

@@ -206,7 +206,7 @@ class ProviderHelper(ProviderBase):
             pass
 
     def test_cleanup(self, timeout=None, until=None):
-        info = self.prov.info_path(self.test_root, use_cache=False)
+        info = self.prov.info_path(self.test_root)
         self.__cleanup(info.oid)
 
     def prime_events(self):
@@ -1357,7 +1357,7 @@ def test_report_info(provider):
     u1 = provider.get_quota()["used"]
     log.info("used %s", u1)
 
-    provider.create(temp_name, BytesIO(b"t;lksjdf;lkajsd;lfkja;lsdkjf;laskjdf;laksjdf;lkjasdf;lkjas;ldkfja;lskdjf;laskdjf;laksjdf;lkajsdf;lkjasdf;lkjasd;lfkja;lsdkjf;laskdjf;laskdjf;laskdjf;laksjdf;laksjdf;laksjdf;laksjdf;laksjdf;laskfdjest"))
+    provider.create(temp_name, BytesIO(b"test"))
 
     time.sleep(10)
 
@@ -1374,7 +1374,8 @@ def test_report_info(provider):
 
     assert pinfo2['used'] > 0
     assert pinfo2['limit'] > 0
-    assert pinfo2['used'] > u1
+    if provider.name not in ("box",):
+        assert pinfo2['used'] > u1
 
     login = pinfo2.get('login')
 
@@ -1566,7 +1567,7 @@ def test_exists_immediately(provider):
     if not provider.prov._clear_cache():
         raise pytest.skip("test only runs if provider implements _clear_cache method")
     root_oid = provider.info_path('/').oid
-    dir_name = "testdir"  # provider.temp_name()
+    dir_name = "/testdir"  # provider.temp_name()
     file_name1 = dir_name + "/file1"
     file_name2 = dir_name + "/file2"
 
@@ -1577,6 +1578,9 @@ def test_exists_immediately(provider):
     log.debug("contents=%s", contents)
     oids = [i.oid for i in contents]
     assert dir_oid in oids
+    provider.prov._clear_cache()
+    oinfo = provider.info_path(dir_name)
+    assert oinfo
 
     file_info1 = provider.create(file_name1, BytesIO(b"hello"))
     file_info2 = provider.create(file_name2, BytesIO(b"hello"))
@@ -1586,6 +1590,11 @@ def test_exists_immediately(provider):
     oids = [i.oid for i in contents]
     assert file_info1.oid in oids
     assert file_info2.oid in oids
+    provider.prov._clear_cache()
+    oinfo1 = provider.info_path(file_name1)
+    oinfo2 = provider.info_path(file_name2)
+    assert oinfo1
+    assert oinfo2
 
     provider.delete(file_info1.oid)
     provider.prov._clear_cache()
@@ -1594,6 +1603,11 @@ def test_exists_immediately(provider):
     oids = [i.oid for i in contents]
     assert file_info1.oid not in oids
     assert file_info2.oid in oids
+    provider.prov._clear_cache()
+    oinfo1 = provider.info_path(file_name1)
+    oinfo2 = provider.info_path(file_name2)
+    assert not oinfo1
+    assert oinfo2
 
 
 @pytest.fixture

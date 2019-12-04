@@ -445,7 +445,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             cls.test_creds: Dict[str, str] = None            # type: ignore
             return cls()
 
-    def _clear_cache(self):
+    def _clear_cache(self, *, oid=None, path=None):
         # override this method if the provider implements a cache, to permit the internal cache to be cleared on demand
         # the _clear_cache method in the subclass should return True
         return False

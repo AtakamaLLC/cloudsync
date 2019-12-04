@@ -1,7 +1,8 @@
 import logging
-from typing import Dict, Optional, Tuple, Generator, Type
+from typing import Dict, Optional, Tuple, Generator, Type, List
 from enum import Enum
 import weakref
+from pystrict import strict
 from cloudsync.provider import Provider
 from cloudsync import OType, DIRECTORY, FILE
 
@@ -13,10 +14,12 @@ class Casing(Enum):
     INSENSITIVE = "insensitive"
 
 
+@strict
 class Node:
-    def __init__(self, provider, otype: OType, oid, name, parent, metadata: Dict[str, any]):
+    def __init__(self, provider: Provider, otype: OType, oid: Optional[str], name: str, parent: 'Node', metadata: Dict[str, any]):
         self._oid = oid
         self.parent = parent
+        self.wr_parent = None
         self.name = name
         self.metadata = metadata or {}
         self._provider = provider
@@ -25,9 +28,13 @@ class Node:
 
     def check(self):
         if self.parent:
-            if self.oid and self.oid == self.parent.oid:
-                log.error("oid=%s name=%s parent=-->%s<-- path=%s", self.oid, self.name, self.parent, "")
-            assert not self.oid or self.oid != self.parent.oid
+            if self.oid is not None and self.oid == self.parent.oid:
+                if self.wr_parent() is self:
+                    log.error("parent is self! oid=%s name=%s", self.oid, self.name)
+                else:
+                    log.error("parent is not self: oid=%s name=%s parent=-->%s<-- path=%s", self.oid, self.name, self.parent, "")
+            assert self.oid is None or self.oid != self.parent.oid
+            assert self.wr_parent() is not self
 
     @property
     def oid(self):
@@ -40,10 +47,20 @@ class Node:
         self._oid = val
 
     def full_path(self):
+        return self._full_path([])
+
+    def _full_path(self, seen: List['Node']):
+        if self in seen:
+            log.error("hierarchical cache loop at node name=%s oid=%s", self.name, self.oid)
+            for node in seen:
+                if node is not self:
+                    log.error("other node: name=%s, oid=%s", node.name, node.oid)
+        seen.append(self)
         self.check()
         if self.parent is None:
             return self._provider.sep
-        return self._provider.join(self.parent.full_path(), self.name)
+        obj = self.wr_parent()
+        return self._provider.join(self.parent._full_path(seen), self.name)
 
     def add_child(self, child_node):
         self.check()
@@ -55,17 +72,29 @@ class Node:
         return f"{type(self)} {self.oid}:{self.full_path()} {self.metadata or ''}"
 
 
+@strict
 class HierarchicalCache:
-    def __init__(self, provider: Provider, root_oid,
+    def __init__(self, provider: Provider, root_oid: any,
                  metadata_template: Optional[Dict[str, Type]] = None, root_metadata: Optional[Dict[str, any]] = None):
+        assert root_oid is not None
+        self._oid_type = type(root_oid)
         self._metadata_template = metadata_template or {}
         self._root = self.new_node(provider, DIRECTORY, root_oid, '', None, root_metadata)
         self._oid_to_node: Dict[str, Node] = {self._root.oid: self._root}
         self._provider = provider
 
+    def check(self, node: Node):
+        if node.oid is not None:
+            assert type(node.oid) is self._oid_type, \
+                "oid type %s does not match the root oid type %s" % (type(node.oid), self._oid_type)
+        node.full_path()
+
     def new_node(self, provider, otype: OType, oid, name, parent, metadata: Dict[str, any]):
         self.check_metadata(metadata)
-        return Node(provider=provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
+        retval = Node(provider=provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
+        retval.check()
+        self.check(retval)
+        return retval
 
     def check_metadata(self, metadata: Optional[Dict[str, any]]) -> None:
         if metadata is None:
@@ -90,7 +119,10 @@ class HierarchicalCache:
             node.metadata = metadata or {}
 
     def update(self, path, otype, oid=None, metadata=None, keep=True):
-        self._update(path=path, otype=otype, oid=oid, metadata=metadata, keep=keep)
+        node = self._update(path=path, otype=otype, oid=oid, metadata=metadata, keep=keep)
+        if node:
+            node.check()
+            self.check(node)
 
     def _update(self, path, otype, oid=None, metadata=None, keep=True) -> Node:
         metadata = metadata or {}
@@ -119,7 +151,9 @@ class HierarchicalCache:
 
         node.name = name
         # note: the type of parent is now ProxyType, not Node, because of the weakref.proxy()
+        assert parent_node is not node
         node.parent = weakref.proxy(parent_node)
+        node.wr_parent = weakref.ref(parent_node)
 
         self.delete(path=path)
         if node.oid:
@@ -140,6 +174,7 @@ class HierarchicalCache:
         _, name = self._provider.split(path)
         new_node = self.new_node(self._provider, otype, oid, name, None, metadata)
         self.__insert_node(new_node, norm_path)
+        self.check(new_node)
         return new_node
 
     def _walk(self, node: Node, path: str = None) -> Generator[Node, None, None]:
@@ -191,8 +226,9 @@ class HierarchicalCache:
             if node.type == DIRECTORY:
                 children = list(node.children.values())
                 for child_node in children:
-                    log.debug("about to delete child %s", child_node.oid)
+                    log.debug("about to delete child %s:%s", child_node.oid, child_node.full_path())
                     self.delete(oid=child_node.oid, path=child_node.full_path())
+            log.debug("about to delete parent %s:%s", node.oid, node.full_path())
             self._delete(node)
 
     def _delete(self, remove_node):
@@ -238,6 +274,7 @@ class HierarchicalCache:
         self.delete(path=new_path)  # renaming a nonexistent oid over an existing path should kick the target out of the tree
         if node:
             self.__insert_node(node, new_path)
+            self.check(node)
         return node
 
     def _unsafe_path_to_node(self, path: str) -> Node:
@@ -274,6 +311,7 @@ class HierarchicalCache:
                 self.delete(oid=oid)
             self.__insert_node(node, path)
             node.oid = oid
+            self.check(node)
 
     def get_oid(self, path):
         node = self._get_node(path=path)
