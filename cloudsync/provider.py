@@ -3,7 +3,7 @@ import re
 import os
 import logging
 import random
-from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO, final
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
@@ -89,6 +89,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         return self.connection_id or os.urandom(16).hex()
 
+    @final
     def connect(self, creds):
         """Connect to provider.
 

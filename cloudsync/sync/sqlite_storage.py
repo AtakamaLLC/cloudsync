@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, overload
 import logging
 import sqlite3
 from .state import Storage
@@ -65,7 +65,15 @@ class SqliteStorage(Storage):
             log.debug("ignoring delete: id %s doesn't exist", eid)
             return
 
-    def read_all(self, tag: str = None) -> Dict[Any, bytes]:
+    @overload
+    def read_all(self) -> Dict[str, Dict[Any, bytes]]:
+        ...
+
+    @overload
+    def read_all(self, tag: str) -> Dict[Any, bytes]:             # pylint: disable=arguments-differ
+        ...
+
+    def read_all(self, tag: str = None):                          # pylint: disable=arguments-differ
         ret = {}
         if tag is not None:
             query = 'SELECT id, tag, serialization FROM cloud WHERE tag = ?'

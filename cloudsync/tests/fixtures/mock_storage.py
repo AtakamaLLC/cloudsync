@@ -1,5 +1,5 @@
 from threading import Lock
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, Union, overload
 import logging
 from cloudsync import Storage, LOCAL, REMOTE
 
@@ -40,25 +40,34 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
         log.debug("deleting eid%s", eid)
         with lock:
             if eid not in storage:
-                log.debug("ignoring delete: id %s doesn't exist" % eid)
+                log.debug("ignoring delete: id %s doesn't exist", eid)
                 return
             del storage[eid]
 
-    def read_all(self, tag: str = None) -> Dict[Any, bytes]:
+    @overload
+    def read_all(self) -> Dict[str, Dict[Any, bytes]]:
+        ...
+
+    @overload
+    def read_all(self, tag: str) -> Dict[Any, bytes]:
+        ...
+
+    def read_all(self, tag: str = None):
         if tag is not None:
             lock, storage = self._get_internal_storage(tag)
             with lock:
                 ret: Dict[Any, bytes] = storage.copy()
                 return ret
         else:
-            ret = {}
+            ret_all: Dict[str, Dict[Any, bytes]] = {}
             with self.top_lock:
                 tags = self.storage_dict.keys()
-            for tag in tags:
-                assert tag is not None
-                tag_dict = self.read_all(tag)
-                ret.update(tag_dict)
-            return ret
+            for t in tags:
+                ret_all[t] = {}
+                lock, storage = self._get_internal_storage(t)
+                for k, v in storage.items():
+                    ret_all[t][k] = v
+            return ret_all
 
     def read(self, tag: str, eid: Any) -> Optional[bytes]:
         lock, storage = self._get_internal_storage(tag)
@@ -66,3 +75,7 @@ class MockStorage(Storage):  # Does not actually persist the data... but it's ju
             if eid not in storage:
                 raise ValueError("id %s doesn't exist" % eid)
             return storage[eid]
+
+    def close(self):     #pylint: disable=no-self-use
+        pass
+
