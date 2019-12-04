@@ -20,7 +20,7 @@ def _is_windows():
     return sys.platform in ("win32", "cygwin")
 
 class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
-    GUI_TIMEOUT = 15
+    SHUFFLE_PORTS: bool = True
 
     def __init__(self, *, html_generator: Callable[[bool, str], str] = None, 
             port_range: Tuple[int, int] = None, 
@@ -42,7 +42,6 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.event = threading.Event()
         self.success_code: str = None
         self.failure_info: str = None
-        self._shuffle_ports: bool = True
 
     @property
     def running(self):
@@ -68,24 +67,16 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
 
             # generally this is faster, but it can make testing falsely more forgiving
             # so expose this for tests
-            if self._shuffle_ports:
+            if self.SHUFFLE_PORTS:
                 random.shuffle(ports)
 
             free = None
             for port in ports:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
-                if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
-                    # windows will allow reuse sometimes
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-                try:
-                    sock.bind(('127.0.0.1', port))
-                    sock.close()
-                    free = port
+               try:
+                    self.__api_server = ApiServer('127.0.0.1', port)
                     break
-                except OSError:
+               except OSError:
                     pass
-            self.__api_server = ApiServer('127.0.0.1', free)
         else:
             self.__api_server = ApiServer('127.0.0.1', 0)
         if not self.__api_server:
