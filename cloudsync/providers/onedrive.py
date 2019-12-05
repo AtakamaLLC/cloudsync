@@ -105,6 +105,7 @@ class OneDriveItem():
                     self.__path = self.__prov.join(prpath, ret.name)
         return self.__path
 
+    # todo: get rid of this
     def _sdk_item(self):
         if self.__item:
             return self.__item
@@ -201,8 +202,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     # names of args are compat with requests module
     def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=redefined-outer-name
         assert path or url
+
         if not url:
             url = self._get_url(path)
+
         with self._api() as client:
             if not url:
                 path = path.lstrip("/")
@@ -276,17 +279,23 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self._namespace = "personal"
 
     def raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
-        assert ex or req, "One of ex or req required"
-
-        if ex:
+        status = 0
+        if ex is not None:
             status = ex.status_code
             msg = str(ex)
             code = ex.code
-        else:
+
+        if req is not None:
             status = req.status_code
             dat = req.json()
             msg = dat["error"]["message"]
             code = dat["error"]["code"]
+
+        if status == 0:
+            log.error("Unusual status %s %s", ex, req)
+
+        if code < 300:
+            return False
             
         if status == 404:
             raise CloudFileNotFoundError(msg)
@@ -313,6 +322,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudFileNotFoundError(msg)
         if code == "UnknownError":
             raise CloudTemporaryError(msg)
+
+        return False
 
     def get_drive_id(self):
         try:
