@@ -460,7 +460,7 @@ class MockProvider(Provider):
             return None
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         self._api()
         file: MockFSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):

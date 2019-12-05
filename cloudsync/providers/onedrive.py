@@ -711,7 +711,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except CloudFileNotFoundError:
             return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OneDriveInfo]:
         return self._info_oid(oid)
 
     def _info_oid(self, oid, path=None) -> Optional[OneDriveInfo]:

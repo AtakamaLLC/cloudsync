@@ -677,7 +677,7 @@ class DropboxProvider(Provider):
     def exists_path(self, path) -> bool:
         return self.info_path(path) is not None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         if oid == "":
             otype = DIRECTORY
             fhash = None

@@ -717,7 +717,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 return path
         return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[GDriveInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[GDriveInfo]:
         info = self._info_oid(oid)
         if info is None:
             return None

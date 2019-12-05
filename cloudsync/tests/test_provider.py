@@ -132,7 +132,7 @@ class ProviderHelper(ProviderBase):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.info_path(path, use_cache))
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
     def listdir(self, oid, page_size=None):
