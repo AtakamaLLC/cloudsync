@@ -1,6 +1,5 @@
 import logging
 import sys
-import socket
 import random
 import threading
 import errno
@@ -72,10 +71,10 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
 
             free = None
             for port in ports:
-               try:
+                try:
                     self.__api_server = ApiServer('127.0.0.1', port)
                     break
-               except OSError:
+                except OSError:
                     pass
         else:
             self.__api_server = ApiServer('127.0.0.1', 0)
