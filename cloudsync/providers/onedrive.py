@@ -294,7 +294,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if status == 0:
             log.error("Unusual status %s %s", ex, req)
 
-        if code < 300:
+        if status < 300:
             return False
             
         if status == 404:
