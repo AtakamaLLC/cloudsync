@@ -71,11 +71,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._long_poll_manager = LongPollManager(self.short_poll, self.long_poll, short_poll_only=True)
         self._ids: Dict[str, str] = {}
         self.__seen_events: Dict[str, float] = {}
-        metadata_template = {"hash": str, "mtime": int, "readonly": bool, "shared": bool, "size": int}
+        metadata_template = {"hash": str, "mtime": float, "readonly": bool, "shared": bool, "size": int}
         # TODO: hardcoding '0' as the root oid seems fishy... we should be *asking* for the root oid,
         #   but we can't here, because we aren't connected. we could delay creating the cache, but what
         #   a logistical nightmire that is...
-        self.__cache = HierarchicalCache(self, '0', metadata_template)
+        self.__cache = HierarchicalCache(self, '0', metadata_template=metadata_template)
         self.__root_id = None
 
     def _store_refresh_token(self, access_token, refresh_token):
