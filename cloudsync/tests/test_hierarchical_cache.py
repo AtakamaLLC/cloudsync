@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Dict
+from typing import Dict, List, Any
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync import FILE, DIRECTORY
 import gc
@@ -18,12 +18,11 @@ def new_oid() -> str:
     return os.urandom(4).hex()
 
 
-def new_cache(root_oid=None, root_metadata: Dict[str, any] = None):
+def new_cache(root_oid=None, root_metadata: Dict[str, Any] = None):
     if not root_oid:
         root_oid = new_oid()
     provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # todo: make this a fixture
-    metadata_fields = set(root_metadata.keys()) if root_metadata else set()
-    return HierarchicalCache(provider, root_oid, metadata_fields)
+    return HierarchicalCache(provider, root_oid, root_metadata)
 
 
 def test_walk():
@@ -541,7 +540,7 @@ def test_create_node_over_existing_path_and_oid():
 
 
 def full_split(provider: Provider, path: str):
-    retval = []
+    retval: List[str] = []
     while path not in ('', '/'):
         parent, base = provider.split(path)
         retval.insert(0, base)
@@ -557,8 +556,8 @@ def check_structure(cache: HierarchicalCache):
     #           has an entry in it's parent's children dict under the correct name
     #       check every node in oid_to_node
     #           traverse the tree starting at the root all the way to the node
+    node: Node
     for node, path in cache._walk(cache._root, '/'):
-        node: Node
         if node.oid:
             assert cache._oid_to_node[node.oid] is node
         if node is not cache._root:
@@ -568,7 +567,6 @@ def check_structure(cache: HierarchicalCache):
             assert path == node.full_path()  # compare walking the parents with walking the children
 
     for oid, node in cache._oid_to_node.items():
-        node: Node
         assert node.oid == oid
         path = cache.get_path(node.oid)
 

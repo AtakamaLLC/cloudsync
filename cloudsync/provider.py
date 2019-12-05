@@ -251,7 +251,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         """Returns info for an object at a path, or None if not found"""
         ...
 
@@ -445,7 +445,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             cls.test_creds: Dict[str, str] = None            # type: ignore
             return cls()
 
-    def _clear_cache(self, *, oid=None, path=None):
+    def _clear_cache(self, *, oid=None, path=None):  # pylint: disable=unused-argument, no-self-use
         # override this method if the provider implements a cache, to permit the internal cache to be cleared on demand
         # the _clear_cache method in the subclass should return True
         return False

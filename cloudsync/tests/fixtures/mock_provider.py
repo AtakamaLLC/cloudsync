@@ -454,7 +454,7 @@ class MockProvider(Provider):
     def hash_data(self, file_like) -> Any:
         return self.hash_func(file_like.read())
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None

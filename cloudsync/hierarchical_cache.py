@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional, Tuple, Generator, Type, List
+from typing import Dict, Optional, Tuple, Generator, Type, List, Any
 from enum import Enum
 import weakref
 from pystrict import strict
@@ -16,25 +16,28 @@ class Casing(Enum):
 
 @strict
 class Node:
-    def __init__(self, provider: Provider, otype: OType, oid: Optional[str], name: str, parent: 'Node', metadata: Dict[str, any]):
+    def __init__(self, provider: Provider, otype: OType, oid: Optional[str], name: str, parent: 'Node', metadata: Dict[str, Any]):
         self._oid = oid
         self.parent = parent
-        self.wr_parent = None
+        self.wr_parent: Optional[weakref.ReferenceType] = None
         self.name = name
         self.metadata = metadata or {}
         self._provider = provider
-        self.children = {}
+        self.children: Dict[str, Node] = {}
         self.type: OType = otype
+
+    def _real_parent_ref(self):
+        return self.wr_parent()  # pylint: disable=not-callable
 
     def check(self):
         if self.parent:
             if self.oid is not None and self.oid == self.parent.oid:
-                if self.wr_parent() is self:
+                if self._real_parent_ref() is self:
                     log.error("parent is self! oid=%s name=%s", self.oid, self.name)
                 else:
                     log.error("parent is not self: oid=%s name=%s parent=-->%s<-- path=%s", self.oid, self.name, self.parent, "")
             assert self.oid is None or self.oid != self.parent.oid
-            assert self.wr_parent() is not self
+            assert self._real_parent_ref() is not self
 
     @property
     def oid(self):
@@ -59,8 +62,7 @@ class Node:
         self.check()
         if self.parent is None:
             return self._provider.sep
-        obj = self.wr_parent()
-        return self._provider.join(self.parent._full_path(seen), self.name)
+        return self._provider.join(self.parent._full_path(seen), self.name)  # pylint: disable=protected-access
 
     def add_child(self, child_node):
         self.check()
@@ -74,14 +76,14 @@ class Node:
 
 @strict
 class HierarchicalCache:
-    def __init__(self, provider: Provider, root_oid: any,
-                 metadata_template: Optional[Dict[str, Type]] = None, root_metadata: Optional[Dict[str, any]] = None):
+    def __init__(self, provider: Provider, root_oid: Any,
+                 metadata_template: Optional[Dict[str, Type]] = None, root_metadata: Optional[Dict[str, Any]] = None):
         assert root_oid is not None
         self._oid_type = type(root_oid)
         self._metadata_template = metadata_template or {}
-        self._root = self.new_node(provider, DIRECTORY, root_oid, '', None, root_metadata)
+        self._root: Node = self.new_node(provider, DIRECTORY, root_oid, '', None, root_metadata)
         self._oid_to_node: Dict[str, Node] = {self._root.oid: self._root}
-        self._provider = provider
+        self._provider: Provider = provider
 
     def check(self, node: Node):
         if node.oid is not None:
@@ -89,14 +91,14 @@ class HierarchicalCache:
                 "oid type %s does not match the root oid type %s" % (type(node.oid), self._oid_type)
         node.full_path()
 
-    def new_node(self, provider, otype: OType, oid, name, parent, metadata: Dict[str, any]):
+    def new_node(self, provider, otype: OType, oid, name, parent, metadata: Dict[str, Any]) -> Node:
         self.check_metadata(metadata)
         retval = Node(provider=provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
         retval.check()
         self.check(retval)
         return retval
 
-    def check_metadata(self, metadata: Optional[Dict[str, any]]) -> None:
+    def check_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
         if metadata is None:
             return
         for k, v in metadata.items():
@@ -106,7 +108,7 @@ class HierarchicalCache:
                 raise ValueError("key %s:%s has the wrong type. provided %s, template has %s" %
                                  (k, v, type(v), self._metadata_template.get(k, None)))
 
-    def get_metadata(self, *, path=None, oid=None) -> any:
+    def get_metadata(self, *, path=None, oid=None) -> Dict:
         node = self._get_node(path=path, oid=oid)
         if node:
             return node.metadata
@@ -168,7 +170,7 @@ class HierarchicalCache:
                     self.delete(oid=current_node.oid)
                 self._oid_to_node[current_node.oid] = current_node
 
-    def __make_node(self, otype: OType, path: str, oid: Optional[str], metadata: Optional[Dict[str, any]] = None):
+    def __make_node(self, otype: OType, path: str, oid: Optional[str], metadata: Optional[Dict[str, Any]] = None) -> Node:
         norm_path = self._provider.normalize_path(path)
 
         _, name = self._provider.split(path)
@@ -177,7 +179,7 @@ class HierarchicalCache:
         self.check(new_node)
         return new_node
 
-    def _walk(self, node: Node, path: str = None) -> Generator[Node, None, None]:
+    def _walk(self, node: Node, path: str = None) -> Generator[Tuple[Node, str], None, None]:
         if not path:
             path = node.full_path()
         assert node
@@ -206,17 +208,17 @@ class HierarchicalCache:
             return []
         return [x.name for x in node.children.values()]
 
-    def mkdir(self, path: str, oid: Optional[str], metadata: Optional[Dict[str, any]] = None):
+    def mkdir(self, path: str, oid: Optional[str], metadata: Optional[Dict[str, Any]] = None):
         self._mkdir(path, oid, metadata)
 
-    def _mkdir(self, path: str, oid: Optional[str], metadata: Optional[Dict[str, any]] = None) -> Node:
+    def _mkdir(self, path: str, oid: Optional[str], metadata: Optional[Dict[str, Any]] = None) -> Node:
         new_node = self.__make_node(DIRECTORY, path, oid, metadata)
         return new_node
 
-    def create(self, path: str, oid: str, metadata: Optional[Dict[str, any]] = None):
+    def create(self, path: str, oid: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         self._create(path, oid, metadata)
 
-    def _create(self, path: str, oid: str, metadata: Optional[Dict[str, any]] = None):
+    def _create(self, path: str, oid: str, metadata: Optional[Dict[str, Any]] = None) -> Node:
         return self.__make_node(FILE, path, oid, metadata=metadata)
 
     def delete(self, *, oid: str = None, path: str = None):
@@ -240,8 +242,8 @@ class HierarchicalCache:
         except KeyError:
             pass
 
+        curr_node: Node
         for curr_node, _ignored_curr_path in self._walk(remove_node):
-            curr_node: Node
             if curr_node.oid:
                 self._oid_to_node.pop(curr_node.oid, None)
 

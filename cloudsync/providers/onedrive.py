@@ -627,7 +627,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def exists_oid(self, oid):
         return self._info_oid(oid, path=False) is not None
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         try:
             with self._api() as client:
                 item = client.item(path=path).get()

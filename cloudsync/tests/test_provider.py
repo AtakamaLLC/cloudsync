@@ -128,9 +128,9 @@ class ProviderHelper(ProviderBase):
         path = self.__add_root(path)
         return self.prov.exists_path(path)
 
-    def info_path(self, path: str, **kwargs) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         path = self.__add_root(path)
-        return self.__strip_root(self.prov.info_path(path, **kwargs))
+        return self.__strip_root(self.prov.info_path(path, use_cache))
 
     def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
@@ -1232,14 +1232,13 @@ def test_cursor(provider):
 
     assert current_csr1 != current_csr2
 
-    if provider.name == 'box':
-        # box can't seem to handle going backwards reliably?
-        # this will be an issue if the event manager crashes and events were received but not yet processed...
-        return
+    # if provider.name == 'box':
+    #     # box can't seem to handle going backwards reliably?
+    #     # this will be an issue if the event manager crashes and events were received but not yet processed...
+    #     return
 
     # check that we can go backwards
-    provider.disconnect()
-    provider.reconnect()
+    provider.prov._clear_cache()
     provider.current_cursor = current_csr1
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
     found = False
