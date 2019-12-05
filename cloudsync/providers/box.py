@@ -497,7 +497,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             for entry in entries:
                 if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
                     raise NotImplementedError
-                retval = self._box_get_dirinfo(entry, parent_path)
+                retval = self._box_get_dirinfo(client, entry, parent_path)
                 if retval is not None:
                     yield retval
 
@@ -521,7 +521,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             sha1.update(c)
         return sha1.hexdigest()
 
-    def _box_object_is_root(self, client, box_object: box_item):
+    def _box_object_is_root(self, client: Client, box_object: box_item):
         assert isinstance(client, Client)
         if not box_object:
             return False
