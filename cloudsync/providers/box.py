@@ -172,7 +172,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     # noinspection PyMethodParameters
     class Guard:
-        def __init__(self, client, box):
+        def __init__(self, client: Client, box):
+            assert isinstance(client, Client)
             self.__client = client
             self.__box = box
 
@@ -469,6 +470,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         return self.info_path(path) is not None
 
     def _box_get_items(self, client: Client, box_object: box_item, path: str, page_size: Optional[int] = 5000):
+        assert isinstance(client, Client)
         if not page_size:
             page_size = 5000
         if box_object.object_type == 'file':
@@ -476,7 +478,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         entries = list(box_object.get_items(limit=page_size))
         if not path:
             path = self._box_get_path(client, box_object)
-        self._cache_collection_entries(entries, path)
+        self._cache_collection_entries(client, entries, path)
         return entries
 
     def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
@@ -519,19 +521,20 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             sha1.update(c)
         return sha1.hexdigest()
 
-    def _box_object_is_root(self, box_object: box_item):
-        with self._api() as client:
-            if not box_object:
-                return False
-            if box_object.object_type == 'file':
-                return False
-            if self.__root_id is None:
-                self.__root_id = client.root_folder().object_id
-            object_is_root = (box_object.object_id == self.__root_id)
-            return object_is_root
+    def _box_object_is_root(self, client, box_object: box_item):
+        assert isinstance(client, Client)
+        if not box_object:
+            return False
+        if box_object.object_type == 'file':
+            return False
+        if self.__root_id is None:
+            self.__root_id = client.root_folder().object_id
+        object_is_root = (box_object.object_id == self.__root_id)
+        return object_is_root
 
     def _box_get_path(self, client: Client, box_object: box_item, use_cache=True) -> Optional[str]:
-        if self._box_object_is_root(box_object):
+        assert isinstance(client, Client)
+        if self._box_object_is_root(client, box_object):
             return self.sep
         if use_cache:
             cached_path = self.__cache.get_path(box_object.object_id)
@@ -688,7 +691,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         dir_info = self._box_get_dirinfo(client, box_object, parent_path=parent)
         # pylint: disable=no-member
         if dir_info:
-            metadata = {"size": dir_info.size}
+            # type hint mtime to a float. for some reason, pylint guesses int...
+            metadata = {"size": dir_info.size, "mtime": 0.0}
+            metadata.pop('mtime')
             if dir_info.hash:
                 metadata["hash"] = dir_info.hash
             if dir_info.mtime:
@@ -700,9 +705,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return metadata, dir_info
         return None, None
 
-    def _cache_collection_entries(self, entries, parent_path):
+    def _cache_collection_entries(self, client: Client, entries, parent_path):
+        assert isinstance(client, Client)
         for entry in entries:
-            self.__box_cache_object(entry, self.join(parent_path, entry.name))
+            self.__box_cache_object(client, entry, self.join(parent_path, entry.name))
 
     def __box_cache_object(self, client: Client, box_object: box_item, path=None) -> Tuple[Optional[Dict], Optional[DirInfo]]:
         assert isinstance(client, Client)
@@ -732,7 +738,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         return metadata, dir_info
 
     # noinspection PyTypeChecker
-    def _unsafe_box_object_populate(self, client: Client, box_object: box_item) -> box_item:
+    @staticmethod
+    def _unsafe_box_object_populate(client: Client, box_object: box_item) -> box_item:
         assert isinstance(client, Client)
         retval: box_item = box_object.get()
         return retval
