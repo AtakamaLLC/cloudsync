@@ -199,7 +199,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return client.base_url.rstrip("/") + "/" + api_path
 
     # names of args are compat with requests module
-    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=too-many-branches, redefined-outer-name
+    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=redefined-outer-name
         assert path or url
         if not url:
             url = self._get_url(path)
@@ -226,34 +226,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return {}
 
         if req.status_code > 202:
-            dat = req.json()
-            emsg = dat['error']['message']
-            log.error("%s error %s (%s)", action, str(req.status_code)+" "+emsg, dat['error'])
-            if req.status_code == 404:
-                raise CloudFileNotFoundError(emsg)
-            if dat['error']['code'] == ErrorCode.Unauthenticated:
-                self.disconnect()
-                raise CloudTokenError(emsg)
-            if dat['error']['code'] == 'ErrorInsufficientPermissionsInAccessToken':
-                raise CloudTokenError(emsg)
-            if dat['error']['code'] == ErrorCode.ItemNotFound:
-                raise CloudFileNotFoundError(emsg)
-            if dat['error']['code'] == ErrorCode.ResourceModified:
-                raise CloudTemporaryError(emsg)
-            if dat['error']['code'] in (ErrorCode.NameAlreadyExists, ErrorCode.AccessDenied):
-                raise CloudFileExistsError(emsg)
-            if req.status_code == 400:
-                if dat['error']['code'] == ErrorCode.InvalidRequest:
-                    # invalid oid
-                    raise CloudFileNotFoundError(emsg)
-            if req.status_code == 405:
-                if dat['error']['code'] == ErrorCode.InvalidRequest:
-                    # expected type to be folder
-                    raise CloudFileExistsError(emsg)
-            if req.status_code in (429, 503):
-                raise CloudTemporaryError(emsg)
-            self.disconnect()
-            raise CloudDisconnectedError(emsg)
+            if not self.raise_converted_error(req=req):
+                raise Exception("Unknown error %s %s" % (req.status_code, req.json()))
 
         if stream:
             return req
@@ -300,6 +274,45 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         # default namespace to personal
         self._namespace = "personal"
+
+    def raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
+        assert ex or req, "One of ex or req required"
+
+        if ex:
+            status = ex.status_code
+            msg = str(ex)
+            code = ex.code
+        else:
+            status = req.status_code
+            dat = req.json()
+            msg = dat["error"]["message"]
+            code = dat["error"]["code"]
+            
+        if status == 404:
+            raise CloudFileNotFoundError(msg)
+        if status in (429, 503):
+            raise CloudTemporaryError(msg)
+        if (dat['error']['code'] == 'ErrorInsufficientPermissionsInAccessToken' or 
+               code == ErrorCode.Unauthenticated):
+            self.disconnect()
+            raise CloudTokenError(msg)
+        if code == ErrorCode.Malformed:
+            raise CloudFileNotFoundError(msg)
+        if code == ErrorCode.ItemNotFound:
+            raise CloudFileNotFoundError(msg)
+        if code == ErrorCode.ResourceModified:
+            raise CloudTemporaryError(msg)
+        if code == ErrorCode.NameAlreadyExists:
+            raise CloudFileExistsError(msg)
+        if code == ErrorCode.AccessDenied:
+            raise CloudFileExistsError(msg)
+        if code == ErrorCode.InvalidRequest:
+            if status == 405:
+                raise CloudFileExistsError(msg)
+            if status == 400:
+                raise CloudFileNotFoundError(msg)
+        if code == "UnknownError":
+            raise CloudTemporaryError(msg)
 
     def get_drive_id(self):
         try:
@@ -403,7 +416,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.mutex.__enter__()
         return self.__client
 
-    def __exit__(self, ty, ex, tb):                   # pylint:disable=too-many-branches
+    def __exit__(self, ty, ex, tb):
         self.mutex.__exit__(ty, ex, tb)
 
         if ex:
@@ -415,25 +428,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
             except OneDriveError as e:
-                if e.status_code in (429, 503):
-                    raise CloudTemporaryError(str(e))
-                if e.code == ErrorCode.Malformed:
-                    raise CloudFileNotFoundError(str(e))
-                if e.code == ErrorCode.ItemNotFound:
-                    raise CloudFileNotFoundError(str(e))
-                if e.code == ErrorCode.ResourceModified:
-                    raise CloudTemporaryError(str(e))
-                if e.code == ErrorCode.NameAlreadyExists:
-                    raise CloudFileExistsError(str(e))
-                if e.code == ErrorCode.InvalidRequest:
-                    if e.status_code == 405:
-                        raise CloudFileExistsError(str(e))
-                    if e.status_code == 400:
-                        raise CloudFileNotFoundError(str(e))
-                if e.code == ErrorCode.AccessDenied:
-                    raise CloudFileExistsError(str(e))
-                if e.code == "UnknownError":
-                    raise CloudTemporaryError(str(e))
+                if not self.raise_converted_error(ex=e):
+                    raise
             except Exception:
                 pass
 
