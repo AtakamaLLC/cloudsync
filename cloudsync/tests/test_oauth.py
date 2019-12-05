@@ -25,7 +25,7 @@ class TokenServer(ApiServer):
 
 
 def x_test_oauth():
-    OAuthRedirServer.SHUFFLE_PORTS = 0
+    OAuthRedirServer.SHUFFLE_PORTS = False
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
     t = TokenServer("127.0.0.1", 0)
