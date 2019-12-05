@@ -1,6 +1,6 @@
 import logging
 import sys
-import socket
+import random
 import threading
 import errno
 from typing import Callable, Any, Optional, Tuple
@@ -19,6 +19,8 @@ def _is_windows():
     return sys.platform in ("win32", "cygwin")
 
 class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
+    SHUFFLE_PORTS: bool = True
+
     def __init__(self, *, html_generator: Callable[[bool, str], str] = None, 
             port_range: Tuple[int, int] = None, 
             host_name: str = None):
@@ -60,18 +62,16 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
             # Some providers (Dropbox, Onedrive) don't allow us to just use localhost
             #  redirect. For these providers, we define a range of
             #  host_name:(port_min, port_max) as valid redir URLs
-            for port in range(port_min, port_max):
+            ports = list(range(port_min, port_max))
+
+            # generally this is faster, but it can make testing falsely more forgiving
+            # so expose this for tests
+            if self.SHUFFLE_PORTS:
+                random.shuffle(ports)
+
+            free = None
+            for port in ports:
                 try:
-                    if _is_windows():
-                        # Windows will be weird if we just try to
-                        #  connect to the port directly. Check to see if the
-                        #  port is responsive before claiming it as our own
-                        try:
-                            socket.create_connection(('127.0.0.1', port), 0.001)
-                            continue
-                        except socket.timeout:
-                            pass
-                    log.debug('Attempting to start api server on port %d', port)
                     self.__api_server = ApiServer('127.0.0.1', port)
                     break
                 except OSError:

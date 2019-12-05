@@ -89,7 +89,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         return self.connection_id or os.urandom(16).hex()
 
-#    @final
+#    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):
         """Connect to provider.
 

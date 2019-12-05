@@ -5,7 +5,7 @@ from unittest.mock import patch
 import requests
 import pytest
 
-from cloudsync.oauth import OAuthConfig, OAuthError, OAuthProviderInfo
+from cloudsync.oauth import OAuthConfig, OAuthError, OAuthProviderInfo, OAuthRedirServer
 from cloudsync.oauth.apiserver import ApiServer, api_route
 from cloudsync.exceptions import CloudTokenError
 from .fixtures import MockProvider
@@ -24,8 +24,8 @@ class TokenServer(ApiServer):
         }
 
 
-@patch('webbrowser.open')
-def test_oauth(wb):
+def x_test_oauth():
+    OAuthRedirServer.SHUFFLE_PORTS = False
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
     t = TokenServer("127.0.0.1", 0)
@@ -34,10 +34,11 @@ def test_oauth(wb):
     auth_url = t.uri("/auth")
     token_url = t.uri("/token")
 
+    log.debug("start auth")
     o = OAuthConfig(app_id="foo", app_secret="bar", port_range=(54045, 54099), host_name="localhost")
     o.start_auth(auth_url)
-    wb.assert_called_once()
     requests.get(o.redirect_uri, params={"code": "cody"})
+    log.debug("wait auth")
     res = o.wait_auth(token_url=token_url, timeout=5)
 
     assert res.refresh_token == "r1"
@@ -47,6 +48,31 @@ def test_oauth(wb):
     requests.get(o.redirect_uri, params={"error": "erry"})
     with pytest.raises(OAuthError):
         res = o.wait_auth(token_url=token_url, timeout=5)
+
+
+@patch('webbrowser.open')
+def test_oauth_threaded(wb):
+    thread_count = 4
+    threads = []
+    tpass = 0
+    tfail = []
+    for _ in range(thread_count):
+        def trap():
+            try:
+                nonlocal tpass
+                x_test_oauth()
+                tpass += 1
+            except Exception as e:
+                tfail.append(e)
+        t = threading.Thread(target=trap, daemon=True)
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join(timeout=10)
+
+    log.debug("errs %s", tfail)
+    assert tpass == 4
 
 
 @patch('webbrowser.open')

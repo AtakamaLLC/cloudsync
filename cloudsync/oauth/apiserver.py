@@ -24,7 +24,10 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
 
 
 class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
-    pass
+    allow_reuse_address = True
+
+class ThreadedWSGIServerEx(ThreadedWSGIServer):
+    allow_reuse_address = False
 
 
 class ApiServerLogLevel(Enum):
@@ -67,7 +70,7 @@ def sanitize_for_status(e):
 
 
 class ApiServer:
-    def __init__(self, addr, port, headers=None, log_level=ApiServerLogLevel.ARGS):
+    def __init__(self, addr, port, headers=None, log_level=ApiServerLogLevel.ARGS, allow_reuse=False):
         """
         Create a new server on address, port.  Port can be zero.
 
@@ -94,11 +97,16 @@ class ApiServer:
 
 
         self.__started = False
-        self.__server = make_server(app=self, host=self.__addr, port=self.__port, handler_class=NoLoggingWSGIRequestHandler, server_class=ThreadedWSGIServer)
+        if allow_reuse:
+            server_class = ThreadedWSGIServer
+        else:
+            server_class = ThreadedWSGIServerEx
+        self.__server = make_server(app=self, host=self.__addr, port=self.__port, handler_class=NoLoggingWSGIRequestHandler, server_class=server_class)
         self.__routes: Dict[str, Tuple[Callable, str]] = {}
         self.__shutting_down = False
         self.__shutdown_lock = threading.Lock()
         self.__server.socket.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+        self.__server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
 
         # routed methods map into handler
         for meth in type(self).__dict__.values():

@@ -301,7 +301,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileNotFoundError(msg)
         if status in (429, 503):
             raise CloudTemporaryError(msg)
-        if (dat['error']['code'] == 'ErrorInsufficientPermissionsInAccessToken' or 
+        if (code == 'ErrorInsufficientPermissionsInAccessToken' or 
                code == ErrorCode.Unauthenticated):
             self.disconnect()
             raise CloudTokenError(msg)
