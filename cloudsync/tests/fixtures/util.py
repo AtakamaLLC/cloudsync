@@ -1,9 +1,10 @@
-from typing import NamedTuple, Union, Sequence, List, cast, Any, Tuple
+from typing import NamedTuple, Union, Sequence, List, cast, Any, Tuple, Callable
+import time
 import logging
 
 from cloudsync.provider import Provider
 from cloudsync.runnable import time_helper
-from cloudsync import CloudFileNotFoundError
+from cloudsync import CloudFileNotFoundError, CloudDisconnectedError
 
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ class WaitFor(NamedTuple):
             try:
                 other_info = providers[info.side].info_path(info.path)
             except CloudFileNotFoundError:
+                other_info = None
+            except CloudDisconnectedError:
                 other_info = None
 
             if other_info is None:
@@ -72,3 +75,21 @@ class RunUntilHelper:
 
         if not found():
             raise TimeoutError("timed out while waiting: %s" % errs)
+
+    def wait_until(self: Any, found: Callable, timeout=TIMEOUT):
+        while not found():
+            time.sleep(0.1)
+        if not found():
+            raise TimeoutError("timed out while waiting")
+
+    def wait_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT):
+        log.debug("waiting until found")
+
+        errs: List[str] = []
+        found = lambda: WaitFor.is_found(files, self.providers, errs)
+
+        try:
+            self.wait_until(found)
+        except TimeoutError:
+            raise TimeoutError("timed out while waiting: %s" % errs)
+

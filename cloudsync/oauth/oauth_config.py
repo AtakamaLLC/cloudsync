@@ -1,6 +1,8 @@
+import os
 import logging
 from typing import Optional, Tuple
 import webbrowser
+from oauthlib.oauth2 import OAuth2Error
 from requests_oauthlib import OAuth2Session
 
 from .redir_server import OAuthRedirServer
@@ -12,11 +14,10 @@ logging.getLogger("requests_oauthlib").setLevel(logging.INFO)
 
 log = logging.getLogger(__name__)
 
+OAuthError = OAuth2Error
+
 # this class delibarately not strict, since it can contain provider-specific configuration
 # applications can derive from this class and provide appropriate defaults
-
-class OAuthError(Exception): 
-    pass
 
 class OAuthToken:       # pylint: disable=too-few-public-methods
     def __init__(self, data):
@@ -73,6 +74,7 @@ class OAuthConfig:
         This starts a server, pops a browser.
         Do some stuff, then follow with wait_auth() to wait
         """
+        os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)
         self.authorization_url, _unused_state = self._session.authorization_url(auth_url)
@@ -104,11 +106,14 @@ class OAuthConfig:
         Or, you could just call it before the expiration
         """
         assert self._session or scope
+
+        kws = {**extra}
+
         if not self._session and scope:
-            self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri)
-        if isinstance(token, OAuthToken):
-            token = token.refresh_token
-        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
+            self._session = OAuth2Session(client_id=self.app_id, scope=scope)
+        kws["client_id"] = self.app_id
+        kws["client_secret"] = self.app_secret
+        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **kws))
         self.token_changed(self._token)
         return self._token
 

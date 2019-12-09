@@ -1,0 +1,13 @@
+coverage:
+  status:
+    project:
+        default: yes
+        threshold: 0.5
+        base: pr
+    patch: 
+        default: yes
+        threshold: 0.5
+        base: pr
+ignore:
+    - "cloudsync/providers"
+    - "cloudsync/tests/providers"

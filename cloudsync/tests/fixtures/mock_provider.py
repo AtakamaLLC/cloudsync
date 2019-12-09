@@ -9,6 +9,7 @@ import pytest
 
 from cloudsync.event import Event
 from cloudsync.provider import Provider
+from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
     CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError
@@ -16,6 +17,7 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
+
 
 class MockFSObject:         # pylint: disable=too-few-public-methods
     FILE = 'mock file'
@@ -89,7 +91,6 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 class MockProvider(Provider):
     default_sleep = 0.01
-    connected = True
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
@@ -117,23 +118,23 @@ class MockProvider(Provider):
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
         }
-        self.event_timeout = 1
-        self.event_sleep = 0.001
-        self.creds = {"key": "val"}
-        self.connect(self.creds)
+        self.test_event_timeout = 1
+        self.test_event_sleep = 0.001
+        self.test_creds = {"key": "val"}
+        self.connect(self.test_creds)
         self.hash_func = hash_func
         if hash_func is None:
             self.hash_func = lambda a: md5(a).digest()
         self.uses_cursor = True
         self.forbidden_chars: list = []
 
-    def disconnect(self):
-        self.connected = False
-
-    def reconnect(self):
-        if not self.creds:
+    def connect_impl(self, creds):
+        log.debug("connect mock prov creds : %s", creds)
+        if not creds:
             raise CloudTokenError()
-        self.connected = True
+        if self.connection_id is None or self.connection_id == "invalid":
+            return os.urandom(16).hex()
+        return self.connection_id
 
     def _register_event(self, action, target_object, prior_oid=None):
         event = MockEvent(action, target_object, prior_oid)
@@ -485,8 +486,6 @@ class MockProvider(Provider):
 
 def mock_provider_instance(*args, **kws):
     prov = MockProvider(*args, **kws)
-    prov.event_timeout = 1
-    prov.event_sleep = 0.001
     return prov
 
 
@@ -502,9 +501,31 @@ def mock_provider_generator(request):
             request.param[0] if oid_is_path is None else oid_is_path,
             request.param[1] if case_sensitive is None else case_sensitive)
 
+
 @pytest.fixture
 def mock_provider_creator():
     return mock_provider_instance
+
+
+class MockPathCs(MockProvider):
+    name = "mock_path_cs"
+
+    def __init__(self):
+        super().__init__(oid_is_path=True, case_sensitive=True)
+
+
+register_provider(MockPathCs)
+
+
+class MockOidCs(MockProvider):
+    name = "mock_oid_cs"
+
+    def __init__(self):
+        super().__init__(oid_is_path=True, case_sensitive=True)
+
+
+register_provider(MockOidCs)
+
 
 def test_mock_basic():
     """

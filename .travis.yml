@@ -20,13 +20,13 @@ jobs:
       script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
-        - ./test_providers.sh gdrive
+        - ./test_providers.sh "gdrive,onedrive"
       python:
         - '3.6'
     - script:
           # only run tests if the interface or any implementations change
           # todo: move providers to their own individual repos/projects with a plugin model
-        - ./test_providers.sh "dropbox or onedrive"
+        - ./test_providers.sh "dropbox,testodbiz"
       python:
         - '3.6'
     - stage: deploy
@@ -47,9 +47,3 @@ branches:
 install:
 - pip install -r requirements-dev.txt
 - pip install -r requirements.txt
-
-env:
-  global:
-  - secure: ij/D8TgoajOxXU6zXUDYcGSPGqc/ehF3X54nLsXEAwJuyne76m82KkLYn1yS1WkCYbqI2EKBPezriUc/OC42s3Nl8GQUQs/8vI/W+whiVYgVKzbZILzudmtMQXg9LGVFeIqCfSc3ViSGuk2ogBwOv1Ian8xqy4ntLaBKCXj10ba2/WNq72sbgaLQ/Hbu46IIpLLAwjqE/sPVWwE8GR4s2hccjzl1ljMe9enBccBSjV6U334tu26vkWLM9orKpOkr8p9Q24AIACIBSEZccsNeJqnDE6VQ4LwBqiXvm+BZnYHLXDnszOApBce+Ouvdb9IAwPKZ1SSrVxlJjWyQm3OmBSQTjY7QFyXJ+2CgX51q6BoAGBYCf5H0SLWCcOkJOUk0wFDlWh6EMNVHNO/htlVVkCFwG/FNm1RQ6lPEdbw/SjDxMtr9OvsTHyUioo7oyueccoNA7QUdYW4CHYFI+aTwPQPZvk2TrHZWbFqdKKDgUOAEN4BbN0Q4AB/NAc/DIe7vYMVUMLNihzZQ8Jfw8r/qVJUSJemCvZp5WapK+ydFB2D2dIEh+XPla4h0TJquzak2FnI8aRTCy/2EWZ+RBlTI2do3OX4YHzMIvfD+QejoKPJEvkcOP22r25tW6cO0iUARA6RiFjy3iVS7WoHOUnmnGotdWU46ZOzRzfAk6NAQUPM=
-  - secure: W+XSEVH1/+EPt7A2DZqhVidhZXSv9OKW4S759FkuXzlXVwJVQQcHozvfeVBrDz2X2OlX6QQV2KcsywXrZevjTh13Ibs0Be7Z4hp23fG2kU6nnv4IpO/dGbtQDBb/rxDRlGvh25uU8F7pm6prhz15PTjRYPTA9zUJi53C4XewyzXgI9MRKnG6ctDkpFfp4g2Z9/ehawO3xORuS3bP9Ss8DpU5N1JxAyTB7QAsL19SltDHVqEJ09H/CbUVP/jbo7pcotaICjvRciZLHU9R5IVx1x0NZ6iui9FT0vYiv1/Z1i4795qBUpXwvzHjWF3BYhcVqb+kfAnFtuX7awQeX3YaSRDstSy6jLx+RJ7QekvS/GjpcsCY7LQ+XENWPzy3/Wo6tr7OGNjR+uiRkWbRCLydN8smQMDwxuTePY2uMjs0dACPdvHbuAFe3a87j/rcWpIBykckSc+KJTYkxbQMp55udqCcXE49lvOEU3qLRYJJjYNHqM+A7ZAuQx+An7BU3GOWL5s16/7lZm5BfQIGeP0sJFwbOMkVXu6ZQGKyIHQ3wLWi2mHZThbEHIgLNMARR7B+H7jNYswtq2sxcB/6x2eEKsRMjrrbsdvopT8uafDknrMm4rMnt7M36qT4vS4IZd55xSQjbOtECn1aatLNB4zXI66AxLbzgvUTfmtfHVGDAiw=
-  - secure: lTzqc4JHNinfKWKYr8Rdd0JM2l8AsAHMgBy4tkfhDpmI0bUxqw/eVJEqr/q4UBNPHypOwAmDwBG+WFshkfz3pa1gh6KCvZMJP3N2X5/aneChVIriBoEcviSedQd204/1OwjmUDCwD/HbPhtSH10yiICQ8OxUcvkF6qNcbCO3e+5Tb3E0dp9tG4R9bK/mIh2nHK7XkIt4cIPb9cH8ub62Yc15iGCdPhdvOAW4b18zk0hMuLqTrbY8oKQ5Ml3PKBZLJ/o4JX6MzoaJQDtAYNMT+sPjIqJRhGNWYvV3SHzL6dd45BfB1zC3MCv9Zw02NQmXB6znSTrz3zagRpV+LgfnEstMqXEGj3eWWe+1XaCSVOHLcRnaSJM8ObS7Ac/es7j+LxP9pB17uBATfkhcXZw4TBTuuxDPj/KbEycHlIOYNiX5zlZnoW2hRPtnIgpSPoHVbPTQEBECusM3nEL92pk2AwFGbda3KfBGDBV0sVkkYEQc8S/6vdY3LO3oxzjErv7b85PFdxn39GKx/xkfYKLFTbw7TpTq9SqwQb0vywgNs6sKEz/5ZG1vNGu+2boqWswimd4nCZ8rKYFwdLSRnvuRyR3P4+5Ap27KDPhfBVn5BhJpmoFF1EYgUPvlfA8mWNBwwEziCGM9CMmzJ4akjXXqca9uI/emVI1gL8me9a/LZ/4=

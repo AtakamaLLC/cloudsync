@@ -45,8 +45,6 @@ class EventManager(Runnable):
         self.__nmgr = notification_manager
         self.need_auth = False
 
-        self.walk_one_time = None
-        self._walk_tag: str = None
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         if self.cursor is not None:
@@ -57,18 +55,17 @@ class EventManager(Runnable):
                 log.exception("Cursor error... resetting cursor. %s", e)
                 self.cursor = None
 
-        if walk_root:
-            self._walk_tag = self.label + "_walked_" + walk_root
+        self.walk_root = walk_root
+        self.need_walk = False
+        self._first_do = True
+        self._walk_tag: Optional[str] = None
+        if self.walk_root:
+            self._walk_tag = self.label + "_walked_" + self.walk_root
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                self.walk_one_time = walk_root
-
-        if self.cursor is None:
-            self.cursor = provider.current_cursor
-            if self.cursor is not None:
-                self.state.storage_update_data(self._cursor_tag, self.cursor)
+                self.need_walk = True
 
         self.min_backoff = provider.default_sleep / 10
-        self.max_backoff = provider.default_sleep * 4
+        self.max_backoff = provider.default_sleep * 10
         self.mult_backoff = 2
 
         self.reauthenticate = reauth or self.__reauth
@@ -89,15 +86,21 @@ class EventManager(Runnable):
     def do(self):
         self.events.shutdown = False
         try:
-            if self.need_auth:
-                creds = self.reauthenticate()
-                if creds:
-                    self.provider.connect(creds)
-                self.need_auth = False
-
             if not self.provider.connected:
-                log.info("reconnect to %s", self.provider.name)
-                self.provider.reconnect()
+                if self.need_auth:
+                    try:
+                        # possibly this is a temporary loss of authorization
+                        self.provider.reconnect()
+                    except CloudTokenError:
+                        log.warning("Need auth, calling reauthenticate")
+                        try:
+                            self.reauthenticate()
+                        except NotImplementedError:
+                            raise CloudTokenError("No auth method defined")
+                    self.need_auth = False
+                else:
+                    log.info("reconnect to %s", self.provider.name)
+                    self.provider.reconnect()
             self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError) as e:
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
@@ -114,13 +117,20 @@ class EventManager(Runnable):
             self.need_auth = True
 
     def _do_unsafe(self):
-        if self.walk_one_time:
+        if self._first_do:
+            if self.cursor is None:
+                self.cursor = self.provider.current_cursor
+                if self.cursor is not None:
+                    self.state.storage_update_data(self._cursor_tag, self.cursor)
+        self._first_do = False
+
+        if self.need_walk:
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_one_time)
-            for event in self.provider.walk(self.walk_one_time):
+                      self.provider.name, self.walk_root)
+            for event in self.provider.walk(self.walk_root):
                 self.process_event(event, from_walk=True)
             self.state.storage_update_data(self._walk_tag, time.time())
-            self.walk_one_time = None
+            self.need_walk = False
 
         for event in self.events:
             if not event:

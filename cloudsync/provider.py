@@ -2,10 +2,12 @@ from abc import ABC, abstractmethod
 import re
 import os
 import logging
-from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict
+import random
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 if TYPE_CHECKING:
     from .event import Event
 
@@ -16,151 +18,257 @@ log = logging.getLogger(__name__)
 # mypy doesn't support cyclic definitions yet...
 Hash = Union[Dict[str, 'Hash'], Tuple['Hash', ...], str, int, bytes, float, None]          # type: ignore
 Cursor = Union[Dict[str, 'Cursor'], Tuple['Cursor', ...], str, int, bytes, float, None]    # type: ignore
+Creds = Dict[str, Union[str, int]]
 
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
-    sep: str = '/'                      # path delimiter
-    alt_sep: str = '\\'                 # alternate path delimiter
-    oid_is_path: bool = False
-    case_sensitive: bool = True
-    win_paths: bool = False
-    default_sleep: float = 0.01
+    """
+    File storage provider.
+
+    Override this to implement a provider capable of using the sync engine.
+
+    Implementors are responsible for normalizing behavior, errors thrown, any needed caching.
+
+    Some helpers are provided in this base class for oauth and  path manipulation.
+    """
+
+    # pylint: disable=multiple-statements
+    name: str = None                        ; """Provider name"""
+    sep: str = '/'                          ; """Path delimiter"""
+    alt_sep: str = '\\'                     ; """Alternate path delimiter"""
+    oid_is_path: bool = False               ; """Objects stored in cloud are only referenced by path"""
+    case_sensitive: bool = True             ; """Provider is case sensitive"""
+    win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
+    default_sleep: float = 0.01             ; """Per event loop sleep time"""
+    _namespace: str = None                   ; """current namespace, if needed """
+    _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
+    _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for
     # multipart upload tests
-    large_file_size: int = 0
-    upload_block_size: int = 0
+    large_file_size: int = 0                ; """Used for testing providers with separate large file handling"""
+    upload_block_size: int = 0              ; """Used for testing providers with separate large file handling"""
 
-    # this is guaranteed to remain the same between logins, and guaranteed to be unique per login
-    connection_id: str = None
-    __creds: Optional[Any] = None
+    connection_id: str = None               ; """Must remain constant between logins and must be unique to the login"""
+    _creds: Optional[Any] = None           ; """Base class helpers to store creds"""
+    __connected = False                     ; """Base class helper to fake a connection"""
+    # pylint: enable=multiple-statements
 
     @abstractmethod
     def _api(self, *args, **kwargs):
+        """Central function that wraps calls to the provider's api.
+
+        Use this function on all calls that involve a network connection to the provider.
+
+        Implmentations should catch provider specific errors and turn them into CloudException types.
+
+        Suggestions for args can be:
+               - endpoint + url params
+               - a lambda with underlying provider calls
+
+        Alternatively, _api can be written as a Guard with enter/exit code.
+        """
         ...
 
     def get_quota(self) -> dict:    # pylint: disable=no-self-use
-        """Returns a dict with of used (bytes), limit (bytes), optional login, and possibly other provider-specific info
+        """
+        Returns a dict with of used (bytes), limit (bytes), optional login, and possibly other provider-specific info
         """
         return {"used": 0.0, "limit": 0.0, "login": None}
 
+    def connect_impl(self, creds) -> str:  # pylint: disable=unused-argument
+        """Connection implementation.
+
+        Some providers don't need connections, so just don't implement/overload this method.
+
+        Returns:
+            Unique connection id that should be the same each time the same user connects.
+            A combination of a provider name and a login/userid could be sufiicient, but
+            it is suggested to use a provider specific identity, if available.
+        """
+        return self.connection_id or os.urandom(16).hex()
+
+#    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):
-        # some providers don't need connections, so just don't implement/overload this method
-        # providers who implement connections need to set the connection_id to a value
-        #   that is unique to each login, so that connecting to this provider
-        #   under multiple userid's will produce different connection_id's. One
-        #   suggestion is to just set the connection_id to the user's login_id
-        # if connection ids are reused, it's possible that existing cursors can be loaded
-        # for different providers.
-        # this could cause issues if cursors are not uuids
-        self.connection_id = os.urandom(16).hex()
-        self.__creds = creds
+        """Connect to provider.
+
+        Generally providers should overload connect_impl, instead.
+        """
+        log.debug("connect %s (%s)", self.name, self.connection_id)
+        new_id = self.connect_impl(creds)
+        if self.connection_id:
+            if self.connection_id != new_id:
+                self.disconnect()
+                raise CloudTokenError("Cannot connect with mismatched credentials")
+        else:
+            self.connection_id = new_id
+        self._creds = creds
+        self.__connected = True
+        assert self.connected
 
     def reconnect(self):
-        # reuse existing credentials and reconnect
-        # raises: CloudDisconnectedError on failure
-        if not self.connected:
-            self.connect(self.__creds)
+        """Reconnect to provider, using existing creds.
+
+        If a provider was previously connected, it should retain the creds used.
+        This function should restore the connection if the creds are still valid
+
+        Raises:
+            CloudDisconnectedError on failure
+        """
+        if not self.__connected:
+            self.connect(self._creds)
 
     def disconnect(self):
-        # disconnect from cloud
-        self.connection_id = None
+        """Invalidates current connection, closes sockets, etc.
+        """
+        self.__connected = False
 
     @property
     def connected(self):
-        return self.connection_id is not None
+        """True if connected, false if not.
 
-    def authenticate(self):
-        # implement this method for providers that need authentication
-        pass
+        If False, any use of the provider except the connect() function,
+        must raise a CloudDisconnectedError
+        """
+        return self.connection_id is not None and self.__connected
 
-    def interrupt_auth(self):
-        # interrupt/stop a blocking authentication call
+    def authenticate(self) -> Creds:
+        """Authenticate a connection.
+
+        Returns:
+            Creds: A JSON serializable object that can be used to log in.
+
+        Raises:
+                CloudTokenError on failure
+        """
+        if self._oauth_info:
+            try:
+                self._oauth_config.start_auth(self._oauth_info.auth_url, self._oauth_info.scopes)
+                token = self._oauth_config.wait_auth(self._oauth_info.token_url)
+            except Exception as e:
+                log.error("oauth error %s", e)
+                self.disconnect()
+                raise CloudTokenError(str(e))
+
+            return {"refresh_token": token.refresh_token,
+                    "access_token": token.access_token}
         raise NotImplementedError()
 
-    @property
-    @abstractmethod
-    def name(self):
-        ...
+    def interrupt_auth(self):
+        """Iterrupt/stop a blocking authentication call."""
+        if self._oauth_config:
+            self._oauth_config.shutdown()
+        else:
+            raise NotImplementedError()
 
     @property
     @abstractmethod
-    def latest_cursor(self):
+    def latest_cursor(self) -> Cursor:
+        """Get the latest cursor as of now."""
         ...
 
     @property
     @abstractmethod
     def current_cursor(self) -> Cursor:
+        """Get the current cursor for the events generator"""
         ...
 
     @current_cursor.setter
     def current_cursor(self, val: Cursor) -> None:  # pylint: disable=no-self-use, unused-argument
+        """Get the current cursor for the events generator"""
         ...
 
     @abstractmethod
     def events(self) -> Generator["Event", None, None]:
+        """Yields events, possibly forever.
+
+        If stopped, the event poller will sleep for self.default_sleep, and call this again.
+        """
         ...
 
     @abstractmethod
-    def walk(self, path, since=None):
-        # Test that the root path does not show up in the walk
+    def walk(self, path, since=None) -> Generator["Event", None, None]:
+        """List all files recursively, yielded as events"""
         ...
 
     @abstractmethod
-    def upload(self, oid, file_like, metadata=None) -> 'OInfo':
+    def upload(self, oid, file_like: BinaryIO, metadata=None) -> 'OInfo':
+        """Upload a filelike to an existing object id, optionally setting metadata"""
         ...
 
     @abstractmethod
-    def create(self, path, file_like, metadata=None) -> 'OInfo':
+    def create(self, path, file_like: BinaryIO, metadata=None) -> 'OInfo':
+        """Create a file at the specified path, setting contents and optionally setting metadata"""
         ...
 
     @abstractmethod
-    def download(self, oid, file_like):
+    def download(self, oid, file_like: BinaryIO):
+        """Get the bytes of a specified object id"""
         ...
 
     @abstractmethod
     def rename(self, oid, path) -> str:
+        """Rename an object to specified path"""
         # TODO: test that a renamed file can be renamed again
         # TODO: test that renaming a folder renames the children in the state file
         ...
 
     @abstractmethod
     def mkdir(self, path) -> str:
+        """Create a folder"""
         ...
 
     @abstractmethod
     def delete(self, oid):
+        """Delete an object"""
+        ...
         ...
 
     @abstractmethod
-    def exists_oid(self, oid):
-        ...
+    def exists_oid(self, oid) -> bool:
+        """Returns true of object exists with specified oid"""
+        return self.info_oid(oid) is not None
 
     @abstractmethod
     def exists_path(self, path) -> bool:
-        ...
+        """Returns true of object exists at the specified path"""
+        return self.info_path(path) is not None
 
     @abstractmethod
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
+        """Yield one entry for each file at the directory pointed to by the specified object id"""
         ...
 
     # override this if your implementation is more efficient
     def hash_oid(self, oid) -> Hash:
+        """Returns a provider specific hash associated with the object referred to"""
         info = self.info_oid(oid)
         return info.hash if info else None
 
     @abstractmethod
-    def hash_data(self, file_like) -> Hash:
+    def hash_data(self, file_like: BinaryIO) -> Hash:
+        """Returns a provider specific hash from data"""
         ...
 
     @abstractmethod
     def info_path(self, path: str) -> Optional[OInfo]:
+        """Returns info for an object at a path, or None if not found"""
         ...
 
     @abstractmethod
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
+        """Returns info for an object with specified oid, or None if not found"""
         ...
+
+    def list_ns(self) -> List[str]:                        # pylint: disable=no-self-use
+        """Yield one entry for each namespace supported, or None if namespaces are not needed"""
+        return None
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
+
 
 # CONVENIENCE
     def download_path(self, path, io):
@@ -174,7 +282,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         if not info or not info.oid:
             raise CloudFileNotFoundError()
         return self.listdir(info.oid)
-
 
 # HELPER
     @classmethod
@@ -318,3 +425,42 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 # but this is a guess.  todo: scenarios that make this happen
                 raise CloudFileExistsError("f'ed up mkdir")
         return oid
+
+# TEST ################################################
+
+    @classmethod
+    def test_instance(cls):
+        """Override to enable CI testing of your class, see oauth_test_instance code for an example
+
+        Returns:
+            Provider: an instance of an provider, with "creds" set to the creds blob
+        """
+        if cls._oauth_info is not None:
+            # pull environment info based on class name prefix
+            return cls.oauth_test_instance(prefix=cls.name.upper())             # pylint: disable=no-member
+        else:
+            # no connection needed
+            cls.test_creds: Dict[str, str] = None            # type: ignore
+            return cls()
+
+    @classmethod
+    def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None, host_name=None):
+        """Helper function for oauth providers.
+
+        Args:
+            prefix: environment varible prefix
+            token_key: creds dict key
+            token_sep: multi-env var token separator
+            port_range: if any, specify tuple
+        """
+
+        tokens = os.environ.get("%s_TOKEN" % prefix).split(token_sep)
+        creds = {
+            token_key: tokens[random.randrange(0, len(tokens))],
+        }
+        cls.test_creds = creds                                          # type: ignore
+        return cls(OAuthConfig(                                         # type: ignore
+            app_id=os.environ.get("%s_APP_ID" % prefix),
+            app_secret=os.environ.get("%s_APP_SECRET" % prefix),
+            host_name=host_name,
+            port_range=port_range))
