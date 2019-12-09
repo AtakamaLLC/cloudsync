@@ -40,6 +40,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True             ; """Provider is case sensitive"""
     win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01             ; """Per event loop sleep time"""
+    _namespace: str = None                   ; """current namespace, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
@@ -88,6 +89,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         return self.connection_id or os.urandom(16).hex()
 
+#    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):
         """Connect to provider.
 
@@ -235,7 +237,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self.info_path(path) is not None
 
     @abstractmethod
-    def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
+    def listdir(self, oid) -> Generator[DirInfo, None, None]:
         """Yield one entry for each file at the directory pointed to by the specified object id"""
         ...
 
@@ -259,6 +261,15 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         """Returns info for an object with specified oid, or None if not found"""
         ...
+
+    def list_ns(self) -> List[str]:                        # pylint: disable=no-self-use
+        """Yield one entry for each namespace supported, or None if namespaces are not needed"""
+        return None
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
+
 
 # CONVENIENCE
     def download_path(self, path, io):
@@ -451,7 +462,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return False
 
     @classmethod
-    def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None):
+    def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None, host_name=None):
         """Helper function for oauth providers.
 
         Args:
@@ -469,4 +480,5 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return cls(OAuthConfig(                                         # type: ignore
             app_id=os.environ.get("%s_APP_ID" % prefix),
             app_secret=os.environ.get("%s_APP_SECRET" % prefix),
+            host_name=host_name,
             port_range=port_range))

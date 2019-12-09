@@ -2,7 +2,7 @@ import os
 import pytest
 import logging
 
-from cloudsync.utils import debug_args, memoize
+from cloudsync.utils import debug_args, memoize, NamedTemporaryFile
 
 log = logging.getLogger(__name__)
 
@@ -123,3 +123,29 @@ def test_memoize3():
     assert m
     assert c.fun2.get() == m
 
+def test_alt_ntp():
+    x = NamedTemporaryFile()
+    x.write(b"foo")
+    x.seek(0)
+    assert x.read() == b"foo"
+    name = x.name
+    assert os.path.exists(name)
+    del x
+    assert not os.path.exists(name)
+
+def test_alt_ntp_win():
+    x = NamedTemporaryFile(mode=None)
+    name = x.name
+    assert not os.path.exists(name)
+
+def test_alt_ntp_clos():
+    x = NamedTemporaryFile(mode=None)
+    name = x.name
+    with open(x.name, "w") as f:
+        f.write("hi")
+    del x
+    assert not os.path.exists(name)
+
+def test_already_gone():
+    x = NamedTemporaryFile(mode=None)
+    del x

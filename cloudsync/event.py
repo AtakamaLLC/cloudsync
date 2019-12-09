@@ -88,8 +88,15 @@ class EventManager(Runnable):
         try:
             if not self.provider.connected:
                 if self.need_auth:
-                    log.warning("Need auth, calling reauthenticate")
-                    self.reauthenticate()
+                    try:
+                        # possibly this is a temporary loss of authorization
+                        self.provider.reconnect()
+                    except CloudTokenError:
+                        log.warning("Need auth, calling reauthenticate")
+                        try:
+                            self.reauthenticate()
+                        except NotImplementedError:
+                            raise CloudTokenError("No auth method defined")
                     self.need_auth = False
                 else:
                     log.info("reconnect to %s", self.provider.name)

@@ -18,3 +18,4 @@ boxsdk[jwt]
 
 # onedrive provider
 onedrivesdk_fork
+quickxorhash
