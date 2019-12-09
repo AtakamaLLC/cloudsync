@@ -33,7 +33,9 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     count = 4
     def wrapped(prov, *args, **kwargs):
         ex: CloudException = None
-        for _ in range(count):
+        for i in range(count):
+            if i > 0:
+                log.warning("retry %s after %s", func.__name__, repr(ex))
             try:
                 return func(prov, *args, **kwargs)
             except CloudTemporaryError as e:

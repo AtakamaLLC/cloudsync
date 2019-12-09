@@ -293,10 +293,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             msg = dat["error"]["message"]
             code = dat["error"]["code"]
 
-        if status == 0:
-            log.error("Unusual status %s %s", ex, req)
-
         if status < 300:
+            log.error("Not converting err %s %s", ex, req)
             return False
             
         if status == 404:
@@ -324,6 +322,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if code == "UnknownError":
             raise CloudTemporaryError(msg)
 
+        log.error("Not converting err %s %s", ex, req)
         return False
 
     def get_drive_id(self):
@@ -617,24 +616,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         size = _get_size_and_seek0(file_like)
 
         # TODO switch to directapi
-        if size <= self.large_file_size:
+        if size <= self.large_file_size and '(' not in path:
             with self._api() as client:
                 api_path = self._get_item(client, oid=pid).api_path
-                rename = None
                 name = urllib.parse.quote(base)
-                # tested as of 12/2019 
-                # 1. this specific character is caused by an bug in the graph api
-                # 2. the ('XXX') syntax does not rescue proper behavior
-                if '(' in path:
-                    rename = name 
-                    name = os.urandom(32).hex()
-
                 api_path += "/children/" + name + "/content"
                 r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
-                if rename:
-                    # see above: rename seems to work fine, regardless of the name
-                    self.rename(r["id"], path)
-                    r["name"] = rename
             return self._info_from_rest(r, root=dirname)
         else:
             with self._api() as client:
