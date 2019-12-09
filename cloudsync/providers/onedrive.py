@@ -617,8 +617,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudFileExistsError()
             with self._api() as client:
                 api_path = self._get_item(client, oid=pid).api_path
+                base = base.replace("'", "''")
                 name = urllib.parse.quote(base)
-                name = name.replace("'", "''")
                 api_path += "/children('" + name + "')/content"
                 r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
             return self._info_from_rest(r, root=dirname)
