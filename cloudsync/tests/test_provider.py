@@ -228,7 +228,7 @@ class ProviderHelper(ProviderBase):
 
     def __cleanup(self, oid):
         try:
-            for info in self.prov.listdir(oid):
+            for info in self.listdir(oid):
                 if info.otype == FILE:
                     log.debug("cleaning %s", info)
                     self.delete(info.oid)
@@ -240,10 +240,10 @@ class ProviderHelper(ProviderBase):
             pass
 
     def test_cleanup(self, timeout=None, until=None):
-        info = self.prov.info_path(self.test_root)
+        info = self.info_path(self.test_root)
         self.__cleanup(info.oid)
 
-        info = self.prov.info_path(self.test_root)
+        info = self.info_path(self.test_root)
         if info:
             try:
                 log.debug("cleaning %s", info)
