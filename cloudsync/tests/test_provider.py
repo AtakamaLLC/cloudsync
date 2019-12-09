@@ -272,11 +272,11 @@ class ProviderHelper(ProviderBase):
         self.prov.connection_id = val
 
 
-def mixin_provider(prov):
+def mixin_provider(prov, connect=True):
     assert prov
     assert isinstance(prov, Provider)
 
-    prov = ProviderHelper(prov)         # type: ignore
+    prov = ProviderHelper(prov, connect=connect)         # type: ignore
 
     yield prov
 
@@ -288,7 +288,7 @@ def provider_params():
     return None
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def config_provider(request, provider_name):
     try:
         yield request.getfixturevalue("cloudsync_provider")
@@ -299,9 +299,14 @@ def config_provider(request, provider_name):
         yield cloudsync.registry.provider_by_name(provider_name).test_instance()
 
 
-@pytest.fixture(name="provider")
+@pytest.fixture(name="provider", scope="module")
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+@pytest.fixture(name="scoped_provider")
+def scoped_provider_fixture(config_provider):
+    yield from mixin_provider(config_provider)
+
 
 from cloudsync.providers import *
 
@@ -340,7 +345,7 @@ def pytest_generate_tests(metafunc):
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
 
-        metafunc.parametrize("provider_name", marks)
+        metafunc.parametrize("provider_name", marks, scope="module")
 
 
 def test_join(mock_provider):
@@ -495,7 +500,8 @@ def test_mkdir(provider):
     provider.create(sub_f, data(), None)
 
 
-def test_walk(provider):
+def test_walk(scoped_provider):
+    provider = scoped_provider
     temp = BytesIO(os.urandom(32))
     folder = provider.temp_name("folder")
     provider.mkdir(folder)
@@ -781,10 +787,12 @@ def test_event_longpoll(provider):
 
     assert received_event
 
-def test_api_failure(provider):
+def test_api_failure(scoped_provider):
     # assert that the cloud
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
+
+    provider = scoped_provider
 
     def side_effect(*a, **k):
         raise CloudTemporaryError("fake disconnect")
