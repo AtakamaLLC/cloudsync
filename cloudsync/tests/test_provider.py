@@ -610,6 +610,9 @@ def test_event_basic(provider):
 
 
 def test_event_del_create(provider):
+    if provider.prov.name =='box':
+        logging.getLogger('boxsdk.network.default_network').setLevel(logging.INFO)
+        logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG)
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
@@ -625,23 +628,23 @@ def test_event_del_create(provider):
     saw_first_create = False
     disordered = False
     done = False
-    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
-        log.debug("event %s", e)
+    for event in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+        log.debug("event %s", event)
         # you might get events for the root folder here or other setup stuff
-        path = e.path
-        if not e.path:
-            info = provider.info_oid(e.oid)
+        path = event.path
+        if not event.path:
+            info = provider.info_oid(event.oid)
             if info:
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or e.oid == info1.oid):
+        if not (path == dest or event.oid == info1.oid):
             continue
 
-        last_event = e
+        last_event = event
 
-        if e.oid == info1.oid:
-            if e.exists:
+        if event.oid == info1.oid:
+            if event.exists:
                 saw_first_create = True
                 if saw_first_delete and not provider.oid_is_path:  # TODO: this condition is not correct...
                     log.debug("disordered!")
@@ -649,7 +652,7 @@ def test_event_del_create(provider):
             else:
                 saw_first_delete = True
 
-        if e.exists and e.oid == info2.oid:
+        if event.exists and event.oid == info2.oid:
             if provider.oid_is_path:
                 if saw_first_delete and saw_first_create:
                     done = True
@@ -665,6 +668,14 @@ def test_event_del_create(provider):
     # So, if we saw the first create, make sure we got the delete. If we didn't see the first create,
     # it doesn't matter if we saw the first delete.
     if saw_first_create:
+        if not saw_first_delete:
+            log.error("first delete not seen yet, about to fail, giving it a chance to come in so we can log it")
+            done = False
+            try:
+                for event in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+                    done = (event.oid == info1.oid and not event.exists)
+            except TimeoutError:
+                pass
         assert saw_first_delete
     assert not disordered
 

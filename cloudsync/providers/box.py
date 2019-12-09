@@ -71,6 +71,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._long_poll_manager = LongPollManager(self.short_poll, self.long_poll, short_poll_only=True)
         self._ids: Dict[str, str] = {}
         self.__seen_events: Dict[str, float] = {}
+        self.__event_sequence: Dict[str, int] = {}
         metadata_template = {"hash": str, "mtime": float, "readonly": bool, "shared": bool, "size": int}
         # TODO: hardcoding '0' as the root oid seems fishy... we should be *asking* for the root oid,
         #   but we can't here, because we aren't connected. we could delay creating the cache, but what
@@ -280,11 +281,23 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 if self.__seen_events.get(change.event_id):
                     log.debug("skipped duplicate event %s", change.event_id)
                     continue
-                log.debug("got event %s %s", change.event_id, self.__cursor)
+                log.debug("got event %s %s", change.event_id, self.current_cursor)
                 log.debug("event type is %s", change.get('event_type'))
                 self.__seen_events[change.event_id] = time.monotonic()
                 ts = arrow.get(change.get('created_at')).float_timestamp
                 change_source = change.get('source')
+                previous_sequence: int = self.__event_sequence.get(change_source.id)
+                if previous_sequence:
+                    try:
+                        current_sequence = int(change_source.sequence_id)
+                    except ValueError:  # couldn't convert to int for some reason?
+                        pass
+                    if current_sequence:
+                        if current_sequence < previous_sequence:
+                            log.debug("skipped earlier event for OID %s", change_source.id)
+                            continue
+                        self.__event_sequence[change_source.id] = current_sequence
+
                 if isinstance(change_source, box_item):
                     otype = DIRECTORY if type(change_source) is box_folder else FILE
                     oid = change_source.id
@@ -881,6 +894,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             path = '/'
         self.__cache.delete(oid=oid, path=path)
         self.__seen_events = {}
+        self.__event_sequence = {}
         return True
 
     @classmethod
