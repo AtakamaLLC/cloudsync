@@ -12,7 +12,7 @@ import msgpack
 import pytest
 import cloudsync
 
-from cloudsync import Event, CloudFileNotFoundError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
+from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -29,6 +29,22 @@ else:
     # but we can't actually derive from it or stuff will break
     ProviderBase = object
 
+def wrap_retry(func):                 # pylint: disable=too-few-public-methods
+    count = 4
+    def wrapped(prov, *args, **kwargs):
+        ex: CloudException = None
+        for i in range(count):
+            if i > 0:
+                log.warning("retry %s after %s", func.__name__, repr(ex))
+            try:
+                return func(prov, *args, **kwargs)
+            except CloudTemporaryError as e:
+                ex = e
+            except CloudDisconnectedError as e:
+                prov.reconnect()
+                ex = e
+        raise ex
+    return wrapped
 
 class ProviderHelper(ProviderBase):
     def __init__(self, prov, connect=True):
@@ -49,6 +65,10 @@ class ProviderHelper(ProviderBase):
             self.make_root()
 
     def make_root(self):
+        ns = self.prov.list_ns()
+        if ns:
+            self.prov.namespace = self.prov.test_namespace
+
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
@@ -90,53 +110,65 @@ class ProviderHelper(ProviderBase):
             if self.__filter_root(e):
                 yield e
 
+    @wrap_retry
     def download(self, *args, **kwargs):
         return self.__strip_root(self.prov.download(*args, **kwargs))
 
+    @wrap_retry
     def download_path(self, path: str, *args, **kwargs):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.download_path(path, *args, **kwargs))
 
+    @wrap_retry
     def create(self, path, file_like, metadata=None):
         path = self.__add_root(path)
         log.debug("CREATE %s", path)
         return self.__strip_root(self.prov.create(path, file_like, metadata))
 
+    @wrap_retry
     def upload(self, *args, **kwargs):
         return self.__strip_root(self.prov.upload(*args, **kwargs))
 
+    @wrap_retry
     def rename(self, oid, path):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.rename(oid, path))
 
+    @wrap_retry
     def mkdir(self, path):
         path = self.__add_root(path)
         return self.__strip_root(self.prov.mkdir(path))
 
+    @wrap_retry
     def delete(self, *args, **kwargs):
         return self.__strip_root(self.prov.delete(*args, **kwargs))
 
+    @wrap_retry
     def exists_oid(self, oid):
         return self.prov.exists_oid(oid)
 
+    @wrap_retry
     def exists_path(self, path):
         path = self.__add_root(path)
         return self.prov.exists_path(path)
 
+    @wrap_retry
     def info_path(self, path: str) -> Optional[OInfo]:
         path = self.__add_root(path)
         return self.__strip_root(self.prov.info_path(path))
 
+    @wrap_retry
     def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
+    @wrap_retry
     def listdir(self, oid):
         for e in self.prov.listdir(oid):
             if self.__filter_root(e):
                 yield e
 
     def __add_root(self, path):
-        return self.join(self.test_root, path)
+        return self.prov.join(self.test_root, path)
 
     def __filter_root(self, obj):
         if hasattr(obj, "path"):
@@ -152,7 +184,7 @@ class ProviderHelper(ProviderBase):
                 # so isolation is not perfect
                 return True
 
-            if not self.is_subpath(self.test_root, raw_path):
+            if not self.prov.is_subpath(self.test_root, raw_path):
                 return False
 
             self.__strip_root(obj)
@@ -163,17 +195,17 @@ class ProviderHelper(ProviderBase):
         if hasattr(obj, "path"):
             path = obj.path
             if path:
-                relative = self.is_subpath(self.test_root, path)
+                relative = self.prov.is_subpath(self.test_root, path)
                 assert relative
                 path = relative
-                if not path.startswith(self.sep):
-                    path = self.sep + path
+                if not path.startswith(self.prov.sep):
+                    path = self.prov.sep + path
                 obj.path = path
         return obj
     # HELPERS
 
     def temp_name(self, name="tmp", *, folder=None):
-        fname = self.join(folder or self.sep, os.urandom(16).hex() + "." + name)
+        fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "(." + name)
         return fname
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
@@ -196,7 +228,7 @@ class ProviderHelper(ProviderBase):
 
     def __cleanup(self, oid):
         try:
-            for info in self.prov.listdir(oid):
+            for info in self.listdir(oid):
                 if info.otype == FILE:
                     log.debug("cleaning %s", info)
                     self.delete(info.oid)
@@ -617,8 +649,10 @@ def test_event_del_create(provider):
     saw_first_create = False
     disordered = False
     done = False
+    log.info("test oid 1 %s", info1.oid)
+    log.info("test oid 2 %s", info2.oid)
     for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
-        log.debug("event %s", e)
+        log.info("test event %s", e)
         # you might get events for the root folder here or other setup stuff
         path = e.path
         if not e.path:
@@ -652,12 +686,12 @@ def test_event_del_create(provider):
     assert last_event, "Event loop timed out before getting any events"
     assert done, "Event loop timed out after the delete, but before the create, " \
                  "saw_first_delete=%s, saw_first_create=%s, disordered=%s" % (saw_first_delete, saw_first_create, disordered)
-    assert last_event.exists is True
     # The provider may compress out the first create, or compress out the first create and delete, or deliver both
     # So, if we saw the first create, make sure we got the delete. If we didn't see the first create,
     # it doesn't matter if we saw the first delete.
     if saw_first_create:
         assert saw_first_delete
+    assert last_event.exists is True
     assert not disordered
 
 
@@ -779,7 +813,7 @@ def test_file_not_found(provider):
     provider.delete(test_folder_deleted_oid)
 
     test_path_made_up = provider.temp_name("dest2")  # Never created
-    test_oid_made_up = "never created"
+    test_oid_made_up = "nevercreated"
     # TODO: consider mocking info_path to always return None, and then call all the provider methods
     #  to see if they are handling the None, and not raising exceptions other than FNF
 
@@ -1508,12 +1542,13 @@ def test_authenticate(config_provider):
         pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
+    log.info(creds);
     provider.connect(creds)
 
     modded = False
     for k, v in creds.items():
         if type(v) is str:
-            creds[k] = cast(str, creds[k]) + "junk"
+            creds[k] = cast(str, v) + "junk"
             modded = True
 
     if modded:

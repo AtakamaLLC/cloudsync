@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 class TokenServer(ApiServer):
     @api_route("/token")
-    def token(ctx, req):
+    def token(self, ctx, req):
         return {
             "token_type": "bearer",
             "refresh_token": "r1",
@@ -39,7 +39,7 @@ def x_test_oauth():
     o.start_auth(auth_url)
     requests.get(o.redirect_uri, params={"code": "cody"})
     log.debug("wait auth")
-    res = o.wait_auth(token_url=token_url)
+    res = o.wait_auth(token_url=token_url, timeout=5)
 
     assert res.refresh_token == "r1"
     assert res.expires_in == 340
@@ -47,7 +47,7 @@ def x_test_oauth():
     o.start_auth(auth_url)
     requests.get(o.redirect_uri, params={"error": "erry"})
     with pytest.raises(OAuthError):
-        res = o.wait_auth(token_url=token_url)
+        res = o.wait_auth(token_url=token_url, timeout=5)
 
 
 @patch('webbrowser.open')
@@ -106,7 +106,7 @@ def test_oauth_interrupt(wb):
     wb.assert_called_once()
     o.shutdown()
     with pytest.raises(OAuthError):
-        o.wait_auth(token_url=token_url)
+        o.wait_auth(token_url=token_url, timeout=5)
 
 
 @patch('webbrowser.open')

@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, overload
 import logging
 import sqlite3
 from .state import Storage
@@ -9,10 +9,14 @@ log = logging.getLogger(__name__)
 class SqliteStorage(Storage):
     def __init__(self, filename: str):
         self._filename = filename
+        self.db = None
         self.db = self.__db_connect()
         self._ensure_table_exists()
 
     def __db_connect(self):
+        if self.db:
+            self.close()
+
         self.db = sqlite3.connect(self._filename,
                                   uri=self._filename.startswith('file:'),
                                   check_same_thread=self._filename == ":memory:",
@@ -61,7 +65,15 @@ class SqliteStorage(Storage):
             log.debug("ignoring delete: id %s doesn't exist", eid)
             return
 
-    def read_all(self, tag: str = None) -> Dict[Any, bytes]:
+    @overload
+    def read_all(self) -> Dict[str, Dict[Any, bytes]]:
+        ...
+
+    @overload
+    def read_all(self, tag: str) -> Dict[Any, bytes]:             # pylint: disable=arguments-differ
+        ...
+
+    def read_all(self, tag: str = None):                          # pylint: disable=arguments-differ
         ret = {}
         if tag is not None:
             query = 'SELECT id, tag, serialization FROM cloud WHERE tag = ?'
@@ -85,3 +97,11 @@ class SqliteStorage(Storage):
         for row in db_cursor.fetchall():
             return row
         return None
+
+
+    def close(self):
+        try:
+            self.db.close()
+        except Exception:
+            self.db = None
+
