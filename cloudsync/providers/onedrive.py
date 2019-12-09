@@ -24,7 +24,7 @@ from onedrivesdk_fork.error import OneDriveError, ErrorCode
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudCursorError, CloudTemporaryError
+    CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudException
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
@@ -252,9 +252,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         groups = self._direct_api("get", "/groups")
         for group in groups.get("value", []):
             group_name = group["displayName"]
-            drive = self._direct_api("get", "/groups/%s/drive" % group["id"])
-            drive_id = drive["id"]
-            all_drives[drive_id] = "team/" + group_name
+            try:
+                drive = self._direct_api("get", "/groups/%s/drive" % group["id"])
+                drive_id = drive["id"]
+                all_drives[drive_id] = "team/" + group_name
+            except (OneDriveError, CloudException):
+                log.exception("Failed to get drive info for %s", group["id"])
 
         try:
             # drives linked to other "sites"
@@ -403,7 +406,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 try:
                     segs = token.split('.')
                     if len(segs) > 1:
-                        info = json.loads(urlsafe_b64decode(segs[1]))
+                        info = json.loads(urlsafe_b64decode(segs[1]+"==="))
                         self.__team_id = info.get("tid")
                         log.debug("got team : %s", self.__team_id)
                 except Exception as e:
