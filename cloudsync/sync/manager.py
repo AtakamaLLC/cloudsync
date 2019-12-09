@@ -551,7 +551,7 @@ class SyncManager(Runnable):
         # used internally
         self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype)
 
-    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
+    def insert_event(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
