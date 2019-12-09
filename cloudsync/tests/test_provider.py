@@ -240,11 +240,11 @@ class ProviderHelper(ProviderBase):
         self.prov.connection_id = val
 
 
-def mixin_provider(prov):
+def mixin_provider(prov, connect=True):
     assert prov
     assert isinstance(prov, Provider)
 
-    prov = ProviderHelper(prov)         # type: ignore
+    prov = ProviderHelper(prov, connect=connect)         # type: ignore
 
     yield prov
 
@@ -256,7 +256,7 @@ def provider_params():
     return None
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def config_provider(request, provider_name):
     try:
         yield request.getfixturevalue("cloudsync_provider")
@@ -267,9 +267,14 @@ def config_provider(request, provider_name):
         yield cloudsync.registry.provider_by_name(provider_name).test_instance()
 
 
-@pytest.fixture(name="provider")
+@pytest.fixture(name="provider", scope="module")
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+@pytest.fixture(name="unconnected_provider")
+def unconnected_provider_fixture(config_provider):
+    yield from mixin_provider(config_provider, connect=False)
+
 
 from cloudsync.providers import *
 
@@ -308,7 +313,7 @@ def pytest_generate_tests(metafunc):
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
 
-        metafunc.parametrize("provider_name", marks)
+        metafunc.parametrize("provider_name", marks, scope="module")
 
 
 def test_join(mock_provider):
