@@ -24,7 +24,7 @@ from onedrivesdk_fork.error import OneDriveError, ErrorCode
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudFileNameError
+    CloudFileExistsError, CloudCursorError, CloudTemporaryError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
@@ -238,6 +238,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         res = req.json()
 # very large: uncomment if more detail needed, semicolonn left in for lint prevention
 #        log.debug("response %s", res);
+
         return res
 
     def _set_drive_list(self):
@@ -606,27 +607,19 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if not metadata:
             metadata = {}
 
-        # TODO: set @microsoft.graph.conflictBehavior to "fail"
-        # see https://docs.microsoft.com/en-us/onedrive/developer/rest-api/api/driveitem_createuploadsession?view=odsp-graph-online
-        if self.exists_path(path):
-            raise CloudFileExistsError()
-
         pid = self.get_parent_id(path=path)
         dirname, base = self.split(path)
         size = _get_size_and_seek0(file_like)
 
-        # TODO switch to directapi
         use_large = size > self.large_file_size
-        if '(' in path and "'" in path:
-            if size == 0:
-                raise CloudFileNameError("Cannot create a zero byte file with both a quote and a parenthesis")
-            use_large = True
-
         if not use_large:
+            if self.exists_path(path):
+                raise CloudFileExistsError()
             with self._api() as client:
                 api_path = self._get_item(client, oid=pid).api_path
                 name = urllib.parse.quote(base)
-                api_path += "/children/b('" + name + "')/content"
+                name = name.replace("'", "''")
+                api_path += "/children('" + name + "')/content"
                 r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
             return self._info_from_rest(r, root=dirname)
         else:
@@ -843,7 +836,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             ohash = None
         else:
             otype = FILE
-            log.info(dir(item.file.hashes))
 
             if self._is_biz:
                 ohash = item.file.hashes.to_dict()["quickXorHash"]
