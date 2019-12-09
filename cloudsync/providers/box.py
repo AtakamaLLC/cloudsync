@@ -270,7 +270,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     def events(self) -> Generator[Event, None, None]:  # pylint: disable=method-hidden
         yield from self._long_poll_manager()
 
-    def short_poll(self) -> Generator[Event, None, None]:
+    def short_poll(self) -> Generator[Event, None, None]:  # pylint: disable=too-many-locals
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
         log.debug("inside short_poll() cursor = %s", self.current_cursor)
         with self._api() as client:
