@@ -63,6 +63,7 @@ def _get_size_and_seek0(file_like):
 
 
 class OneDriveItem():
+    """Use to covert oid to path or path to oid.   Don't try to keep it around, or reuse it."""
     def __init__(self, prov, *, oid=None, path=None, pid=None):
         self.__prov = prov
         self.__item = None
@@ -235,7 +236,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if stream:
             return req
         res = req.json()
-#        log.debug("response %s", res)
+# very large: uncomment if more detail needed, semicolonn left in for lint prevention
+#        log.debug("response %s", res);
         return res
 
     def _set_drive_list(self):
@@ -490,8 +492,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 events = reversed(cast(List, events))
 
             for change in events:
-#                with disable_log_multiline():
-#                    log.debug("got event\n%s", pformat(change))
+# uncomment only while debugging, demicolon left in to cause linter to fail 
+#                log.debug("got event\n%s", pformat(change));
 
                 # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
                 #  'createdBy': {'application': {'id': '4805d153'},
@@ -591,9 +593,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     else:
                         raise
 
-                log.debug("RESP: %s", resp.content)
+                log.debug("uploaded: %s", resp.content)
+                # TODO: why not just info_from_rest?
                 item = onedrivesdk.Item(json.loads(resp.content))
-#                return self.info_oid(oid)
                 return self._info_item(item)
         else:
             with self._api() as client:
@@ -620,6 +622,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 api_path = self._get_item(client, oid=pid).api_path
                 rename = None
                 name = urllib.parse.quote(base)
+                # tested as of 12/2019 
+                # 1. this specific character is caused by an bug in the graph api
+                # 2. the ('XXX') syntax does not rescue proper behavior
                 if '(' in path:
                     rename = name 
                     name = os.urandom(32).hex()
@@ -627,6 +632,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 api_path += "/children/" + name + "/content"
                 r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
                 if rename:
+                    # see above: rename seems to work fine, regardless of the name
                     self.rename(r["id"], path)
                     r["name"] = rename
             return self._info_from_rest(r, root=dirname)

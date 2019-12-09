@@ -102,8 +102,6 @@ class SqliteStorage(Storage):
     def close(self):
         try:
             self.db.close()
-            self.db = None
         except Exception:
-            # no need to worry about fails to close
-            pass
+            self.db = None
 
