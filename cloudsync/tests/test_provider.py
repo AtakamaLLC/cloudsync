@@ -240,10 +240,10 @@ class ProviderHelper(ProviderBase):
             pass
 
     def test_cleanup(self, timeout=None, until=None):
-        info = self.info_path(self.test_root)
+        info = self.prov.info_path(self.test_root)
         self.__cleanup(info.oid)
 
-        info = self.info_path(self.test_root)
+        info = self.prov.info_path(self.test_root)
         if info:
             try:
                 log.debug("cleaning %s", info)
