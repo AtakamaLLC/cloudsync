@@ -205,7 +205,7 @@ class ProviderHelper(ProviderBase):
     # HELPERS
 
     def temp_name(self, name="tmp", *, folder=None):
-        fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "(." + name)
+        fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "('." + name)
         return fname
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:

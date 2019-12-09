@@ -24,7 +24,7 @@ from onedrivesdk_fork.error import OneDriveError, ErrorCode
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudCursorError, CloudTemporaryError
+    CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudFileNameError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
@@ -616,11 +616,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         size = _get_size_and_seek0(file_like)
 
         # TODO switch to directapi
-        if size <= self.large_file_size and '(' not in path:
+        use_large = size > self.large_file_size
+        if '(' in path and "'" in path:
+            if size == 0:
+                raise CloudFileNameError("Cannot create a zero byte file with both a quote and a parenthesis")
+            use_large = True
+
+        if not use_large:
             with self._api() as client:
                 api_path = self._get_item(client, oid=pid).api_path
                 name = urllib.parse.quote(base)
-                api_path += "/children/" + name + "/content"
+                api_path += "/children/b('" + name + "')/content"
                 r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
             return self._info_from_rest(r, root=dirname)
         else:
