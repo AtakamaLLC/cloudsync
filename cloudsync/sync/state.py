@@ -15,7 +15,7 @@ import random
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator
+from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator, overload
 
 from typing import Union, Sequence
 import msgpack
@@ -165,8 +165,20 @@ class Storage(ABC):
         """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
         ...
 
+    @overload
+    @abstractmethod
+    def read_all(self) -> Dict[str, Dict[Any, bytes]]: 
+        """yield all the serialized strings in a generator"""
+        ...
+
+    @overload
     @abstractmethod
     def read_all(self, tag: str) -> Dict[Any, bytes]:
+        """yield all the serialized strings in a generator"""
+        ...
+
+    @abstractmethod
+    def read_all(self, tag=None):
         """yield all the serialized strings in a generator"""
         ...
 

@@ -1284,7 +1284,7 @@ def test_cs_disconnect(cs):
 
     assert not cs.providers[REMOTE].connected
 
-    cs.run(until=lambda: cs.providers[REMOTE].connected, timeout=1)
+    cs.run(until=lambda: cs.providers[REMOTE].connected, timeout=2)
 
     assert not cs.providers[REMOTE].info_path(remote_path1)
 

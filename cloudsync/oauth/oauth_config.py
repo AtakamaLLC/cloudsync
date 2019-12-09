@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import Optional, Tuple
 import webbrowser
@@ -73,6 +74,7 @@ class OAuthConfig:
         This starts a server, pops a browser.
         Do some stuff, then follow with wait_auth() to wait
         """
+        os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)
         self.authorization_url, _unused_state = self._session.authorization_url(auth_url)

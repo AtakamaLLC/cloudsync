@@ -2,11 +2,13 @@ pystrict
 arrow
 msgpack
 dataclasses
+requests_oauthlib
 # gdrive provider
 google-oauth
 google-auth-httplib2
 google-api-python-client
 # dropbox provider
 dropbox
+#onedrive
 onedrivesdk_fork
-requests_oauthlib
+quickxorhash
