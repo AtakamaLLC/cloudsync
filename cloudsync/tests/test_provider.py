@@ -271,9 +271,9 @@ def config_provider(request, provider_name):
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
-@pytest.fixture(name="unconnected_provider")
-def unconnected_provider_fixture(config_provider):
-    yield from mixin_provider(config_provider, connect=False)
+@pytest.fixture(name="scoped_provider")
+def scoped_provider_fixture(config_provider):
+    yield from mixin_provider(config_provider)
 
 
 from cloudsync.providers import *
@@ -468,7 +468,8 @@ def test_mkdir(provider):
     provider.create(sub_f, data(), None)
 
 
-def test_walk(provider):
+def test_walk(scoped_provider):
+    provider = scoped_provider
     temp = BytesIO(os.urandom(32))
     folder = provider.temp_name("folder")
     provider.mkdir(folder)
@@ -752,10 +753,12 @@ def test_event_longpoll(provider):
 
     assert received_event
 
-def test_api_failure(provider):
+def test_api_failure(scoped_provider):
     # assert that the cloud
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
+
+    provider = scoped_provider
 
     def side_effect(*a, **k):
         raise CloudTemporaryError("fake disconnect")
