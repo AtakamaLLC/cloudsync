@@ -8,10 +8,10 @@ import requests
 import arrow
 
 from boxsdk import Client, JWTAuth, OAuth2
-from boxsdk.object.item import Item as box_item
-from boxsdk.object.folder import Folder as box_folder
-from boxsdk.object.file import File as box_file
-from boxsdk.object.event import Event as box_event
+from boxsdk.object.item import Item as BoxItem
+from boxsdk.object.folder import Folder as BoxFolder
+from boxsdk.object.file import File as BoxFile
+from boxsdk.object.event import Event as BoxEvent
 from boxsdk.exception import BoxException, BoxAPIException  # , BoxAPIException, BoxNetworkException, BoxOAuthException
 from boxsdk.session.session import Session, AuthorizedSession
 
@@ -29,7 +29,6 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 # TODO:
 #   refactor _api to produce the client or a box_object, or consider if I want to switch to the RESTful api instead
-#   add caching for the object id's and types
 
 # Dox:
 #   sdk:
@@ -83,7 +82,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     def _store_refresh_token(self, access_token, refresh_token):
         self.__creds = {"api_key": access_token,
                         "refresh_token": refresh_token,
-                       }
+                        }
         self._oauth_config.creds_changed(self.__creds)
 
     def interrupt_auth(self):
@@ -100,7 +99,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
         return {"api_key": token.access_token,
                 "refresh_token": token.refresh_token,
-               }
+                }
 
     def get_quota(self):
         with self._api() as client:
@@ -149,10 +148,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         box_session = Session()
                         box_kwargs = box_session.get_constructor_kwargs()
                         auth = OAuth2(client_id=self._oauth_config.app_id,
-                                           client_secret=self._oauth_config.app_secret,
-                                           access_token=self.__creds["api_key"],
-                                           refresh_token=self.__creds["refresh_token"],
-                                           store_tokens=self._store_refresh_token)
+                                      client_secret=self._oauth_config.app_secret,
+                                      access_token=self.__creds["api_key"],
+                                      refresh_token=self.__creds["refresh_token"],
+                                      store_tokens=self._store_refresh_token)
 
                         box_session = AuthorizedSession(auth, **box_kwargs)
                         self.__client = Client(auth, box_session)
@@ -206,7 +205,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     log.exception("unknown box exception: \n%s", e)
                 except CloudException:
                     raise
-                except Exception as e:
+                except Exception:
                     pass
 
     def _api(self, *args, **kwargs) -> 'BoxProvider.Guard':
@@ -246,7 +245,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 headers = {'Authorization': 'Bearer %s' % (self.__api_key, )}
                 log.debug("headers: %s", headers)
                 srv_resp: requests.Response = self.__long_poll_session.options(self.base_box_url + self.events_endpoint,
-                                                            headers=headers)
+                                                                               headers=headers)
                 log.debug("response content is %s, %s", srv_resp.status_code, srv_resp.content)
                 if not 200 <= srv_resp.status_code < 300:
                     raise CloudTokenError
@@ -277,7 +276,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         with self._api() as client:
             response = client.events().get_events(limit=100, stream_position=self.current_cursor)
             new_position = response.get('next_stream_position')
-            change: box_event
+            change: BoxEvent
             for change in (i for i in response.get('entries') if i.get('event_type')):
                 if self.__seen_events.get(change.event_id):
                     log.debug("skipped duplicate event %s", change.event_id)
@@ -299,11 +298,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                             continue
                         self.__event_sequence[change_source.id] = current_sequence
 
-                if isinstance(change_source, box_item):
-                    otype = DIRECTORY if type(change_source) is box_folder else FILE
+                if isinstance(change_source, BoxItem):
+                    otype = DIRECTORY if type(change_source) is BoxFolder else FILE
                     oid = change_source.id
                     path = self._box_get_path(client, change_source)
-                    ohash = change_source.sha1 if type(change_source) is box_file else None
+                    ohash = change_source.sha1 if type(change_source) is BoxFile else None
                     exists = change_source.item_status == 'active'
                 else:
                     log.debug("ignoring event type %s source type %s", change.get('event_type'), type(change_source))
@@ -340,7 +339,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         with self._api() as client:
-            box_object: box_item = self._get_box_object(client, oid=oid, object_type=FILE, strict=False)
+            box_object: BoxItem = self._get_box_object(client, oid=oid, object_type=FILE, strict=False)
             if box_object is None:
                 raise CloudFileNotFoundError()
             if box_object.object_type != 'file':
@@ -356,7 +355,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             if parent_object is None:
                 raise CloudFileNotFoundError()
             # TODO: implement preflight_check on the upload_stream() call
-            new_object: box_file = parent_object.upload_stream(file_stream=file_like, file_name=base)
+            new_object: BoxFile = parent_object.upload_stream(file_stream=file_like, file_name=base)
             log.debug("caching id %s for file %s", new_object.object_id, path)
             self.__cache.create(path, new_object.object_id)
             retval = self._box_get_oinfo(client, new_object, parent_path=parent)
@@ -364,7 +363,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def download(self, oid, file_like):
         with self._api() as client:
-            box_object: box_item = self._get_box_object(client, oid=oid, object_type=FILE)
+            box_object: BoxItem = self._get_box_object(client, oid=oid, object_type=FILE)
             if box_object is None:
                 raise CloudFileNotFoundError()
             box_object.download_to(writeable_stream=file_like)
@@ -373,7 +372,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__cache.delete(path=path)
         try:
             with self._api() as client:
-                box_object: box_item = self._get_box_object(client, oid=oid, object_type=NOTKNOWN, strict=False)  # todo: get object_type from cache
+                box_object: BoxItem = self._get_box_object(client, oid=oid, object_type=NOTKNOWN, strict=False)  # todo: get object_type from cache
                 if box_object is None:
                     self.__cache.delete(oid=oid)
                     raise CloudFileNotFoundError()
@@ -422,10 +421,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 with self._api():  # only for exception translation inside the try
                     parent, base = self.split(path)
                     log.debug("MKDIR ---------------- parent=%s base=%s", parent, base)
-                    parent_object: box_item = self._get_box_object(client, path=parent, object_type=DIRECTORY)
+                    parent_object: BoxItem = self._get_box_object(client, path=parent, object_type=DIRECTORY)
                     if parent_object is None:
                         raise CloudFileNotFoundError()
-                    child_object: box_folder = parent_object.create_subfolder(base)
+                    child_object: BoxFolder = parent_object.create_subfolder(base)
                     self.__cache.mkdir(path, child_object.object_id)
                     log.debug("MKDIR ---------------- path=%s oid=%s", path, child_object.object_id)
 
@@ -483,7 +482,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return True
         return self.info_path(path) is not None
 
-    def _box_get_items(self, client: Client, box_object: box_item, path: str, page_size: Optional[int] = 5000):
+    def _box_get_items(self, client: Client, box_object: BoxItem, path: str, page_size: Optional[int] = 5000):
         assert isinstance(client, Client)
         if not page_size:
             page_size = 5000
@@ -535,7 +534,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             sha1.update(c)
         return sha1.hexdigest()
 
-    def _box_object_is_root(self, client: Client, box_object: box_item):
+    def _box_object_is_root(self, client: Client, box_object: BoxItem):
         assert isinstance(client, Client)
         if not box_object:
             return False
@@ -546,7 +545,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         object_is_root = (box_object.object_id == self.__root_id)
         return object_is_root
 
-    def _box_get_path(self, client: Client, box_object: box_item, use_cache=True) -> Optional[str]:
+    def _box_get_path(self, client: Client, box_object: BoxItem, use_cache=True) -> Optional[str]:
         assert isinstance(client, Client)
         if self._box_object_is_root(client, box_object):
             return self.sep
@@ -575,7 +574,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             retval_list.append(base_name)
         return self.join(retval_list)
 
-    def _box_get_dirinfo(self, client: Client, box_object: box_item, parent_path=None) -> Optional[DirInfo]:
+    def _box_get_dirinfo(self, client: Client, box_object: BoxItem, parent_path=None) -> Optional[DirInfo]:
         assert isinstance(client, Client)
         oinfo = self._box_get_oinfo(client, box_object, parent_path)
         if not oinfo.path:
@@ -587,7 +586,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return retval
         return None
 
-    def _box_get_oinfo(self, client: Client, box_object: box_item, parent_path=None, use_cache=True) -> Optional[OInfo]:
+    def _box_get_oinfo(self, client: Client, box_object: BoxItem, parent_path=None, use_cache=True) -> Optional[OInfo]:
         assert isinstance(client, Client)
         if box_object is None:
             return None
@@ -674,7 +673,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             return OInfo(dir_info.otype, dir_info.oid, dir_info.hash, dir_info.path, dir_info.size)
         return None
 
-    def _get_box_object(self, client: Client, oid=None, path=None, object_type: OType = None, strict=True, use_cache=True) -> Optional[box_item]:
+    def _get_box_object(self, client: Client, oid=None, path=None, object_type: OType = None, strict=True, use_cache=True) -> Optional[BoxItem]:
         assert isinstance(client, Client)
         assert object_type is not None
         assert not strict or object_type in (FILE, DIRECTORY)
@@ -696,7 +695,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 return self._get_box_object(client, oid=entry.object_id, object_type=found_type, strict=strict), found_type
         return None, None
 
-    def __box_get_metadata(self, client: Client, box_object: box_item, path=None):
+    def __box_get_metadata(self, client: Client, box_object: BoxItem, path=None):
         assert isinstance(client, Client)
         path = path or self._box_get_path(client, box_object)
         parent = None
@@ -724,7 +723,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         for entry in entries:
             self.__box_cache_object(client, entry, self.join(parent_path, entry.name))
 
-    def __box_cache_object(self, client: Client, box_object: box_item, path=None) -> Tuple[Optional[Dict], Optional[DirInfo]]:
+    def __box_cache_object(self, client: Client, box_object: BoxItem, path=None) -> Tuple[Optional[Dict], Optional[DirInfo]]:
         assert isinstance(client, Client)
         if not box_object:
             if path:
@@ -753,16 +752,17 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     # noinspection PyTypeChecker
     @staticmethod
-    def _unsafe_box_object_populate(client: Client, box_object: box_item) -> box_item:
+    def _unsafe_box_object_populate(client: Client, box_object: BoxItem) -> BoxItem:
         assert isinstance(client, Client)
-        retval: box_item = box_object.get()
+        retval: BoxItem = box_object.get()
         return retval
     
-    def _unsafe_get_box_object_from_path(self, client: Client, path: str, object_type: OType, strict: bool, use_cache: bool) -> Optional[box_item]: # pylint: disable=too-many-locals
+    def _unsafe_get_box_object_from_path(self, client: Client, path: str, object_type: OType, strict: bool,
+                                         use_cache: bool) -> Optional[BoxItem]:  # pylint: disable=too-many-locals
         assert isinstance(client, Client)
         assert object_type in (FILE, DIRECTORY)
         if path in ('/', ''):
-            root: box_item = client.root_folder()
+            root: BoxItem = client.root_folder()
             root = self._unsafe_box_object_populate(client, root)
             return root
         if use_cache:
@@ -774,7 +774,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         cached_parent_oid = None
         if use_cache:
             cached_parent_oid = self.__cache.get_oid(parent)
-        parent_object: Optional[box_folder] = None
+        parent_object: Optional[BoxFolder]
         if cached_parent_oid is not None:
             parent_object = self._get_box_object(client, oid=cached_parent_oid, object_type=DIRECTORY, strict=strict)
         else:
@@ -805,7 +805,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         return self._get_box_object(client, oid=entry.object_id, object_type=found_type, strict=strict)
 
     def _unsafe_get_box_object_from_oid(self, client: Client, oid: str, object_type: OType, strict: bool) \
-            -> Optional[box_item]:
+            -> Optional[BoxItem]:
         assert isinstance(client, Client)
         assert object_type in (FILE, DIRECTORY)
         box_object = None

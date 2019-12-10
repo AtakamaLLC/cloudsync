@@ -50,7 +50,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     large_file_size: int = 0                ; """Used for testing providers with separate large file handling"""
     upload_block_size: int = 0              ; """Used for testing providers with separate large file handling"""
 
-    connection_id: str = None               ; """Must remain constant between logins and must be unique to the login"""
+    connection_id: Optional[str] = None               ; """Must remain constant between logins and must be unique to the login"""
     _creds: Optional[Any] = None           ; """Base class helpers to store creds"""
     __connected = False                     ; """Base class helper to fake a connection"""
     # pylint: enable=multiple-statements
