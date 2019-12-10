@@ -53,6 +53,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     events_endpoint = '/events'
     long_poll_timeout = 120
     name = 'box'
+    listdir_page_size = 5000
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -494,7 +495,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._cache_collection_entries(client, entries, path)
         return entries
 
-    def listdir(self, oid, page_size=None) -> Generator[DirInfo, None, None]:
+    def listdir(self, oid) -> Generator[DirInfo, None, None]:
         # optionally takes a path, to make creating the OInfo cheaper, so that it doesn't need to figure out the path
         with self._api() as client:
             parent_object = self._get_box_object(client, oid=oid, object_type=DIRECTORY)
@@ -506,7 +507,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             # entries = parent_object.item_collection['entries']  # don't use this, new children may be missing
 
             # shitty attempt 2 that fails due to caching in the sdk:
-            entries = self._box_get_items(client, parent_object, parent_path, page_size=page_size)
+            entries = self._box_get_items(client, parent_object, parent_path, page_size=self.listdir_page_size)
             for entry in entries:
                 if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
                     raise NotImplementedError
