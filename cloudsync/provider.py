@@ -269,6 +269,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def namespace(self) -> str:
         return self._namespace
 
+    @namespace.setter
+    def namespace(self, ns: str):
+        raise NotImplementedError("This provider does not support namespaces")
+
 
 # CONVENIENCE
     def download_path(self, path, io):

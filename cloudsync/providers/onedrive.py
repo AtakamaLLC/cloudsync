@@ -256,8 +256,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 drive = self._direct_api("get", "/groups/%s/drive" % group["id"])
                 drive_id = drive["id"]
                 all_drives[drive_id] = "team/" + group_name
-            except (OneDriveError, CloudException):
-                log.exception("Failed to get drive info for %s", group["id"])
+            except (OneDriveError, CloudException) as err:
+                log.warning("Failed to get drive info for %s. Exception: %s", group["id"], repr(err))
 
         try:
             # drives linked to other "sites"
