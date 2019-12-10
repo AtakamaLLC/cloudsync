@@ -3,7 +3,7 @@ import logging
 import json
 import hashlib
 import time
-from typing import Optional, Generator, Dict, Tuple, List, Any
+from typing import Optional, Generator, Dict, Tuple, Any
 import requests
 import arrow
 
@@ -44,9 +44,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                        'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
-    # _auth_url = 'https://account.box.com/api/oauth2/authorize'
-    # _token_url = "https://api.box.com/oauth2/token"
-    # _scopes: List[str] = []
     _oauth_info = OAuthProviderInfo(auth_url='https://account.box.com/api/oauth2/authorize',  # self._auth_url,
                                     token_url="https://api.box.com/oauth2/token",  # self._token_url,
                                     scopes=[]  # self._scopes
@@ -744,8 +741,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         retval: BoxItem = box_object.get()
         return retval
     
-    def _unsafe_get_box_object_from_path(self, client: Client, path: str, object_type: OType, strict: bool,
-                                         use_cache: bool) -> Optional[BoxItem]:  # pylint: disable=too-many-locals
+    def _unsafe_get_box_object_from_path(self, client: Client,  # pylint: disable=too-many-locals
+                                         path: str,
+                                         object_type: OType,
+                                         strict: bool,
+                                         use_cache: bool) -> Optional[BoxItem]:
         assert isinstance(client, Client)
         assert object_type in (FILE, DIRECTORY)
         if path in ('/', ''):
