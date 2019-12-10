@@ -17,10 +17,10 @@ import webbrowser
 from base64 import urlsafe_b64decode, b64encode
 import requests
 import arrow
-import quickxorhash
 
 import onedrivesdk_fork as onedrivesdk
 from onedrivesdk_fork.error import OneDriveError, ErrorCode
+import quickxorhash
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \

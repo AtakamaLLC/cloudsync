@@ -271,7 +271,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self._namespace
 
     @namespace.setter
-    def namespace(self, ns: str):
+    def namespace(self, ns: str):                          # pylint: disable=no-self-use
         raise CloudNamespaceError("This provider does not support namespaces")
 
     @property
@@ -279,7 +279,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self._namespace_id
 
     @namespace_id.setter
-    def namespace_id(self, ns_id: str):
+    def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
         raise CloudNamespaceError("This provider does not support namespaces")
 
 
