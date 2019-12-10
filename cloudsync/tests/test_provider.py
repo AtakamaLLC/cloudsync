@@ -298,7 +298,7 @@ def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
-from cloudsync.providers import *
+import cloudsync.providers
 
 _registered = False
 def pytest_generate_tests(metafunc):
