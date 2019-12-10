@@ -51,10 +51,11 @@ class ProviderHelper(ProviderBase):
         self.api_retry = True
         self.prov = prov
 
-        self.test_root = getattr(self.prov, "test_root", None)
+        self.test_parent = getattr(self.prov, "test_root", "/")
         self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
         self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
         self.test_creds = getattr(self.prov, "test_creds", {})
+        self.test_root = None
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
@@ -72,7 +73,7 @@ class ProviderHelper(ProviderBase):
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
-            self.test_root = "/" + os.urandom(16).hex()
+            self.test_root = self.join(self.test_parent, os.urandom(16).hex())
 
         log.debug("mkdir %s", self.test_root)
         self.prov.mkdir(self.test_root)
