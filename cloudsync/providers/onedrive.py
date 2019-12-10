@@ -24,7 +24,7 @@ from onedrivesdk_fork.error import OneDriveError, ErrorCode
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudException
+    CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudException, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
@@ -976,7 +976,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @namespace_id.setter
     def namespace_id(self, ns_id: str):
         if ns_id not in self.__drive_to_name:
-            raise KeyError("The namespace id specified was not known to the onedrive provider")
+            raise CloudNamespaceError("The namespace id specified was invalid")
         self.namespace = self.__drive_to_name[ns_id]
 
     @classmethod

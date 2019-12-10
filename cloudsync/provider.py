@@ -6,7 +6,7 @@ import random
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 if TYPE_CHECKING:
     from .event import Event
@@ -272,7 +272,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @namespace.setter
     def namespace(self, ns: str):
-        raise NotImplementedError("This provider does not support namespaces")
+        raise CloudNamespaceError("This provider does not support namespaces")
 
     @property
     def namespace_id(self) -> Optional[str]:
@@ -280,7 +280,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):
-        raise NotImplementedError("This provider does not support namespaces")
+        raise CloudNamespaceError("This provider does not support namespaces")
 
 
 # CONVENIENCE
