@@ -1612,3 +1612,31 @@ def test_revoke_auth(config_provider, suspend_capture):
             time.sleep(5)
             log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
     assert not provider.connected
+
+## provider helper test
+def test_specific_test_root():
+    # assure that the provider helper uses the requested test root
+    # assure it never deletes it
+    # cryptvfs relies on this
+
+    class MockProvRooted(MockProvider):
+        test_root = "/banana"
+    base = MockProvRooted(False, False)
+    base.mkdir("/banana")
+
+    provider = ProviderHelper(base)
+    # i use whatever root the test instance specified
+    assert provider.test_root.startswith("/banana/")
+    # i but i put my tests in their own folder
+    assert provider.test_root != "/banana/"
+
+    # and i created it
+    assert base.info_path(provider.test_root).otype == cloudsync.DIRECTORY 
+
+    provider.test_cleanup()
+
+    # and i dont delete the test root
+    assert list(base.listdir_path("/banana")) == []
+
+
+
