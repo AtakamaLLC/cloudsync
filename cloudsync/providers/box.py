@@ -79,10 +79,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__cache = HierarchicalCache(self, '0', metadata_template=metadata_template)
         self.__root_id = None
 
-    def _store_refresh_token(self, access_token, refresh_token):
-        self.__creds = {"access_token": access_token, "refresh_token": refresh_token}
-        self._oauth_config.creds_changed(self.__creds)
-
     def get_quota(self):
         with self._api() as client:
             url = client.user(user_id='me').get_url()
@@ -105,6 +101,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
             log.debug("quota %s", res)
             return res
+
+    def _store_refresh_token(self, access_token, refresh_token):
+        self.__creds = {"access_token": access_token, "refresh_token": refresh_token}
+        self._oauth_config.creds_changed(self.__creds)
 
     def connect_impl(self, creds):
         log.debug('Connecting to box')
@@ -156,7 +156,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.connection_id = None
 
     # noinspection PyBroadException
-    class Guard:
+    class BoxProviderGuard:
         def __init__(self, client: Client, box):
             assert isinstance(client, Client)
             self.__client = client
@@ -192,11 +192,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 except Exception:
                     pass
 
-    def _api(self, *args, **kwargs) -> 'BoxProvider.Guard':
+    def _api(self, *args, **kwargs) -> 'BoxProvider.BoxProviderGuard':
         needs_client = kwargs.get('needs_client', True)
         if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
-        return self.Guard(self.__client, self)
+        return self.BoxProviderGuard(self.__client, self)
 
     @property
     def latest_cursor(self) -> Optional[Cursor]:
