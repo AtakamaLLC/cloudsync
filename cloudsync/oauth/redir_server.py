@@ -69,7 +69,6 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
             if self.SHUFFLE_PORTS:
                 random.shuffle(ports)
 
-            free = None
             for port in ports:
                 try:
                     self.__api_server = ApiServer('127.0.0.1', port)
