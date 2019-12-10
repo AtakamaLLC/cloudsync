@@ -1624,7 +1624,7 @@ def test_specific_test_root():
     base = MockProvRooted(False, False)
     base.mkdir("/banana")
 
-    provider = ProviderHelper(base)
+    provider = ProviderHelper(base)                             # type: ignore
     # i use whatever root the test instance specified
     assert provider.test_root.startswith("/banana/")
     # i but i put my tests in their own folder
