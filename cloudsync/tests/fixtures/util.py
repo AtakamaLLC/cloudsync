@@ -66,7 +66,12 @@ class WaitFor(NamedTuple):
 
 class RunUntilHelper:
     def run_until_clean(self: Any, timeout=TIMEOUT):
-        self.run(until=lambda: not self.busy, timeout=1)
+        # self.run(until=lambda: not self.busy, timeout=1)  # older, SLIGHTLY slower version
+        start = time.monotonic()
+        while self.busy:
+            self.do()
+            if time.monotonic() - start > timeout:
+                raise TimeoutError()
 
     def run_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT):
         log.debug("running until found")

@@ -3,10 +3,10 @@ from io import BytesIO
 import pytest
 from typing import List, Optional
 from unittest.mock import patch
-
+from itertools import permutations
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY, Event
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.sync.state import TRASHED
@@ -119,10 +119,10 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
-    sync.insert_event(LOCAL, FILE, oid=linfo.oid, exists=True)
+    sync.create_event(LOCAL, FILE, oid=linfo.oid, exists=True)
 
     assert sync.state.entry_count() == 1
     assert sync.state.changeset_len == 1
@@ -132,7 +132,7 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     rinfo = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
 
     # inserts info about some cloud path
-    sync.insert_event(REMOTE, FILE, oid=rinfo.oid,
+    sync.create_event(REMOTE, FILE, oid=rinfo.oid,
                       path=remote_path2, hash=rinfo.hash)
 
     def done():
@@ -188,14 +188,14 @@ def test_sync_rename(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
     new_oid = sync.providers[LOCAL].rename(linfo.oid, local_path2)
 
-    sync.insert_event(LOCAL, FILE, path=local_path2,
+    sync.create_event(LOCAL, FILE, path=local_path2,
                       oid=new_oid, hash=linfo.hash, prior_oid=linfo.oid)
 
     sync.run_until_found((REMOTE, remote_path2))
@@ -215,14 +215,14 @@ def test_sync_hash(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
     linfo = sync.providers[LOCAL].upload(linfo.oid, BytesIO(b"hello2"))
 
-    sync.insert_event(LOCAL, FILE, linfo.oid, hash=linfo.hash)
+    sync.create_event(LOCAL, FILE, linfo.oid, hash=linfo.hash)
 
     sync.run_until_found(WaitFor(REMOTE, remote_path1, hash=linfo.hash))
 
@@ -246,13 +246,13 @@ def test_sync_rm(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
     sync.providers[LOCAL].delete(linfo.oid)
-    sync.insert_event(LOCAL, FILE, linfo.oid, exists=False)
+    sync.create_event(LOCAL, FILE, linfo.oid, exists=False)
 
     sync.run_until_found(WaitFor(REMOTE, remote_path1, exists=False))
 
@@ -271,9 +271,9 @@ def test_sync_mkdir(sync):
     local_path_oid1 = sync.providers[LOCAL].mkdir(local_path1)
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, DIRECTORY, path=local_dir1,
+    sync.create_event(LOCAL, DIRECTORY, path=local_dir1,
                       oid=local_dir_oid1)
-    sync.insert_event(LOCAL, DIRECTORY, path=local_path1,
+    sync.create_event(LOCAL, DIRECTORY, path=local_path1,
                       oid=local_path_oid1)
 
     sync.run_until_found((REMOTE, remote_dir1))
@@ -282,7 +282,7 @@ def test_sync_mkdir(sync):
     log.debug("BEFORE DELETE\n %s", sync.state.pretty_print())
 
     sync.providers[LOCAL].delete(local_path_oid1)
-    sync.insert_event(LOCAL, FILE, local_path_oid1, exists=False)
+    sync.create_event(LOCAL, FILE, local_path_oid1, exists=False)
 
     log.debug("AFTER DELETE\n %s", sync.state.pretty_print())
 
@@ -306,9 +306,9 @@ def test_sync_conflict_simul(sync):
     rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(b"goodbye"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
-    sync.insert_event(REMOTE, FILE, path=remote_path1,
+    sync.create_event(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
     # one of them is a conflict
@@ -373,9 +373,9 @@ def test_sync_conflict_resolve(sync, side, keep):
     rinfo = sync.providers[REMOTE].create(remote_path1, BytesIO(data[REMOTE]))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
-    sync.insert_event(REMOTE, FILE, path=remote_path1,
+    sync.create_event(REMOTE, FILE, path=remote_path1,
                       oid=rinfo.oid, hash=rinfo.hash)
 
     # ensure events are flushed a couple times
@@ -423,7 +423,7 @@ def test_sync_conflict_path(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
@@ -441,13 +441,13 @@ def test_sync_conflict_path(sync):
 
     sync.providers[REMOTE].log_debug_state("AFTER")         # type: ignore
 
-    sync.insert_event(LOCAL, FILE, path=local_path2,
+    sync.create_event(LOCAL, FILE, path=local_path2,
                       oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
 
     assert len(sync.state.get_all()) == 1
     assert ent[REMOTE].oid == new_oid_r
 
-    sync.insert_event(REMOTE, FILE, path=remote_path2,
+    sync.create_event(REMOTE, FILE, path=remote_path2,
                       oid=new_oid_r, hash=rinfo.hash, prior_oid=rinfo.oid)
 
     assert len(sync.state.get_all()) == 1
@@ -478,17 +478,17 @@ def test_sync_cycle(sync: SyncMgrMixin):
     r_parent_oid = sync.providers[REMOTE].mkdir(r_parent)
 
     linfo1 = sync.providers[LOCAL].create(lp1, BytesIO(b"hello1"))
-    sync.insert_event(LOCAL, FILE, path=lp1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.create_event(LOCAL, FILE, path=lp1, oid=linfo1.oid, hash=linfo1.hash)
     sync.run_until_found((REMOTE, rp1), timeout=1)
     rinfo1 = sync.providers[REMOTE].info_path(rp1)
 
     linfo2 = sync.providers[LOCAL].create(lp2, BytesIO(b"hello2"))
-    sync.insert_event(LOCAL, FILE, path=lp2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.create_event(LOCAL, FILE, path=lp2, oid=linfo2.oid, hash=linfo2.hash)
     sync.run_until_found((REMOTE, rp2))
     rinfo2 = sync.providers[REMOTE].info_path(rp2)
 
     linfo3 = sync.providers[LOCAL].create(lp3, BytesIO(b"hello3"))
-    sync.insert_event(LOCAL, FILE, path=lp3, oid=linfo3.oid, hash=linfo3.hash)
+    sync.create_event(LOCAL, FILE, path=lp3, oid=linfo3.oid, hash=linfo3.hash)
     sync.run_until_found((REMOTE, rp3))
     rinfo3 = sync.providers[REMOTE].info_path(rp3)
 
@@ -501,13 +501,13 @@ def test_sync_cycle(sync: SyncMgrMixin):
     # a->temp, c->a, b->c, temp->b
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
-    sync.insert_event(LOCAL, FILE, path=templ, oid=tmp1oid, hash=linfo1.hash, prior_oid=linfo1.oid)
+    sync.create_event(LOCAL, FILE, path=templ, oid=tmp1oid, hash=linfo1.hash, prior_oid=linfo1.oid)
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
-    sync.insert_event(LOCAL, FILE, path=lp1, oid=lp1oid, hash=linfo3.hash, prior_oid=linfo3.oid)
+    sync.create_event(LOCAL, FILE, path=lp1, oid=lp1oid, hash=linfo3.hash, prior_oid=linfo3.oid)
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
-    sync.insert_event(LOCAL, FILE, path=lp3, oid=lp3oid, hash=linfo2.hash, prior_oid=linfo2.oid)
+    sync.create_event(LOCAL, FILE, path=lp3, oid=lp3oid, hash=linfo2.hash, prior_oid=linfo2.oid)
     log.debug("TABLE 3:\n%s", sync.state.pretty_print())
-    sync.insert_event(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
+    sync.create_event(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
     log.debug("TABLE 4:\n%s", sync.state.pretty_print())
     assert len(sync.state.get_all()) == 3
     sync.providers[REMOTE].log_debug_state("MIDDLE")                # type: ignore
@@ -553,10 +553,10 @@ def test_sync_conflict_path_combine(sync):
     rinfo2 = sync.providers[REMOTE].create(remote_path2, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.insert_event(LOCAL, FILE, path=local_path1,
+    sync.create_event(LOCAL, FILE, path=local_path1,
                       oid=linfo1.oid, hash=linfo1.hash)
 
-    sync.insert_event(REMOTE, FILE, path=remote_path2,
+    sync.create_event(REMOTE, FILE, path=remote_path2,
                       oid=rinfo2.oid, hash=rinfo2.hash)
 
     sync.run_until_found((REMOTE, remote_path1), (LOCAL, local_path2))
@@ -565,11 +565,11 @@ def test_sync_conflict_path_combine(sync):
 
     new_oid1 = sync.providers[LOCAL].rename(linfo1.oid, local_path3)
     prior_oid = sync.providers[LOCAL].oid_is_path and linfo1.oid
-    sync.insert_event(LOCAL, FILE, path=local_path3, oid=new_oid1, prior_oid=prior_oid)
+    sync.create_event(LOCAL, FILE, path=local_path3, oid=new_oid1, prior_oid=prior_oid)
 
     new_oid2 = sync.providers[REMOTE].rename(rinfo2.oid, remote_path3)
     prior_oid = sync.providers[REMOTE].oid_is_path and rinfo2.oid
-    sync.insert_event(REMOTE, FILE, path=remote_path3, oid=new_oid2, prior_oid=prior_oid)
+    sync.create_event(REMOTE, FILE, path=remote_path3, oid=new_oid2, prior_oid=prior_oid)
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
@@ -585,9 +585,8 @@ def test_sync_conflict_path_combine(sync):
     assert ok()
 
 
-def test_del_create(sync):
-    remote_parent = "/remote"
-    local_parent = "/local"
+def test_event_order_del_create(sync):
+    local_parent, remote_parent = ("/local", "/remote")
     local, remote = sync.providers
     local.mkdir(local_parent)
     remote.mkdir(remote_parent)
@@ -597,9 +596,9 @@ def test_del_create(sync):
     rinfo1 = sync.providers[REMOTE].create(remote_path1, BytesIO(b"hello"))
 
     # insert the delete event before the create event, file exists, confirm it exists locally after syncing
-    sync.insert_event(REMOTE, FILE, path=remote_path1, oid=rinfo1.oid, hash=rinfo1.hash, exists=False)
+    sync.create_event(REMOTE, FILE, path=remote_path1, oid=rinfo1.oid, hash=rinfo1.hash, exists=False)
     sync.run_until_clean(timeout=1)
-    sync.insert_event(REMOTE, FILE, oid=rinfo1.oid, exists=True)
+    sync.create_event(REMOTE, FILE, oid=rinfo1.oid, exists=True)
     sync.run_until_clean(timeout=1)
 
     assert sync.providers[LOCAL].info_path(local_path1) is not None
@@ -610,36 +609,64 @@ def test_del_create(sync):
     sync.providers[REMOTE].delete(rinfo2.oid)
 
     # insert the delete event before the create event, file trashed, confirm it doesn't exist locally after syncing
-    sync.insert_event(REMOTE, FILE, path=remote_path2, oid=rinfo2.oid, hash=rinfo2.hash, exists=False)
+    sync.create_event(REMOTE, FILE, path=remote_path2, oid=rinfo2.oid, hash=rinfo2.hash, exists=False)
     sync.run_until_clean(timeout=1)
-    sync.insert_event(REMOTE, FILE, oid=rinfo2.oid, exists=True)
+    sync.create_event(REMOTE, FILE, oid=rinfo2.oid, exists=True)
     sync.run_until_clean(timeout=1)
 
     assert sync.providers[LOCAL].info_path(local_path2) is None
 
-    remote_path3 = "/remote/stuff3"
-    local_path3 = "/local/stuff3"
-    rinfo3a = sync.providers[REMOTE].create(remote_path3, BytesIO(b"helloa"))
-    sync.providers[REMOTE].delete(rinfo3a.oid)
-    rinfo3b = sync.providers[REMOTE].create(remote_path3, BytesIO(b"hellob"))
 
-    # generate events in crazy order: create b, trash a, create a
-    sync.insert_event(REMOTE, FILE, path=remote_path3, oid=rinfo3b.oid, hash=rinfo3b.hash, exists=True)
-    assert sync.state.changeset_len > 0
-    sync.run_until_clean(timeout=1)
-    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
-    assert sync.state.changeset_len == 0
-    linfo = sync.providers[LOCAL].info_path(local_path3)
-    assert linfo
-    sync.run_until_found(WaitFor(LOCAL, local_path3, exists=True))
-    sync.insert_event(REMOTE, FILE, path=remote_path3, oid=rinfo3a.oid, hash=rinfo3a.hash, exists=False)
-    sync.run_until_clean(timeout=1)
-    sync.insert_event(REMOTE, FILE, oid=rinfo3a.oid, exists=True)
-    sync.run_until_clean(timeout=1)
+@pytest.mark.manual
+@pytest.mark.parametrize("order", list(permutations(range(6), 6)))
+def test_event_order_permute(order, sync):
+    local_parent, remote_parent = ("/local", "/remote")
+    local, remote = sync.providers
+    local.mkdir(local_parent)
+    remote.mkdir(remote_parent)
 
-    linfo = sync.providers[LOCAL].info_path(local_path3)
-    assert linfo is not None
-    assert linfo.hash == local.hash_data(BytesIO(b"hellob"))
+    def target_hash(suffix):
+        return local.hash_data(BytesIO(b"hello" + bytes(str(suffix), "utf8")))
+
+    fn_suffix = "".join([str(i) for i in order])
+    log.debug("test ordering = %s", fn_suffix)
+    local_path_a = "/local/stuffa" + fn_suffix
+    local_path_b = "/local/stuffb" + fn_suffix
+    local_path_c = "/local/stuffc" + fn_suffix
+    remote_path_a = "/remote/stuffa" + fn_suffix
+    remote_path_b = "/remote/stuffb" + fn_suffix
+    remote_path_c = "/remote/stuffc" + fn_suffix
+
+    rinfo_1 = remote.create(remote_path_b, BytesIO(b"hello1"))
+    remote.delete(rinfo_1.oid)
+    rinfo_2 = remote.create(remote_path_a, BytesIO(b"hello2"))
+    remote.rename(rinfo_2.oid, remote_path_b)
+    remote.rename(rinfo_2.oid, remote_path_c)
+    rinfo_3 = remote.create(remote_path_b, BytesIO(b"hello3"))
+
+    # Event(otype=, oid=, path=, hash=, exists=, mtime=, prior_oid=, new_cursor=)
+    events = [
+        Event(otype=FILE, oid=rinfo_1.oid, path=remote_path_a, hash=rinfo_1.hash, exists=True, mtime=1),  # create b
+        Event(otype=FILE, oid=rinfo_1.oid, path=remote_path_a, hash=rinfo_1.hash, exists=False, mtime=2),  # trash b
+
+        Event(otype=FILE, oid=rinfo_2.oid, path=remote_path_a, hash=rinfo_2.hash, exists=True, mtime=3),  # create a
+        Event(otype=FILE, oid=rinfo_2.oid, path=remote_path_b, hash=rinfo_2.hash, exists=True, mtime=4),  # rename to b
+        Event(otype=FILE, oid=rinfo_2.oid, path=remote_path_c, hash=rinfo_2.hash, exists=True, mtime=5),  # rename to c
+
+        Event(otype=FILE, oid=rinfo_3.oid, path=remote_path_b, hash=rinfo_3.hash, exists=True, mtime=6),  # create b
+    ]
+    for event_no in order:
+        event = events[event_no]
+        log.info("Processing event %s:%s", event.mtime, event)
+        sync.insert_event(REMOTE, event)
+        sync.run_until_clean(timeout=1)
+
+    linfo_a = local.info_path(local_path_a)
+    linfo_b = local.info_path(local_path_b)
+    linfo_c = local.info_path(local_path_c)
+    assert linfo_a is None
+    assert linfo_b.hash == target_hash("3")
+    assert linfo_c.hash == target_hash("2")
 
 
 def test_create_then_move(sync):  # TODO: combine with the reverse test
@@ -654,16 +681,16 @@ def test_create_then_move(sync):  # TODO: combine with the reverse test
     sync.providers[LOCAL].mkdir(local_parent)
     sync.providers[REMOTE].mkdir(remote_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
-    sync.insert_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
     sync.run_until_found((REMOTE, remote_file1))
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
 
     folder_oid = sync.providers[LOCAL].mkdir(local_folder)
-    sync.insert_event(LOCAL, DIRECTORY, path=local_folder, oid=folder_oid, hash=None)
+    sync.create_event(LOCAL, DIRECTORY, path=local_folder, oid=folder_oid, hash=None)
 
     new_oid = sync.providers[LOCAL].rename(linfo1.oid, local_file2)
-    sync.insert_event(LOCAL, FILE, path=local_file2, oid=new_oid, hash=linfo1.hash, prior_oid=linfo1.oid)
+    sync.create_event(LOCAL, FILE, path=local_file2, oid=new_oid, hash=linfo1.hash, prior_oid=linfo1.oid)
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((REMOTE, remote_file2), timeout=2)
@@ -682,16 +709,16 @@ def test_create_then_move_reverse(sync):  # TODO: see if this can be combined wi
     oid = sync.providers[LOCAL].mkdir(local_parent)
     oid = sync.providers[REMOTE].mkdir(remote_parent)
     rinfo1 = sync.providers[REMOTE].create(remote_file1, BytesIO(b"hello"))
-    sync.insert_event(REMOTE, FILE, path=remote_file1, oid=rinfo1.oid, hash=rinfo1.hash)
+    sync.create_event(REMOTE, FILE, path=remote_file1, oid=rinfo1.oid, hash=rinfo1.hash)
     sync.run_until_found((LOCAL, local_file1))
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
 
     folder_oid = sync.providers[REMOTE].mkdir(remote_folder)
-    sync.insert_event(REMOTE, DIRECTORY, path=remote_folder, oid=folder_oid, hash=None)
+    sync.create_event(REMOTE, DIRECTORY, path=remote_folder, oid=folder_oid, hash=None)
 
     sync.providers[REMOTE].rename(rinfo1.oid, remote_file2)
-    sync.insert_event(REMOTE, FILE, path=remote_file2, oid=rinfo1.oid, hash=rinfo1.hash)
+    sync.create_event(REMOTE, FILE, path=remote_file2, oid=rinfo1.oid, hash=rinfo1.hash)
 
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
     sync.run_until_found((LOCAL, local_file2), timeout=2)
@@ -708,10 +735,10 @@ def _test_rename_folder_with_kids(sync, source, dest):
     for loc in (source, dest):
         sync.providers[loc].mkdir(parent[loc])
     folder_oid = sync.providers[source].mkdir(folder1[source])
-    sync.insert_event(source, DIRECTORY, path=folder1[source], oid=folder_oid, hash=None)
+    sync.create_event(source, DIRECTORY, path=folder1[source], oid=folder_oid, hash=None)
 
     file_info: OInfo = sync.providers[source].create(file1[source], BytesIO(b"hello"))
-    sync.insert_event(source, FILE, path=file1[source], oid=file_info.oid, hash=None)
+    sync.create_event(source, FILE, path=file1[source], oid=file_info.oid, hash=None)
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
     sync.run_until_found((dest, folder1[dest]))
@@ -719,7 +746,7 @@ def _test_rename_folder_with_kids(sync, source, dest):
     log.debug("TABLE 1:\n%s", sync.state.pretty_print())
 
     new_oid = sync.providers[source].rename(folder_oid, folder2[source])
-    sync.insert_event(source, DIRECTORY, path=folder2[source], oid=new_oid, hash=None, prior_oid=folder_oid)
+    sync.create_event(source, DIRECTORY, path=folder2[source], oid=new_oid, hash=None, prior_oid=folder_oid)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
     sync.run_until_found(
@@ -745,7 +772,7 @@ def test_aging(sync):
 
     # aging slows things down
     sync.aging = 0.2
-    sync.insert_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
     sync.do()
     sync.do()
     sync.do()
@@ -759,7 +786,7 @@ def test_aging(sync):
 
     sync.aging = 0
     linfo2 = sync.providers[LOCAL].create(local_file2, BytesIO(b"hello"))
-    sync.insert_event(LOCAL, FILE, path=local_file2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.create_event(LOCAL, FILE, path=local_file2, oid=linfo2.oid, hash=linfo2.hash)
     sync.do()
     sync.do()
     sync.do()
@@ -777,10 +804,10 @@ def test_remove_folder_with_kids(sync_sh):
     for loc in (LOCAL, REMOTE):
         sync.providers[loc].mkdir(parent[loc])
     folder_oid = sync.providers[LOCAL].mkdir(folder1[LOCAL])
-    sync.insert_event(LOCAL, DIRECTORY, path=folder1[LOCAL], oid=folder_oid, hash=None)
+    sync.create_event(LOCAL, DIRECTORY, path=folder1[LOCAL], oid=folder_oid, hash=None)
 
     file_info: OInfo = sync.providers[LOCAL].create(file1[LOCAL], BytesIO(b"hello"))
-    sync.insert_event(LOCAL, FILE, path=file1[LOCAL], oid=file_info.oid, hash=None)
+    sync.create_event(LOCAL, FILE, path=file1[LOCAL], oid=file_info.oid, hash=None)
 
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
     sync.run_until_found((REMOTE, file1[REMOTE]))
@@ -790,8 +817,8 @@ def test_remove_folder_with_kids(sync_sh):
     sync.providers[LOCAL].delete(file_info.oid)
     sync.providers[LOCAL].delete(folder_oid)
 
-    sync.insert_event(LOCAL, DIRECTORY, oid=file_info.oid, exists=False)
-    sync.insert_event(LOCAL, DIRECTORY, oid=folder_oid, exists=False)
+    sync.create_event(LOCAL, DIRECTORY, oid=file_info.oid, exists=False)
+    sync.create_event(LOCAL, DIRECTORY, oid=folder_oid, exists=False)
 
     log.debug("TABLE 2:\n%s", sync.state.pretty_print())
 
@@ -812,9 +839,9 @@ def test_dir_rm(sync):
     rdir = sync.providers[REMOTE].mkdir(remote_dir)
     lfile = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
 
-    sync.insert_event(LOCAL, DIRECTORY, path=local_dir,
+    sync.create_event(LOCAL, DIRECTORY, path=local_dir,
                       oid=ldir)
-    sync.insert_event(LOCAL, FILE, path=local_file,
+    sync.create_event(LOCAL, FILE, path=local_file,
                       oid=lfile.oid, hash=lfile.hash)
 
     sync.run_until_found((REMOTE, remote_file), (REMOTE, remote_dir))
@@ -825,11 +852,11 @@ def test_dir_rm(sync):
 
     # Directory delete - should punt because of children
     sync.aging = 0
-    sync.insert_event(REMOTE, DIRECTORY, path=remote_dir, oid=rdir, exists=False)
+    sync.create_event(REMOTE, DIRECTORY, path=remote_dir, oid=rdir, exists=False)
     sync.do()
     assert len(list(sync.providers[LOCAL].listdir(ldir))) == 1
 
-    sync.insert_event(REMOTE, FILE, path=remote_file, oid=rfile.oid, exists=False)
+    sync.create_event(REMOTE, FILE, path=remote_file, oid=rfile.oid, exists=False)
     sync.do()
     assert len(list(sync.providers[LOCAL].listdir(ldir))) == 0
 
@@ -848,7 +875,7 @@ def test_no_change_does_nothing(sync):
     sync.providers[LOCAL].mkdir(local_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
 
-    sync.insert_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
 
     sync.run_until_clean(timeout=1)
 
@@ -879,7 +906,7 @@ def test_file_name_error(sync):
     sync.providers[LOCAL].mkdir(local_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
 
-    sync.insert_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
 
     _create = sync.providers[REMOTE].create
 
@@ -913,11 +940,11 @@ def test_modif_rename(sync):
     sync.providers[LOCAL].mkdir(local_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
 
-    sync.insert_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
     sync.run_until_found((REMOTE, remote_file1))
 
     linfo2 = sync.providers[LOCAL].upload(linfo1.oid, BytesIO(b"hello2"))
-    sync.insert_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo2.hash)
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo2.hash)
     new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file2)
 
     log.debug("CHANGE LF1 NO REN EVENT")
@@ -929,7 +956,7 @@ def test_modif_rename(sync):
         assert sync.providers[REMOTE].info_path(remote_file1) is not None
 
     log.debug("REN EVENT")
-    sync.insert_event(LOCAL, FILE, path=local_file2,
+    sync.create_event(LOCAL, FILE, path=local_file2,
                       oid=new_loid, prior_oid=linfo1.oid)
 
     sync.run_until_found((REMOTE, remote_file2))
@@ -948,7 +975,7 @@ def test_re_mkdir_synced(sync):
     lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
     lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
 
-    sync.insert_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
 
     sync.run_until_found((REMOTE, remote_file))
 
@@ -959,7 +986,7 @@ def test_re_mkdir_synced(sync):
     sync.providers[LOCAL].delete(lsub_oid)
 
     sync.run(until=lambda: not sync.busy)
-    sync.insert_event(REMOTE, FILE, path=remote_file, oid=rfil.oid, hash=rfil.hash)
+    sync.create_event(REMOTE, FILE, path=remote_file, oid=rfil.oid, hash=rfil.hash)
 
     log.info("TABLE 0:\n%s", sync.state.pretty_print())
 
@@ -980,7 +1007,7 @@ def test_folder_del_loop(sync):
     lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
     lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
 
-    sync.insert_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
 
     sync.run_until_found((REMOTE, remote_file))
 
@@ -993,12 +1020,12 @@ def test_folder_del_loop(sync):
 
     log.info("TABLE 0:\n%s", sync.state.pretty_print())
 
-    sync.insert_event(REMOTE, FILE, oid=rfil.oid, exists=TRASHED)
+    sync.create_event(REMOTE, FILE, oid=rfil.oid, exists=TRASHED)
     sync.run(until=lambda: not sync.busy, timeout=1)
 
-    sync.insert_event(LOCAL, DIRECTORY, oid=lsub2_oid, path=local_sub2, prior_oid=lsub_oid)
-    sync.insert_event(LOCAL, FILE, oid=lfil2.oid, path=local_file2, prior_oid=lfil.oid)
-    sync.insert_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
+    sync.create_event(LOCAL, DIRECTORY, oid=lsub2_oid, path=local_sub2, prior_oid=lsub_oid)
+    sync.create_event(LOCAL, FILE, oid=lfil2.oid, path=local_file2, prior_oid=lfil.oid)
+    sync.create_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
 
     log.info("TABLE 1:\n%s", sync.state.pretty_print())
 
