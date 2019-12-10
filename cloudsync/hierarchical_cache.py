@@ -90,15 +90,16 @@ class HierarchicalCache:
             assert type(node.oid) is self._oid_type, \
                 "oid type %s does not match the root oid type %s" % (type(node.oid), self._oid_type)
         node.full_path()
+        node.check()
 
     def new_node(self, otype: OType, oid, name, parent, metadata: Dict[str, Any]) -> Node:
-        self.check_metadata(metadata)
+        self._check_metadata(metadata)
         retval = Node(provider=self._provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
         retval.check()
         self.check(retval)
         return retval
 
-    def check_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
+    def _check_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
         if metadata is None:
             return
         for k, v in metadata.items():
@@ -115,7 +116,7 @@ class HierarchicalCache:
         return None
 
     def set_metadata(self, metadata, *, path=None, oid=None):
-        self.check_metadata(metadata)
+        self._check_metadata(metadata)
         node = self._get_node(path=path, oid=oid)
         if node:
             node.metadata = metadata or {}
@@ -128,7 +129,7 @@ class HierarchicalCache:
 
     def _update(self, path, otype, oid=None, metadata=None, keep=True) -> Node:
         metadata = metadata or {}
-        self.check_metadata(metadata)
+        self._check_metadata(metadata)
         node = self._get_node(path=path)
         if node and node.type != otype:
             self._delete(remove_node=node)
