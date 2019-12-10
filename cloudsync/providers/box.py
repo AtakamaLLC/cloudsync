@@ -190,7 +190,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 except CloudException:
                     raise
                 except Exception:
-                    pass
+                    pass  # this will not swallow the exception, because this is in a context manager
 
     def _api(self, *args, **kwargs) -> 'BoxProvider.BoxProviderGuard':
         needs_client = kwargs.get('needs_client', True)

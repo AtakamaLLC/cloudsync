@@ -81,9 +81,9 @@ class HierarchicalCache:
         assert root_oid is not None
         self._oid_type = type(root_oid)
         self._metadata_template = metadata_template or {}
-        self._root: Node = self.new_node(provider, DIRECTORY, root_oid, '', None, root_metadata)
-        self._oid_to_node: Dict[str, Node] = {self._root.oid: self._root}
         self._provider: Provider = provider
+        self._root: Node = self.new_node(DIRECTORY, root_oid, '', None, root_metadata)
+        self._oid_to_node: Dict[str, Node] = {self._root.oid: self._root}
 
     def check(self, node: Node):
         if node.oid is not None:
@@ -91,9 +91,9 @@ class HierarchicalCache:
                 "oid type %s does not match the root oid type %s" % (type(node.oid), self._oid_type)
         node.full_path()
 
-    def new_node(self, provider, otype: OType, oid, name, parent, metadata: Dict[str, Any]) -> Node:
+    def new_node(self, otype: OType, oid, name, parent, metadata: Dict[str, Any]) -> Node:
         self.check_metadata(metadata)
-        retval = Node(provider=provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
+        retval = Node(provider=self._provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
         retval.check()
         self.check(retval)
         return retval
@@ -174,7 +174,7 @@ class HierarchicalCache:
         norm_path = self._provider.normalize_path(path)
 
         _, name = self._provider.split(path)
-        new_node = self.new_node(self._provider, otype, oid, name, None, metadata)
+        new_node = self.new_node(otype, oid, name, None, metadata)
         self.__insert_node(new_node, norm_path)
         self.check(new_node)
         return new_node
