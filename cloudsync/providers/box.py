@@ -18,7 +18,7 @@ from boxsdk.session.session import Session, AuthorizedSession
 from cloudsync.hierarchical_cache import HierarchicalCache
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType, Hash, Cursor, LongPollManager
 
-from cloudsync.oauth import OAuthConfig
+from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
     CloudFileExistsError, CloudException, CloudCursorError
@@ -39,15 +39,18 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 #      https://developer.box.com/en/reference/
 
 
-# noinspection PyProtectedMember
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     additional_invalid_characters = ''
     events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                        'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
-    _auth_url = 'https://account.box.com/api/oauth2/authorize'
-    _token_url = "https://api.box.com/oauth2/token"
-    _scopes: List[str] = []
+    # _auth_url = 'https://account.box.com/api/oauth2/authorize'
+    # _token_url = "https://api.box.com/oauth2/token"
+    # _scopes: List[str] = []
+    _oauth_info = OAuthProviderInfo(auth_url='https://account.box.com/api/oauth2/authorize',  # self._auth_url,
+                                    token_url="https://api.box.com/oauth2/token",  # self._token_url,
+                                    scopes=[]  # self._scopes
+                                    )
     base_box_url = 'https://api.box.com/2.0'
     events_endpoint = '/events'
     long_poll_timeout = 120
@@ -63,7 +66,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__long_poll_config: Dict[str, Any] = {}
         self.__long_poll_session = requests.Session()
 
-        self.__api_key = None
+        self.__access_token = None
         self.refresh_token = None
         self.mutex = threading.RLock()
 
@@ -80,26 +83,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__root_id = None
 
     def _store_refresh_token(self, access_token, refresh_token):
-        self.__creds = {"api_key": access_token,
-                        "refresh_token": refresh_token,
-                        }
+        self.__creds = {"access_token": access_token, "refresh_token": refresh_token}
         self._oauth_config.creds_changed(self.__creds)
-
-    def interrupt_auth(self):
-        self._oauth_config.shutdown()
-
-    def authenticate(self):
-        logging.error('authenticating')
-        try:
-            self._oauth_config.start_auth(self._auth_url, self._scopes)
-            token = self._oauth_config.wait_auth(self._token_url, include_client_id=True)
-        except Exception as e:
-            log.error("oauth error %s", e)
-            raise CloudTokenError(str(e))
-
-        return {"api_key": token.access_token,
-                "refresh_token": token.refresh_token,
-                }
 
     def get_quota(self):
         with self._api() as client:
@@ -108,13 +93,15 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             user = client.make_request('GET', url).json()
             log.debug("json resp = %s", user)
             # {'type': 'user', 'id': '8506151483', 'name': 'Atakama JWT',
-            # 'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com', 'created_at': '2019-05-29T08:35:19-07:00',
-            # 'modified_at': '2019-12-04T10:39:14-08:00', 'language': 'en', 'timezone': 'America/Los_Angeles',
-            # 'space_amount': 10737418240, 'space_used': 5551989, 'max_upload_size': 5368709120, 'status': 'active',
+            # 'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+            # 'space_amount': 10737418240,
+            # 'space_used': 5551989,
+            # 'created_at': '2019-05-29T08:35:19-07:00', 'modified_at': '2019-12-04T10:39:14-08:00',
+            # 'language': 'en', 'timezone': 'America/Los_Angeles', 'max_upload_size': 5368709120, 'status': 'active',
             # 'job_title': '', 'phone': '', 'address': '',
             # 'avatar_url': 'https://app.box.com/api/avatar/large/8506151483', 'notification_email': []}
             res = {
-                'used': user['space_used'],
+                'used': user['space_used'],  # CAUTION: 'used' is cached at the server , so won't be updated right away
                 'limit': user['space_amount'],
                 'login': user['login'],
             }
@@ -128,12 +115,12 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             self.__creds = creds
 
             jwt_token = creds.get('jwt_token')
-            api_key = creds.get('api_key')
+            access_token = creds.get('access_token')
             refresh_token = creds.get('refresh_token')
 
             if not jwt_token:
-                if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or api_key)):
-                    raise CloudTokenError("require app_id/secret and either api_key or refresh token")
+                if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or access_token)):
+                    raise CloudTokenError("require app_id/secret and either access_token or refresh token")
 
             try:
                 with self.mutex:
@@ -149,14 +136,14 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         box_kwargs = box_session.get_constructor_kwargs()
                         auth = OAuth2(client_id=self._oauth_config.app_id,
                                       client_secret=self._oauth_config.app_secret,
-                                      access_token=self.__creds["api_key"],
+                                      access_token=self.__creds["access_token"],
                                       refresh_token=self.__creds["refresh_token"],
                                       store_tokens=self._store_refresh_token)
 
                         box_session = AuthorizedSession(auth, **box_kwargs)
                         self.__client = Client(auth, box_session)
                 with self._api():
-                    self.__api_key = auth.access_token
+                    self.__access_token = auth.access_token
                     self._long_poll_manager.start()
             except BoxException:
                 log.exception("Error during connect")
@@ -171,7 +158,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__client = None
         self.connection_id = None
 
-    # noinspection PyMethodParameters
+    # noinspection PyBroadException
     class Guard:
         def __init__(self, client: Client, box):
             assert isinstance(client, Client)
@@ -242,7 +229,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         try:
             if self.__long_poll_config.get('retries_remaining', 0) < 1:
                 log.debug("creds = %s", self.__creds)
-                headers = {'Authorization': 'Bearer %s' % (self.__api_key, )}
+                headers = {'Authorization': 'Bearer %s' % (self.__access_token,)}
                 log.debug("headers: %s", headers)
                 srv_resp: requests.Response = self.__long_poll_session.options(self.base_box_url + self.events_endpoint,
                                                                                headers=headers)
@@ -882,13 +869,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if not parent_info:
             raise CloudFileNotFoundError("parent %s must exist" % parent)
         return self.__cache.get_oid(parent_info.path)
-
-    def refresh_api_key(self):
-        # Use the refresh token to get a new api key and refresh token
-        raise NotImplementedError
-
-    def write_refresh_token_to_database(self):
-        raise NotImplementedError
 
     def _clear_cache(self, *, oid=None, path=None):
         if oid is None and path is None:
