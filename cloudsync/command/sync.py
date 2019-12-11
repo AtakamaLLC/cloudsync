@@ -1,7 +1,7 @@
 import re
 import logging
-import daemon
 import json
+import daemon
 
 from cloudsync import CloudSync, get_provider, OAuthConfig
 
