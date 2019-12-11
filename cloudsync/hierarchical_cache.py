@@ -16,7 +16,8 @@ class Casing(Enum):
 
 @strict
 class Node:
-    def __init__(self, provider: Provider, otype: OType, oid: Optional[str], name: str, parent: 'Node', metadata: Dict[str, Any], is_root: bool = False):
+    def __init__(self, provider: Provider, otype: OType, oid: Optional[str],  # pylint: disable=too-many-arguments
+                 name: str, parent: 'Node', metadata: Dict[str, Any], is_root: bool = False):
         self._oid = oid
         self.wr_parent: Optional[weakref.ReferenceType] = None
         if parent:
@@ -300,7 +301,7 @@ class HierarchicalCache:
             self.check(node)
         return node
 
-    def _path_is_root(self, path:str) -> bool:
+    def _path_is_root(self, path: str) -> bool:
         parent_path, name = self._provider.split(path)
         return parent_path == path
 
