@@ -302,7 +302,7 @@ class HierarchicalCache:
         return node
 
     def _path_is_root(self, path: str) -> bool:
-        parent_path, name = self._provider.split(path)
+        parent_path, _ = self._provider.split(path)
         return parent_path == path
 
     def _unsafe_path_to_node(self, path: str) -> Node:

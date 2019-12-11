@@ -339,13 +339,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         return res
 
-    def get_root(self):
-        return self.join();
-
-    def is_root(self, path):
-        parent, _ = self.split(path);
-        return path == parent;
-
     def split(self, path):
         # todo cache regex
         index = path.rfind(self.sep)
