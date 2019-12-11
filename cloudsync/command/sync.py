@@ -1,6 +1,6 @@
 import re
 import logging
-
+import daemon
 import json
 
 from cloudsync import CloudSync, get_provider, OAuthConfig
@@ -97,4 +97,9 @@ def do_sync(args):
     if args.onetime:
         done = lambda: not cs.busy
 
-    cs.run(until=done)
+    if args.daemon:
+        with daemon.DaemonContext():
+            cs.start(until=done)
+    else:
+        cs.start(until=done)
+        cs.wait()

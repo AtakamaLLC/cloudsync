@@ -82,10 +82,10 @@ class Runnable(ABC):
             return
         self.interrupt.set()
 
-    def start(self, **kwargs):
+    def start(self, *, daemon=True, **kwargs):
         if self.thread_name is None:
             self.thread_name = self.__class__.__name__
-        self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=True, name=self.thread_name)
+        self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.thread_name)
         self.thread.name = self.thread_name
         self.thread.start()
 

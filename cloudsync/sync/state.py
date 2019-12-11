@@ -1046,11 +1046,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     assert False, ("changeset missing %s" % ent)
 
     def get_all(self, discarded=False) -> Set['SyncEntry']:
-        log.debug("GET ALL")
         ents = set()
         for ent in self._oids[LOCAL].values():
             assert ent
-            log.debug("ent %s %s", ent, ent.is_conflicted)
             if (ent.is_discarded or ent.is_conflicted) and not discarded:
                 continue
             ents.add(ent)
