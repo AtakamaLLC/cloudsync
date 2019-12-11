@@ -88,7 +88,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             A combination of a provider name and a login/userid could be sufiicient, but
             it is suggested to use a provider specific identity, if available.
         """
-        return self.connection_id or os.urandom(16).hex()
+        return self.connection_id or self.name
 
 #    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):
