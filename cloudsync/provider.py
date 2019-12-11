@@ -6,7 +6,7 @@ import random
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 if TYPE_CHECKING:
     from .event import Event
@@ -41,6 +41,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01             ; """Per event loop sleep time"""
     _namespace: str = None                   ; """current namespace, if needed """
+    _namespace_id: str = None                ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
@@ -266,8 +267,20 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return None
 
     @property
-    def namespace(self) -> str:
+    def namespace(self) -> Optional[str]:
         return self._namespace
+
+    @namespace.setter
+    def namespace(self, ns: str):                          # pylint: disable=no-self-use
+        raise CloudNamespaceError("This provider does not support namespaces")
+
+    @property
+    def namespace_id(self) -> Optional[str]:
+        return self._namespace_id
+
+    @namespace_id.setter
+    def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
+        raise CloudNamespaceError("This provider does not support namespaces")
 
 
 # CONVENIENCE

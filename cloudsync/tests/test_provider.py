@@ -413,6 +413,18 @@ def test_create_upload_download(provider):
     assert dest.getvalue() == dat
 
 
+def test_namespace(provider):
+    ns = provider.list_ns()
+    if not ns:
+        return
+
+    provider.namespace = ns[0]
+    nid = provider.namespace_id
+    provider.namespace_id = nid
+
+    assert provider.namespace == ns[0]
+
+
 def test_rename(provider):
     dat = os.urandom(32)
 

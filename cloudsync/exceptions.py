@@ -36,3 +36,5 @@ class CloudCursorError(CloudException):              # 'cursor is invalid'
     pass
 
 
+class CloudNamespaceError(CloudException):           # 'namespaces are not supported or the namespace is invalid'
+    pass
