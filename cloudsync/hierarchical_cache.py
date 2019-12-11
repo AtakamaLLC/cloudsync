@@ -16,15 +16,25 @@ class Casing(Enum):
 
 @strict
 class Node:
-    def __init__(self, provider: Provider, otype: OType, oid: Optional[str], name: str, parent: 'Node', metadata: Dict[str, Any]):
+    def __init__(self, provider: Provider, otype: OType, oid: Optional[str], name: str, parent: 'Node', metadata: Dict[str, Any], is_root: bool = False):
         self._oid = oid
-        self.parent = parent
         self.wr_parent: Optional[weakref.ReferenceType] = None
+        if parent:
+            self.wr_parent = weakref.ref(parent)
         self.name = name
         self.metadata = metadata or {}
         self._provider = provider
         self.children: Dict[str, Node] = {}
         self.type: OType = otype
+        self.is_root = is_root
+
+    @property
+    def parent(self):
+        return self.wr_parent() if self.wr_parent else None
+
+    @parent.setter
+    def parent(self, value):
+        self.wr_parent = weakref.ref(value) if value else None
 
     def _real_parent_ref(self):
         return self.wr_parent()  # pylint: disable=not-callable
@@ -50,9 +60,13 @@ class Node:
         self._oid = val
 
     def full_path(self):
-        return self._full_path([])
+        elements = self.full_path_nodes([])
+        if not elements[0].is_root:
+            return None
+        names = [x.name for x in elements]
+        return self._provider.join(*names)
 
-    def _full_path(self, seen: List['Node']):
+    def full_path_nodes(self, seen: List['Node']):
         if self in seen:
             log.error("hierarchical cache loop at node name=%s oid=%s", self.name, self.oid)
             for node in seen:
@@ -60,9 +74,13 @@ class Node:
                     log.error("other node: name=%s, oid=%s", node.name, node.oid)
         seen.append(self)
         self.check()
-        if self.parent is None:
-            return self._provider.sep
-        return self._provider.join(self.parent._full_path(seen), self.name)  # pylint: disable=protected-access
+        parent = self.parent
+        if parent:
+            # noinspection PyProtectedMember
+            return parent.full_path_nodes(seen)  # pylint: disable=protected-access
+        else:
+            seen.reverse()  # This must only happen once at the end of the recursion
+            return seen
 
     def add_child(self, child_node):
         self.check()
@@ -82,7 +100,7 @@ class HierarchicalCache:
         self._oid_type = type(root_oid)
         self._metadata_template = metadata_template or {}
         self._provider: Provider = provider
-        self._root: Node = self.new_node(DIRECTORY, root_oid, '', None, root_metadata)
+        self._root: Node = self.new_node(DIRECTORY, root_oid, '', None, root_metadata, is_root=True)
         self._oid_to_node: Dict[str, Node] = {self._root.oid: self._root}
 
     def check(self, node: Node):
@@ -92,9 +110,9 @@ class HierarchicalCache:
         node.full_path()
         node.check()
 
-    def new_node(self, otype: OType, oid, name, parent, metadata: Dict[str, Any]) -> Node:
+    def new_node(self, otype: OType, oid, name, parent, metadata: Dict[str, Any], is_root=False) -> Node:
         self._check_metadata(metadata)
-        retval = Node(provider=self._provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata)
+        retval = Node(provider=self._provider, otype=otype, oid=oid, name=name, parent=parent, metadata=metadata, is_root=is_root)
         retval.check()
         self.check(retval)
         return retval
@@ -109,7 +127,7 @@ class HierarchicalCache:
                 raise ValueError("key %s:%s has the wrong type. provided %s, template has %s" %
                                  (k, v, type(v), self._metadata_template.get(k, None)))
 
-    def get_metadata(self, *, path=None, oid=None) -> Dict:
+    def get_metadata(self, *, path=None, oid=None) -> Optional[Dict]:
         node = self._get_node(path=path, oid=oid)
         if node:
             return node.metadata
@@ -155,7 +173,6 @@ class HierarchicalCache:
         node.name = name
         # note: the type of parent is now ProxyType, not Node, because of the weakref.proxy()
         assert parent_node is not node
-        node.parent = weakref.proxy(parent_node)
         node.wr_parent = weakref.ref(parent_node)
 
         self.delete(path=path)
@@ -184,7 +201,7 @@ class HierarchicalCache:
         if not path:
             path = node.full_path()
         assert node
-        yield (node, path)
+        yield node, path
         if node.type == FILE:
             return
         for child_name, child_node in node.children.items():
@@ -192,11 +209,11 @@ class HierarchicalCache:
             if child_node.type == DIRECTORY:
                 yield from self._walk(child_node, child_path)
             else:
-                yield (child_node, child_path)
+                yield child_node, child_path
 
     def walk(self, *, oid: str = None, path: str = None) -> Generator[str, None, None]:
         if not (oid or path):
-            path = self._provider.sep
+            path = self._root.full_path()
         node = self._get_node(oid=oid, path=path)
         if node is None:
             return
@@ -235,7 +252,7 @@ class HierarchicalCache:
             self._delete(node)
 
     def _delete(self, remove_node):
-        if not remove_node or remove_node.oid == self._root.oid:
+        if not remove_node or remove_node.is_root:
             return None
         node_deleted_from_parent = None
         try:
@@ -260,8 +277,11 @@ class HierarchicalCache:
         return remove_node
 
     def split(self, path: str) -> Tuple[str, str]:
-        stripped_path = path.rstrip(self._provider.sep + self._provider.alt_sep)
-        return self._provider.split(stripped_path)
+        parent, name = self._provider.split(path)
+        while parent != path and not name:
+            path = parent
+            parent, name = self._provider.split(path)
+        return parent, name
 
     def join(self, *paths):
         return self._provider.join(*paths)
@@ -270,9 +290,9 @@ class HierarchicalCache:
         self._rename(old_path, new_path)
 
     def _rename(self, old_path: str, new_path: str) -> Optional[Node]:
-        if old_path in (self._provider.sep, self._provider.alt_sep):
-            raise ValueError("cannot rename '%s'" % (self._provider.sep, ))
         node = self._get_node(path=old_path)
+        if node and node.is_root:
+            raise ValueError("cannot rename '%s'" % (old_path,))
         self._delete(node)  # _delete will delete the parent but not the children
         self.delete(path=new_path)  # renaming a nonexistent oid over an existing path should kick the target out of the tree
         if node:
@@ -280,9 +300,13 @@ class HierarchicalCache:
             self.check(node)
         return node
 
+    def _path_is_root(self, path:str) -> bool:
+        parent_path, name = self._provider.split(path)
+        return parent_path == path
+
     def _unsafe_path_to_node(self, path: str) -> Node:
         # this method is "unsafe" because it depends on sanitizing the arguments
-        if path in (self._provider.sep, self._provider.alt_sep):
+        if self._path_is_root(path):
             return self._root
         parent_path, name = self._provider.split(path)
         parent_node = self._unsafe_path_to_node(parent_path)
@@ -295,11 +319,9 @@ class HierarchicalCache:
             return self._oid_to_node.get(oid)
         elif path is not None:
             norm_path = self._provider.normalize_path(path)
-            if norm_path in (self._provider.sep, self._provider.alt_sep):
+            if self._path_is_root(norm_path):
                 return self._root
-            if len(norm_path) > 0 and norm_path[0] in (self._provider.sep, self._provider.alt_sep):
-                return self._unsafe_path_to_node(norm_path)
-            raise ValueError('Path must be fully qualified path (begin with %s)' % (self._provider.sep, ))
+            return self._unsafe_path_to_node(norm_path)
         else:
             raise ValueError('get_node requires an oid or path')
 

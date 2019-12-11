@@ -564,7 +564,9 @@ def check_structure(cache: HierarchicalCache):
             parent_node = node.parent
             assert node.parent
             assert parent_node.children[node.name] is node
-            assert path == node.full_path()  # compare walking the parents with walking the children
+            full_path = node.full_path()
+            if path != full_path:
+                assert path == full_path  # compare walking the parents with walking the children
 
     for oid, node in cache._oid_to_node.items():
         assert node.oid == oid

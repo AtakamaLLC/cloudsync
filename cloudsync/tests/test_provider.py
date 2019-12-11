@@ -207,6 +207,7 @@ class ProviderHelper(ProviderBase):
                 relative = self.prov.is_subpath(self.test_root, path)
                 assert relative
                 path = relative
+                # TODO: This does not obey provider control over paths. Frex, consider windows paths and "C:"
                 if not path.startswith(self.prov.sep):
                     path = self.prov.sep + path
                 obj.path = path
