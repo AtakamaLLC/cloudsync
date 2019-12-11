@@ -13,10 +13,12 @@ import pytest
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
+from cloudsync.providers import MockProvider
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 from os import SEEK_SET, SEEK_CUR, SEEK_END
+
 # from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ class ProviderHelper(ProviderBase):
         self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
         self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
         self.test_creds = getattr(self.prov, "test_creds", {})
-        self.test_root = None
+        self.test_root: Optional[str] = None
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
