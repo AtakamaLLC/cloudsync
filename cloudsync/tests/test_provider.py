@@ -51,10 +51,11 @@ class ProviderHelper(ProviderBase):
         self.api_retry = True
         self.prov = prov
 
-        self.test_root = getattr(self.prov, "test_root", None)
+        self.test_parent = getattr(self.prov, "test_root", "/")
         self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
         self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
         self.test_creds = getattr(self.prov, "test_creds", {})
+        self.test_root = None
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
@@ -72,10 +73,10 @@ class ProviderHelper(ProviderBase):
         if not self.test_root:
             # if the provider class doesn't specify a testing root
             # then just make one up
-            self.test_root = "/" + os.urandom(16).hex()
-        self.test_root_id = self.prov.mkdir(self.test_root)
-        if not self.test_root_id:
-            log.error("no id returned from mkdir")
+            self.test_root = self.join(self.test_parent, os.urandom(16).hex())
+
+        log.debug("mkdir %s", self.test_root)
+        self.prov.mkdir(self.test_root)
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -400,6 +401,18 @@ def test_create_upload_download(provider):
 
     dest.seek(0)
     assert dest.getvalue() == dat
+
+
+def test_namespace(provider):
+    ns = provider.list_ns()
+    if not ns:
+        return
+
+    provider.namespace = ns[0]
+    nid = provider.namespace_id
+    provider.namespace_id = nid
+
+    assert provider.namespace == ns[0]
 
 
 def test_rename(provider):
@@ -1710,3 +1723,31 @@ def test_revoke_auth(config_provider, suspend_capture):
             time.sleep(5)
             log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
     assert not provider.connected
+
+## provider helper test
+def test_specific_test_root():
+    # assure that the provider helper uses the requested test root
+    # assure it never deletes it
+    # cryptvfs relies on this
+
+    class MockProvRooted(MockProvider):
+        test_root = "/banana"
+    base = MockProvRooted(False, False)
+    base.mkdir("/banana")
+
+    provider = ProviderHelper(base)                             # type: ignore
+    # i use whatever root the test instance specified
+    assert provider.test_root.startswith("/banana/")
+    # i but i put my tests in their own folder
+    assert provider.test_root != "/banana/"
+
+    # and i created it
+    assert base.info_path(provider.test_root).otype == cloudsync.DIRECTORY 
+
+    provider.test_cleanup()
+
+    # and i dont delete the test root
+    assert list(base.listdir_path("/banana")) == []
+
+
+

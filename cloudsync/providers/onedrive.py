@@ -17,14 +17,14 @@ import webbrowser
 from base64 import urlsafe_b64decode, b64encode
 import requests
 import arrow
-import quickxorhash
 
 import onedrivesdk_fork as onedrivesdk
 from onedrivesdk_fork.error import OneDriveError, ErrorCode
+import quickxorhash
 
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType
 from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudFileNotFoundError, \
-    CloudFileExistsError, CloudCursorError, CloudTemporaryError
+    CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudException, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
@@ -252,9 +252,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         groups = self._direct_api("get", "/groups")
         for group in groups.get("value", []):
             group_name = group["displayName"]
-            drive = self._direct_api("get", "/groups/%s/drive" % group["id"])
-            drive_id = drive["id"]
-            all_drives[drive_id] = "team/" + group_name
+            try:
+                drive = self._direct_api("get", "/groups/%s/drive" % group["id"])
+                drive_id = drive["id"]
+                all_drives[drive_id] = "team/" + group_name
+            except (OneDriveError, CloudException) as err:
+                log.warning("Failed to get drive info for %s. Exception: %s", group["id"], repr(err))
 
         try:
             # drives linked to other "sites"
@@ -403,7 +406,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 try:
                     segs = token.split('.')
                     if len(segs) > 1:
-                        info = json.loads(urlsafe_b64decode(segs[1]))
+                        info = json.loads(urlsafe_b64decode(segs[1]+"==="))
                         self.__team_id = info.get("tid")
                         log.debug("got team : %s", self.__team_id)
                 except Exception as e:
@@ -966,7 +969,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self._namespace = ns
         dat = self._direct_api("get", "/drives/%s/" % self.get_drive_id())
         self._is_biz = dat["driveType"] != 'personal'
-        
+
+    @property
+    def namespace_id(self) -> Optional[str]:
+        return self.get_drive_id()
+
+    @namespace_id.setter
+    def namespace_id(self, ns_id: str):
+        if ns_id not in self.__drive_to_name:
+            raise CloudNamespaceError("The namespace id specified was invalid")
+        self.namespace = self.__drive_to_name[ns_id]
+
     @classmethod
     def test_instance(cls):
         return cls.oauth_test_instance(prefix=cls.name.upper(), port_range=(54200, 54210), host_name="localhost")
