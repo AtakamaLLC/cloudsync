@@ -44,6 +44,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     _namespace_id: str = None                ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
+    _listdir_page_size: Optional[int] = None  ; """Used for testing listdir"""
+
 
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for
@@ -337,6 +339,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         return res
 
+    def is_root(self, path):
+        parent, _ = self.split(path)
+
+
     def split(self, path):
         # todo cache regex
         index = path.rfind(self.sep)
@@ -344,7 +350,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             index = max(index, path.rfind(self.alt_sep))
 
         if index == -1:
-            return path, ""
+            return "", path
         if index == 0:
             return self.sep, path[index+1:]
         return path[:index], path[index+1:]

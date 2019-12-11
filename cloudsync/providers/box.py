@@ -52,7 +52,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     events_endpoint = '/events'
     long_poll_timeout = 120
     name = 'box'
-    listdir_page_size = 5000
+    _listdir_page_size = 5000
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -490,7 +490,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             # entries = parent_object.item_collection['entries']  # don't use this, new children may be missing
 
             # shitty attempt 2 that fails due to caching in the sdk:
-            entries = self._box_get_items(client, parent_object, parent_path, page_size=self.listdir_page_size)
+            entries = self._box_get_items(client, parent_object, parent_path, page_size=self._listdir_page_size)
             for entry in entries:
                 if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
                     raise NotImplementedError

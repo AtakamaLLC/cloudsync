@@ -225,8 +225,14 @@ class CloudSync(Runnable):
         import random  # pylint: disable=import-outside-toplevel
         mgrs = [*self.emgrs, self.smgr]
         random.shuffle(mgrs)
+        caught = None
         for m in mgrs:
-            m.do()
+            try:
+                m.do()
+            except Exception as e:
+                caught = e
+        if caught is not None:
+            raise caught
 
         #  conceptually this should work, but our tests rely on changeset_len
         # instead we need to expose a stuff-to-do property in cs

@@ -1349,18 +1349,18 @@ def test_listdir(provider):
 
 
 def test_listdir_paginates(provider):
-    if not provider.listdir_page_size:
+    if not provider._listdir_page_size:
         pytest.skip("provider doesn't support listdir pagination")
 
-    provider.listdir_page_size = 5
-    for _ in range(provider.listdir_page_size):
+    provider._listdir_page_size = 5
+    for _ in range(provider._listdir_page_size):
         provider.mkdir("/" + os.urandom(16).hex())
     root_info = provider.info_path("/")
-    assert len(list(provider.listdir(root_info.oid))) == provider.listdir_page_size
+    assert len(list(provider.listdir(root_info.oid))) == provider._listdir_page_size
 
     provider.mkdir("/" + os.urandom(16).hex())
     root_info = provider.info_path("/")
-    assert len(list(provider.listdir(root_info.oid))) == provider.listdir_page_size + 1
+    assert len(list(provider.listdir(root_info.oid))) == provider._listdir_page_size + 1
 
 
 def test_upload_to_a_path(provider):
