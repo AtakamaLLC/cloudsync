@@ -56,14 +56,14 @@ class ProviderHelper(ProviderBase):
         self.test_parent = getattr(self.prov, "test_root", "/")
         self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
         self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
-        self.test_creds = getattr(self.prov, "test_creds", {})
+        self._test_creds = getattr(self.prov, "_test_creds", {})
         self.test_root: Optional[str] = None
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
         if connect:
-            self.prov.connect(self.test_creds)
+            self.prov.connect(self._test_creds)
             assert prov.connection_id
             self.make_root()
 
@@ -1618,7 +1618,7 @@ def test_cursor_error_during_listdir(provider):
 @pytest.mark.manual
 def test_authenticate(config_provider):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.test_creds:
+    if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
@@ -1641,7 +1641,7 @@ def test_authenticate(config_provider):
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.test_creds:
+    if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
     import time
@@ -1716,7 +1716,7 @@ def suspend_capture(pytestconfig):
 @pytest.mark.manual
 def test_revoke_auth(config_provider, suspend_capture):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.test_creds:
+    if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
     provider.connect(creds)
@@ -1772,9 +1772,10 @@ def test_provider_interface(provider):
         if x in prov_dir:
             prov_dir.remove(x)
     if len(prov_dir) > 0:
-        log.error("provider %s exposes public interfaces not exposed by the base class:", provider.prov.name)
+        msg = "provider %s exposes public interfaces not exposed by the base class:" % provider.prov.name
         for x in prov_dir:
-            log.debug("     %s", x)
+            msg += "\n     %s" % x
+        log.error(msg)
     assert len(prov_dir) == 0
 
 

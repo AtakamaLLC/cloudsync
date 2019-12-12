@@ -120,8 +120,8 @@ class MockProvider(Provider):
         }
         self.test_event_timeout = 1
         self.test_event_sleep = 0.001
-        self.test_creds = {"key": "val"}
-        self.connect(self.test_creds)
+        self._test_creds = {"key": "val"}
+        self.connect(self._test_creds)
         self.hash_func = hash_func
         if hash_func is None:
             self.hash_func = lambda a: md5(a).digest()
