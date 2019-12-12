@@ -305,7 +305,7 @@ def scoped_provider_fixture(config_provider):
 
 
 @pytest.fixture(name="unconnected_provider")
-def scoped_provider_fixture(config_provider):
+def scoped_provider_fixture_unconnected(config_provider):
     yield from mixin_provider(config_provider, connect=False)
 
 
