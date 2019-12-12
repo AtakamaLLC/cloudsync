@@ -81,7 +81,7 @@ class EventManager(Runnable):
 
     @property
     def busy(self):
-        return not self.events.empty
+        return not self.events.empty or self.need_walk
 
     def do(self):
         self.events.shutdown = False

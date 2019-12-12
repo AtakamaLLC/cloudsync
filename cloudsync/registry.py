@@ -1,6 +1,8 @@
 import sys
 
-__all__ = ["create_provider"]
+
+__all__ = ["create_provider", "get_provider"]
+
 
 providers = {}
 
@@ -17,7 +19,7 @@ def discover_providers():
                 register_provider(mod.__cloudsync__)                # type: ignore
 
 
-def provider_by_name(name):
+def get_provider(name):
     if name not in providers:
         discover_providers()
 
@@ -28,7 +30,7 @@ def provider_by_name(name):
 
 
 def create_provider(name, *args, **kws):
-    return provider_by_name(name)(*args, *kws)
+    return get_provider(name)(*args, *kws)
 
 
 def known_providers():
