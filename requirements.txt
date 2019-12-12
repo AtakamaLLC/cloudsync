@@ -12,3 +12,4 @@ dropbox
 #onedrive
 onedrivesdk_fork
 quickxorhash
+python-daemon

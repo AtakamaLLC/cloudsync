@@ -6,7 +6,7 @@ import random
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError
+from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 if TYPE_CHECKING:
     from .event import Event
@@ -33,26 +33,27 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     """
 
     # pylint: disable=multiple-statements
-    name: str = None                        ; """Provider name"""
-    sep: str = '/'                          ; """Path delimiter"""
-    alt_sep: str = '\\'                     ; """Alternate path delimiter"""
-    oid_is_path: bool = False               ; """Objects stored in cloud are only referenced by path"""
-    case_sensitive: bool = True             ; """Provider is case sensitive"""
-    win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
-    default_sleep: float = 0.01             ; """Per event loop sleep time"""
+    name: str = None                         ; """Provider name"""
+    sep: str = '/'                           ; """Path delimiter"""
+    alt_sep: str = '\\'                      ; """Alternate path delimiter"""
+    oid_is_path: bool = False                ; """Objects stored in cloud are only referenced by path"""
+    case_sensitive: bool = True              ; """Provider is case sensitive"""
+    win_paths: bool = False                  ; """C: drive letter stuff needed for paths"""
+    default_sleep: float = 0.01              ; """Per event loop sleep time"""
     _namespace: str = None                   ; """current namespace, if needed """
+    _namespace_id: str = None                ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
 
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for
     # multipart upload tests
-    large_file_size: int = 0                ; """Used for testing providers with separate large file handling"""
-    upload_block_size: int = 0              ; """Used for testing providers with separate large file handling"""
+    large_file_size: int = 0                 ; """Used for testing providers with separate large file handling"""
+    upload_block_size: int = 0               ; """Used for testing providers with separate large file handling"""
 
-    connection_id: str = None               ; """Must remain constant between logins and must be unique to the login"""
-    _creds: Optional[Any] = None           ; """Base class helpers to store creds"""
-    __connected = False                     ; """Base class helper to fake a connection"""
+    connection_id: str = None                ; """Must remain constant between logins and must be unique to the login"""
+    _creds: Optional[Any] = None             ; """Base class helpers to store creds"""
+    __connected = False                      ; """Base class helper to fake a connection"""
     # pylint: enable=multiple-statements
 
     @abstractmethod
@@ -87,7 +88,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             A combination of a provider name and a login/userid could be sufiicient, but
             it is suggested to use a provider specific identity, if available.
         """
-        return self.connection_id or os.urandom(16).hex()
+        return self.connection_id or self.name
 
 #    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):
@@ -266,9 +267,24 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return None
 
     @property
-    def namespace(self) -> str:
+    def namespace(self) -> Optional[str]:
         return self._namespace
 
+    @namespace.setter
+    def namespace(self, ns: str):                          # pylint: disable=no-self-use
+        raise CloudNamespaceError("This provider does not support namespaces")
+
+    @property
+    def namespace_id(self) -> Optional[str]:
+        return self._namespace_id
+
+    @namespace_id.setter
+    def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
+        raise CloudNamespaceError("This provider does not support namespaces")
+
+    @classmethod
+    def uses_oauth(cls):
+        return cls._oauth_info is not None
 
 # CONVENIENCE
     def download_path(self, path, io):
