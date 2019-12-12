@@ -570,20 +570,6 @@ def test_update():
     assert(cache.get_metadata(path='/a')['throws'] == 'spam')
 
 
-def test_insert_doesnt_delete_non_conflicts():
-    cache = new_cache()
-    a_oid = new_oid()
-    b_oid = new_oid()
-    c_oid = new_oid()
-    d_oid = new_oid()
-    cache.mkdir('/a', a_oid)
-    cache.create('/a/b', b_oid)
-
-
-    #cache.set_oid()
-    assert False
-
-
 def test_metadata():
     cache = new_cache(
         metadata_template={'ph level': str},
@@ -625,7 +611,7 @@ def test_walk_returns_nothing_for_bad_node():
 def test_listdir_returns_empty_for_bad_node():
     cache = new_cache()
     assert(cache.listdir(path='/totally existent path') == [])
-
+    cache.mkdir('/a', new_oid())
 
 def test_cant_rename_root():
     cache = new_cache()
@@ -675,6 +661,7 @@ def test_set_oid():
     cache = new_cache()
     a_oid = new_oid()
     b_oid = new_oid()
+    c_oid = new_oid()
 
     failed = False
     try:
@@ -684,7 +671,6 @@ def test_set_oid():
         pass
     assert not failed
 
-    failed = False
     try:
         cache.set_oid('/a', None, DIRECTORY)
         failed = True
@@ -692,7 +678,6 @@ def test_set_oid():
         pass
     assert not failed
 
-    failed = False
     try:
         cache.set_oid('/a', a_oid, None)
         failed = True
@@ -711,6 +696,10 @@ def test_set_oid():
     cache._set_oid(node, b_oid)
     assert(cache.get_oid('/b') == b_oid)
 
+    cache.set_oid('/b', c_oid, DIRECTORY)
+    assert(cache.get_oid('/b') == c_oid)
+    assert(len(cache.listdir(path='/')) == 3)
+
     try:
         cache.set_oid('/b', None, DIRECTORY)
         failed = True
@@ -725,7 +714,6 @@ def test_node_check_asserts_for_parent_oids():
     child_node = Node(provider, DIRECTORY, '0', 'a', parent_node, None)
 
     fail = False
-    child_node.parent = child_node
     child_node.wr_parent = weakref.ref(child_node)
     try:
         child_node.check()
@@ -734,7 +722,6 @@ def test_node_check_asserts_for_parent_oids():
         pass
     assert not fail
 
-    child_node.parent = parent_node
     child_node.wr_parent = weakref.ref(parent_node)
     try:
         child_node.check()
@@ -763,24 +750,16 @@ def test_node_set_oid():
     test_node.oid = 0
 
 
-def test_full_path_with_cycle():
-    provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
-    test_node = Node(provider, DIRECTORY, None, '', None, None)
-    test_node.parent = test_node
-    test_node.wr_parent = weakref.ref(test_node)
-    try:
-        test_node.full_path()
-    except Exception as e:
-        pass
+def test_split_path():
+    cache = new_cache()
+    a_oid = new_oid()
+    b_oid = new_oid()
+    cache.mkdir('/a', a_oid)
+    cache.mkdir('/b', b_oid)
 
-
-def test_add_child_node():
-    provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
-    parent_node = Node(provider, DIRECTORY, '0', '', None, None)
-    child_node = Node(provider, FILE, '1', 'a', parent_node, None)
-    
-    parent_node.add_child(child_node)
-    assert(parent_node.children == [child_node])
+    parent, name = cache._split('/a/b///')
+    assert(parent == '/a')
+    assert(name == 'b')
 
 
 def full_split(provider: Provider, path: str):

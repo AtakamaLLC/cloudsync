@@ -130,18 +130,46 @@ class HierarchicalCache:
                                  (k, v, type(v), self._metadata_template.get(k, None)))
 
     def get_metadata(self, *, path=None, oid=None) -> Optional[Dict]:
+        """
+        Retrives the metadata for a node at oid, if oid is not set, retrieves metadata for path instead
+        Args:
+              path: the target path
+              oid: the target oid
+        Returns:
+              Optional[Dict]: metadata for the specified node
+        """
         node = self._get_node(path=path, oid=oid)
         if node:
             return node.metadata
         return None
 
     def set_metadata(self, metadata, *, path=None, oid=None):
+        """
+        Sets the metadata for the node at oid, if oid is not set, sets the metadata for the node at path instead
+        Metadata must conform to the metadata template passed in on construction
+        Args:
+              metadata: dictionary containing the new metadata entries
+              path: the target path
+              oid: the target oid
+        """
         self._check_metadata(metadata)
         node = self._get_node(path=path, oid=oid)
         if node:
             node.metadata = metadata or {}
 
     def update(self, path, otype, oid=None, metadata=None, keep=True):
+        """
+        Updates a node in the cache.
+        NOTE: the node passed in may not be the same as the node returned
+        Args:
+              path: the path to update
+              otype: if otype for the node changes, the old node is deleted and a new is added in its place
+              oid: the new oid, if oid for the node changes the old is delete anda  new is added
+              metadata: the metadata dictionary to add to the node
+              keep: if set the metadata is added to the old, else it replaces it
+        Returns:
+              Node: the updated node, returned because it may not be the same as the passed node
+        """
         node = self._update(path=path, otype=otype, oid=oid, metadata=metadata, keep=keep)
         if node:
             self._check(node)
@@ -213,6 +241,14 @@ class HierarchicalCache:
                 yield child_node, child_path
 
     def walk(self, *, oid: str = None, path: str = None) -> Generator[str, None, None]:
+        """
+        Walks the cache depth first from the node specified by oid. if oid is not set walks the node specified by path
+        Args:
+              oid: the target oid
+              path: the target path
+        Returns:
+              Generator[str]: a generator for all node names from the input nodes children
+        """
         if not (oid or path):
             path = self._root.full_path()
         node = self._get_node(oid=oid, path=path)
@@ -222,12 +258,27 @@ class HierarchicalCache:
             yield curr_path
 
     def listdir(self, *, oid: str = None, path: str = None):
+        """
+        returns a list of children of the node specified by oid, if oid is none then uses the node at path instead
+        Args:
+              oid: the target oid
+              path the target path
+        Returns:
+              List[str]: the names of the target nodes children
+        """
         node = self._get_node(oid=oid, path=path)
         if not node:
             return []
         return [x.name for x in node.children.values()]
 
     def mkdir(self, path: str, oid: Optional[str], metadata: Optional[Dict[str, Any]] = None):
+        """
+        Creates a new directory node
+        Args:
+              path: the string path for the new node
+              oid: the string oid for the new node
+              metadata: the metadata dictinary for the new node
+        """
         self._mkdir(path, oid, metadata)
 
     def _mkdir(self, path: str, oid: Optional[str], metadata: Optional[Dict[str, Any]] = None) -> Node:
@@ -235,12 +286,26 @@ class HierarchicalCache:
         return new_node
 
     def create(self, path: str, oid: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Creates a new file node
+        Args:
+              path: the string path for the new node
+              oid: the string oid for the new node
+              metadata: the metadata dictionary for the new node
+        """
         self._create(path, oid, metadata)
 
     def _create(self, path: str, oid: str, metadata: Optional[Dict[str, Any]] = None) -> Node:
         return self.__make_node(FILE, path, oid, metadata=metadata)
 
     def delete(self, *, oid: str = None, path: str = None):
+        """
+        Removes the node specified by oid, if oid is none, removes the node ad path instead
+        If target is a directory, recursively removes its children
+        Args:
+              oid: the path for the node to delete
+              path: the path for the node to delete
+        """
         node = self._get_node(oid=oid, path=path)
         if node:
             # Recursively delete the children to ensure they are popped from the oid_to_node dict
@@ -285,6 +350,12 @@ class HierarchicalCache:
         return parent, name
 
     def rename(self, old_path: str, new_path: str):
+        """
+        Changes a nodes path, deleting any node that may be in the new location
+        Args:
+              old_path: the path to the node to move
+              new_path: the path to move the node to
+        """
         self._rename(old_path, new_path)
 
     def _rename(self, old_path: str, new_path: str) -> Optional[Node]:
@@ -324,6 +395,13 @@ class HierarchicalCache:
             raise ValueError('get_node requires an oid or path')
 
     def set_oid(self, path: str, oid: str, otype: OType):
+        """
+        Sets the oid of the node at the target path, if the node is not found, makes a new node
+        Args:
+              path: the path to the node
+              oid: the new oid for the node
+              otype: the type of the target node
+        """
         assert oid and path and otype
         node = self._get_node(path=path)
         if node:
@@ -344,16 +422,37 @@ class HierarchicalCache:
             self.__make_node(node.type, node.full_path(), oid)
 
 
-
     def get_oid(self, path):
+        """
+        Gets the oid from the node at path
+        Args:
+              path: the path to retrieve the oid from
+        Returns:
+              str: oid from the target node
+        """
         node = self._get_node(path=path)
         return node.oid if node else None
 
     def get_path(self, oid):
+        """
+        Gets the path from the node at oid
+        Args:
+              oid: the oid to retrieve a path from
+        Returns:
+              str: path from the target node
+        """
         node = self._oid_to_node.get(oid)
         return node.full_path() if node else None
 
     def get_type(self, *, oid=None, path=None) -> Optional[OType]:
+        """
+        Gets the type from the node at oid, if oid is none gets the type from the node at path
+        Args:
+              oid: the target oid to get a type from
+              path: the target path to get a type from
+        Returns:
+              OType: the type of the target node
+        """
         node = self._get_node(oid=oid, path=path)
         return node.type if node else None
 
