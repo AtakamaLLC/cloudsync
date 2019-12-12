@@ -29,8 +29,10 @@ from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
 
+
 class OneDriveFileDoneError(Exception):
     pass
+
 
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
@@ -300,7 +302,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if status < 300:
             log.error("Not converting err %s %s", ex, req)
             return False
-            
+
         if status == 404:
             raise CloudFileNotFoundError(msg)
         if status in (429, 503):
@@ -318,6 +320,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileExistsError(msg)
         if code == ErrorCode.AccessDenied:
             raise CloudFileExistsError(msg)
+        if code == "BadRequest":
+            if status == 400:
+                raise CloudFileNotFoundError(msg)
         if code == ErrorCode.InvalidRequest:
             if status == 405:
                 raise CloudFileExistsError(msg)
@@ -454,7 +459,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @property
     def latest_cursor(self):
         save_cursor = self.__cursor
-        
+
         self.__cursor = self._get_url("/drives/%s/root/delta" % self.get_drive_id())
         log.debug("cursor %s", self.__cursor)
         for _ in self.events():
@@ -495,8 +500,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 events = reversed(cast(List, events))
 
             for change in events:
-# uncomment only while debugging, demicolon left in to cause linter to fail 
-#                log.debug("got event\n%s", pformat(change));
+                # uncomment only while debugging, demicolon left in to cause linter to fail
+                # log.debug("got event\n%s", pformat(change));
 
                 # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
                 #  'createdBy': {'application': {'id': '4805d153'},
@@ -623,7 +628,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 base = base.replace("'", "''")
                 name = urllib.parse.quote(base)
                 api_path += "/children('" + name + "')/content"
-                r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
+                r = self._direct_api("put", api_path, data=file_like, headers={'content-type': 'text/plain'})
             return self._info_from_rest(r, root=dirname)
         else:
             with self._api() as client:

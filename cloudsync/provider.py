@@ -295,7 +295,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     def listdir_path(self, path):
         info = self.info_path(path)
-        if not info or not info.oid:
+        if not info:
             raise CloudFileNotFoundError()
         return self.listdir(info.oid)
 
