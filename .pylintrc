@@ -58,6 +58,7 @@ confidence=
 # --disable=W"
 disable=multiple-imports,
         missing-docstring,
+        too-few-public-methods,
         broad-except,
         no-else-return,
         trailing-newlines,

@@ -42,7 +42,7 @@ class LongPollManager(Runnable):
                     log.debug("about to long poll")
                     self.long_poll(self.long_poll_timeout)
                     log.debug("long poll finished, about to check events")
-                    self.__provider_events_pending.set()  # don't condition on long_poll(), we run if there's a timeout or event
+                    self.__provider_events_pending.set()  # don't condition on _long_poll(), we run if there's a timeout or event
                     log.debug("events check complete")
                 except Exception as e:
                     log.exception('Unhandled exception during long poll %s', e)

@@ -13,8 +13,8 @@ import pytest
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
-from cloudsync.providers import MockProvider
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
+from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 from os import SEEK_SET, SEEK_CUR, SEEK_END
@@ -290,7 +290,7 @@ def config_provider(request, provider_name):
         # this should be a _pytest.fixtures.FixtureLookupError
         if provider_name == "external":
             raise
-        yield cloudsync.registry.provider_by_name(provider_name).test_instance()
+        yield cloudsync.registry.get_provider(provider_name).test_instance()
 
 
 @pytest.fixture(name="provider", scope="module")
@@ -665,7 +665,9 @@ def test_event_basic(provider):
 
 
 def test_event_del_create(provider):
-    if provider.prov.name =='box':
+    if provider.prov.name == 'box':
+        dnll = logging.getLogger('boxsdk.network.default_network').getEffectiveLevel()
+        cpll = logging.getLogger('urllib3.connectionpool').getEffectiveLevel()
         logging.getLogger('boxsdk.network.default_network').setLevel(logging.INFO)
         logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG)
     temp = BytesIO(os.urandom(32))
@@ -734,6 +736,9 @@ def test_event_del_create(provider):
         assert saw_first_delete
     assert last_event.exists is True
     assert not disordered
+    if provider.prov.name == 'box':
+        logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
+        logging.getLogger('urllib3.connectionpool').setLevel(cpll)
 
 
 def test_event_rename(provider):
@@ -1350,18 +1355,18 @@ def test_listdir(provider):
 
 
 def test_listdir_paginates(provider):
+    root = '/' + os.urandom(16).hex()
+    root_oid = provider.mkdir(root)
     if not provider._listdir_page_size:
         pytest.skip("provider doesn't support listdir pagination")
 
     provider._listdir_page_size = 5
     for _ in range(provider._listdir_page_size):
-        provider.mkdir("/" + os.urandom(16).hex())
-    root_info = provider.info_path("/")
-    assert len(list(provider.listdir(root_info.oid))) == provider._listdir_page_size
+        provider.mkdir(root + "/" + os.urandom(16).hex())
+    assert len(list(provider.listdir(root_oid))) == provider._listdir_page_size
 
-    provider.mkdir("/" + os.urandom(16).hex())
-    root_info = provider.info_path("/")
-    assert len(list(provider.listdir(root_info.oid))) == provider._listdir_page_size + 1
+    provider.mkdir(root + "/" + os.urandom(16).hex())
+    assert len(list(provider.listdir(root_oid))) == provider._listdir_page_size + 1
 
 
 def test_upload_to_a_path(provider):
@@ -1727,11 +1732,14 @@ def test_revoke_auth(config_provider, suspend_capture):
             log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
     assert not provider.connected
 
-## provider helper test
+
+# testing the test framework
 def test_specific_test_root():
-    # assure that the provider helper uses the requested test root
-    # assure it never deletes it
-    # cryptvfs relies on this
+    """
+    assure that the provider helper uses the requested test root
+    assure it never deletes it
+    cryptvfs relies on this
+    """
 
     class MockProvRooted(MockProvider):
         test_root = "/banana"
@@ -1752,5 +1760,21 @@ def test_specific_test_root():
     # and i dont delete the test root
     assert list(base.listdir_path("/banana")) == []
 
+
+@pytest.mark.manual
+def test_provider_interface(provider):
+    base_dir = set([x for x in dir(Provider) if not x.startswith('_')])
+    base_dir = set(dir(Provider))
+    log.debug("basedir = %s", base_dir)
+    prov_dir = set([x for x in dir(provider.prov) if not x.startswith('_')])
+    log.debug("provdir = %s", prov_dir)
+    for x in base_dir:
+        if x in prov_dir:
+            prov_dir.remove(x)
+    if len(prov_dir) > 0:
+        log.error("provider %s exposes public interfaces not exposed by the base class:", provider.prov.name)
+        for x in prov_dir:
+            log.debug("     %s", x)
+    assert len(prov_dir) == 0
 
 

@@ -81,7 +81,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def connected(self):
         return self.client is not None
 
-    def get_display_name(self):
+    def get_display_name(self):  # Public method?
         return self.name
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
@@ -243,7 +243,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudDisconnectedError("disconnected on timeout")
 
     @property
-    def root_id(self):
+    def root_id(self):  # Public method?
         if not self.__root_id:
             res = self._api('files', 'get',
                             fileId='root',
@@ -675,7 +675,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return True
         return self.info_path(path) is not None
 
-    def get_parent_id(self, path):
+    def get_parent_id(self, path):  # Public method?
         if not path:
             return None
 

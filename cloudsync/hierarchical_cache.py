@@ -83,11 +83,11 @@ class Node:
             seen.reverse()  # This must only happen once at the end of the recursion
             return seen
 
-    def add_child(self, child_node):
+    def add_child(self, child_node: 'Node'):
         self.check()
         child_node.check()
         assert self.type == DIRECTORY
-        self.children += [child_node]
+        self.children[child_node.name] = child_node
 
     def __str__(self):
         return f"{type(self)} {self.oid}:{self.full_path()} {self.metadata or ''}"
@@ -180,7 +180,7 @@ class HierarchicalCache:
         if node.oid:
             self.delete(oid=node.oid)
 
-        parent_node.children[name] = node
+        parent_node.add_child(node)
 
         for current_node, _ignored_current_path in self._walk(node):
             if current_node.oid:

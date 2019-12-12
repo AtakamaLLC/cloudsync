@@ -158,6 +158,10 @@ class memoize():
         key = (args, tuple(sorted(kwargs.items())))
         self.cache[key] = (_value, time.monotonic())
 
+
+def is_subpath(folder, target):
+    return os.path.commonpath([folder]) == os.path.commonpath([folder, target])
+
 # from https://gist.github.com/earonesty/a052ce176e99d5a659472d0dab6ea361
 # windows compatible temp files
 
