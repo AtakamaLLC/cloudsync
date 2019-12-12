@@ -176,7 +176,6 @@ def test_oauth_defaults(wb):
     th.start()
     while True:
         try:
-            wb.assert_called_once()
             inst.interrupt_auth()
             break
         except AssertionError:
