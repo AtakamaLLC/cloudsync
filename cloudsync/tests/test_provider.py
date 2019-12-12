@@ -1732,11 +1732,14 @@ def test_revoke_auth(config_provider, suspend_capture):
             log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
     assert not provider.connected
 
-## provider helper test
+
+# testing the test framework
 def test_specific_test_root():
-    # assure that the provider helper uses the requested test root
-    # assure it never deletes it
-    # cryptvfs relies on this
+    """
+    assure that the provider helper uses the requested test root
+    assure it never deletes it
+    cryptvfs relies on this
+    """
 
     class MockProvRooted(MockProvider):
         test_root = "/banana"
@@ -1758,6 +1761,7 @@ def test_specific_test_root():
     assert list(base.listdir_path("/banana")) == []
 
 
+@pytest.mark.manual
 def test_provider_interface(provider):
     base_dir = set([x for x in dir(Provider) if not x.startswith('_')])
     base_dir = set(dir(Provider))
