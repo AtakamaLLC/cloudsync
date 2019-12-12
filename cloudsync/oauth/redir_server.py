@@ -89,7 +89,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.__thread.start()
         log.info('Listening on %s', self.uri())
 
-    def auth_redir_success(self, _srv, _env, info):
+    def auth_redir_success(self, _env, info):
         err = ""
         if info and ('error' in info or 'error_description' in info):
             log.debug("auth error")
