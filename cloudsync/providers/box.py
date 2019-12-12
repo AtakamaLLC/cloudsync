@@ -17,7 +17,8 @@ from boxsdk.exception import BoxException, BoxAPIException  # , BoxAPIException,
 from boxsdk.session.session import Session, AuthorizedSession
 
 from cloudsync.hierarchical_cache import HierarchicalCache
-from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType, Hash, Cursor, LongPollManager
+from cloudsync import Provider, OInfo, DIRECTORY, FILE, NOTKNOWN, Event, DirInfo, OType, LongPollManager
+from cloudsync.provider import Hash, Cursor
 
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 
