@@ -135,7 +135,7 @@ def test_oauth_defaults(wb):
     inst = Prov.test_instance()
     assert inst._oauth_config.app_id == "123"
     assert inst._oauth_config.app_secret == "456"
-    assert inst.test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
+    assert inst._test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
 
     # actually test the instance
     creds = None

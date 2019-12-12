@@ -470,7 +470,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return cls.oauth_test_instance(prefix=cls.name.upper())             # pylint: disable=no-member
         else:
             # no connection needed
-            cls.test_creds: Dict[str, str] = None            # type: ignore
+            cls._test_creds: Dict[str, str] = None            # type: ignore
             return cls()
 
     def _clear_cache(self, *, oid=None, path=None):  # pylint: disable=unused-argument, no-self-use
@@ -493,7 +493,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         creds = {
             token_key: tokens[random.randrange(0, len(tokens))],
         }
-        cls.test_creds = creds                                          # type: ignore
+        cls._test_creds = creds                                          # type: ignore
         return cls(OAuthConfig(                                         # type: ignore
             app_id=os.environ.get("%s_APP_ID" % prefix),
             app_secret=os.environ.get("%s_APP_SECRET" % prefix),
