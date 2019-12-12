@@ -709,7 +709,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def __box_cache_object(self, client: Client, box_object: BoxItem, path=None) -> Tuple[Optional[Dict], Optional[DirInfo]]:
         assert isinstance(client, Client)
-        if not box_object:
+        if not box_object:  # this saves from having to check this condition everywhere
             if path:
                 self.__cache.delete(path=path)
             return None, None
@@ -722,12 +722,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
         self.__cache.update(path, otype, box_object.object_id, metadata, keep=True)
 
-        if otype == FILE:
-            return metadata, dir_info
-
-        if hasattr(box_object, "item_collection"):
+        if hasattr(box_object, "item_collection"):  # has to be a folder
+            assert len(box_object.item_collection.get('entries', [])) == 0 or path
             for child in box_object.item_collection.get('entries', []):
-                assert path
                 child_path = self.join(path, child.name)
                 child_otype = FILE if child.object_type == 'file' else DIRECTORY
                 self.__cache.update(child_path, child_otype, child.object_id, keep=True)
