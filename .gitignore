@@ -1,6 +1,9 @@
 #sphinx
 _build
 
+# don't check in tokens
+*.token
+
 # coverage annotations
 *,cover
 

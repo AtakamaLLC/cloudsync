@@ -490,8 +490,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
 
         tokens = os.environ.get("%s_TOKEN" % prefix).split(token_sep)
+        token = tokens[random.randrange(0, len(tokens))]
+
+        if token.startswith("file:"):
+            token = open(token[5:]).read()
+
         creds = {
-            token_key: tokens[random.randrange(0, len(tokens))],
+            token_key: token,
         }
         cls._test_creds = creds                                          # type: ignore
         return cls(OAuthConfig(                                         # type: ignore
