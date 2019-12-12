@@ -108,10 +108,15 @@ class ApiServer:
         self.__server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
 
         # routed methods map into handler
-        for meth in type(self).__dict__.values():
+        for fname in dir(self):
+            meth = getattr(self, fname)
+            if not callable(meth):
+                continue
             if hasattr(meth, "_routes"):
                 for route in meth._routes:      # pylint: disable=protected-access
                     self.add_route(route, meth)
+
+        log.debug("routes %s", list(self.__routes.keys()))
 
     def add_route(self, path, meth, content_type='application/json'):
         self.__routes[path] = (meth, content_type)
@@ -231,7 +236,7 @@ class ApiServer:
                 if handler_tmp:
                     handler, content_type = handler_tmp
                     try:
-                        response = handler(self, env, info)
+                        response = handler(env, info)
                         if response is None:
                             response = ""
                         if isinstance(response, dict):
@@ -289,8 +294,8 @@ class TestApiServer(unittest.TestCase):
 
         httpd = MyServer('127.0.0.1', 0)
 
-        httpd.add_route("/foo", lambda srv, ctx, x: "FOO" + x["x"][0])
-        httpd.add_route("/sub/", lambda srv, ctx, x: "SUB")
+        httpd.add_route("/foo", lambda ctx, x: "FOO" + x["x"][0])
+        httpd.add_route("/sub/", lambda ctx, x: "SUB")
 
         try:
             print("serving on ", httpd.address(), httpd.port())
@@ -314,7 +319,7 @@ class TestApiServer(unittest.TestCase):
             self.assertEqual(response.text, "FOO4")
 
             # not found handled
-            httpd.add_route(None, lambda srv, ctx, x: "NOTFOUNDY", content_type='text/plain')
+            httpd.add_route(None, lambda ctx, x: "NOTFOUNDY", content_type='text/plain')
             response = requests.get(httpd.uri("sd;lfjksdfkl;j"), timeout=1)
             self.assertEqual(response.text, "NOTFOUNDY")
             self.assertEqual(response.headers["content-type"], "text/plain")

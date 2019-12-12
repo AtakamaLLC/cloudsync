@@ -2,7 +2,7 @@ import os
 import io
 import threading
 import logging
-from typing import Dict
+from typing import Dict, List
 from unittest.mock import patch
 
 from cloudsync.providers import BoxProvider
@@ -10,15 +10,12 @@ from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.utils import is_subpath
 from cloudsync.oauth.apiserver import ApiServer, ApiError, api_route
 
+from .fixtures import FakeApi, fake_oauth_provider
+
 log = logging.getLogger(__name__)
 
 
-class FakeBoxApi(ApiServer):
-    def __init__(self):
-        super().__init__("127.0.0.1", 0)
-        self.upload_url = self.uri("/upload")
-        self.calls: Dict[str, tuple] = {}
-
+class FakeBoxApi(FakeApi):
     @api_route("/users/me")
     def upload(self, ctx, req):
         self.called("users/me", (ctx, req))
@@ -191,24 +188,9 @@ class FakeBoxApi(ApiServer):
             'total_count': 1}
 
 
-    @api_route(None)
-    def default(self, ctx, req):
-        meth = ctx.get("REQUEST_METHOD")
-        uri = ctx.get("PATH_INFO")
-
-        log.debug("unhandled api: %s, %s %s", meth, uri, req)
-        return {}
-
-    def called(self, name, args):
-        log.debug("called %s", name)
-        if name not in self.calls:
-            self.calls[name] = []
-        self.calls[name].append((name, args))
-
 def fake_prov():
     # TODO: shutting this down is slow, fix that and then fix all tests using the api server to shut down, or use fixtures or something
     srv = FakeBoxApi()
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
     base_url = srv.uri()
 
     class API(object):
@@ -219,19 +201,8 @@ def fake_prov():
         OAUTH2_AUTHORIZE_URL = base_url + "oauth/auth"
         MAX_RETRY_ATTEMPTS = 1
 
-    with patch("boxsdk.config.API", API) as api:
-        prov = BoxProvider(OAuthConfig(app_id="fakeappid", app_secret="fakesecret"))
-        prov._base_url = base_url
-        prov._oauth_info = OAuthProviderInfo(
-                auth_url=base_url + "auth",
-                token_url=base_url + "token",
-                scopes=['whatever'],
-                )
-        fake_creds = {
-                "access_token": "BAZ",
-                "refresh_token": "YO",
-                }
-        prov.connect(fake_creds)
+    with patch("boxsdk.config.API", API):
+        prov = fake_oauth_provider(srv, BoxProvider)
         assert srv.calls["users/me"]
         return srv, prov
  
