@@ -16,7 +16,7 @@ lint: _lint
 	git fetch origin master
 
 _lint:
-	pylint cloudsync --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
+	pylint cloudsync --enable=duplicate-code --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
 
 test:
 	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests --full-trace --timeout=10
