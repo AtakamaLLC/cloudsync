@@ -1,3 +1,7 @@
+"""
+ muxer.Muxer : turn generators into subscribable streams
+"""
+
 import queue
 from threading import Lock
 from collections import namedtuple
@@ -11,6 +15,30 @@ class Muxer:
     top_lock = Lock()
 
     def __init__(self, func, key=None, restart=False):
+        """
+        Create or subscribe to a generator function.
+
+        Args:
+            func: generator function
+            key: globally unique id (default is just func)
+            restart: make the generator infinite, by re-calling it forever
+
+        Synopsis:
+
+        ```
+            x = Muxer(generator_function)
+            y = Muxer(generator_function)
+
+            # putting these loops in threads is OK
+
+            for e in x:
+                do()
+
+            for e in y:
+                do()
+
+        ```
+        """
         self.restart = restart
         self.func: Callable = func
         self.queue: queue.Queue = queue.Queue()

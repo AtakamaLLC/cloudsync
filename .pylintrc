@@ -57,7 +57,6 @@ confidence=
 # no Warning level messages displayed, use"--disable=all --enable=classes
 # --disable=W"
 disable=multiple-imports,
-        missing-docstring,
         broad-except,
         no-else-return,
         trailing-newlines,
@@ -160,7 +159,7 @@ const-naming-style=UPPER_CASE
 
 # Minimum line length for functions/classes that require docstrings, shorter
 # ones are exempt.
-docstring-min-length=-1
+docstring-min-length=10
 
 # Naming style matching correct function names
 function-naming-style=snake_case
@@ -248,7 +247,7 @@ indent-string='    '
 max-line-length=160
 
 # Maximum number of lines in a module
-max-module-lines=1000
+max-module-lines=1500
 
 # List of optional constructs for which whitespace checking is disabled. `dict-
 # separator` is used to allow tabulation in dicts, etc.: {1  : 1,\n222: 2}.

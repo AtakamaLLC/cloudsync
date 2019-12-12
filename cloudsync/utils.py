@@ -1,3 +1,7 @@
+"""
+The ubuquitous "misc utilities" file required in every library
+"""
+
 import os, tempfile
 from typing import IO
 
@@ -40,8 +44,10 @@ def _debug_arg(val: Any):
     return ret
 
 
-# prevents very long arguments from getting logged
 def debug_args(*stuff: Any):
+    """
+    Use this when logging stuff that might be too long.  It truncates them.
+    """
     if log.isEnabledFor(logging.DEBUG):
         r = _debug_arg(stuff)
         if len(r) == 1:
@@ -52,14 +58,20 @@ def debug_args(*stuff: Any):
     return tuple(["N/A"] * len(stuff))
 
 
-# useful for converting oids and pointer nubmers into digestible nonces
 def debug_sig(t: Any, size: int = 3) -> str:
+    """
+    Useful for converting oids and pointer nubmers into short digestible nonces
+    """
     if not t:
         return "0"
     return b64encode(abs(hash(str(t))).to_bytes(8, "big")).decode()[0:size]
 
 
 class disable_log_multiline:
+    """
+    Decortator that deals with : https://github.com/pytest-dev/pytest/pull/5926
+    TODO: remove this, and just bump the pytest version
+    """
     @staticmethod
     def _format(loggerclass, record):
         return loggerclass._fmt % record.__dict__       # pylint: disable=protected-access
@@ -171,6 +183,9 @@ class TemporaryFile:
         return getattr(self.__io, k)
 
     def __del__(self):
+        """
+        Delete on going out of scope.  This isn't safe, but it ususally works.
+        """
         if self.__delete:
             try:
                 os.unlink(self.name)
@@ -178,6 +193,9 @@ class TemporaryFile:
                 pass
 
 def NamedTemporaryFile(mode='w+b', bufsize=-1, suffix='', prefix='tmp', dir=None, delete=True):         # pylint: disable=redefined-builtin
+    """
+    Windows compatible temp files.
+    """
     if not dir:
         dir = tempfile.gettempdir()
     name = os.path.join(dir, prefix + os.urandom(32).hex() + suffix)

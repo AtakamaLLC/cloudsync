@@ -1,3 +1,8 @@
+"""
+A threaded wsgi web server, free of dependencies on 3rd party libraries.
+
+Exports ApiServer, ApiError and api_route
+"""
 import sys
 import re
 import json
@@ -38,6 +43,15 @@ class ApiServerLogLevel(Enum):
 
 
 class ApiError(Exception):
+    """
+    User can raise an ApiError in order to abort processing and return something other than '200' to the web client.
+
+    Args:
+        code: status code
+        msg: message to show
+        desc: description of the error
+        json: json to return, instead of any error descriptions
+    """
     def __init__(self, code, msg=None, desc=None, json=None):       # pylint: disable=redefined-outer-name
         super().__init__()
         self.code = code
@@ -54,6 +68,9 @@ class ApiError(Exception):
 
 
 def api_route(path):
+    """
+    Decorator for handling specific urls.
+    """
     def outer(func):
         if not hasattr(func, "_routes"):
             setattr(func, "_routes", [])
@@ -71,25 +88,25 @@ def sanitize_for_status(e):
 
 
 class ApiServer:
+    """
+    Create a new server on address, port.  Port can be zero.
+
+    from apiserver import ApiServer, ApiError, api_route
+
+    Create your handlers by inheriting from ApiServer and tagging them with @api_route("/path").
+
+    Alternately you can use the ApiServer() directly, and call add_handler("path", function)
+
+    Raise errors by raising ApiError(code, message, description=None)
+
+    Return responses by simply returning a dict() or str() object
+
+    Parameter to handlers is a dict()
+
+    Query arguments are shoved into the dict via urllib.parse_qs
+
+    """
     def __init__(self, addr, port, headers=None, log_level=ApiServerLogLevel.ARGS, allow_reuse=False):
-        """
-        Create a new server on address, port.  Port can be zero.
-
-        from apiserver import ApiServer, ApiError, api_route
-
-        Create your handlers by inheriting from ApiServer and tagging them with @api_route("/path").
-
-        Alternately you can use the ApiServer() directly, and call add_handler("path", function)
-
-        Raise errors by raising ApiError(code, message, description=None)
-
-        Return responses by simply returning a dict() or str() object
-
-        Parameter to handlers is a dict()
-
-        Query arguments are shoved into the dict via urllib.parse_qs
-
-        """
         self.__addr = addr
         self.__port = port
         self.__headers = headers if headers else []
@@ -256,12 +273,21 @@ class ApiServer:
 
 
 class TestApiServer(unittest.TestCase):
+    """
+    Built-in test cases
+    """
     @staticmethod
     def test_nostart():
+        """
+        Test shutdown when not started
+        """
         httpd = ApiServer('127.0.0.1', 0)
         httpd.shutdown()
 
     def test_basic(self):
+        """
+        Basic function tests
+        """
         class MyServer(ApiServer):
             @api_route("/popup")
             def popup(self, unused_ctx, req):        # pylint: disable=no-self-use
@@ -298,6 +324,9 @@ class TestApiServer(unittest.TestCase):
             httpd.shutdown()
 
     def test_error(self):
+        """
+        Ensure apierrors return correctly
+        """
         class MyServer(ApiServer):
             @api_route("/popup")
             def popup(self, ctx, unused_req):        # pylint: disable=no-self-use

@@ -1,3 +1,6 @@
+"""
+Module exports the 'Provider' abstract base class as well as the 'Hash', 'Cursor' and 'Creds' types
+"""
 from abc import ABC, abstractmethod
 import re
 import os
@@ -302,6 +305,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 # HELPER
     @classmethod
     def join(cls, *paths):
+        """
+        Joins a list of path strings in a provider-specific manner.
+
+        Args:
+            *paths: zero or more paths
+        """
         res = ""
         rl: List[str] = []
         for path in paths:

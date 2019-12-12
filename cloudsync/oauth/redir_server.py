@@ -1,3 +1,7 @@
+"""
+Locally running OAuth redirect server for desktop authentication
+"""
+
 import logging
 import sys
 import random
@@ -15,15 +19,25 @@ __all__ = ['OAuthRedirServer']
 # then provide tools to that provider-writers don't have to do much to get their app-specific oauth to work other than
 # providing the resource name, auth url and any app-specific parameters
 
+
 def _is_windows():
     return sys.platform in ("win32", "cygwin")
+
 
 class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
     SHUFFLE_PORTS: bool = True
 
-    def __init__(self, *, html_generator: Callable[[bool, str], str] = None, 
-            port_range: Tuple[int, int] = None, 
-            host_name: str = None):
+    def __init__(self, *, html_generator: Callable[[bool, str], str] = None,
+                 port_range: Tuple[int, int] = None,
+                 host_name: str = None):
+        """
+        Redirect web server instance
+
+        Args:
+            html_generator: Function that returns the string to show the user.
+            port_range: List of allowable ports
+            host_name: Host name to use (default: 127.0.0.1)
+        """
         self.__html_response_generator = html_generator
         self.__port_range = port_range
 
@@ -47,6 +61,9 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         return self.__running
 
     def run(self, on_success: Callable[[Any], None], on_failure: Callable[[str], None]):
+        """
+        Starts the server, and autodiscovers the port it will be binding to.
+        """
         if self.__running:
             raise RuntimeError('OAuth server was run() twice')
         self.__on_success = on_success
@@ -69,7 +86,6 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
             if self.SHUFFLE_PORTS:
                 random.shuffle(ports)
 
-            free = None
             for port in ports:
                 try:
                     self.__api_server = ApiServer('127.0.0.1', port)
@@ -81,8 +97,8 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         if not self.__api_server:
             raise OSError(errno.EADDRINUSE, "Unable to open any port in range %s-%s" % (port_min, (port_max)))
 
-        self.__api_server.add_route('/', self.auth_redir_success, content_type='text/html')
-        self.__api_server.add_route('/auth', self.auth_redir_success, content_type='text/html')
+        self.__api_server.add_route('/', self._auth_redir_success, content_type='text/html')
+        self.__api_server.add_route('/auth', self._auth_redir_success, content_type='text/html')
         self.__api_server.add_route('/favicon.ico', lambda s, x, y: "", content_type='text/html')
 
         self.__thread = threading.Thread(target=self.__api_server.serve_forever,
@@ -90,7 +106,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.__thread.start()
         log.info('Listening on %s', self.uri())
 
-    def auth_redir_success(self, _srv, _env, info):
+    def _auth_redir_success(self, _srv, _env, info):
         err = ""
         if info and ('error' in info or 'error_description' in info):
             log.debug("auth error")
@@ -127,6 +143,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         return "OAuth Failure:" + msg
 
     def shutdown(self):
+        """Abandon any waiting oauths and shut down the server"""
         self.event.set()
         if self.__api_server and self.__running:
             try:
@@ -139,11 +156,14 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.__thread = None
 
     def wait(self, timeout=None):
+        """Wait for oauth response"""
         self.event.wait(timeout=timeout)
 
-    def uri(self):
+    def uri(self) -> str:
+        """Return the base url for this server"""
         return self.__api_server.uri("/", self.__host_name)
 
-    def port(self):
+    def port(self) -> int:
+        """Port number for this server"""
         return self.__api_server.port()
 
