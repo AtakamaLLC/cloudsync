@@ -26,8 +26,8 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
     CloudFileExistsError, CloudException, CloudCursorError
 
 log = logging.getLogger(__name__)
-logging.getLogger('boxsdk.network.default_network').setLevel(logging.DEBUG)
-logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG)
+logging.getLogger('boxsdk.network.default_network').setLevel(logging.ERROR)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 # TODO:
 #   refactor _api to produce the client or a box_object, or consider if I want to switch to the RESTful api instead
