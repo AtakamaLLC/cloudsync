@@ -29,8 +29,10 @@ from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
 
+
 class OneDriveFileDoneError(Exception):
     pass
+
 
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
@@ -300,7 +302,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if status < 300:
             log.error("Not converting err %s %s", ex, req)
             return False
-            
+
         if status == 404:
             raise CloudFileNotFoundError(msg)
         if status in (429, 503):
@@ -318,6 +320,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileExistsError(msg)
         if code == ErrorCode.AccessDenied:
             raise CloudFileExistsError(msg)
+        if code == ErrorCode.BadRequest:
+            if status == 400:
+                raise CloudFileNotFoundError(msg)
         if code == ErrorCode.InvalidRequest:
             if status == 405:
                 raise CloudFileExistsError(msg)
