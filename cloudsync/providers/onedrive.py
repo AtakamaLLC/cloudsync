@@ -165,7 +165,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         scopes=['profile', 'openid', 'email', 'files.readwrite.all', 'sites.readwrite.all', 'offline_access', 'group.readwrite.all'],
     )
 
-    additional_invalid_characters = '#'
+    _additional_invalid_characters = '#'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -611,7 +611,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if not metadata:
             metadata = {}
 
-        pid = self.get_parent_id(path=path)
+        pid = self._get_parent_id(path=path)
         dirname, base = self.split(path)
         size = _get_size_and_seek0(file_like)
 
@@ -784,7 +784,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
 
-        pid = self.get_parent_id(path=path)
+        pid = self._get_parent_id(path=path)
         log.debug("got pid %s", pid)
 
         f = onedrivesdk.Folder()
@@ -863,7 +863,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except CloudFileNotFoundError:
             return False
 
-    def get_parent_id(self, *, path=None, oid=None):
+    def _get_parent_id(self, *, path=None, oid=None):
         log.debug("get parent %s", path)
         if not path and not oid:
             log.error("invalid info %s %s", path, oid)

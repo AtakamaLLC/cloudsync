@@ -435,7 +435,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         fields = 'id, md5Checksum, size'
 
-        parent_oid = self.get_parent_id(path)
+        parent_oid = self._get_parent_id(path)
 
         gdrive_info['parents'] = [parent_oid]
 
@@ -472,7 +472,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 done = True
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches
-        pid = self.get_parent_id(path)
+        pid = self._get_parent_id(path)
 
         add_pids = [pid]
         if pid == 'root':
@@ -572,7 +572,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudFileExistsError(path)
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
-        pid = self.get_parent_id(path)
+        pid = self._get_parent_id(path)
         _, name = self.split(path)
         file_metadata = {
             'name': name,
@@ -623,7 +623,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return self.info_oid(self.root_id)
 
         try:
-            parent_id = self.get_parent_id(path)
+            parent_id = self._get_parent_id(path)
             _, name = self.split(path)
 
             escaped_name = self.__escape(name)
@@ -675,7 +675,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return True
         return self.info_path(path) is not None
 
-    def get_parent_id(self, path):  # Public method?
+    def _get_parent_id(self, path):  # Public method?
         if not path:
             return None
 

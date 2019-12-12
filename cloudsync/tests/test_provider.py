@@ -1553,7 +1553,7 @@ def test_large_file_support(provider):
 def test_special_characters(provider):
     log.debug("start")
     fname = ""
-    additional_invalid_characters = getattr(provider, "additional_invalid_characters", "")
+    additional_invalid_characters = getattr(provider, "_additional_invalid_characters", "")
     for i in range(32, 127):
         char = str(chr(i))
         if char in (provider.sep, provider.alt_sep):

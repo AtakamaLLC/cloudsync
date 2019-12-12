@@ -42,7 +42,6 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
-    additional_invalid_characters = ''
     _events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                         'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
@@ -859,17 +858,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 if box_object and oinfo.path:
                     self.__box_cache_object(client, box_object, oinfo.path)
             return oinfo
-
-    def get_parent_id(self, path):  # Public method?
-        if not path:
-            return None
-        parent, _ = self.split(path)
-        if parent == path:
-            return self.__cache.get_oid(parent)
-        parent_info = self.info_path(parent)
-        if not parent_info:
-            raise CloudFileNotFoundError("parent %s must exist" % parent)
-        return self.__cache.get_oid(parent_info.path)
 
     def _clear_cache(self, *, oid=None, path=None):
         if oid is None and path is None:
