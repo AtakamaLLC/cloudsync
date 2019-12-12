@@ -762,7 +762,6 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         return GDriveInfo(otype, oid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name, size=size)
 
-
     @classmethod
     def test_instance(cls):
         return cls.oauth_test_instance(prefix="GDRIVE", token_sep=",")

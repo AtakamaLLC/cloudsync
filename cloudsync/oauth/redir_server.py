@@ -141,8 +141,12 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.event.wait(timeout=timeout)
 
     def uri(self):
+        if not self.__api_server:
+            return None
         return self.__api_server.uri("/", self.__host_name)
 
     def port(self):
+        if not self.__api_server:
+            return None
         return self.__api_server.port()
 
