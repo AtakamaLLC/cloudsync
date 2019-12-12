@@ -2,7 +2,7 @@ import io
 import sys
 import logging
 import json
-import os, tempfile
+import os
 from typing import IO
 
 from unittest.mock import MagicMock
@@ -16,14 +16,11 @@ from cloudsync import SqliteStorage, SyncState, LOCAL, FILE, IgnoreReason
 
 log = logging.getLogger()
 
-# from https://gist.github.com/earonesty/a052ce176e99d5a659472d0dab6ea361
-# windows compat
 
-@pytest.mark.parametrize("arg_json", ["json", "nojson"])
-@pytest.mark.parametrize("arg_discard", ["discard", "nodiscard"])
-def test_debug_mode(arg_json, arg_discard):
-    arg_json = arg_json[0:1] != "no"
-    arg_discard = arg_discard[0:1] != "no"
+@pytest.mark.parametrize("arg_json", [True, False], ids=["json", "nojson"])
+@pytest.mark.parametrize("arg_discard", [True, False], ids=["discarded", "nodiscarded"])
+@pytest.mark.parametrize("arg_changed", [True, False], ids=["changed", "unchanged"])
+def test_debug_mode(capsys, arg_json, arg_discard, arg_changed):
     providers = (MagicMock(), MagicMock())
 
     tf = NamedTemporaryFile(mode=None)
@@ -32,8 +29,10 @@ def test_debug_mode(arg_json, arg_discard):
         state = SyncState(providers, storage, tag="whatever")
         state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
         state.update(LOCAL, FILE, path="456", oid="456", hash=b"456")
+        state.update(LOCAL, FILE, path="789", oid="789", hash=b"789")
         state.lookup_oid(LOCAL, "456")[LOCAL].sync_path = "456"
         state.lookup_oid(LOCAL, "456").ignored = IgnoreReason.CONFLICT
+        state.lookup_oid(LOCAL, "456")[LOCAL].changed = False
 
         state.storage_commit()
 
@@ -42,21 +41,13 @@ def test_debug_mode(arg_json, arg_discard):
         args.state = tf.name
         args.json = arg_json
         args.discarded = arg_discard
-
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        cap_out = io.StringIO()
-        sys.stdout = cap_out
+        args.changed = arg_changed
 
         res = ""
-        try:
-            do_debug(args)
-        finally:
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-            res = cap_out.getvalue()
+        do_debug(args)
+        res = capsys.readouterr().out
 
-        assert "whatever"  in res
+        assert "whatever" in res
         assert "123" in res
 
         if arg_json:
@@ -65,8 +56,11 @@ def test_debug_mode(arg_json, arg_discard):
             log.info("loaded: %s", ret)
             assert ret["whatever"]
             if arg_discard:
-                assert len(ret["whatever"]) == 2
+                if arg_changed:
+                    assert len(ret["whatever"]) == 2
+                else:
+                    assert len(ret["whatever"]) == 3
             else:
-                assert len(ret["whatever"]) == 1
+                assert len(ret["whatever"]) == 2
     finally:
         storage.close()

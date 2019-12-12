@@ -27,6 +27,31 @@ def to_jsonable(d):
     return r
 
 
+def output_json_for_tag(args, ss, tag, first):
+    stuff: Iterable[SyncEntry]
+    if args.changed:
+        stuff = ss.changes
+    else:
+        stuff = ss.get_all(discarded=args.discarded)
+
+    if not stuff:
+        return
+
+    print("," if not first else "", '"%s":[' % tag)
+    ent_comma = ""
+    se: SyncEntry
+    for se in stuff:
+        if not args.discarded:
+            if se.is_conflicted or se.is_discarded:
+                continue
+        ser = se.serialize()
+        d = msgpack.loads(ser, use_list=True, raw=False)
+
+        d = to_jsonable(d)
+        print(ent_comma, json.dumps(d))
+        ent_comma = ","
+
+
 def do_debug(args):
     if args.state:
         fake_state = MagicMock()
@@ -40,32 +65,13 @@ def do_debug(args):
         for tag, _ in store.read_all().items():
             tags.add(tag)
 
-        tag_comma = ""
+        first = True
         for tag in tags:
             logging.getLogger().setLevel(logging.CRITICAL)
             ss = SyncState((MagicMock(), MagicMock()), store, tag)
             logging.getLogger().setLevel(logging.INFO)
             if args.json:
-                stuff: Iterable[SyncEntry]
-                if args.changed:
-                    stuff = ss.changes
-                else:
-                    stuff = ss.get_all(discarded=args.discarded)
-
-                if not stuff:
-                    continue
-
-                print(tag_comma, '"%s":[' % tag)
-                tag_comma = ","
-                ent_comma = ""
-                se: SyncEntry
-                for se in stuff:
-                    ser = se.serialize()
-                    d = msgpack.loads(ser, use_list=True, raw=False)
-
-                    d = to_jsonable(d)
-                    print(ent_comma, json.dumps(d))
-                    ent_comma = ","
+                output_json_for_tag(args, ss, tag, first)
             else:
                 if ss.get_all(discarded=args.discarded):
                     print("****", tag, "****")
@@ -73,6 +79,7 @@ def do_debug(args):
 
             if args.json:
                 print("]")
+            first = False
 
         if args.json:
             print("}")

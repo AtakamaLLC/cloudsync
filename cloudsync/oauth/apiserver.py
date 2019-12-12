@@ -1,5 +1,6 @@
-""""Generic, threaded, routed api server with no external deps."""
+"""Generic, threaded, routed api server with no external deps."""
 
+import sys
 import json
 import traceback
 import socket
@@ -145,8 +146,8 @@ class ApiServer:
             pass
 
     def __del__(self):
-        log.debug("automatically shutting down")
-        self.shutdown()
+        if self.__started and not self.__shutting_down:
+            print("note: didn't shut down oauth server", file=sys.stderr)
 
     def shutdown(self):
         try:

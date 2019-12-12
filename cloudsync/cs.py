@@ -192,12 +192,12 @@ class CloudSync(Runnable):
     def busy(self):
         return self.smgr.busy or self.emgrs[0].busy or self.emgrs[1].busy
 
-    def start(self, **kwargs):
+    def start(self, *, daemon=True, **kwargs):
         # override Runnable start/stop so that events can be processed in separate threads
-        self.sthread = threading.Thread(target=self.smgr.run, kwargs={'sleep': 0.1, **kwargs}, daemon=True)
+        self.sthread = threading.Thread(target=self.smgr.run, kwargs={'sleep': 0.1, **kwargs}, daemon=daemon)
         self.ethreads = (
-            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': self.sleep[0], **kwargs}, daemon=True),
-            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': self.sleep[1], **kwargs}, daemon=True)
+            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': self.sleep[0], **kwargs}, daemon=daemon),
+            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': self.sleep[1], **kwargs}, daemon=daemon)
         )
         self.sthread.start()
         self.ethreads[0].start()
