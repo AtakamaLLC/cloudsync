@@ -222,7 +222,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudCursorError(val)
         self.__cursor = val
 
-    def _long_poll(self, timeout=None):  # Public method?
+    def _long_poll(self, timeout=None):
         if timeout is None:
             timeout = self._long_poll_timeout
         log.debug("inside _long_poll")
@@ -257,7 +257,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     def events(self) -> Generator[Event, None, None]:  # pylint: disable=method-hidden
         yield from self._long_poll_manager()
 
-    def _short_poll(self) -> Generator[Event, None, None]:  # pylint: disable=too-many-locals  # Public method?
+    def _short_poll(self) -> Generator[Event, None, None]:  # pylint: disable=too-many-locals
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
         log.debug("inside _short_poll() cursor = %s", self.current_cursor)
         with self._api() as client:

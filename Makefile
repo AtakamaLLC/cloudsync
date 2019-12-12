@@ -19,7 +19,7 @@ _lint:
 	pylint cloudsync --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
 
 test:
-	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests
+	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests --full-trace --timeout=10
 
 coverage:
 	pytest --cov-report html --cov=cloudsync -n=8 cloudsync/tests

@@ -54,8 +54,8 @@ class ProviderHelper(ProviderBase):
         self.prov = prov
 
         self.test_parent = getattr(self.prov, "test_root", "/")
-        self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
-        self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
+        self._test_event_timeout = getattr(self.prov, "_test_event_timeout", 20)
+        self._test_event_sleep = getattr(self.prov, "_test_event_sleep", 1)
         self._test_creds = getattr(self.prov, "_test_creds", {})
         self.test_root: Optional[str] = None
 
@@ -70,7 +70,7 @@ class ProviderHelper(ProviderBase):
     def make_root(self):
         ns = self.prov.list_ns()
         if ns:
-            self.prov.namespace = self.prov.test_namespace
+            self.prov.namespace = self.prov._test_namespace
 
         if not self.test_root:
             # if the provider class doesn't specify a testing root
@@ -90,7 +90,7 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self.test_event_timeout, sleep=self.test_event_sleep, multiply=2):
+        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep, multiply=2):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
@@ -220,13 +220,13 @@ class ProviderHelper(ProviderBase):
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
-            timeout = self.test_event_timeout
+            timeout = self._test_event_timeout
 
         if timeout == 0:
             yield from self.events()
             return
 
-        for _ in time_helper(timeout, sleep=self.test_event_sleep, multiply=2):
+        for _ in time_helper(timeout, sleep=self._test_event_sleep, multiply=2):
             got = False
             for e in self.events():
                 yield e
@@ -274,7 +274,8 @@ def mixin_provider(prov, connect=True):
 
     yield prov
 
-    prov.test_cleanup()
+    if connect:
+        prov.test_cleanup()
 
 
 @pytest.fixture
@@ -297,9 +298,15 @@ def config_provider(request, provider_name):
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
+
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+
+@pytest.fixture(name="unconnected_provider")
+def scoped_provider_fixture(config_provider):
+    yield from mixin_provider(config_provider, connect=False)
 
 
 import cloudsync.providers
@@ -686,7 +693,7 @@ def test_event_del_create(provider):
     disordered = False
     done = False
 
-    for event in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+    for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
         log.debug("event %s", event)
         # you might get events for the root folder here or other setup stuff
         path = event.path
@@ -729,7 +736,7 @@ def test_event_del_create(provider):
             log.error("first delete not seen yet, about to fail, giving it a chance to come in so we can log it")
             done = False
             try:
-                for event in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+                for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
                     done = (event.oid == info1.oid and not event.exists)
             except TimeoutError:
                 pass
@@ -761,7 +768,7 @@ def test_event_rename(provider):
     last_event = None
     second_to_last = None
     done = False
-    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+    for e in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
         if provider.oid_is_path:
             assert e.path
         log.debug("event %s", e)
@@ -804,7 +811,7 @@ def test_event_longpoll(provider):
 
     def waiter():
         nonlocal received_event
-        timeout = time.monotonic() + provider.test_event_timeout
+        timeout = time.monotonic() + provider._test_event_timeout
         while time.monotonic() < timeout:
             for e in provider.events_poll(until=lambda: received_event):
                 if e.exists:
@@ -823,7 +830,7 @@ def test_event_longpoll(provider):
     log.debug("create event")
     provider.create(dest, temp, None)
 
-    t.join(timeout=provider.test_event_timeout)
+    t.join(timeout=provider._test_event_timeout)
 
     assert received_event
 
@@ -1473,7 +1480,7 @@ def test_report_info(provider):
 
 
 def test_quota_limit(mock_provider):
-    mock_provider.set_quota(1024)
+    mock_provider._set_quota(1024)
     mock_provider.create("/foo", BytesIO(b'0' * 1024))
     with pytest.raises(CloudOutOfSpaceError):
         mock_provider.create("/bar", BytesIO(b'0' * 2))
@@ -1761,8 +1768,8 @@ def test_specific_test_root():
     assert list(base.listdir_path("/banana")) == []
 
 
-@pytest.mark.manual
-def test_provider_interface(provider):
+def test_provider_interface(unconnected_provider):
+    provider = unconnected_provider
     base_dir = set([x for x in dir(Provider) if not x.startswith('_')])
     base_dir = set(dir(Provider))
     log.debug("basedir = %s", base_dir)

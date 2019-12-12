@@ -70,19 +70,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self.__root_id = None
         self.__cursor: str = None
         self._creds = None
-        self.client = None
-        self.user_agent = 'cloudsync/1.0'
-        self.mutex = threading.Lock()
+        self._client = None
+        self._mutex = threading.Lock()
         self._ids = {"/": "root"}
         self._trashed_ids: Dict[str, str] = {}
         self._oauth_config = oauth_config
 
     @property
     def connected(self):
-        return self.client is not None
-
-    def get_display_name(self):  # Public method?
-        return self.name
+        return self._client is not None
 
     @memoize(expire_secs=CACHE_QUOTA_TIME)
     def get_quota(self):
@@ -114,7 +110,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
-        if not self.client or creds != self._creds:
+        if not self._client or creds != self._creds:
             refresh_token = creds and creds.get('refresh_token')
 
             if not refresh_token:
@@ -123,7 +119,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             try:
                 new = self._oauth_config.refresh(self._oauth_info.token_url, refresh_token, scope=self._oauth_info.scopes)
                 google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._oauth_info.scopes)
-                self.client = build(
+                self._client = build(
                     'drive', 'v3', credentials=google_creds)
                 try:
                     self.get_quota.clear()          # pylint: disable=no-member
@@ -169,16 +165,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return ret
 
     def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements
-        if not self.client:
+        if not self._client:
             raise CloudDisconnectedError("currently disconnected")
 
-        with self.mutex:
+        with self._mutex:
             try:
                 if resource == 'media':
                     res = args[0]
                     args = args[1:]
                 else:
-                    res = getattr(self.client, resource)()
+                    res = getattr(self._client, resource)()
 
                 meth = getattr(res, method)(*args, **kwargs)
 
@@ -246,7 +242,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudDisconnectedError("disconnected on timeout")
 
     @property
-    def root_id(self):  # Public method?
+    def _root_id(self):
         if not self.__root_id:
             res = self._api('files', 'get',
                             fileId='root',
@@ -257,7 +253,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return self.__root_id
 
     def disconnect(self):
-        self.client = None
+        self._client = None
         # clear cached session info!
         self.get_quota.clear()          # pylint: disable=no-member
 
@@ -479,7 +475,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         add_pids = [pid]
         if pid == 'root':
-            add_pids = [self.root_id]
+            add_pids = [self._root_id]
 
         info = self._info_oid(oid)
         if info is None:
@@ -623,7 +619,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:  # pylint: disable=too-many-locals
         if path == "/":
-            return self.info_oid(self.root_id)
+            return self.info_oid(self._root_id)
 
         try:
             parent_id = self._get_parent_id(path)
