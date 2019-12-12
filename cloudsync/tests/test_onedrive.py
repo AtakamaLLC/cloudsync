@@ -2,7 +2,7 @@ import os
 import io
 import threading
 import logging
-from typing import Dict
+from typing import Dict, List
 
 from onedrivesdk_fork.error import ErrorCode
 from cloudsync.providers import OneDriveProvider
@@ -11,14 +11,16 @@ from cloudsync.oauth.apiserver import ApiServer, ApiError, api_route
 
 log = logging.getLogger(__name__)
 
+
 def subpath(a, b):
     return os.path.commonpath([a]) == os.path.commonpath([a, b])
+
 
 class FakeGraphApi(ApiServer):
     def __init__(self):
         super().__init__("127.0.0.1", 0)
         self.upload_url = self.uri("/upload")
-        self.calls: Dict[str, tuple] = {}
+        self.calls: Dict[str, List] = {}
 
     @api_route("/upload")
     def upload(self, ctx, req):
