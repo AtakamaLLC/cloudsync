@@ -33,13 +33,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     """
 
     # pylint: disable=multiple-statements
-    name: str = None                        ; """Provider name"""
-    sep: str = '/'                          ; """Path delimiter"""
-    alt_sep: str = '\\'                     ; """Alternate path delimiter"""
-    oid_is_path: bool = False               ; """Objects stored in cloud are only referenced by path"""
-    case_sensitive: bool = True             ; """Provider is case sensitive"""
-    win_paths: bool = False                 ; """C: drive letter stuff needed for paths"""
-    default_sleep: float = 0.01             ; """Per event loop sleep time"""
+    name: str = None                         ; """Provider name"""
+    sep: str = '/'                           ; """Path delimiter"""
+    alt_sep: str = '\\'                      ; """Alternate path delimiter"""
+    oid_is_path: bool = False                ; """Objects stored in cloud are only referenced by path"""
+    case_sensitive: bool = True              ; """Provider is case sensitive"""
+    win_paths: bool = False                  ; """C: drive letter stuff needed for paths"""
+    default_sleep: float = 0.01              ; """Per event loop sleep time"""
     _namespace: str = None                   ; """current namespace, if needed """
     _namespace_id: str = None                ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
@@ -48,12 +48,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for
     # multipart upload tests
-    large_file_size: int = 0                ; """Used for testing providers with separate large file handling"""
-    upload_block_size: int = 0              ; """Used for testing providers with separate large file handling"""
+    large_file_size: int = 0                 ; """Used for testing providers with separate large file handling"""
+    upload_block_size: int = 0               ; """Used for testing providers with separate large file handling"""
 
-    connection_id: str = None               ; """Must remain constant between logins and must be unique to the login"""
-    _creds: Optional[Any] = None           ; """Base class helpers to store creds"""
-    __connected = False                     ; """Base class helper to fake a connection"""
+    connection_id: str = None                ; """Must remain constant between logins and must be unique to the login"""
+    _creds: Optional[Any] = None             ; """Base class helpers to store creds"""
+    __connected = False                      ; """Base class helper to fake a connection"""
     # pylint: enable=multiple-statements
 
     @abstractmethod
@@ -282,6 +282,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
         raise CloudNamespaceError("This provider does not support namespaces")
 
+    @classmethod
+    def uses_oauth(cls):
+        return cls._oauth_info is not None
 
 # CONVENIENCE
     def download_path(self, path, io):

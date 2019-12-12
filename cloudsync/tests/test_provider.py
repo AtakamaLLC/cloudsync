@@ -13,7 +13,7 @@ import pytest
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
-from cloudsync.tests.fixtures import Provider, mock_provider_instance
+from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 from os import SEEK_SET, SEEK_CUR, SEEK_END
@@ -297,7 +297,7 @@ def config_provider(request, provider_name):
         # this should be a _pytest.fixtures.FixtureLookupError
         if provider_name == "external":
             raise
-        yield cloudsync.registry.provider_by_name(provider_name).test_instance()
+        yield cloudsync.registry.get_provider(provider_name).test_instance()
 
 
 @pytest.fixture(name="provider", scope="module")
