@@ -22,17 +22,44 @@ class FakeBoxApi(ApiServer):
     @api_route("/users/me")
     def upload(self, ctx, req):
         self.called("users/me", (ctx, req))
-        return {"id": "123"}
+        return {'address': '',
+                'avatar_url': 'https://app.box.com/api/avatar/large/8506151483',
+                'created_at': '2019-05-29T08:35:19-07:00',
+                'id': '8506151483',
+                'job_title': '',
+                'language': 'en',
+                'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                'max_upload_size': 5368709120,
+                'modified_at': '2019-12-12T05:13:29-08:00',
+                'name': 'Atakama JWT',
+                'notification_email': [],
+                'phone': '',
+                'space_amount': 10737418240,
+                'space_used': 5551503,
+                'status': 'active',
+                'timezone': 'America/Los_Angeles',
+                'type': 'user'}
 
-    @api_route("/token")
-    def token(self, ctx, req):
+    @api_route("/folders/*")
+    def folders(self, ctx, req):
         self.called("token", (ctx, req))
-        return {
-                "token_type": "bearer",
-                "refresh_token": "r1",
-                "access_token": "a1",
-                "expires_in": 340,
-                "scope": "yes",
+        return {'content_created_at': None,
+                'content_modified_at': None,
+                'created_at': None,
+                'created_by': {'id': '', 'login': '', 'name': '', 'type': 'user'},
+                'description': '',
+                'etag': None,
+                'folder_upload_email': None,
+                'id': '0',
+                'item_collection':
+                    {'entries':
+                        [
+                            {'etag': '0',
+                                'id': '95401994626',
+                                'name': '0109d27be3d76224f640e6076c77184d',
+                                'sequence_id': '0',
+                                'type': 'folder'},
+                        ]}
                 }
 
     @api_route(None)
@@ -54,7 +81,7 @@ def fake_prov():
     srv = FakeBoxApi()
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base_url = srv.uri()
-    
+
     class API(object):
         """Configuration object containing the URLs for the Box API."""
         BASE_API_URL = base_url.rstrip("/")
@@ -76,8 +103,7 @@ def fake_prov():
                 "refresh_token": "YO",
                 }
         prov.connect(fake_creds)
-        assert srv.calls["token"]
-        assert srv.calls["quota"]
+        assert srv.calls["users/me"]
         return srv, prov
  
 def test_upload():

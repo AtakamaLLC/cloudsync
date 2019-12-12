@@ -1,4 +1,5 @@
-import re
+""""Generic, threaded, routed api server with no external deps."""
+
 import json
 import traceback
 import socket
@@ -16,7 +17,6 @@ import requests
 
 log = logging.getLogger(__name__)
 
-### GENERIC THREADED API SERVER
 
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
     def log_message(self, unused_format, *args):
@@ -25,6 +25,7 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
 
 class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
     allow_reuse_address = True
+
 
 class ThreadedWSGIServerEx(ThreadedWSGIServer):
     allow_reuse_address = False
@@ -94,8 +95,6 @@ class ApiServer:
         self.__headers = headers if headers else []
         self.__log_level = log_level
 
-
-
         self.__started = False
         if allow_reuse:
             server_class = ThreadedWSGIServer
@@ -124,7 +123,6 @@ class ApiServer:
     def address(self):
         """Get my ip address"""
         return self.__server.server_name
-
 
     def uri(self, path="/", hostname=None):
         """Make a URI pointing at myself"""
@@ -199,12 +197,20 @@ class ApiServer:
                     if url[-1] == "/":
                         tmp = url[0:-1]
                         handler_tmp = self.__routes.get(tmp)
+
                 if not handler_tmp:
-                    m = re.match(r"(.*?/)[^/]+$", url)
-                    if m:
-                        # adding a route "/" handles /foo
-                        # adding a route "/foo/bar/" handles /foo/bar/baz
-                        handler_tmp = self.__routes.get(m[1])
+                    sub = url
+                    m = url.rfind("/")
+                    while m >= 0:
+                        sub = sub[0:m+1]
+                        # adding a route "/*" handles /foo
+                        # adding a route "/foo/bar/*" handles /foo/bar/baz/bop
+                        handler_tmp = self.__routes.get(sub + "*")
+                        if handler_tmp:
+                            env.set('SUB_PATH', url[len(sub):])
+                            break
+                        m = sub.rfind("/")
+
                 if not handler_tmp:
                     handler_tmp = self.__routes.get(None)
 
@@ -274,6 +280,7 @@ class TestApiServer(unittest.TestCase):
         httpd = MyServer('127.0.0.1', 0)
 
         httpd.add_route("/foo", lambda srv, ctx, x: "FOO" + x["x"][0])
+        httpd.add_route("/sub/folder/is", lambda srv, ctx, x: "FOO" + x["x"][0])
 
         try:
             print("serving on ", httpd.address(), httpd.port())
@@ -284,15 +291,21 @@ class TestApiServer(unittest.TestCase):
             self.assertEqual(response.text, "HERE{}")
             self.assertEqual(response.headers["content-type"], "application/json")
 
+            # not found 404
             response = requests.post(httpd.uri("/notfound"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 404)
 
+            # get string
             response = requests.get(httpd.uri("/foo?x=4"), timeout=1)
             self.assertEqual(response.text, "FOO4")
+
+            # not found handled
             httpd.add_route(None, lambda srv, ctx, x: "NOTFOUNDY", content_type='text/plain')
             response = requests.get(httpd.uri("sd;lfjksdfkl;j"), timeout=1)
             self.assertEqual(response.text, "NOTFOUNDY")
             self.assertEqual(response.headers["content-type"], "text/plain")
+
+            response = requests.get(httpd.uri("/sub/folder/is"), timeout=1)
         finally:
             httpd.shutdown()
 
@@ -301,10 +314,10 @@ class TestApiServer(unittest.TestCase):
             @api_route("/popup")
             def popup(self, ctx, unused_req):        # pylint: disable=no-self-use
                 raise ApiError(501, "BLAH")
+
             @api_route(None)
             def any(self, ctx, unused_req):        # pylint: disable=no-self-use
-                raise ApiError(502, json={"custom":"error"})
-
+                raise ApiError(502, json={"custom": "error"})
 
         httpd = MyServer('127.0.0.1', 0)
 
@@ -319,7 +332,7 @@ class TestApiServer(unittest.TestCase):
 
             response = requests.post(httpd.uri("/sdjkfhsjklf"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 502)
-            self.assertEqual(response.json(), {"custom":"error"})
+            self.assertEqual(response.json(), {"custom": "error"})
         finally:
             httpd.shutdown()
 
