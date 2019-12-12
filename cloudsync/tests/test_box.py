@@ -40,9 +40,62 @@ class FakeBoxApi(ApiServer):
                 'timezone': 'America/Los_Angeles',
                 'type': 'user'}
 
-    @api_route("/folders/*")
+    @api_route("/folders/")
     def folders(self, ctx, req):
-        self.called("token", (ctx, req))
+        if ctx.get("REQUEST_METHOD") == "POST":
+            self.called("mkdir", (ctx, req))
+            return {'content_created_at': '2019-12-12T06:48:48-08:00',
+                    'content_modified_at': '2019-12-12T06:48:48-08:00',
+                    'created_at': '2019-12-12T06:48:48-08:00',
+                    'created_by': {'id': '8506151483',
+                        'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                        'name': 'Atakama JWT',
+                        'type': 'user'},
+                    'description': '',
+                    'etag': '0',
+                    'folder_upload_email': None,
+                    'id': '96120809690',
+                    'item_collection': {'entries': [],
+                        'limit': 100,
+                        'offset': 0,
+                        'order': [{'by': 'type', 'direction': 'ASC'},
+                            {'by': 'name', 'direction': 'ASC'}],
+                        'total_count': 0},
+                    'item_status': 'active',
+                    'modified_at': '2019-12-12T06:48:48-08:00',
+                    'modified_by': {'id': '8506151483',
+                        'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                        'name': 'Atakama JWT',
+                        'type': 'user'},
+                    'name': 'c09bf978eab751234c418e6ff06a43bd(.dest',
+                    'owned_by': {'id': '8506151483',
+                        'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                        'name': 'Atakama JWT',
+                        'type': 'user'},
+                    'parent': {'etag': '0',
+                        'id': '96128905139',
+                        'name': '0274d8039a0277f56f489352011d9f2f',
+                        'sequence_id': '0',
+                        'type': 'folder'},
+                    'path_collection': {'entries': [{'etag': None,
+                        'id': '0',
+                        'name': 'All Files',
+                        'sequence_id': None,
+                        'type': 'folder'},
+                        {'etag': '0',
+                            'id': '96128905139',
+                            'name': '0274d8039a0277f56f489352011d9f2f',
+                            'sequence_id': '0',
+                            'type': 'folder'}],
+                        'total_count': 2},
+                    'purged_at': None,
+                    'sequence_id': '0',
+                    'shared_link': None,
+                    'size': 0,
+                    'trashed_at': None,
+                    'type': 'folder'}
+
+        self.called("folders", (ctx, req))
         return {'content_created_at': None,
                 'content_modified_at': None,
                 'created_at': None,
@@ -52,22 +105,98 @@ class FakeBoxApi(ApiServer):
                 'folder_upload_email': None,
                 'id': '0',
                 'item_collection':
-                    {'entries':
-                        [
-                            {'etag': '0',
-                                'id': '95401994626',
-                                'name': '0109d27be3d76224f640e6076c77184d',
-                                'sequence_id': '0',
-                                'type': 'folder'},
-                        ]}
-                }
+                {'entries':
+                    [
+                        {'etag': '0',
+                            'id': '95401994626',
+                            'name': '0109d27be3d76224f640e6076c77184d',
+                            'sequence_id': '0',
+                            'type': 'folder'},
+                        ],
+                    'limit': 100,
+                    'offset': 0,
+                    'order': [{'by': 'type', 'direction': 'ASC'},
+                              {'by': 'name', 'direction': 'ASC'}],
+                    'total_count': 1},
+                'item_status': 'active',
+                'modified_at': None,
+                'modified_by': {'id': '8506151483',
+                                'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                                'name': 'Atakama JWT',
+                                'type': 'user'},
+                'name': 'All Files',
+                'owned_by': {'id': '8506151483',
+                             'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                             'name': 'Atakama JWT',
+                             'type': 'user'},
+                'parent': None,
+                'path_collection': {'entries': [], 'total_count': 0},
+                'purged_at': None,
+                'sequence_id': None,
+                'shared_link': None,
+                'size': 5551503,
+                'trashed_at': None,
+                'type': 'folder'}
+
+    @api_route("/upload/files/")
+    def upload_files(self, ctx, req):
+        self.called("upload/files", (ctx, req))
+        return {'entries': [{'content_created_at': '2019-12-12T05:13:57-08:00',
+            'content_modified_at': '2019-12-12T05:13:57-08:00',
+            'created_at': '2019-12-12T05:13:57-08:00',
+            'created_by': {'id': '8506151483',
+                'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                'name': 'Atakama JWT',
+                'type': 'user'},
+            'description': '',
+            'etag': '0',
+            'file_version': {'id': '609837449506',
+                'sha1': '85c185b43850ed22c99570b7c04a1e6c9d12ad7d',
+                'type': 'file_version'},
+            'id': '575144701906',
+            'item_status': 'active',
+            'modified_at': '2019-12-12T05:13:57-08:00',
+            'modified_by': {'id': '8506151483',
+                'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                'name': 'Atakama JWT',
+                'type': 'user'},
+            'name': '7075e7dbd6c7bb49da2b74ab60efde68(.dest',
+            'owned_by': {'id': '8506151483',
+                'login': 'AutomationUser_813890_GmcM3Cohcy@boxdevedition.com',
+                'name': 'Atakama JWT',
+                'type': 'user'},
+            'parent': {'etag': '0',
+                'id': '96100489030',
+                'name': 'd49d35bdfb91cee9ccc1581dde986866',
+                'sequence_id': '0',
+                'type': 'folder'},
+            'path_collection': {'entries': [{'etag': None,
+                'id': '0',
+                'name': 'All Files',
+                'sequence_id': None,
+                'type': 'folder'},
+                {'etag': '0',
+                    'id': '96100489030',
+                    'name': 'd49d35bdfb91cee9ccc1581dde986866',
+                    'sequence_id': '0',
+                    'type': 'folder'}],
+                'total_count': 2},
+            'purged_at': None,
+            'sequence_id': '0',
+            'sha1': '85c185b43850ed22c99570b7c04a1e6c9d12ad7d',
+            'shared_link': None,
+            'size': 32,
+            'trashed_at': None,
+            'type': 'file'}],
+            'total_count': 1}
+
 
     @api_route(None)
     def default(self, ctx, req):
         meth = ctx.get("REQUEST_METHOD")
         uri = ctx.get("PATH_INFO")
 
-        log.debug("api: %s, %s %s", meth, uri, req)
+        log.debug("unhandled api: %s, %s %s", meth, uri, req)
         return {}
 
     def called(self, name, args):
@@ -85,7 +214,7 @@ def fake_prov():
     class API(object):
         """Configuration object containing the URLs for the Box API."""
         BASE_API_URL = base_url.rstrip("/")
-        UPLOAD_URL = base_url + "/upload"
+        UPLOAD_URL = base_url + "upload"
         OAUTH2_API_URL = base_url + "oauth"
         OAUTH2_AUTHORIZE_URL = base_url + "oauth/auth"
         MAX_RETRY_ATTEMPTS = 1
@@ -110,10 +239,7 @@ def test_upload():
     srv, prov = fake_prov()
     prov.large_file_size = 10
     prov.create("/small", io.BytesIO(b'123'))
-    assert srv.calls["upload.put"]
-    prov.create("/big", io.BytesIO(b'12345678901234567890'))
-    assert srv.calls["upload.session"]
-    assert srv.calls["upload"]
+    assert srv.calls["upload/files"]
 
 def test_mkdir():
     srv, prov = fake_prov()

@@ -166,27 +166,29 @@ class ApiServer:
             content = b"{}"
             length = env.get("CONTENT_LENGTH", 0)
             content_type = env.get('CONTENT_TYPE')
-            info: Dict[str, Any]
-            if length:
-                content = env['wsgi.input'].read(int(length))
-            if content_type.startswith('application/x-www-form-urlencoded'):
-                info = urlparse.parse_qs(content)
-                for k in info:
-                    if len(info[k]) == 1 and type(info[k]) is list:
-                        info[k] = info[k][0]        # type:ignore
-            else:
-                if content:
-                    try:
-                        info = json.loads(content)
-                        if type(info) != dict:
-                            info = {"content": info}
-                    except Exception:
-                        raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
-                else:
-                    info = {}
-
-            url = '<unknown>'
+            info: Dict[str, Any] = {}
             try:
+                if length:
+                    content = env['wsgi.input'].read(int(length))
+
+                if content_type.startswith('multipart/form-data'):
+                    log.info("multipart form uploads not currently supported")
+                elif content_type.startswith('application/x-www-form-urlencoded'):
+                    info = urlparse.parse_qs(content)
+                    for k in info:
+                        if len(info[k]) == 1 and type(info[k]) is list:
+                            info[k] = info[k][0]        # type:ignore
+                else:
+                    if content:
+                        try:
+                            info = json.loads(content)
+                            if type(info) != dict:
+                                info = {"content": info}
+                        except Exception:
+                            raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
+                    else:
+                        info = {}
+
                 url = env.get('PATH_INFO', '/')
 
                 if self.__log_level == ApiServerLogLevel.CALLS or self.__log_level == ApiServerLogLevel.ARGS:
@@ -197,17 +199,20 @@ class ApiServer:
                     if url[-1] == "/":
                         tmp = url[0:-1]
                         handler_tmp = self.__routes.get(tmp)
+                    else:
+                        handler_tmp = self.__routes.get(url + "/")
 
                 if not handler_tmp:
                     sub = url
                     m = url.rfind("/")
                     while m >= 0:
-                        sub = sub[0:m+1]
-                        # adding a route "/*" handles /foo
-                        # adding a route "/foo/bar/*" handles /foo/bar/baz/bop
-                        handler_tmp = self.__routes.get(sub + "*")
+                        sub = sub[0:m]
+                        # adding a route "/" handles /foo
+                        # adding a route "/foo/bar/" handles /foo/bar/baz/bop
+                        # adding a route "/foo/bar" handles /foo/bar and /foo/bar/ only
+                        handler_tmp = self.__routes.get(sub + "/")
                         if handler_tmp:
-                            env.set('SUB_PATH', url[len(sub):])
+                            env['SUB_PATH'] = url[len(sub):]
                             break
                         m = sub.rfind("/")
 
@@ -258,6 +263,11 @@ class ApiServer:
                     yield bytes(response, "utf-8")
                 except ConnectionAbortedError as e:
                     log.error("GET %s : ERROR : %s", url, e)
+            except Exception as e:
+                log.exception("")
+                start_response("500 Internal Unhandled Exception", ['Content-Type', 'text/plain'])
+                response = repr(e)
+                yield bytes(response, "utf-8")
 
 
 class TestApiServer(unittest.TestCase):
@@ -280,7 +290,7 @@ class TestApiServer(unittest.TestCase):
         httpd = MyServer('127.0.0.1', 0)
 
         httpd.add_route("/foo", lambda srv, ctx, x: "FOO" + x["x"][0])
-        httpd.add_route("/sub/folder/is", lambda srv, ctx, x: "FOO" + x["x"][0])
+        httpd.add_route("/sub/", lambda srv, ctx, x: "SUB")
 
         try:
             print("serving on ", httpd.address(), httpd.port())
@@ -295,6 +305,10 @@ class TestApiServer(unittest.TestCase):
             response = requests.post(httpd.uri("/notfound"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 404)
 
+            # not found subs 404
+            response = requests.post(httpd.uri("/foo/not"), data='{}', timeout=1)
+            self.assertEqual(response.status_code, 404)
+
             # get string
             response = requests.get(httpd.uri("/foo?x=4"), timeout=1)
             self.assertEqual(response.text, "FOO4")
@@ -305,7 +319,14 @@ class TestApiServer(unittest.TestCase):
             self.assertEqual(response.text, "NOTFOUNDY")
             self.assertEqual(response.headers["content-type"], "text/plain")
 
+            # subs ok
             response = requests.get(httpd.uri("/sub/folder/is"), timeout=1)
+            self.assertEqual(response.text, "SUB")
+            response = requests.get(httpd.uri("/sub/"), timeout=1)
+            self.assertEqual(response.text, "SUB")
+            response = requests.get(httpd.uri("/sub"), timeout=1)
+            self.assertEqual(response.text, "SUB")
+
         finally:
             httpd.shutdown()
 
