@@ -1,5 +1,6 @@
+"""Generic, threaded, routed api server with no external deps."""
+
 import sys
-import re
 import json
 import traceback
 import socket
@@ -17,7 +18,6 @@ import requests
 
 log = logging.getLogger(__name__)
 
-### GENERIC THREADED API SERVER
 
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
     def log_message(self, unused_format, *args):
@@ -26,6 +26,7 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
 
 class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
     allow_reuse_address = True
+
 
 class ThreadedWSGIServerEx(ThreadedWSGIServer):
     allow_reuse_address = False
@@ -95,8 +96,6 @@ class ApiServer:
         self.__headers = headers if headers else []
         self.__log_level = log_level
 
-
-
         self.__started = False
         if allow_reuse:
             server_class = ThreadedWSGIServer
@@ -110,10 +109,15 @@ class ApiServer:
         self.__server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
 
         # routed methods map into handler
-        for meth in type(self).__dict__.values():
+        for fname in dir(self):
+            meth = getattr(self, fname)
+            if not callable(meth):
+                continue
             if hasattr(meth, "_routes"):
                 for route in meth._routes:      # pylint: disable=protected-access
                     self.add_route(route, meth)
+
+        log.debug("routes %s", list(self.__routes.keys()))
 
     def add_route(self, path, meth, content_type='application/json'):
         self.__routes[path] = (meth, content_type)
@@ -125,7 +129,6 @@ class ApiServer:
     def address(self):
         """Get my ip address"""
         return self.__server.server_name
-
 
     def uri(self, path="/", hostname=None):
         """Make a URI pointing at myself"""
@@ -169,27 +172,29 @@ class ApiServer:
             content = b"{}"
             length = env.get("CONTENT_LENGTH", 0)
             content_type = env.get('CONTENT_TYPE')
-            info: Dict[str, Any]
-            if length:
-                content = env['wsgi.input'].read(int(length))
-            if content_type.startswith('application/x-www-form-urlencoded'):
-                info = urlparse.parse_qs(content)
-                for k in info:
-                    if len(info[k]) == 1 and type(info[k]) is list:
-                        info[k] = info[k][0]        # type:ignore
-            else:
-                if content:
-                    try:
-                        info = json.loads(content)
-                        if type(info) != dict:
-                            info = {"content": info}
-                    except Exception:
-                        raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
-                else:
-                    info = {}
-
-            url = '<unknown>'
+            info: Dict[str, Any] = {}
             try:
+                if length:
+                    content = env['wsgi.input'].read(int(length))
+
+                if content_type.startswith('multipart/form-data'):
+                    log.info("multipart form uploads not currently supported")
+                elif content_type.startswith('application/x-www-form-urlencoded'):
+                    info = urlparse.parse_qs(content)
+                    for k in info:
+                        if len(info[k]) == 1 and type(info[k]) is list:
+                            info[k] = info[k][0]        # type:ignore
+                else:
+                    if content:
+                        try:
+                            info = json.loads(content)
+                            if type(info) != dict:
+                                info = {"content": info}
+                        except Exception:
+                            raise ApiError(400, "Invalid JSON " + str(content, "utf-8"))
+                    else:
+                        info = {}
+
                 url = env.get('PATH_INFO', '/')
 
                 if self.__log_level == ApiServerLogLevel.CALLS or self.__log_level == ApiServerLogLevel.ARGS:
@@ -200,12 +205,23 @@ class ApiServer:
                     if url[-1] == "/":
                         tmp = url[0:-1]
                         handler_tmp = self.__routes.get(tmp)
+                    else:
+                        handler_tmp = self.__routes.get(url + "/")
+
                 if not handler_tmp:
-                    m = re.match(r"(.*?/)[^/]+$", url)
-                    if m:
+                    sub = url
+                    m = url.rfind("/")
+                    while m >= 0:
+                        sub = sub[0:m]
                         # adding a route "/" handles /foo
-                        # adding a route "/foo/bar/" handles /foo/bar/baz
-                        handler_tmp = self.__routes.get(m[1])
+                        # adding a route "/foo/bar/" handles /foo/bar/baz/bop
+                        # adding a route "/foo/bar" handles /foo/bar and /foo/bar/ only
+                        handler_tmp = self.__routes.get(sub + "/")
+                        if handler_tmp:
+                            env['SUB_PATH'] = url[len(sub):]
+                            break
+                        m = sub.rfind("/")
+
                 if not handler_tmp:
                     handler_tmp = self.__routes.get(None)
 
@@ -221,7 +237,7 @@ class ApiServer:
                 if handler_tmp:
                     handler, content_type = handler_tmp
                     try:
-                        response = handler(self, env, info)
+                        response = handler(env, info)
                         if response is None:
                             response = ""
                         if isinstance(response, dict):
@@ -253,6 +269,11 @@ class ApiServer:
                     yield bytes(response, "utf-8")
                 except ConnectionAbortedError as e:
                     log.error("GET %s : ERROR : %s", url, e)
+            except Exception as e:
+                log.exception("")
+                start_response("500 Internal Unhandled Exception", ['Content-Type', 'text/plain'])
+                response = repr(e)
+                yield bytes(response, "utf-8")
 
 
 class TestApiServer(unittest.TestCase):
@@ -274,7 +295,8 @@ class TestApiServer(unittest.TestCase):
 
         httpd = MyServer('127.0.0.1', 0)
 
-        httpd.add_route("/foo", lambda srv, ctx, x: "FOO" + x["x"][0])
+        httpd.add_route("/foo", lambda ctx, x: "FOO" + x["x"][0])
+        httpd.add_route("/sub/", lambda ctx, x: "SUB")
 
         try:
             print("serving on ", httpd.address(), httpd.port())
@@ -285,15 +307,32 @@ class TestApiServer(unittest.TestCase):
             self.assertEqual(response.text, "HERE{}")
             self.assertEqual(response.headers["content-type"], "application/json")
 
+            # not found 404
             response = requests.post(httpd.uri("/notfound"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 404)
 
+            # not found subs 404
+            response = requests.post(httpd.uri("/foo/not"), data='{}', timeout=1)
+            self.assertEqual(response.status_code, 404)
+
+            # get string
             response = requests.get(httpd.uri("/foo?x=4"), timeout=1)
             self.assertEqual(response.text, "FOO4")
-            httpd.add_route(None, lambda srv, ctx, x: "NOTFOUNDY", content_type='text/plain')
+
+            # not found handled
+            httpd.add_route(None, lambda ctx, x: "NOTFOUNDY", content_type='text/plain')
             response = requests.get(httpd.uri("sd;lfjksdfkl;j"), timeout=1)
             self.assertEqual(response.text, "NOTFOUNDY")
             self.assertEqual(response.headers["content-type"], "text/plain")
+
+            # subs ok
+            response = requests.get(httpd.uri("/sub/folder/is"), timeout=1)
+            self.assertEqual(response.text, "SUB")
+            response = requests.get(httpd.uri("/sub/"), timeout=1)
+            self.assertEqual(response.text, "SUB")
+            response = requests.get(httpd.uri("/sub"), timeout=1)
+            self.assertEqual(response.text, "SUB")
+
         finally:
             httpd.shutdown()
 
@@ -302,10 +341,10 @@ class TestApiServer(unittest.TestCase):
             @api_route("/popup")
             def popup(self, ctx, unused_req):        # pylint: disable=no-self-use
                 raise ApiError(501, "BLAH")
+
             @api_route(None)
             def any(self, ctx, unused_req):        # pylint: disable=no-self-use
-                raise ApiError(502, json={"custom":"error"})
-
+                raise ApiError(502, json={"custom": "error"})
 
         httpd = MyServer('127.0.0.1', 0)
 
@@ -320,7 +359,7 @@ class TestApiServer(unittest.TestCase):
 
             response = requests.post(httpd.uri("/sdjkfhsjklf"), data='{}', timeout=1)
             self.assertEqual(response.status_code, 502)
-            self.assertEqual(response.json(), {"custom":"error"})
+            self.assertEqual(response.json(), {"custom": "error"})
         finally:
             httpd.shutdown()
 

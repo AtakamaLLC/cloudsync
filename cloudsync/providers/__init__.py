@@ -26,3 +26,12 @@ except Exception as _e:
 
     def GDriveProvider(*a, **k):            # type: ignore
         raise _ex
+
+try:
+    from .box import BoxProvider
+except Exception as e:
+    _ex = e
+
+    def BoxProvider(*a, **k):           # type: ignore
+        raise _ex
+
