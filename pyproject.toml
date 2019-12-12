@@ -18,6 +18,7 @@ requires = ["arrow", "dataclasses", "pystrict", "msgpack", "requests_oauthlib", 
 requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]
+box = [ "boxsdk", ]
 dropbox = [ "dropbox", ]
 gdrive = [ "google-oauth", "google-auth-httplib2", "google-api-python-client" ]
 boxcom = [ "boxsdk[jwt]", ]
