@@ -68,7 +68,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
         self.__root_id = None
-        self.__cursor: str = None
+        self.__cursor: Optional[str] = None
         self._creds = None
         self._client = None
         self._mutex = threading.Lock()
@@ -143,6 +143,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     @staticmethod
     def _get_reason_from_http_error(e):
         # gets a default something (actually the message, not the reason) using their secret interface
+        # noinspection PyProtectedMember
         reason = e._get_reason()  # pylint: disable=protected-access
 
         # parses the JSON of the content to get the reason from where it really lives in the content
@@ -337,6 +338,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.__cursor = new_cursor
             page_token = response.get('nextPageToken')
 
+    # noinspection DuplicatedCode
     def _walk(self, path, oid):
         for ent in self.listdir(oid):
             current_path = self.join(path, ent.name)
@@ -586,6 +588,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._ids[path] = fileid
         return fileid
 
+    # noinspection DuplicatedCode
     def delete(self, oid):
         info = self._info_oid(oid)
         if not info:
