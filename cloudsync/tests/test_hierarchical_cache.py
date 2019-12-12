@@ -698,7 +698,7 @@ def test_set_oid():
 
     cache.set_oid('/b', c_oid, DIRECTORY)
     assert(cache.get_oid('/b') == c_oid)
-    assert(len(cache.listdir(path='/')) == 3)
+    assert(len(cache.listdir(path='/')) == 2)
 
     try:
         cache.set_oid('/b', None, DIRECTORY)
@@ -760,6 +760,16 @@ def test_split_path():
     parent, name = cache._split('/a/b///')
     assert(parent == '/a')
     assert(name == 'b')
+
+
+def test_add_child():
+    provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+    parent_node = Node(provider, DIRECTORY, '0', '', None, None)
+    child_node = Node(provider, DIRECTORY, '0', 'a', None, None)
+
+    parent_node.add_child(child_node)
+    assert(len(parent_node.children) == 1)
+    assert(parent_node.children['a'] == child_node)
 
 
 def full_split(provider: Provider, path: str):
