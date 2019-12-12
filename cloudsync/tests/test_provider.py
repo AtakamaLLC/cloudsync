@@ -1454,8 +1454,6 @@ def test_report_info(provider):
 
     provider.create(temp_name, BytesIO(b"test"))
 
-    time.sleep(10)
-
     pinfo2 = provider.get_quota()
 
     # note this may be memoized (gdrive does this internally)
