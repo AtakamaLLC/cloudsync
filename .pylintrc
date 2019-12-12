@@ -57,7 +57,7 @@ confidence=
 # no Warning level messages displayed, use"--disable=all --enable=classes
 # --disable=W"
 disable=multiple-imports,
-        missing-docstring,
+        too-few-public-methods,
         broad-except,
         no-else-return,
         trailing-newlines,
@@ -160,7 +160,7 @@ const-naming-style=UPPER_CASE
 
 # Minimum line length for functions/classes that require docstrings, shorter
 # ones are exempt.
-docstring-min-length=-1
+docstring-min-length=10
 
 # Naming style matching correct function names
 function-naming-style=snake_case

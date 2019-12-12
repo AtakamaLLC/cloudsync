@@ -7,6 +7,7 @@ from typing import Optional, Generator, Dict, Tuple, Any
 import requests
 import arrow
 
+import boxsdk
 from boxsdk import Client, JWTAuth, OAuth2
 from boxsdk.object.item import Item as BoxItem
 from boxsdk.object.folder import Folder as BoxFolder
@@ -24,8 +25,8 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
     CloudFileExistsError, CloudException, CloudCursorError
 
 log = logging.getLogger(__name__)
-logging.getLogger('boxsdk.network.default_network').setLevel(logging.ERROR)
-logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
+logging.getLogger('boxsdk.network.default_network').setLevel(logging.DEBUG)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG)
 
 # TODO:
 #   refactor _api to produce the client or a box_object, or consider if I want to switch to the RESTful api instead
@@ -129,8 +130,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     else:
                         if not refresh_token:
                             raise CloudTokenError("Missing refresh token")
-                        box_session = Session()
+                        box_session = Session(api_config=boxsdk.config.API)
                         box_kwargs = box_session.get_constructor_kwargs()
+                        box_kwargs["api_config"] = boxsdk.config.API
                         auth = OAuth2(client_id=self._oauth_config.app_id,
                                       client_secret=self._oauth_config.app_secret,
                                       access_token=self.__creds["access_token"],
