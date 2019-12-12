@@ -668,7 +668,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 unsafe_box_object = self._unsafe_get_box_object(client, oid=oid, path=path, object_type=object_type, strict=strict, use_cache=use_cache)
                 retval = unsafe_box_object
                 return retval
-        except CloudFileNotFoundError:
+        except (CloudFileNotFoundError, PermissionError):  # PermissionError is raised on a non-existent OID
             return None
 
     def __look_for_name_in_collection_entries(self, client: Client, name, collection_entries, object_type, strict):

@@ -339,10 +339,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         return res
 
-    def is_root(self, path):
-        parent, _ = self.split(path)
-
-
     def split(self, path):
         # todo cache regex
         index = path.rfind(self.sep)
@@ -352,7 +348,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         if index == -1:
             return "", path
         if index == 0:
-            return self.sep, path[index+1:]
+            return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
 
     def normalize_path(self, path: str):
@@ -366,9 +362,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             norm_path = norm_path.lower()
         return norm_path
 
-    def is_subpath(self, folder, target, sep=None, alt_sep=None, strict=False):
-        sep = sep or self.sep
-        alt_sep = alt_sep or self.alt_sep
+    def is_subpath(self, folder, target, strict=False):
+        sep = self.sep
+        alt_sep = self.alt_sep
         if alt_sep:
             folder = folder.replace(alt_sep, sep)
             target = target.replace(alt_sep, sep)
