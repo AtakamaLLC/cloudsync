@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Dict, List, Any
+import weakref
+from typing import Dict, Optional, Type, List, Any
 from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync import FILE, DIRECTORY
 import gc
@@ -18,11 +19,11 @@ def new_oid() -> str:
     return os.urandom(4).hex()
 
 
-def new_cache(root_oid=None, root_metadata: Dict[str, Any] = None):
+def new_cache(root_oid=None, root_metadata: Dict[str, Any] = None, metadata_template: Optional[Dict[str, Type]]=None):
     if not root_oid:
         root_oid = new_oid()
     provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # todo: make this a fixture
-    return HierarchicalCache(provider, root_oid, root_metadata)
+    return HierarchicalCache(provider, root_oid, metadata_template, root_metadata)
 
 
 def test_walk():
@@ -537,6 +538,238 @@ def test_create_node_over_existing_path_and_oid():
     assert cache.get_type(oid=b_oid) is None
     assert cache.get_type(oid=a_oid) == DIRECTORY
     check_structure(cache)
+
+
+def test_update():
+    cache = new_cache(root_metadata={'throws': 'pork products'}, metadata_template={'throws': str, 'speed': str})
+    a_oid = new_oid()
+    a2_oid = new_oid()
+    cache.mkdir('/a', a_oid)
+
+    cache.update('/a', DIRECTORY)
+    assert(cache.get_oid('/a') is a_oid)
+    assert(cache.get_type(path='/a') is DIRECTORY)
+
+    cache.update('/a', FILE, a2_oid)
+    assert(cache.get_oid('/a') is a2_oid)
+    assert(cache.get_type(path='/a') is FILE)
+
+    cache.update('/a', FILE, a_oid)
+    assert(cache.get_oid('/a') is a_oid)
+
+    cache.update('/a', FILE, metadata={'throws': 'dak ham'}, keep=True)
+    assert(len(cache.get_metadata(path='/a')) == 1)
+    assert(cache.get_metadata(path='/a')['throws'] == 'dak ham')
+
+    cache.update('/a', FILE, metadata={'speed': 'mach 4'}, keep=True)
+    assert(len(cache.get_metadata(path='/a')) == 2)
+    assert(cache.get_metadata(path='/a')['speed'] == 'mach 4')
+
+    cache.update('/a', FILE, metadata={'throws': 'spam'}, keep=False)
+    assert(len(cache.get_metadata(path='/a')) == 1)
+    assert(cache.get_metadata(path='/a')['throws'] == 'spam')
+
+
+def test_metadata():
+    cache = new_cache(
+        metadata_template={'ph level': str},
+        root_metadata={'ph level': '1'}
+    )
+    assert(cache.get_metadata(path='/a') is None)
+    assert(cache.get_metadata(path='/')['ph level'] == '1')
+    assert(len(cache.get_metadata(path='/')) == 1)
+
+    cache.set_metadata({'ph level': '7'}, path='/a')
+    assert(cache.get_metadata(path='/a') is None)
+    assert(len(cache.get_metadata(path='/')) == 1)
+
+    cache.set_metadata({'ph level': 'pumpkin spice'}, path='/')
+    assert(cache.get_metadata(path='/')['ph level'] == 'pumpkin spice')
+    assert(len(cache.get_metadata(path='/')) == 1)
+
+    try:
+        cache.set_metadata({'fake data': 'catapults are the perfect seige equipment'}, path='/')
+        assert False
+    except ValueError:
+        pass
+    try:
+        cache.set_metadata({'ph level': 11}, path='/')
+        assert False
+    except ValueError:
+        pass
+
+
+#bad still
+def test_walk_returns_nothing_for_bad_node():
+    cache = new_cache()
+    walked = 0
+    for _ in cache.walk(path='/totally existent path'):
+        walked += 1
+    assert(walked == 0)
+
+
+def test_listdir_returns_empty_for_bad_node():
+    cache = new_cache()
+    assert(cache.listdir(path='/totally existent path') == [])
+    cache.mkdir('/a', new_oid())
+
+def test_cant_rename_root():
+    cache = new_cache()
+    try:
+        cache.rename('/', 'thanks path very cool')
+        assert False
+    except ValueError:
+        pass
+
+
+def test_delete_malformed_nodes():
+    cache = new_cache()
+    a_oid = new_oid()
+    cache.mkdir('/a', a_oid)
+    cache._root.children = {}
+    cache.delete(oid=a_oid)
+
+    b_oid = new_oid()
+    c_oid = new_oid()
+    tmp_oid = new_oid()
+    cache.mkdir('/b', b_oid)
+    cache.mkdir('/c', c_oid)
+    cache.mkdir('/c/tmp', tmp_oid)
+    cache._root.children['b'] = cache._root.children['c']
+    try:
+        cache.delete(oid=b_oid)
+        assert False
+    except LookupError:
+        pass
+
+
+def test_get_root_node():
+    cache = new_cache(root_oid='0')
+    assert(cache.get_type(oid='0') is not None)
+
+
+def test_get_node_needs_oid_or_path():
+    cache = new_cache()
+    try:
+        cache.get_type()
+        assert False
+    except ValueError:
+        pass
+
+
+def test_set_oid():
+    cache = new_cache()
+    a_oid = new_oid()
+    b_oid = new_oid()
+    c_oid = new_oid()
+
+    failed = False
+    try:
+        cache.set_oid(None, a_oid, DIRECTORY)
+        failed = True
+    except AssertionError:
+        pass
+    assert not failed
+
+    try:
+        cache.set_oid('/a', None, DIRECTORY)
+        failed = True
+    except AssertionError:
+        pass
+    assert not failed
+
+    try:
+        cache.set_oid('/a', a_oid, None)
+        failed = True
+    except AssertionError:
+        pass
+    assert not failed
+
+    cache.set_oid('/a', a_oid, DIRECTORY)
+    assert(cache.get_oid('/a') == a_oid)
+
+    cache.mkdir('/b', None)
+    cache.set_oid('/b', b_oid, DIRECTORY)
+    assert(cache.get_oid('/b') == b_oid)
+
+    node = cache._get_node(oid=b_oid)
+    cache._set_oid(node, b_oid)
+    assert(cache.get_oid('/b') == b_oid)
+
+    cache.set_oid('/b', c_oid, DIRECTORY)
+    assert(cache.get_oid('/b') == c_oid)
+    assert(len(cache.listdir(path='/')) == 2)
+
+    try:
+        cache.set_oid('/b', None, DIRECTORY)
+        failed = True
+    except AssertionError:
+        pass
+    assert not failed
+
+
+def test_node_check_asserts_for_parent_oids():
+    provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+    parent_node = Node(provider, DIRECTORY, '0', '', None, None)
+    child_node = Node(provider, DIRECTORY, '0', 'a', parent_node, None)
+
+    fail = False
+    child_node.wr_parent = weakref.ref(child_node)
+    try:
+        child_node.check()
+        fail = True
+    except AssertionError:
+        pass
+    assert not fail
+
+    child_node.wr_parent = weakref.ref(parent_node)
+    try:
+        child_node.check()
+        fail = True
+    except AssertionError:
+        pass
+    assert not fail
+
+
+def test_node_set_oid():
+    provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+    test_node = Node(provider, DIRECTORY, None, '', None, None)
+
+    test_node.oid = '0'
+    assert(test_node.oid == '0')
+
+    test_node.oid = '1'
+    assert(test_node.oid == '1')
+
+    try:
+        test_node.oid = None
+        assert False
+    except AssertionError:
+        pass
+
+    test_node.oid = 0
+
+
+def test_split_path():
+    cache = new_cache()
+    a_oid = new_oid()
+    b_oid = new_oid()
+    cache.mkdir('/a', a_oid)
+    cache.mkdir('/b', b_oid)
+
+    parent, name = cache._split('/a/b///')
+    assert(parent == '/a')
+    assert(name == 'b')
+
+
+def test_add_child():
+    provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+    parent_node = Node(provider, DIRECTORY, '0', '', None, None)
+    child_node = Node(provider, DIRECTORY, '0', 'a', None, None)
+
+    parent_node.add_child(child_node)
+    assert(len(parent_node.children) == 1)
+    assert(parent_node.children['a'] == child_node)
 
 
 def full_split(provider: Provider, path: str):
