@@ -41,16 +41,15 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     additional_invalid_characters = ''
-    events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
-                       'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
+    _events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
+                        'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
     _oauth_info = OAuthProviderInfo(auth_url='https://account.box.com/api/oauth2/authorize',  # self._auth_url,
                                     token_url="https://api.box.com/oauth2/token",  # self._token_url,
                                     scopes=[]  # self._scopes
                                     )
-    base_box_url = 'https://api.box.com/2.0'
-    events_endpoint = '/events'
-    long_poll_timeout = 120
+    _base_box_url = 'https://api.box.com/2.0'
+    _events_endpoint = '/events'
     name = 'box'
     _listdir_page_size = 5000
 
@@ -62,13 +61,13 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__creds: Optional[Dict[str, str]] = None
         self.__long_poll_config: Dict[str, Any] = {}
         self.__long_poll_session = requests.Session()
+        self._long_poll_timeout = 120
 
         self.__access_token = None
-        self.refresh_token = None
-        self.mutex = threading.RLock()
+        self._mutex = threading.RLock()
 
         self._oauth_config = oauth_config
-        self._long_poll_manager = LongPollManager(self.short_poll, self.long_poll, short_poll_only=True)
+        self._long_poll_manager = LongPollManager(self._short_poll, self._long_poll, short_poll_only=True)
         self._ids: Dict[str, str] = {}
         self.__seen_events: Dict[str, float] = {}
         self.__event_sequence: Dict[str, int] = {}
@@ -120,7 +119,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     raise CloudTokenError("require app_id/secret and either access_token or refresh token")
 
             try:
-                with self.mutex:
+                with self._mutex:
                     if jwt_token:
                         jwt_dict = json.loads(jwt_token)
                         user_id = creds.get('user_id')
@@ -156,18 +155,18 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.connection_id = None
 
     # noinspection PyBroadException
-    class BoxProviderGuard:
+    class _BoxProviderGuard:
         def __init__(self, client: Client, box):
             assert isinstance(client, Client)
             self.__client = client
             self.__box = box
 
         def __enter__(self) -> Client:
-            self.__box.mutex.__enter__()
+            self.__box._mutex.__enter__()
             return self.__client
 
         def __exit__(self, ty, ex, tb):
-            self.__box.mutex.__exit__(ty, ex, tb)
+            self.__box._mutex.__exit__(ty, ex, tb)
 
             if ex:
                 try:
@@ -192,11 +191,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 except Exception:
                     pass  # this will not swallow the exception, because this is in a context manager
 
-    def _api(self, *args, **kwargs) -> 'BoxProvider.BoxProviderGuard':
+    def _api(self, *args, **kwargs) -> 'BoxProvider._BoxProviderGuard':
         needs_client = kwargs.get('needs_client', True)
         if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
-        return self.BoxProviderGuard(self.__client, self)
+        return self._BoxProviderGuard(self.__client, self)
 
     @property
     def latest_cursor(self) -> Optional[Cursor]:
@@ -221,14 +220,16 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudCursorError(val)
         self.__cursor = val
 
-    def long_poll(self, timeout=long_poll_timeout):
-        log.debug("inside long_poll")
+    def _long_poll(self, timeout=None):  # Public method?
+        if timeout is None:
+            timeout = self._long_poll_timeout
+        log.debug("inside _long_poll")
         try:
             if self.__long_poll_config.get('retries_remaining', 0) < 1:
                 log.debug("creds = %s", self.__creds)
                 headers = {'Authorization': 'Bearer %s' % (self.__access_token,)}
                 log.debug("headers: %s", headers)
-                srv_resp: requests.Response = self.__long_poll_session.options(self.base_box_url + self.events_endpoint,
+                srv_resp: requests.Response = self.__long_poll_session.options(self._base_box_url + self._events_endpoint,
                                                                                headers=headers)
                 log.debug("response content is %s, %s", srv_resp.status_code, srv_resp.content)
                 if not 200 <= srv_resp.status_code < 300:
@@ -254,9 +255,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     def events(self) -> Generator[Event, None, None]:  # pylint: disable=method-hidden
         yield from self._long_poll_manager()
 
-    def short_poll(self) -> Generator[Event, None, None]:  # pylint: disable=too-many-locals
+    def _short_poll(self) -> Generator[Event, None, None]:  # pylint: disable=too-many-locals  # Public method?
         # see: https://developer.box.com/en/reference/resources/realtime-servers/
-        log.debug("inside short_poll() cursor = %s", self.current_cursor)
+        log.debug("inside _short_poll() cursor = %s", self.current_cursor)
         with self._api() as client:
             response = client.events().get_events(limit=100, stream_position=self.current_cursor)
             new_position = response.get('next_stream_position')
@@ -807,7 +808,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 return box_object
         except CloudFileNotFoundError:
             pass
-        except CloudFileExistsError:
+        except (CloudFileExistsError, PermissionError):
             raise
         except Exception as e:
             log.exception(e)
@@ -859,7 +860,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     self.__box_cache_object(client, box_object, oinfo.path)
             return oinfo
 
-    def get_parent_id(self, path):
+    def get_parent_id(self, path):  # Public method?
         if not path:
             return None
         parent, _ = self.split(path)
