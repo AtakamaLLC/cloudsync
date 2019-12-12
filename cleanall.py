@@ -1,12 +1,12 @@
+import threading
+
 from cloudsync import *
 
-from cloudsync.tests.providers.gdrive import gdrive_provider
-from cloudsync.tests.providers.dropbox import dropbox_provider
-from cloudsync.tests.providers.box import box_provider
+from cloudsync.providers import GDriveProvider, DropboxProvider, BoxProvider
 
-gd = gdrive_provider()
-db = dropbox_provider()
-bx = box_provider()
+gd = GDriveProvider.test_instance()
+db = DropboxProvider.test_instance()
+bx = BoxProvider.test_instance()
 
 def _rmtree(prov, oid, path):
     count = 0
@@ -32,7 +32,9 @@ threads = []
 provs = [gd, db, bx]
 
 for prov in provs:
-    prov.connect(prov.creds)
+    print(prov._test_creds)
+    prov.connect(prov._test_creds)
+
     def run(prov):
         print(prov.name, "start")
         oid = prov.info_path("/").oid

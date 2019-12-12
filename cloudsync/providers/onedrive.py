@@ -75,7 +75,7 @@ class OneDriveItem():
         self.__path = path
         self.__pid = pid
 
-        if oid:
+        if oid is not None:
             self.__sdk_kws = {"id": oid}
 
         if path:
@@ -876,7 +876,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if i.otype == FILE:
                     raise CloudFileExistsError("file where a folder should be")
 
-        if oid:
+        if oid is not None:
             i = self.info_oid(oid)
             if i:
                 ret = i.pid     # parent id

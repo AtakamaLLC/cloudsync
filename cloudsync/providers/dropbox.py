@@ -161,7 +161,7 @@ class DropboxProvider(Provider):
             auth_dict['state'] = auth_dict['state'][0]
         try:
             res: OAuth2FlowResult = self._flow.finish(auth_dict)
-            self._creds = {"refresh_token": res.access_token}
+            self._creds = {"access_token": res.access_token}
         except Exception:
             log.exception('Authentication failed')
             raise
@@ -217,7 +217,7 @@ class DropboxProvider(Provider):
             if not self._client or creds != self._creds:
                 if creds:
                     self._creds = creds
-                    api_key = creds.get('key', creds.get('refresh_token'))
+                    api_key = creds.get('key', creds.get('access_token'))
                 else:
                     api_key = None
 
@@ -695,7 +695,7 @@ class DropboxProvider(Provider):
 
     @classmethod
     def test_instance(cls):
-        return cls.oauth_test_instance(prefix="DROPBOX", port_range=(52400, 54250))
+        return cls.oauth_test_instance(prefix="DROPBOX", port_range=(52400, 54250), token_key="access_token")
 
 
 __cloudsync__ = DropboxProvider

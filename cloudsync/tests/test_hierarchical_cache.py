@@ -20,7 +20,7 @@ def new_oid() -> str:
 
 
 def new_cache(root_oid=None, root_metadata: Dict[str, Any] = None, metadata_template: Optional[Dict[str, Type]]=None):
-    if not root_oid:
+    if root_oid is None:
         root_oid = new_oid()
     provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # todo: make this a fixture
     return HierarchicalCache(provider, root_oid, metadata_template, root_metadata)
@@ -121,7 +121,7 @@ def check_walk(cache: HierarchicalCache, walk):
 def check_results(cache: HierarchicalCache, oid, path, otype, child_names=None, child_oids=None, walk=None):
     assert cache.get_oid(path) == oid
     assert cache.get_type(path=path) == otype
-    if oid:
+    if oid is not None:
         assert cache.get_path(oid) == path
         assert cache.get_type(oid=oid) == otype
     if child_names:
@@ -391,7 +391,7 @@ def test_create_parent_doesnt_exist():
 
 
 def confirm_gone(cache, oid=None, path=None):
-    if oid:
+    if oid is not None:
         assert cache.get_path(oid) is None
     assert cache.get_oid(path) is None
 
