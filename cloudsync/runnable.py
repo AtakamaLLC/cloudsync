@@ -39,9 +39,9 @@ class Runnable(ABC):
             self.interrupt.clear()
 
     def __increment_backoff(self):
-        log.debug("increment %s", self.in_backoff, self.max_backoff)
+        log.debug("increment 1 %s %s", self.in_backoff, self.max_backoff)
         self.in_backoff = min(self.max_backoff, max(self.in_backoff * self.mult_backoff, self.min_backoff))
-        log.debug("increment %s", self.in_backoff, self.max_backoff)
+        log.debug("increment 2 %s %s", self.in_backoff, self.max_backoff)
 
     def run(self, *, timeout=None, until=None, sleep=0.001):
         self.interrupt = threading.Event()

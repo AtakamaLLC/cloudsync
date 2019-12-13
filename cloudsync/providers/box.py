@@ -53,6 +53,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     _events_endpoint = '/events'
     name = 'box'
     _listdir_page_size = 5000
+    default_sleep = 10
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
