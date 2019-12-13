@@ -91,12 +91,13 @@ def test_backoff(manager):
         provider.create("/dest", BytesIO(b'hello'))
         provider.disconnect()
 
+        called = 0
+
         def fail_to_connect(creds):
             nonlocal called
             called = True
             raise CloudTokenError()
 
-        called = 0
         with patch.object(provider, "connect", fail_to_connect):
             manager.start(until=lambda: called, timeout=1)
             manager.wait()
