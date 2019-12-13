@@ -186,3 +186,14 @@ def test_oauth_defaults(wb):
 
     assert creds is None
     assert type(creds_ex) is CloudTokenError
+
+
+def test_err():
+    with pytest.raises(OAuthError):
+        OAuthConfig(app_id=None, app_secret="secret").start_auth("whatever")
+
+    with pytest.raises(OAuthError):
+        OAuthConfig(app_id="id", app_secret=None).start_auth("whatever")
+
+    with pytest.raises(OAuthError):
+        OAuthConfig(app_id="id", app_secret="secret").start_auth(None)

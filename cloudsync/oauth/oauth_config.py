@@ -79,6 +79,8 @@ class OAuthConfig:
         log.debug("appid %s", self.app_id)
         if self.app_id is None:
             raise OAuthError("app id bad")
+        if auth_url is None:
+            raise OAuthError("auth url bad")
         os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)

@@ -4,8 +4,8 @@ import threading
 
 import pytest
 
-from cloudsync import EventManager, SyncState, LOCAL
-
+from cloudsync import EventManager, SyncState, LOCAL, CloudTokenError
+from unittest.mock import patch, MagicMock
 
 @pytest.fixture(name="manager")
 def fixture_manager(mock_provider_generator):
@@ -13,7 +13,7 @@ def fixture_manager(mock_provider_generator):
     provider = mock_provider_generator()
     state = SyncState((provider, provider), shuffle=True)
 
-    yield EventManager(provider, state, LOCAL)
+    yield EventManager(provider, state, LOCAL, reauth=MagicMock())
 
 
 def test_event_basic(manager):
@@ -79,5 +79,40 @@ def test_events_shutdown_force_process_event(manager):
             assert False
         except StopIteration:
             pass
+    finally:
+        manager.stop()
+
+
+def test_backoff(manager):
+    handle = threading.Thread(target=manager.run, kwargs={'sleep': .3}, daemon=True)
+    handle.start()
+    try:
+        provider = manager.provider
+        provider.create("/dest", BytesIO(b'hello'))
+        provider.disconnect()
+
+        def fail_to_connect(creds):
+            nonlocal called
+            called = True
+            raise CloudTokenError()
+
+        called = 0
+        with patch.object(provider, "connect", fail_to_connect):
+            manager.start(until=lambda: called, timeout=1)
+            manager.wait()
+
+        assert manager.in_backoff
+        prev_backoff = manager.in_backoff
+
+        called = 0
+        with patch.object(provider, "connect", fail_to_connect):
+            manager.start(until=lambda: called, timeout=1)
+            manager.wait()
+        assert manager.in_backoff > prev_backoff
+
+        assert manager.reauthenticate.call_count > 0
+
+        manager.start(until=lambda: provider.connected, timeout=1)
+        manager.wait()
     finally:
         manager.stop()
