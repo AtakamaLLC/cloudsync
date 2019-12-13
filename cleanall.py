@@ -32,8 +32,8 @@ threads = []
 provs = [gd, db, bx]
 
 for prov in provs:
-    print(prov._test_creds)
-    prov.connect(prov._test_creds)
+    print(prov.test_creds)
+    prov.connect(prov.test_creds)
 
     def run(prov):
         print(prov.name, "start")
