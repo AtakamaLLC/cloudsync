@@ -78,7 +78,9 @@ class OAuthConfig:
         """
         log.debug("appid %s", self.app_id)
         if self.app_id is None:
-            raise OAuthError("app id bad")
+            raise OAuthError("app id None")
+        if self.app_secret is None:
+            raise OAuthError("app secret is None")
         if auth_url is None:
             raise OAuthError("auth url bad")
         os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
