@@ -13,7 +13,7 @@ from boxsdk.object.item import Item as BoxItem
 from boxsdk.object.folder import Folder as BoxFolder
 from boxsdk.object.file import File as BoxFile
 from boxsdk.object.event import Event as BoxEvent
-from boxsdk.exception import BoxException, BoxAPIException  # , BoxAPIException, BoxNetworkException, BoxOAuthException
+from boxsdk.exception import BoxAPIException, BoxNetworkException, BoxOAuthException
 from boxsdk.session.session import Session, AuthorizedSession
 
 from cloudsync.hierarchical_cache import HierarchicalCache
@@ -53,6 +53,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     _events_endpoint = '/events'
     name = 'box'
     _listdir_page_size = 5000
+    default_sleep = 10
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -111,15 +112,18 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if not self.__client:
             self.__creds = creds
 
-            jwt_token = creds.get('jwt_token')
-            access_token = creds.get('access_token')
-            refresh_token = creds.get('refresh_token')
-
-            if not jwt_token:
-                if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or access_token)):
-                    raise CloudTokenError("require app_id/secret and either access_token or refresh token")
-
             try:
+                if not creds:
+                    raise CloudTokenError("no creds")
+
+                jwt_token = creds.get('jwt_token')
+                access_token = creds.get('access_token')
+                refresh_token = creds.get('refresh_token')
+
+                if not jwt_token:
+                    if not ((self._oauth_config.app_id and self._oauth_config.app_secret) and (refresh_token or access_token)):
+                        raise CloudTokenError("require app_id/secret and either access_token or refresh token")
+
                 with self._mutex:
                     if jwt_token:
                         jwt_dict = json.loads(jwt_token)
@@ -134,8 +138,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         box_kwargs["api_config"] = boxsdk.config.API
                         auth = OAuth2(client_id=self._oauth_config.app_id,
                                       client_secret=self._oauth_config.app_secret,
-                                      access_token=self.__creds["access_token"],
-                                      refresh_token=self.__creds["refresh_token"],
+                                      access_token=access_token,
+                                      refresh_token=refresh_token,
                                       store_tokens=self._store_refresh_token)
 
                         box_session = AuthorizedSession(auth, **box_kwargs)
@@ -143,10 +147,17 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 with self._api():
                     self.__access_token = auth.access_token
                     self._long_poll_manager.start()
-            except BoxException:
-                log.exception("Error during connect")
+            except (BoxNetworkException) as e:
+                log.exception("Error during connect %s", e)
+                self.disconnect()
+                raise CloudDisconnectedError()
+            except CloudTokenError as e:
+                raise
+            except Exception as e:
+                log.exception("Error during connect %s", e)
                 self.disconnect()
                 raise CloudTokenError()
+
         with self._api() as client:
             return client.user(user_id='me').get().id
 
@@ -167,7 +178,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             self.__box._mutex.__enter__()
             return self.__client
 
-        def __exit__(self, ty, ex, tb):
+        def __exit__(self, ty, ex, tb):     # pylint: disable=too-many-branches
             self.__box._mutex.__exit__(ty, ex, tb)
 
             if ex:
@@ -176,6 +187,12 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 except (TimeoutError,):
                     self.__box.disconnect()
                     raise CloudDisconnectedError("disconnected on timeout")
+                except BoxOAuthException as e:
+                    self.__box.disconnect()
+                    raise CloudTokenError("oauth fail %s" %e)
+                except BoxNetworkException as e:
+                    self.__box.disconenct()
+                    raise CloudDisconnectedError("disconnected %s" % e)
                 except BoxAPIException as e:
                     if e.status == 400 and e.code == 'folder_not_empty':
                         raise CloudFileExistsError()
@@ -187,6 +204,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         raise PermissionError()
                     if e.status == 409 and e.code == 'item_name_in_use':
                         raise CloudFileExistsError()
+                    if e.status == 400 and e.code == 'invalid_grant':
+                        raise CloudTokenError()
                     log.exception("unknown box exception: \n%s", e)
                 except CloudException:
                     raise

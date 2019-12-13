@@ -111,10 +111,12 @@ class EventManager(Runnable):
             log.exception("Cursor error... resetting cursor. %s", e)
             self.provider.current_cursor = self.provider.latest_cursor
             self._save_current_cursor()
+            self.backoff()
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
             self.need_auth = True
+            self.backoff()
 
     def _do_unsafe(self):
         if self._first_do:

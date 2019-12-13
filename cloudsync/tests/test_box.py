@@ -5,6 +5,9 @@ import logging
 from typing import Dict, List
 from unittest.mock import patch
 
+import pytest
+
+from cloudsync.exceptions import CloudTokenError
 from cloudsync.providers import BoxProvider
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.utils import is_subpath
@@ -217,4 +220,10 @@ def test_mkdir():
     log.info("calls %s", list(srv.calls.keys()))
     prov.mkdir("/dir")
     assert srv.calls["mkdir"]
+
+def test_nocred():
+    srv, prov = fake_prov()
+    with pytest.raises(CloudTokenError):
+        prov.disconnect()
+        prov.connect(None)
 

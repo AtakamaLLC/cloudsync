@@ -77,6 +77,12 @@ class OAuthConfig:
         Do some stuff, then follow with wait_auth() to wait
         """
         log.debug("appid %s", self.app_id)
+        if self.app_id is None:
+            raise OAuthError("app id None")
+        if self.app_secret is None:
+            raise OAuthError("app secret is None")
+        if auth_url is None:
+            raise OAuthError("auth url bad")
         os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)
@@ -96,6 +102,7 @@ class OAuthConfig:
                 raise OAuthError("Oauth interrupted")
 
             self._token = OAuthToken(self._session.fetch_token(token_url,
+                                     include_client_id=True,
                                      client_secret=self.app_secret,
                                      code=self.success_code,
                                      **kwargs))

@@ -332,6 +332,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return False
 
     def _get_drive_id(self):
+        if not self.__client:
+            raise CloudDisconnectedError()
         try:
             return self.__name_to_drive[self.namespace]
         except KeyError:
@@ -423,8 +425,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         q = self.get_quota()
         return q["drive_id"]
 
-    def _api(self, *args, **kwargs):
-        needs_client = kwargs.get('needs_client', None)
+    def _api(self, *args, needs_client=True, **kwargs):  # pylint: disable=arguments-differ
         if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
         return self
@@ -912,7 +913,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return path
 
     def _get_item(self, client, *, oid=None, path=None):
-        assert client, "use within a with _api block or else issues"
+        if not client:
+            raise CloudDisconnectedError("Not connected")
         return OneDriveItem(self, oid=oid, path=path)
 
     def _get_path(self, oid=None) -> Optional[str]:
