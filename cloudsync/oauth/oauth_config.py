@@ -96,6 +96,7 @@ class OAuthConfig:
                 raise OAuthError("Oauth interrupted")
 
             self._token = OAuthToken(self._session.fetch_token(token_url,
+                                     include_client_id=True,
                                      client_secret=self.app_secret,
                                      code=self.success_code,
                                      **kwargs))
