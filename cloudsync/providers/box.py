@@ -13,7 +13,7 @@ from boxsdk.object.item import Item as BoxItem
 from boxsdk.object.folder import Folder as BoxFolder
 from boxsdk.object.file import File as BoxFile
 from boxsdk.object.event import Event as BoxEvent
-from boxsdk.exception import BoxException, BoxAPIException, BoxAPIException, BoxNetworkException, BoxOAuthException
+from boxsdk.exception import BoxAPIException, BoxNetworkException, BoxOAuthException
 from boxsdk.session.session import Session, AuthorizedSession
 
 from cloudsync.hierarchical_cache import HierarchicalCache
@@ -178,7 +178,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             self.__box._mutex.__enter__()
             return self.__client
 
-        def __exit__(self, ty, ex, tb):
+        def __exit__(self, ty, ex, tb):     # pylint: disable=too-many-branches
             self.__box._mutex.__exit__(ty, ex, tb)
 
             if ex:
