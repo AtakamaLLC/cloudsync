@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional, overload
 import logging
 import sqlite3
-from .state import Storage
 from threading import Lock
+from .state import Storage
 
 log = logging.getLogger(__name__)
 
