@@ -71,7 +71,7 @@ def test_sync_daemon():
         with patch("daemon.DaemonContext") as dc:
             # if you don't patch, then this will fork... not what you want
             do_sync(args)
-    except ModuleNotFoundError:
+    except ImportError:
         pytest.skip("no daemon mode, skipping")
 
     dc.assert_called_once()
