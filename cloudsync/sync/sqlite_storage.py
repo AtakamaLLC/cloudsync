@@ -16,16 +16,15 @@ class SqliteStorage(Storage):
         self._ensure_table_exists()
 
     def __db_connect(self):
-        with self._mutex:
-            if self.db:
-                self.close()
+        if self.db:
+            self.close()
 
-            self.db = sqlite3.connect(self._filename,
-                                      uri=self._filename.startswith('file:'),
-                                      check_same_thread=self._filename == ":memory:",
-                                      timeout=5,
-                                      isolation_level=None,
-                                      )
+        self.db = sqlite3.connect(self._filename,
+                                  uri=self._filename.startswith('file:'),
+                                  check_same_thread=self._filename == ":memory:",
+                                  timeout=5,
+                                  isolation_level=None,
+                                  )
         return self.db
 
     def __db_execute(self, sql, parameters=()):
