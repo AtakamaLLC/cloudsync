@@ -54,8 +54,8 @@ class ProviderHelper(ProviderBase):
         self.prov = prov
 
         self.test_parent = getattr(self.prov, "test_root", "/")
-        self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
-        self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
+        self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20) or 20
+        self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1) or 1
         self.test_creds = getattr(self.prov, "test_creds", {})
         self.test_root: Optional[str] = None
 
