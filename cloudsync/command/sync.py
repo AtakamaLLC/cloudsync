@@ -1,7 +1,10 @@
 import re
 import logging
 import json
-import daemon
+try:
+    import daemon
+except ImportError:
+    daemon = None
 
 from cloudsync import CloudSync, get_provider, OAuthConfig
 
@@ -98,6 +101,8 @@ def do_sync(args):
         done = lambda: not cs.busy
 
     if args.daemon:
+        if not daemon:
+            raise NotImplementedError("daemon mode is not available")
         with daemon.DaemonContext():
             cs.start(until=done)
     else:

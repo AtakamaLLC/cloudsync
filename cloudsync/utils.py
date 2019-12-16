@@ -176,6 +176,8 @@ class TemporaryFile:
 
     def __del__(self):
         if self.__delete:
+            if self.__io:
+                self.__io.close()
             try:
                 os.unlink(self.name)
             except FileNotFoundError:

@@ -38,10 +38,11 @@ def test_sync_oauth(caplog, conf):
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
 
-    with NamedTemporaryFile() as tf:
+    try:
+        tf = NamedTemporaryFile(delete=False)
         tf.write(b'{"oauth":{"host":"localhost"}}')
-
         tf.flush()
+        tf.close()
 
         if conf == "with_conf":
             args.config = tf.name
@@ -51,6 +52,8 @@ def test_sync_oauth(caplog, conf):
         log.info("start sync")
         with pytest.raises(CloudTokenError):
             do_sync(args)
+    finally:
+        os.unlink(tf.name)
 
     logs = caplog.record_tuples
 
@@ -64,8 +67,11 @@ def test_sync_daemon():
     args.dest = "mock_path_cs:/b"
     args.daemon = True         # don't keep running after i quit
 
-    with patch("daemon.DaemonContext") as dc:
-        # if you don't patch, then this will fork... not what you want
-        do_sync(args)
+    try:
+        with patch("daemon.DaemonContext") as dc:
+            # if you don't patch, then this will fork... not what you want
+            do_sync(args)
+    except ModuleNotFoundError:
+        pytest.skip("no daemon mode, skipping")
 
     dc.assert_called_once()
