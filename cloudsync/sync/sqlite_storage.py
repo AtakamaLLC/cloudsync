@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, overload
 import logging
 import sqlite3
+from threading import Lock
 from .state import Storage
 
 log = logging.getLogger(__name__)
@@ -8,30 +9,35 @@ log = logging.getLogger(__name__)
 
 class SqliteStorage(Storage):
     def __init__(self, filename: str):
+        self._mutex = Lock()
         self._filename = filename
         self.db = None
         self.db = self.__db_connect()
         self._ensure_table_exists()
 
     def __db_connect(self):
-        if self.db:
-            self.close()
+        with self._mutex:
+            if self.db:
+                self.close()
 
-        self.db = sqlite3.connect(self._filename,
-                                  uri=self._filename.startswith('file:'),
-                                  check_same_thread=self._filename == ":memory:",
-                                  timeout=5,
-                                  isolation_level=None,
-                                  )
+            self.db = sqlite3.connect(self._filename,
+                                      uri=self._filename.startswith('file:'),
+                                      check_same_thread=self._filename == ":memory:",
+                                      timeout=5,
+                                      isolation_level=None,
+                                      )
         return self.db
 
     def __db_execute(self, sql, parameters=()):
-        try:
-            retval = self.db.execute(sql, parameters)
-        except sqlite3.OperationalError:
-            self.__db_connect()  # reconnect
-            retval = self.db.execute(sql, parameters)
-        return retval
+        # in python 3.6, this will randomly crash unless there's a mutex involved
+        # it's not supposed to be a problem... but it is
+        with self._mutex:
+            try:
+                retval = self.db.execute(sql, parameters)
+            except sqlite3.OperationalError:
+                self.__db_connect()  # reconnect
+                retval = self.db.execute(sql, parameters)
+            return retval
 
     def _ensure_table_exists(self):
         self.__db_execute("PRAGMA journal_mode=WAL;")
