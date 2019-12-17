@@ -40,8 +40,8 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
         self.mtime = mtime or time.time()
 
-        self.hash_func = hash_func
-        assert self.hash_func
+        self._hash_func = hash_func
+        assert self._hash_func
 
     @property
     def otype(self):
@@ -53,7 +53,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
     def hash(self) -> Optional[str]:
         if self.type == self.DIR:
             return None
-        return self.hash_func(self.contents)
+        return self._hash_func(self.contents)
 
     def update(self):
         self.mtime = time.time()
@@ -105,28 +105,28 @@ class MockProvider(Provider):
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
-        self.oidless_folder_trash_events = oidless_folder_trash_events
+        self._oidless_folder_trash_events = oidless_folder_trash_events
         self._fs_by_path: Dict[str, MockFSObject] = {}
         self._fs_by_oid: Dict[str, MockFSObject] = {}
         self._events: List[MockEvent] = []
         self._latest_cursor = -1
         self._cursor = -1
         self._quota = quota
-        self.locked_for_test: Set[str] = set()
+        self._locked_for_test: Set[str] = set()
         self._total_size = 0
         self._type_map = {
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
         }
-        self.test_event_timeout = 1
-        self.test_event_sleep = 0.001
-        self.test_creds = {"key": "val"}
-        self.connect(self.test_creds)
-        self.hash_func = hash_func
+        self._test_event_timeout = 1
+        self._test_event_sleep = 0.001
+        self._test_creds = {"key": "val"}
+        self.connect(self._test_creds)
+        self._hash_func = hash_func
         if hash_func is None:
-            self.hash_func = lambda a: md5(a).digest()
-        self.uses_cursor = True
-        self.forbidden_chars: list = []
+            self._hash_func = lambda a: md5(a).digest()
+        self._uses_cursor = True
+        self._forbidden_chars: list = []
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
@@ -146,14 +146,14 @@ class MockProvider(Provider):
         self._api()
         return self._fs_by_oid.get(oid, None)
 
-    def normalize(self, path):
+    def normalize_path(self, path):
         if self.case_sensitive:
             return path
         else:
             return path.lower()
 
     def _get_by_path(self, path):
-        path = self.normalize(path)
+        path = self.normalize_path(path)
         # TODO: normalize the path, support case insensitive lookups, etc
         self._api()
         return self._fs_by_path.get(path, None)
@@ -162,7 +162,7 @@ class MockProvider(Provider):
         # TODO: support case insensitive storage
         assert fo.path == fo.path.rstrip("/")
 
-        if fo.path in self.locked_for_test:
+        if fo.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (fo.path))
 
         if fo.oid in self._fs_by_oid and self._fs_by_oid[fo.oid].contents:
@@ -171,12 +171,12 @@ class MockProvider(Provider):
         if fo.contents and self._quota is not None and self._total_size + len(fo.contents) > self._quota:
             raise CloudOutOfSpaceError("out of space in mock")
 
-        self._fs_by_path[self.normalize(fo.path)] = fo
+        self._fs_by_path[self.normalize_path(fo.path)] = fo
         self._fs_by_oid[fo.oid] = fo
         if fo.contents:
             self._total_size += len(fo.contents)
 
-    def set_quota(self, quota: int):
+    def _set_quota(self, quota: int):
         self._quota = quota
 
     def get_quota(self):
@@ -188,7 +188,7 @@ class MockProvider(Provider):
 
     def _unstore_object(self, fo: MockFSObject):
         try:
-            del self._fs_by_path[self.normalize(fo.path)]
+            del self._fs_by_path[self.normalize_path(fo.path)]
             del self._fs_by_oid[fo.oid]
             if fo.contents:
                 self._total_size -= len(fo.contents)
@@ -207,9 +207,9 @@ class MockProvider(Provider):
         path = None
         if self.oid_is_path:
             path = event.get("path")
-        if not self.uses_cursor:
+        if not self._uses_cursor:
             cursor = None
-        if self.oidless_folder_trash_events:
+        if self._oidless_folder_trash_events:
             if trashed and standard_type == OType.DIRECTORY:
                 oid = None
                 path = event.get("path")
@@ -222,13 +222,13 @@ class MockProvider(Provider):
 
     @property
     def latest_cursor(self):
-        if not self.uses_cursor:
+        if not self._uses_cursor:
             return None
         return self._latest_cursor
 
     @property
     def current_cursor(self):
-        if not self.uses_cursor:
+        if not self._uses_cursor:
             return None
         return self._cursor
 
@@ -261,7 +261,7 @@ class MockProvider(Provider):
             raise CloudFileNotFoundError(oid)
         if file.type != MockFSObject.FILE:
             raise CloudFileExistsError("Only files may be uploaded, and %s is not a file" % file.path)
-        if file.path in self.locked_for_test:
+        if file.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (file.path))
         contents = file_like.read()
         file.contents = contents
@@ -283,7 +283,7 @@ class MockProvider(Provider):
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         # TODO: store the metadata
-        for c in self.forbidden_chars:
+        for c in self._forbidden_chars:
             if c in path:
                 raise CloudFileNameError()
         file = self._get_by_path(path)
@@ -291,7 +291,7 @@ class MockProvider(Provider):
             raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         self._verify_parent_folder_exists(path)
         if file is None or not file.exists:
-            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self.hash_func)
+            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self._hash_func)
         file.contents = file_like.read()
         file.exists = True
         self._store_object(file)
@@ -378,11 +378,11 @@ class MockProvider(Provider):
         self._store_object(source_object)
         self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
         log.debug("rename complete %s", source_object.path)
-        self.log_debug_state()
+        self._log_debug_state()
 
     def mkdir(self, path) -> str:
         self._verify_parent_folder_exists(path)
-        for c in self.forbidden_chars:
+        for c in self._forbidden_chars:
             if c in path:
                 raise CloudFileNameError()
         file = self._get_by_path(path)
@@ -392,7 +392,7 @@ class MockProvider(Provider):
             else:
                 log.debug("Skipped creating already existing folder: %s", path)
                 return file.oid
-        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self.hash_func)
+        new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
         return new_fs_object.oid
@@ -405,7 +405,7 @@ class MockProvider(Provider):
         if file is None or not file.exists:
             raise CloudFileNotFoundError(oid)
         prior_oid = file.oid if self.oid_is_path else None
-        del self._fs_by_path[self.normalize(file.path)]
+        del self._fs_by_path[self.normalize_path(file.path)]
         file.path = None
         self._register_event(MockEvent.ACTION_RENAME, file, prior_oid)
         return None
@@ -414,7 +414,7 @@ class MockProvider(Provider):
         log.debug("delete %s", debug_sig(oid))
         self._api()
         file = self._fs_by_oid.get(oid, None)
-        if file and file.path in self.locked_for_test:
+        if file and file.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (file.path))
         log.debug("got %s", file)
         if file and file.exists:
@@ -452,15 +452,15 @@ class MockProvider(Provider):
             return None
 
     def hash_data(self, file_like) -> Any:
-        return self.hash_func(file_like.read())
+        return self._hash_func(file_like.read())
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         self._api()
         file: MockFSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
@@ -477,7 +477,7 @@ class MockProvider(Provider):
     #     with open(path, "wb") as x:
     #         x.write(contents)
 
-    def log_debug_state(self, msg=""):
+    def _log_debug_state(self, msg=""):
         files = list(self.walk("/"))
         log.debug("%s: mock provider state %s:%s", msg, len(files), files)
 

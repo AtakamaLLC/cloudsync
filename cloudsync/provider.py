@@ -36,27 +36,28 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     """
 
     # pylint: disable=multiple-statements
-    name: str = None                         ; """Provider name"""
-    sep: str = '/'                           ; """Path delimiter"""
-    alt_sep: str = '\\'                      ; """Alternate path delimiter"""
-    oid_is_path: bool = False                ; """Objects stored in cloud are only referenced by path"""
-    case_sensitive: bool = True              ; """Provider is case sensitive"""
-    win_paths: bool = False                  ; """C: drive letter stuff needed for paths"""
-    default_sleep: float = 0.01              ; """Per event loop sleep time"""
-    _namespace: str = None                   ; """current namespace, if needed """
-    _namespace_id: str = None                ; """current namespace id, if needed """
-    _oauth_info: OAuthProviderInfo = None    ; """OAuth providers can set this as a class variable"""
-    _oauth_config: OAuthConfig = None        ; """OAuth providers can set this in init"""
+    name: str = None                          ; """Provider name"""
+    sep: str = '/'                            ; """Path delimiter"""
+    alt_sep: str = '\\'                       ; """Alternate path delimiter"""
+    oid_is_path: bool = False                 ; """Objects stored in cloud are only referenced by path"""
+    case_sensitive: bool = True               ; """Provider is case sensitive"""
+    win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
+    default_sleep: float = 0.01               ; """Per event loop sleep time"""
+    _namespace: str = None                    ; """current namespace, if needed """
+    _namespace_id: str = None                 ; """current namespace id, if needed """
+    _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
+    _oauth_config: OAuthConfig = None         ; """OAuth providers can set this in init"""
+    _listdir_page_size: Optional[int] = None  ; """Used for testing listdir"""
 
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for
     # multipart upload tests
-    large_file_size: int = 0                 ; """Used for testing providers with separate large file handling"""
-    upload_block_size: int = 0               ; """Used for testing providers with separate large file handling"""
+    large_file_size: int = 0                  ; """Used for testing providers with separate large file handling"""
+    upload_block_size: int = 0                ; """Used for testing providers with separate large file handling"""
 
-    connection_id: str = None                ; """Must remain constant between logins and must be unique to the login"""
-    _creds: Optional[Any] = None             ; """Base class helpers to store creds"""
-    __connected = False                      ; """Base class helper to fake a connection"""
+    connection_id: Optional[str] = None       ; """Must remain constant between logins and must be unique to the login"""
+    _creds: Optional[Any] = None              ; """Base class helpers to store creds"""
+    __connected = False                       ; """Base class helper to fake a connection"""
     # pylint: enable=multiple-statements
 
     @abstractmethod
@@ -120,7 +121,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Raises:
             CloudDisconnectedError on failure
         """
-        if not self.__connected:
+        connected = self.__connected
+        if not connected:
             self.connect(self._creds)
 
     def disconnect(self):
@@ -151,9 +153,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 self._oauth_config.start_auth(self._oauth_info.auth_url, self._oauth_info.scopes)
                 token = self._oauth_config.wait_auth(self._oauth_info.token_url)
             except Exception as e:
-                log.error("oauth error %s", e)
+                log.error("oauth error %s", repr(e))
                 self.disconnect()
-                raise CloudTokenError(str(e))
+                raise CloudTokenError(repr(e))
 
             return {"refresh_token": token.refresh_token,
                     "access_token": token.access_token}
@@ -256,7 +258,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         """Returns info for an object at a path, or None if not found"""
         ...
 
@@ -298,9 +300,21 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     def listdir_path(self, path):
         info = self.info_path(path)
-        if not info or not info.oid:
+        if not info:
             raise CloudFileNotFoundError()
         return self.listdir(info.oid)
+
+    def rmtree(self, oid):
+        try:
+            for info in self.listdir(oid):
+                if info.otype == DIRECTORY:
+                    self.rmtree(info.oid)
+                else:
+                    self.delete(info.oid)
+            self.delete(oid)
+        except CloudFileNotFoundError:
+            pass
+
 
 # HELPER
     @classmethod
@@ -343,9 +357,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             index = max(index, path.rfind(self.alt_sep))
 
         if index == -1:
-            return path, ""
+            return "", path
         if index == 0:
-            return self.sep, path[index+1:]
+            return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
 
     def normalize_path(self, path: str):
@@ -359,9 +373,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             norm_path = norm_path.lower()
         return norm_path
 
-    def is_subpath(self, folder, target, sep=None, alt_sep=None, strict=False):
-        sep = sep or self.sep
-        alt_sep = alt_sep or self.alt_sep
+    def is_subpath(self, folder, target, strict=False):
+        sep = self.sep
+        alt_sep = self.alt_sep
         if alt_sep:
             folder = folder.replace(alt_sep, sep)
             target = target.replace(alt_sep, sep)
@@ -452,6 +466,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return oid
 
 # TEST ################################################
+    def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
+        pass
 
     @classmethod
     def test_instance(cls):
@@ -465,8 +481,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return cls.oauth_test_instance(prefix=cls.name.upper())             # pylint: disable=no-member
         else:
             # no connection needed
-            cls.test_creds: Dict[str, str] = None            # type: ignore
+            cls._test_creds: Dict[str, str] = None            # type: ignore
             return cls()
+
+    def _clear_cache(self, *, oid=None, path=None):  # pylint: disable=unused-argument, no-self-use
+        # override this method if the provider implements a cache, to permit the internal cache to be cleared on demand
+        # the _clear_cache method in the subclass should return True
+        return False
 
     @classmethod
     def oauth_test_instance(cls, prefix: str, token_key="refresh_token", token_sep="|", port_range: Tuple[int, int] = None, host_name=None):
@@ -480,10 +501,15 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
 
         tokens = os.environ.get("%s_TOKEN" % prefix).split(token_sep)
+        token = tokens[random.randrange(0, len(tokens))]
+
+        if token.startswith("file:"):
+            token = open(token[5:]).read()
+
         creds = {
-            token_key: tokens[random.randrange(0, len(tokens))],
+            token_key: token,
         }
-        cls.test_creds = creds                                          # type: ignore
+        cls._test_creds = creds                                          # type: ignore
         return cls(OAuthConfig(                                         # type: ignore
             app_id=os.environ.get("%s_APP_ID" % prefix),
             app_secret=os.environ.get("%s_APP_SECRET" % prefix),

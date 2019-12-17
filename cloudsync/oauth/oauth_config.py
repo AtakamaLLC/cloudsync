@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 import webbrowser
 from oauthlib.oauth2 import OAuth2Error
 from requests_oauthlib import OAuth2Session
@@ -20,12 +20,15 @@ OAuthError = OAuth2Error
 # applications can derive from this class and provide appropriate defaults
 
 class OAuthToken:       # pylint: disable=too-few-public-methods
-    def __init__(self, data):
+    def __init__(self, data=None, **kwargs):
+        if data is None:
+            data = kwargs
         self.access_token = data["access_token"]
         self.token_type = data["token_type"]
         self.expires_in = data.get("expires_in")
         self.refresh_token = data.get("refresh_token")
         self.scope = data.get("scope")
+
 
 class OAuthConfig:
     def __init__(self, *, app_id: str, app_secret: str, 
@@ -67,13 +70,19 @@ class OAuthConfig:
             self._redirect_server = OAuthRedirServer(html_generator=self._gen_html_response, 
                                                      port_range=port_range, host_name=host_name)
 
-
     def start_auth(self, auth_url, scope=None, **kwargs):
         """
         Call this if you want oauth to be handled for you
         This starts a server, pops a browser.
         Do some stuff, then follow with wait_auth() to wait
         """
+        log.debug("appid %s", self.app_id)
+        if self.app_id is None:
+            raise OAuthError("app id None")
+        if self.app_secret is None:
+            raise OAuthError("app secret is None")
+        if auth_url is None:
+            raise OAuthError("auth url bad")
         os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
         self.start_server()
         self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri, **kwargs)
@@ -86,18 +95,21 @@ class OAuthConfig:
         Returns an OAuthToken object, or raises a OAuthError 
         """
         assert self._session
+        try:
+            if not self.wait_success(timeout):
+                if self.failure_info:
+                    raise OAuthError(self.failure_info)
+                raise OAuthError("Oauth interrupted")
 
-        if not self.wait_success(timeout):
-            if self.failure_info:
-                raise OAuthError(self.failure_info)
-            raise OAuthError("Oauth interrupted")
-
-        self._token = OAuthToken(self._session.fetch_token(token_url,
-                client_secret=self.app_secret,
-                code=self.success_code,
-                **kwargs))
-        self.token_changed(self._token)
-        return self._token
+            self._token = OAuthToken(self._session.fetch_token(token_url,
+                                     include_client_id=True,
+                                     client_secret=self.app_secret,
+                                     code=self.success_code,
+                                     **kwargs))
+            self._token_changed()
+            return self._token
+        finally:
+            self.shutdown()
 
     def refresh(self, refresh_url, token=None, scope=None, **extra):
         """
@@ -106,15 +118,15 @@ class OAuthConfig:
         Or, you could just call it before the expiration
         """
         assert self._session or scope
-
-        kws = {**extra}
-
         if not self._session and scope:
-            self._session = OAuth2Session(client_id=self.app_id, scope=scope)
-        kws["client_id"] = self.app_id
-        kws["client_secret"] = self.app_secret
-        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **kws))
-        self.token_changed(self._token)
+            self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri)
+        extra["client_id"] = self.app_id
+        extra["client_secret"] = self.app_secret
+        if isinstance(token, OAuthToken):
+            token = token.refresh_token
+        self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))
+        if self._token.refresh_token != token:
+            self._token_changed()
         return self._token
 
     @property
@@ -156,7 +168,8 @@ class OAuthConfig:
         """
         Get the redirect server's uri
         """
-        assert self._redirect_server
+        if self._redirect_server is None:
+            return None
         return self._redirect_server.uri()
 
     def _gen_html_response(self, success: bool, err_msg: str):
@@ -165,9 +178,14 @@ class OAuthConfig:
         else:
             return self.failure_message(err_msg)
 
-    # override this to save creds on refresh
-    def token_changed(self, creds: OAuthToken):     # pylint: disable=unused-argument, no-self-use
-        ...
+    def _token_changed(self):
+        # this could just be a setter
+        creds = {"refresh_token": self._token.refresh_token, "access_token": self._token.access_token}
+        self.creds_changed(creds)
+
+    def creds_changed(self, creds: Any):     # pylint: disable=unused-argument, no-self-use
+        """Override this to save creds on refresh"""
+        log.warning("creds will not be saved, implement OAuthConfig.creds_changed to save it.")
 
     # override this to make a nicer message on success
     @staticmethod

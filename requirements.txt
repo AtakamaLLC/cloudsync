@@ -3,13 +3,20 @@ arrow
 msgpack
 dataclasses
 requests_oauthlib
+requests
+
 # gdrive provider
 google-oauth
 google-auth-httplib2
 google-api-python-client
+
 # dropbox provider
 dropbox
-#onedrive
+
+# box provider
+boxsdk[jwt]
+
+# onedrive provider
 onedrivesdk_fork
 quickxorhash
 python-daemon

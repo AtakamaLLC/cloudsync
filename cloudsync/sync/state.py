@@ -753,18 +753,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     # no longer indexed by oid, also clear change bit
                     prior_ent[side].oid = None
 
-        if oid:
+        if oid is not None:
             ent[side]._oid = oid
             self._oids[side][oid] = ent
 
             assert self.lookup_oid(side, oid) is ent
 
-        if oid and ent[side].path:
+        if oid is not None and ent[side].path:
             if ent[side].path not in self._paths[side]:
                 self._paths[side][ent[side].path] = {}
             self._paths[side][ent[side].path][oid] = ent
 
-        if oid:
+        if oid is not None:
             # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
             if ent[side].changed or ent[other_side(side)].changed:
@@ -1061,9 +1061,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 assert ent in self.lookup_path(LOCAL, ent[LOCAL].path), ("%s local path not indexed" % ent)
             if ent[REMOTE].path:
                 assert ent in self.lookup_path(REMOTE, ent[REMOTE].path), ("%s remote path not indexed" % ent)
-            if ent[LOCAL].oid:
+            if ent[LOCAL].oid is not None:
                 assert ent is self.lookup_oid(LOCAL, ent[LOCAL].oid), ("%s local oid not indexed" % ent)
-            if ent[REMOTE].oid:
+            if ent[REMOTE].oid is not None:
                 assert ent is self.lookup_oid(REMOTE, ent[REMOTE].oid), ("%s local oid not indexed" % ent)
 
             if ent[LOCAL].changed or ent[REMOTE].changed:
@@ -1101,7 +1101,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         replace_ent[replace] = ent[replace]
         assert replace_ent[replace].oid
 
-        if ent[replace].oid:
+        if ent[replace].oid is not None:
             assert replace_ent in self.get_all()
 
         if defer_ent[replace].path:
@@ -1131,7 +1131,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return defer_ent, defer, replace_ent, replace
 
     def unconditionally_get_latest(self, ent, i):
-        if not ent[i].oid:
+        if ent[i].oid is None:
             if ent[i].exists not in (TRASHED, MISSING):
                 ent[i].exists = UNKNOWN
             return

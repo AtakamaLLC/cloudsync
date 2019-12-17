@@ -57,6 +57,7 @@ confidence=
 # no Warning level messages displayed, use"--disable=all --enable=classes
 # --disable=W"
 disable=multiple-imports,
+        too-few-public-methods,
         broad-except,
         no-else-return,
         trailing-newlines,

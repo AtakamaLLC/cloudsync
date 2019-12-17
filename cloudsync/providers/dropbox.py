@@ -76,8 +76,7 @@ class _FolderIterator:
             self.backoff = lpres.backoff
 
         if lpres.changes:
-            self.ls_res = self.api('files_list_folder_continue',
-                               cursor)
+            self.ls_res = self.api('files_list_folder_continue', cursor)
 
     def __next__(self):
         if self.ls_res:
@@ -106,13 +105,12 @@ class DropboxProvider(Provider):
         self.__root_id = None
         self.__cursor: str = None
         self._creds: Dict[str, str] = None
-        self.client = None
-        self.longpoll_client = None
+        self._client = None
+        self._longpoll_client = None
         self._csrf: bytes = None
         self._flow: DropboxOAuth2Flow = None
-        self.user_agent = 'cloudsync/1.0'
-        self.mutex = threading.RLock()
-        self.longpoll_mutex = threading.RLock()
+        self._mutex = threading.RLock()
+        self._longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config
 
@@ -120,12 +118,9 @@ class DropboxProvider(Provider):
 
     @property
     def connected(self):
-        return self.client is not None
+        return self._client is not None
 
-    def get_display_name(self):
-        return self.name
-
-    def initialize(self):
+    def _initialize(self):
         self._csrf = u_b64enc(urandom(32))
         appid = self._oauth_config.app_id
         secret = self._oauth_config.app_secret
@@ -171,7 +166,7 @@ class DropboxProvider(Provider):
             auth_dict['state'] = auth_dict['state'][0]
         try:
             res: OAuth2FlowResult = self._flow.finish(auth_dict)
-            self._creds = {"refresh_token": res.access_token}
+            self._creds = {"access_token": res.access_token}
         except Exception:
             log.exception('Authentication failed')
             raise
@@ -182,7 +177,7 @@ class DropboxProvider(Provider):
 
     def authenticate(self):
         try:
-            self.initialize()
+            self._initialize()
             if self._oauth_config.wait_success():
                 return self._creds
             msg = self._oauth_config.failure_info
@@ -223,19 +218,19 @@ class DropboxProvider(Provider):
 
     def connect_impl(self, creds):
         log.debug('Connecting to dropbox')
-        with self.mutex:
-            if not self.client or creds != self._creds:
+        with self._mutex:
+            if not self._client or creds != self._creds:
                 if creds:
                     self._creds = creds
-                    api_key = creds.get('key', creds.get('refresh_token'))
+                    api_key = creds.get('key', creds.get('access_token'))
                 else:
                     api_key = None
 
                 if not api_key:
                     raise CloudTokenError()
 
-                self.client = Dropbox(api_key)
-                self.longpoll_client = Dropbox(api_key)
+                self._client = Dropbox(api_key)
+                self._longpoll_client = Dropbox(api_key)
 
             try:
                 self.__memoize_quota.clear()
@@ -256,14 +251,14 @@ class DropboxProvider(Provider):
                 raise CloudDisconnectedError()
 
     def _lpapi(self, method, *args, **kwargs):
-        if self.longpoll_mutex.acquire(blocking=False):
-            self.longpoll_mutex.release()
+        if self._longpoll_mutex.acquire(blocking=False):
+            self._longpoll_mutex.release()
         else:
             log.warning("multiple longpoll threads, probably going to wait for a long time")
-        return self._real_api(self.longpoll_client, self.longpoll_mutex, method, *args, **kwargs)
+        return self._real_api(self._longpoll_client, self._longpoll_mutex, method, *args, **kwargs)
 
     def _api(self, method, *args, **kwargs):    # pylint: disable=arguments-differ
-        return self._real_api(self.client, self.mutex, method, *args, **kwargs)
+        return self._real_api(self._client, self._mutex, method, *args, **kwargs)
 
     def _real_api(self, client, mutex, method, *args, **kwargs):   # pylint: disable=too-many-branches, too-many-statements
         log.debug("_api: %s (%s)", method, debug_args(args, kwargs))
@@ -376,18 +371,18 @@ class DropboxProvider(Provider):
                 raise CloudDisconnectedError()
 
     @property
-    def root_id(self):
+    def _root_id(self):
         return ""
 
     def disconnect(self):
-        self.client = None
-        self.longpoll_client = None
+        self._client = None
+        self._longpoll_client = None
         self.__memoize_quota.clear()      # pylint: disable=no-member
 
     @property
     def latest_cursor(self):
         res = self._api('files_list_folder_get_latest_cursor',
-                        self.root_id, recursive=True, include_deleted=True, limit=200)
+                        self._root_id, recursive=True, include_deleted=True, limit=200)
         if res:
             return res.cursor
         else:
@@ -414,7 +409,7 @@ class DropboxProvider(Provider):
                 raise CloudFileNotFoundError(path)
             oid = info.oid
         else:
-            oid = self.root_id
+            oid = self._root_id
 
         for res in _FolderIterator(self._lpapi, oid, recursive=True, cursor=cursor):
             exists = True
@@ -655,7 +650,7 @@ class DropboxProvider(Provider):
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         if path == "/":
             return OInfo(DIRECTORY, "", None, "/")
 
@@ -683,7 +678,7 @@ class DropboxProvider(Provider):
     def exists_path(self, path) -> bool:
         return self.info_path(path) is not None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         if oid == "":
             otype = DIRECTORY
             fhash = None
@@ -705,7 +700,7 @@ class DropboxProvider(Provider):
 
     @classmethod
     def test_instance(cls):
-        return cls.oauth_test_instance(prefix="DROPBOX", port_range=(52400, 54250))
+        return cls.oauth_test_instance(prefix="DROPBOX", port_range=(52400, 54250), token_key="access_token")
 
 
 __cloudsync__ = DropboxProvider

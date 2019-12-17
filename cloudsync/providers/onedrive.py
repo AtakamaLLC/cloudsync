@@ -35,8 +35,10 @@ from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
 
+
 class OneDriveFileDoneError(Exception):
     pass
+
 
 log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
@@ -84,13 +86,13 @@ class OneDriveItem():
         self.__path = path
         self.__pid = pid
 
-        if oid:
+        if oid is not None:
             self.__sdk_kws = {"id": oid}
 
         if path:
             self.__sdk_kws = {"path": path}
 
-        self.__drive_id = self.__prov.get_drive_id()
+        self.__drive_id = self.__prov._get_drive_id()
         self.__get = None
 
     @property
@@ -174,7 +176,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         scopes=['profile', 'openid', 'email', 'files.readwrite.all', 'sites.readwrite.all', 'offline_access', 'group.readwrite.all'],
     )
 
-    additional_invalid_characters = '#'
+    _additional_invalid_characters = '#'
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
@@ -182,7 +184,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__cursor: Optional[str] = None
         self.__client: onedrivesdk.OneDriveClient = None
         self.__test_root: str = None
-        self.mutex = threading.RLock()
+        self._mutex = threading.RLock()
         self._oauth_config = oauth_config
         self.__team_id = None
         self._namespace: str = None
@@ -191,14 +193,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__name_to_drive: Dict[str, str] = None
 
     @property
-    def connected(self):  # One Drive
+    def connected(self):
         return self.__client is not None
 
-    def get_display_name(self):  # One Drive
-        return self.name
-
     @staticmethod
-    def ensure_event_loop():
+    def _ensure_event_loop():
         try:
             asyncio.get_event_loop()
         except RuntimeError:
@@ -239,7 +238,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return {}
 
         if req.status_code > 202:
-            if not self.raise_converted_error(req=req):
+            if not self._raise_converted_error(req=req):
                 raise Exception("Unknown error %s %s" % (req.status_code, req.json()))
 
         if stream:
@@ -293,7 +292,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         # default namespace to personal
         self._namespace = "personal"
 
-    def raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
+    def _raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
         status = 0
         if ex is not None:
             status = ex.status_code
@@ -309,7 +308,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if status < 300:
             log.error("Not converting err %s %s", ex, req)
             return False
-            
+
         if status == 404:
             raise CloudFileNotFoundError(msg)
         if status in (429, 503):
@@ -327,6 +326,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileExistsError(msg)
         if code == ErrorCode.AccessDenied:
             raise CloudFileExistsError(msg)
+        if code == "BadRequest":
+            if status == 400:
+                raise CloudFileNotFoundError(msg)
         if code == ErrorCode.InvalidRequest:
             if status == 405:
                 raise CloudFileExistsError(msg)
@@ -338,7 +340,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         log.error("Not converting err %s %s", ex, req)
         return False
 
-    def get_drive_id(self):
+    def _get_drive_id(self):
+        if not self.__client:
+            raise CloudDisconnectedError()
         try:
             return self.__name_to_drive[self.namespace]
         except KeyError:
@@ -374,7 +378,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             if not refresh_token:
                 raise CloudTokenError("no refresh token, refusing connection")
 
-            self.ensure_event_loop()
+            self._ensure_event_loop()
 
             with self._api(needs_client=False):
                 http_provider = onedrivesdk.HttpProvider()
@@ -430,18 +434,17 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         q = self.get_quota()
         return q["drive_id"]
 
-    def _api(self, *args, **kwargs):
-        needs_client = kwargs.get('needs_client', None)
+    def _api(self, *args, needs_client=True, **kwargs):  # pylint: disable=arguments-differ
         if needs_client and not self.__client:
             raise CloudDisconnectedError("currently disconnected")
         return self
 
     def __enter__(self):
-        self.mutex.__enter__()
+        self._mutex.__enter__()
         return self.__client
 
     def __exit__(self, ty, ex, tb):
-        self.mutex.__exit__(ty, ex, tb)
+        self._mutex.__exit__(ty, ex, tb)
 
         if ex:
             try:
@@ -452,10 +455,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.disconnect()
                 raise CloudDisconnectedError("disconnected on timeout")
             except OneDriveError as e:
-                if not self.raise_converted_error(ex=e):
+                if not self._raise_converted_error(ex=e):
                     raise
             except Exception:
-                pass
+                return False  # False allows the exit handler to act as normal, which does not swallow the exception
+        return None
 
     def disconnect(self):
         self.__client = None
@@ -463,8 +467,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @property
     def latest_cursor(self):
         save_cursor = self.__cursor
-        
-        self.__cursor = self._get_url("/drives/%s/root/delta" % self.get_drive_id())
+        self.__cursor = self._get_url("/drives/%s/root/delta" % self._get_drive_id())
         log.debug("cursor %s", self.__cursor)
         for _ in self.events():
             pass
@@ -504,8 +507,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 events = reversed(cast(List, events))
 
             for change in events:
-# uncomment only while debugging, demicolon left in to cause linter to fail 
-#                log.debug("got event\n%s", pformat(change));
+                # uncomment only while debugging, demicolon left in to cause linter to fail
+                # log.debug("got event\n%s", pformat(change));
 
                 # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
                 #  'createdBy': {'application': {'id': '4805d153'},
@@ -543,7 +546,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                     if otype == FILE:
                         ohash = self._hash_from_dict(change)
 
-                    path = self._join_parent_reference_path_and_name(change['parentReference'].get('path', ''), change['name'])
+                    path = self._join_parent_reference_path_and_name(change['parentReference'].get('path', '/'), change['name'])
 
                 event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
 
@@ -611,7 +614,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 return self._info_item(item)
         else:
             with self._api() as client:
-                _unused_resp = self.upload_large(self._get_item(client, oid=oid).api_path, file_like, "replace")
+                _unused_resp = self._upload_large(self._get_item(client, oid=oid).api_path, file_like, "replace")
             # todo: maybe use the returned item dict to speed this up
             return self.info_oid(oid)
 
@@ -619,7 +622,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         if not metadata:
             metadata = {}
 
-        pid = self.get_parent_id(path=path)
+        pid = self._get_parent_id(path=path)
         dirname, base = self.split(path)
         size = _get_size_and_seek0(file_like)
 
@@ -632,14 +635,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 base = base.replace("'", "''")
                 name = urllib.parse.quote(base)
                 api_path += "/children('" + name + "')/content"
-                r = self._direct_api("put", api_path, data=file_like, headers={'content-type':'text/plain'})
+                r = self._direct_api("put", api_path, data=file_like, headers={'content-type': 'text/plain'})
             return self._info_from_rest(r, root=dirname)
         else:
             with self._api() as client:
-                r = self.upload_large(self._get_item(client, path=path).api_path + ":", file_like, conflict="fail")
+                r = self._upload_large(self._get_item(client, path=path).api_path + ":", file_like, conflict="fail")
             return self._info_from_rest(r, root=self.dirname(path))
 
-    def upload_large(self, drive_path, file_like, conflict):
+    def _upload_large(self, drive_path, file_like, conflict):
         size = _get_size_and_seek0(file_like)
         r = self._direct_api("post", "%s/createUploadSession" % drive_path, json={"item": {"@microsoft.graph.conflictBehavior": conflict}})
         upload_url = r["uploadUrl"]
@@ -792,7 +795,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             log.debug("Skipped creating already existing folder: %s", path)
             return info.oid
 
-        pid = self.get_parent_id(path=path)
+        pid = self._get_parent_id(path=path)
         log.debug("got pid %s", pid)
 
         f = onedrivesdk.Folder()
@@ -827,7 +830,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def exists_oid(self, oid):
         return self._info_oid(oid, path=False) is not None
 
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         log.debug("info path %s", path)
         try:
             if path == "/":
@@ -871,7 +874,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except CloudFileNotFoundError:
             return False
 
-    def get_parent_id(self, *, path=None, oid=None):
+    def _get_parent_id(self, *, path=None, oid=None):
         log.debug("get parent %s", path)
         if not path and not oid:
             log.error("invalid info %s %s", path, oid)
@@ -887,7 +890,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if i.otype == FILE:
                     raise CloudFileExistsError("file where a folder should be")
 
-        if oid:
+        if oid is not None:
             i = self.info_oid(oid)
             if i:
                 ret = i.pid     # parent id
@@ -919,7 +922,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return path
 
     def _get_item(self, client, *, oid=None, path=None):
-        assert client, "use within a with _api block or else issues"
+        if not client:
+            raise CloudDisconnectedError("Not connected")
         return OneDriveItem(self, oid=oid, path=path)
 
     def _get_path(self, oid=None) -> Optional[str]:
@@ -933,11 +937,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if item is not None:
                     return item.path
 
-                raise ValueError("_get_path requires oid or item")
+                raise ValueError("_box_get_path requires oid or item")
         except CloudFileNotFoundError:
             return None
 
-    def info_oid(self, oid, use_cache=True) -> Optional[OneDriveInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OneDriveInfo]:
         return self._info_oid(oid)
 
     def _info_oid(self, oid, path=None) -> Optional[OneDriveInfo]:
@@ -975,12 +979,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @namespace.setter
     def namespace(self, ns: str):
         self._namespace = ns
-        dat = self._direct_api("get", "/drives/%s/" % self.get_drive_id())
+        dat = self._direct_api("get", "/drives/%s/" % self._get_drive_id())
         self._is_biz = dat["driveType"] != 'personal'
 
     @property
     def namespace_id(self) -> Optional[str]:
-        return self.get_drive_id()
+        return self._get_drive_id()
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):
@@ -992,14 +996,15 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def test_instance(cls):
         return cls.oauth_test_instance(prefix=cls.name.upper(), port_range=(54200, 54210), host_name="localhost")
 
-
     @property
-    def test_namespace(self):
+    def _test_namespace(self):
         return "personal"
+
 
 class OneDriveBusinessTestProvider(OneDriveProvider):
     name = "testodbiz"
-    
+
+
 register_provider(OneDriveBusinessTestProvider)
 
 __cloudsync__ = OneDriveProvider

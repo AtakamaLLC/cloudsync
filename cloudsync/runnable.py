@@ -43,12 +43,12 @@ class Runnable(ABC):
     max_backoff = 1.0
     mult_backoff = 2.0
     in_backoff = 0.0
-    interrupt: threading.Event = None
+    __interrupt: threading.Event = None
     thread_name = None
 
-    def __interruptable_sleep(self, secs):
-        if self.interrupt.wait(secs):
-            self.interrupt.clear()
+    def interruptable_sleep(self, secs):
+        if self.__interrupt.wait(secs):
+            self.__interrupt.clear()
 
     def __increment_backoff(self):
         self.in_backoff = min(self.max_backoff, max(self.in_backoff * self.mult_backoff, self.min_backoff))
@@ -61,35 +61,51 @@ class Runnable(ABC):
             until: lambda returns bool
             sleep: seconds
         """
-        self.interrupt = threading.Event()
+        service_name = self.thread_name or self.__class__
+        log.debug("starting %s", service_name)
+
+        # ordering of these two prevents race condition if you start/stop quickly
+        # see `def started`
         self.stopped = False
+        self.__interrupt = threading.Event()
+
         for _ in time_helper(timeout):
-            self.__interruptable_sleep(sleep)
             if self.stopped:
                 break
 
             try:
                 self.do()
-                self.in_backoff = 0
+                if self.in_backoff > 0:
+                    self.in_backoff = 0
+                    log.debug("%s: clear backoff", service_name)
             except BackoffError:
                 self.__increment_backoff()
-                log.debug("backing off %s", self.__class__)
+                log.debug("%s: backing off %s", service_name, self.in_backoff)
             except Exception:
                 self.__increment_backoff()
-                log.exception("unhandled exception in %s", self.__class__)
+                log.exception("unhandled exception in %s", service_name)
+            except BaseException:
+                self.__increment_backoff()
+                log.exception("very serious exception in %s", service_name)
 
             if self.stopped or (until is not None and until()):
                 break
 
-            if self.in_backoff:
-                log.debug("backoff sleep")
-                self.__interruptable_sleep(self.in_backoff)
+            if self.in_backoff > 0:
+                log.debug("%s: backoff sleep %s", service_name, self.in_backoff)
+                self.interruptable_sleep(self.in_backoff)
+            else:
+                self.interruptable_sleep(sleep)
 
-            if self.stopped:
-                break
+        # clear started flag
+        self.__interrupt = None
 
         if self.__shutdown:
             self.done()
+
+    @property
+    def started(self):
+        return self.__interrupt is not None
 
     @staticmethod
     def backoff():
@@ -102,10 +118,10 @@ class Runnable(ABC):
         """
         Wake up, if do was sleeping, and do things right away.
         """
-        if not self.interrupt:
+        if self.__interrupt is None:
             log.warning("not running, wake ignored")
             return
-        self.interrupt.set()
+        self.__interrupt.set()
 
     def start(self, *, daemon=True, **kwargs):
         """
@@ -115,6 +131,7 @@ class Runnable(ABC):
             self.thread_name = self.__class__.__name__
         self.thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.thread_name)
         self.thread.name = self.thread_name
+        self.stopped = False
         self.thread.start()
 
     @abstractmethod
@@ -142,9 +159,12 @@ class Runnable(ABC):
         Cleanup code goes here.  This is called when a service is stopped.
         """
 
-    def wait(self):
+    def wait(self, timeout=None):
         """
         Wait for the service to stop.
         """
         if self.thread:
-            self.thread.join()
+            self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                raise TimeoutError()
+

@@ -323,8 +323,8 @@ def test_sync_conflict_simul(sync):
         (LOCAL, "/local/stuff1")
     )
 
-    sync.providers[LOCAL].log_debug_state("LOCAL")              # type: ignore
-    sync.providers[REMOTE].log_debug_state("REMOTE")            # type: ignore
+    sync.providers[LOCAL]._log_debug_state("LOCAL")              # type: ignore
+    sync.providers[REMOTE]._log_debug_state("REMOTE")            # type: ignore
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -383,8 +383,8 @@ def test_sync_conflict_resolve(sync, side, keep):
 
     sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
 
-    sync.providers[LOCAL].log_debug_state("LOCAL")      # type: ignore
-    sync.providers[REMOTE].log_debug_state("REMOTE")    # type: ignore
+    sync.providers[LOCAL]._log_debug_state("LOCAL")      # type: ignore
+    sync.providers[REMOTE]._log_debug_state("REMOTE")    # type: ignore
 
     b1 = BytesIO()
     b2 = BytesIO()
@@ -434,12 +434,12 @@ def test_sync_conflict_path(sync):
 
     ent = sync.state.get_all().pop()
 
-    sync.providers[REMOTE].log_debug_state("BEFORE")        # type: ignore
+    sync.providers[REMOTE]._log_debug_state("BEFORE")        # type: ignore
 
     new_oid_l = sync.providers[LOCAL].rename(linfo.oid, local_path2)
     new_oid_r = sync.providers[REMOTE].rename(rinfo.oid, remote_path2)
 
-    sync.providers[REMOTE].log_debug_state("AFTER")         # type: ignore
+    sync.providers[REMOTE]._log_debug_state("AFTER")         # type: ignore
 
     sync.change_state(LOCAL, FILE, path=local_path2,
                       oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
@@ -492,7 +492,7 @@ def test_sync_cycle(sync: SyncMgrMixin):
     sync.run_until_found((REMOTE, rp3))
     rinfo3 = sync.providers[REMOTE].info_path(rp3)
 
-    sync.providers[REMOTE].log_debug_state("BEFORE")                # type: ignore
+    sync.providers[REMOTE]._log_debug_state("BEFORE")                # type: ignore
     tmp1oid = sync.providers[LOCAL].rename(linfo1.oid, templ)
     lp1oid = sync.providers[LOCAL].rename(linfo3.oid, lp1)
     lp3oid = sync.providers[LOCAL].rename(linfo2.oid, lp3)
@@ -510,10 +510,10 @@ def test_sync_cycle(sync: SyncMgrMixin):
     sync.change_state(LOCAL, FILE, path=lp2, oid=lp2oid, hash=linfo1.hash, prior_oid=tmp1oid)
     log.debug("TABLE 4:\n%s", sync.state.pretty_print())
     assert len(sync.state.get_all()) == 3
-    sync.providers[REMOTE].log_debug_state("MIDDLE")                # type: ignore
+    sync.providers[REMOTE]._log_debug_state("MIDDLE")                # type: ignore
 
     sync.run(until=lambda: not sync.state.changeset_len, timeout=1)
-    sync.providers[REMOTE].log_debug_state("AFTER")                 # type: ignore
+    sync.providers[REMOTE]._log_debug_state("AFTER")                 # type: ignore
 
     i1 = sync.providers[REMOTE].info_path(rp1)
     i2 = sync.providers[REMOTE].info_path(rp2)

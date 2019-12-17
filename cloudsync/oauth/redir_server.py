@@ -106,7 +106,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         self.__thread.start()
         log.info('Listening on %s', self.uri())
 
-    def _auth_redir_success(self, _srv, _env, info):
+    def _auth_redir_success(self, _env, info):
         err = ""
         if info and ('error' in info or 'error_description' in info):
             log.debug("auth error")
@@ -159,11 +159,15 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         """Wait for oauth response"""
         self.event.wait(timeout=timeout)
 
-    def uri(self) -> str:
+    def uri(self):
         """Return the base url for this server"""
+        if not self.__api_server:
+            return None
         return self.__api_server.uri("/", self.__host_name)
 
-    def port(self) -> int:
+    def port(self):
         """Port number for this server"""
+        if not self.__api_server:
+            return None
         return self.__api_server.port()
 
