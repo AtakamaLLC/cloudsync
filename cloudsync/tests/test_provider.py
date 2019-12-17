@@ -87,7 +87,7 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep, multiply=2):
+        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
@@ -223,7 +223,7 @@ class ProviderHelper(ProviderBase):
             yield from self.events()
             return
 
-        for _ in time_helper(timeout, sleep=self._test_event_sleep, multiply=2):
+        for _ in time_helper(timeout, sleep=self._test_event_sleep):
             got = False
             for e in self.events():
                 yield e
@@ -353,6 +353,9 @@ def pytest_generate_tests(metafunc):
         kw = metafunc.config.getoption("keyword", "")
         if not provs and kw == "external":
             provs += ["external"]
+
+        if not provs and kw in cloudsync.registry.known_providers():
+            provs += [kw]
 
         if not provs:
             provs += ["mock_oid_cs"]
@@ -634,6 +637,19 @@ def test_event_basic(provider):
                 event_count2 += 1
 
             done = event_count1 > 0 and event_count2 > 0
+
+            event = threading.Event()
+
+            def deadlocker(event):
+                # this hits the api in another thread
+                list(provider.listdir(info2))
+                event.set()
+
+            # make sure nobody holds an rlock during event yields
+            threading.Thread(target=deadlocker, daemon=True, args=(event,)).start()
+
+            # this will fail if there's a deadlock
+            assert event.wait(timeout=provider.default_sleep)
 
     assert done
     assert received_event is not None
