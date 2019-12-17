@@ -150,7 +150,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 self._oauth_config.start_auth(self._oauth_info.auth_url, self._oauth_info.scopes)
                 token = self._oauth_config.wait_auth(self._oauth_info.token_url)
             except Exception as e:
-                log.error("oauth error %s", e)
+                log.exception("oauth error %s", e)
                 self.disconnect()
                 raise CloudTokenError(str(e))
 
@@ -457,6 +457,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return oid
 
 # TEST ################################################
+    def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
+        pass
 
     @classmethod
     def test_instance(cls):

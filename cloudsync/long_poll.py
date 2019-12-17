@@ -16,6 +16,8 @@ class LongPollManager(Runnable):
         self.short_poll = short_poll
         self.long_poll = long_poll
         self.short_poll_only = short_poll_only
+        self.min_backoff = 1.0
+        self.max_backoff = 15
 
     def __call__(self) -> Generator[Event, None, None]:
         log.debug("waiting for events")
@@ -31,20 +33,17 @@ class LongPollManager(Runnable):
                 has_items = True
                 yield event
 
-    def do(self):
+    def do(self):  # this is really "do_once"
         if self.short_poll_only:
-            while not self.stopped:
-                self.__provider_events_pending.set()
-                time.sleep(1)
+            self.__provider_events_pending.set()
+            self.interrupt.wait(1)
         else:
-            while not self.stopped:
-                try:
-                    log.debug("about to long poll")
-                    self.long_poll(self.long_poll_timeout)
-                    log.debug("long poll finished, about to check events")
-                    self.__provider_events_pending.set()  # don't condition on _long_poll(), we run if there's a timeout or event
-                    log.debug("events check complete")
-                except Exception as e:
-                    log.exception('Unhandled exception during long poll %s', e)
-                    time.sleep(15)
-
+            try:
+                log.debug("about to long poll")
+                self.long_poll(self.long_poll_timeout)
+                log.debug("long poll finished, about to check events")
+                self.__provider_events_pending.set()  # don't condition on _long_poll(), we run if there's a timeout or event
+                log.debug("events check complete")
+            except Exception as e:
+                log.exception('Unhandled exception during long poll %s', e)
+                raise  # Let runnable do the regular backoff
