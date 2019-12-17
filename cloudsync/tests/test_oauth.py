@@ -70,6 +70,7 @@ def test_oauth_threaded(wb):
 
     for t in threads:
         t.join(timeout=10)
+        assert not t.is_alive()
 
     log.debug("errs %s", tfail)
     assert tpass == 4

@@ -287,14 +287,15 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         log.debug("inside _short_poll() cursor = %s", self.current_cursor)
         with self._api() as client:
             response = client.events().get_events(limit=100, stream_position=self.current_cursor)
-            new_position = response.get('next_stream_position')
-            change: BoxEvent
-            if new_position:
-                self.current_cursor = new_position
-            else:
-                log.error("No new cursor from Box\n", stack_info=True)
-            for change in (i for i in response.get('entries') if i.get('event_type')):
-                change_source = change.get('source')
+        new_position = response.get('next_stream_position')
+        change: BoxEvent
+        if new_position:
+            self.current_cursor = new_position
+        else:
+            log.error("No new cursor from Box\n", stack_info=True)
+        for change in (i for i in response.get('entries') if i.get('event_type')):
+            change_source = change.get('source')
+            with self._api() as client:
                 if self.__seen_events.get(change.event_id):
                     change_source_info = ""
                     if change_source:
@@ -328,14 +329,15 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     log.debug("ignoring event type %s source type %s", change.get('event_type'), type(change_source))
                     continue
 
-                event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_position)
+            event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_position)
 
-                old_path = self.__cache.get_path(oid)
-                old_type = self.__cache.get_type(oid=oid)
-                if (path and old_path != path) or old_type == DIRECTORY:
-                    self.__cache.delete(path=path)
+            old_path = self.__cache.get_path(oid)
+            old_type = self.__cache.get_type(oid=oid)
+            if (path and old_path != path) or old_type == DIRECTORY:
+                self.__cache.delete(path=path)
 
-                yield event
+            # this MUST NOT BE IN A WITH BLOCK
+            yield event
 
     # noinspection DuplicatedCode
     def _walk(self, path, oid):

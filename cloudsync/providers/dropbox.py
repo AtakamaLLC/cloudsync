@@ -70,8 +70,7 @@ class _FolderIterator:
             self.backoff = lpres.backoff
 
         if lpres.changes:
-            self.ls_res = self.api('files_list_folder_continue',
-                               cursor)
+            self.ls_res = self.api('files_list_folder_continue', cursor)
 
     def __next__(self):
         if self.ls_res:
