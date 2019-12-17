@@ -143,8 +143,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                                       client_secret=self._oauth_config.app_secret,
                                       access_token=access_token,
                                       refresh_token=refresh_token,
-                                      store_tokens=self._store_refresh_token,
-                                      )
+                                      store_tokens=self._store_refresh_token)
 
                         box_session = AuthorizedSession(auth, **box_kwargs)
                         self.__client = Client(auth, box_session)

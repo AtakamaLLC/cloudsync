@@ -1631,7 +1631,9 @@ def test_authenticate(config_provider):
         pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
-    log.info(creds);
+    # log.info(creds)
+    provider.connect(creds)
+    provider.disconnect()
     provider.connect(creds)
 
     modded = False
