@@ -31,12 +31,12 @@ class Runnable(ABC):
     max_backoff = 1.0
     mult_backoff = 2.0
     in_backoff = 0.0
-    interrupt: threading.Event = None
+    __interrupt: threading.Event = None
     thread_name = None
 
-    def __interruptable_sleep(self, secs):
-        if self.interrupt.wait(secs):
-            self.interrupt.clear()
+    def interruptable_sleep(self, secs):
+        if self.__interrupt.wait(secs):
+            self.__interrupt.clear()
 
     def __increment_backoff(self):
         self.in_backoff = min(self.max_backoff, max(self.in_backoff * self.mult_backoff, self.min_backoff))
@@ -48,7 +48,7 @@ class Runnable(ABC):
         # ordering of these two prevents race condition if you start/stop quickly
         # see `def started`
         self.stopped = False
-        self.interrupt = threading.Event()
+        self.__interrupt = threading.Event()
 
         for _ in time_helper(timeout):
             if self.stopped:
@@ -74,29 +74,29 @@ class Runnable(ABC):
 
             if self.in_backoff > 0:
                 log.debug("%s: backoff sleep %s", service_name, self.in_backoff)
-                self.__interruptable_sleep(self.in_backoff)
+                self.interruptable_sleep(self.in_backoff)
             else:
-                self.__interruptable_sleep(sleep)
+                self.interruptable_sleep(sleep)
 
         # clear started flag
-        self.interrupt = None
+        self.__interrupt = None
 
         if self.__shutdown:
             self.done()
 
     @property
     def started(self):
-        return self.interrupt is not None
+        return self.__interrupt is not None
 
     @staticmethod
     def backoff():
         raise BackoffError()
 
     def wake(self):
-        if self.interrupt is None:
+        if self.__interrupt is None:
             log.warning("not running, wake ignored")
             return
-        self.interrupt.set()
+        self.__interrupt.set()
 
     def start(self, *, daemon=True, **kwargs):
         if self.thread_name is None:
