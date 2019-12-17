@@ -49,7 +49,7 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     return wrapped
 
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov, connect=True):
+    def __init__(self, prov, connect=True, isolation_string=None):
         self.api_retry = True
         self.prov = prov
 
@@ -57,7 +57,9 @@ class ProviderHelper(ProviderBase):
         self._test_event_timeout = getattr(self.prov, "_test_event_timeout", 20)
         self._test_event_sleep = getattr(self.prov, "_test_event_sleep", 1)
         self._test_creds = getattr(self.prov, "_test_creds", {})
-        self.test_root: Optional[str] = None
+        if not isolation_string:
+            isolation_string = os.urandom(16).hex()
+        self.test_root: str = self.join(self.test_parent, isolation_string)
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
@@ -71,11 +73,6 @@ class ProviderHelper(ProviderBase):
         ns = self.prov.list_ns()
         if ns:
             self.prov.namespace = self.prov._test_namespace
-
-        if not self.test_root:
-            # if the provider class doesn't specify a testing root
-            # then just make one up
-            self.test_root = self.join(self.test_parent, os.urandom(16).hex())
 
         log.debug("mkdir %s", self.test_root)
         self.prov.mkdir(self.test_root)
@@ -244,7 +241,8 @@ class ProviderHelper(ProviderBase):
 
     def test_cleanup(self, timeout=None, until=None):
         info = self.prov.info_path(self.test_root)
-        self.__cleanup(info.oid)
+        if info:
+            self.__cleanup(info.oid)
 
     def prime_events(self):
         self.current_cursor = self.latest_cursor
@@ -266,16 +264,27 @@ class ProviderHelper(ProviderBase):
         self.prov.connection_id = val
 
 
-def mixin_provider(prov, connect=True):
+def mixin_provider(prov, connect=True, isolation_string=None, instances=1):
     assert prov
     assert isinstance(prov, Provider)
+    assert instances > 0
 
-    prov = ProviderHelper(prov, connect=connect)         # type: ignore
+    providers = []
 
-    yield prov
+    if not isolation_string and instances > 1:
+        isolation_string = os.urandom(16).hex()
+
+    for i in range(instances):
+        curr_prov = ProviderHelper(prov, connect=connect, isolation_string=isolation_string)         # type: ignore
+        providers.append(curr_prov)
+    if len(providers) == 1:
+        yield providers[0]
+    else:
+        yield providers
 
     if connect:
-        prov.test_cleanup()
+        for curr_prov in providers:
+            curr_prov.test_cleanup()
 
 
 @pytest.fixture
@@ -302,6 +311,11 @@ def provider_fixture(config_provider):
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+
+@pytest.fixture(name="two_scoped_providers")
+def scoped_provider_fixture(config_provider):
+    yield from mixin_provider(config_provider, instances=2)
 
 
 @pytest.fixture(name="unconnected_provider")
@@ -1785,4 +1799,18 @@ def test_provider_interface(unconnected_provider):
         log.error(msg)
     assert len(prov_dir) == 0
 
+
+def test_cache(two_scoped_providers):
+    (prov1, prov2) = two_scoped_providers
+    assert prov1 is not prov2
+    folder_oid = prov1.mkdir("/folder")
+    file_info = prov1.create("/folder/file", BytesIO(b"hello, world"))
+    assert prov1.info_path("/folder")
+    assert prov2.info_path("/folder")
+    assert prov1.info_path("/folder/file")
+    assert prov2.info_path("/folder/file")
+
+    prov2.delete(file_info.oid)
+    assert prov1.exists_path("/folder/file")
+    assert not prov2.exists_path("/folder/file")
 
