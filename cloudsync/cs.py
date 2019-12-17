@@ -253,9 +253,10 @@ class CloudSync(Runnable):
         self.nmgr.done()
 
     def wait(self, timeout=None):
-        self.sthread.join(timeout=timeout)
-        self.ethreads[0].join(timeout=timeout)
-        self.ethreads[1].join(timeout=timeout)
+        for t in (self.sthread, self.ethreads[0], self.ethreads[1]):
+            t.join(timeout=timeout)
+            if t.is_alive():
+                raise TimeoutError()
 
     def handle_notification(self, notification):
         pass

@@ -39,12 +39,35 @@ def test_runnable():
         time.sleep(0.1)
     testrun.stop()
     thread.join(timeout=1)
+    assert testrun.stopped
+    assert not thread.is_alive()
 
     assert testrun.stopped == 1
 
     testrun.called = 0
     testrun.start(until=lambda: testrun.called > 0)
-    testrun.wait(timeout=1)
+    testrun.wait(timeout=2)
+
+
+def test_timeout():
+    class TestRun(Runnable):
+        def __init__(self):
+            self.cleaned = False
+            self.called = 0
+
+        def do(self):
+            self.called += 1
+            time.sleep(10)
+
+        def done(self):
+            self.cleaned = True
+
+    testrun = TestRun()
+    testrun.start()
+    while not testrun.started:
+        time.sleep(.01)
+    with pytest.raises(TimeoutError):
+        testrun.wait(timeout=.01)
 
 
 def test_runnable_wake():
@@ -88,4 +111,5 @@ def test_runnable_wake():
     assert testrun.called == 2
 
     testrun.stop()
-    thread.join(timeout=1)
+    thread.join(timeout=2)
+    assert not thread.is_alive()

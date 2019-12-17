@@ -44,10 +44,12 @@ class Runnable(ABC):
     def run(self, *, timeout=None, until=None, sleep=0.001):
         service_name = self.thread_name or self.__class__
         log.debug("starting %s", service_name)
+
         # ordering of these two prevents race condition if you start/stop quickly
         # see `def started`
         self.stopped = False
         self.interrupt = threading.Event()
+
         for _ in time_helper(timeout):
             if self.stopped:
                 break
@@ -76,8 +78,8 @@ class Runnable(ABC):
             else:
                 self.__interruptable_sleep(sleep)
 
-            if self.stopped:
-                break
+        # clear started flag
+        self.interrupt = None
 
         if self.__shutdown:
             self.done()
@@ -125,4 +127,7 @@ class Runnable(ABC):
     def wait(self, timeout=None):
         if self.thread:
             self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                raise TimeoutError()
+
 
