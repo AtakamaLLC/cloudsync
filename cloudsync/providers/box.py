@@ -182,7 +182,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             self.__box._mutex.__enter__()
             return self.__client
 
-        def __exit__(self, ty, ex, tb):
+        def __exit__(self, ty, ex, tb):  # pylint: disable=too-many-branches
             self.__box._mutex.__exit__(ty, ex, tb)
 
             if ex:
@@ -898,7 +898,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     @classmethod
     def test_instance(cls):
         instance = cls.oauth_test_instance(prefix=cls.name.upper(), token_key='jwt_token')
-        instance._test_event_timeout = LongPollManager.long_poll_timeout + 10
+        instance._test_event_timeout = LongPollManager.long_poll_timeout + 10  # pylint: disable=protected-access, attribute-defined-outside-init
         return instance
 
     def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use

@@ -1,6 +1,5 @@
 import threading
 import logging
-import time
 from typing import Callable, Generator, Optional
 from cloudsync import Runnable, Event
 log = logging.getLogger(__name__)
