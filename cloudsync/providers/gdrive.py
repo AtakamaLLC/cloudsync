@@ -677,7 +677,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             return True
         return self.info_path(path) is not None
 
-    def _get_parent_id(self, path):  # Public method?
+    def _get_parent_id(self, path):
         if not path:
             return None
 
