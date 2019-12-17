@@ -637,7 +637,6 @@ def test_event_basic(provider):
             # this will fail if there's a deadlock
             assert event.wait(timeout=provider.default_sleep)
 
-
     assert done
     assert received_event is not None
     assert received_event.oid
