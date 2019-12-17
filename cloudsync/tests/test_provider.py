@@ -314,7 +314,7 @@ def scoped_provider_fixture(config_provider):
 
 
 @pytest.fixture(name="two_scoped_providers")
-def scoped_provider_fixture(config_provider):
+def two_scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider, instances=2)
 
 
