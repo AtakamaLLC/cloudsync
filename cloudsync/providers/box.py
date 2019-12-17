@@ -295,14 +295,17 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             else:
                 log.error("No new cursor from Box\n", stack_info=True)
             for change in (i for i in response.get('entries') if i.get('event_type')):
+                change_source = change.get('source')
                 if self.__seen_events.get(change.event_id):
-                    log.debug("skipped duplicate event %s", change.__dict__)
+                    change_source_info = ""
+                    if change_source:
+                        change_source_info = str(change_source)
+                    log.debug("skipped duplicate event %s, %s", change.event_id, change_source_info)
                     continue
                 log.debug("got event %s %s", change.event_id, self.current_cursor)
                 log.debug("event type is %s", change.get('event_type'))
                 self.__seen_events[change.event_id] = time.monotonic()
                 ts = arrow.get(change.get('created_at')).float_timestamp
-                change_source = change.get('source')
                 log.debug("change source is %s", change_source)
                 previous_sequence: int = self.__event_sequence.get(change_source.id)
                 if previous_sequence:
