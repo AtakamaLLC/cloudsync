@@ -35,7 +35,7 @@ class LongPollManager(Runnable):
     def do(self):  # this is really "do_once"
         if self.short_poll_only:
             self.__provider_events_pending.set()
-            self.interrupt.wait(1)
+            self.interruptable_sleep(1)
         else:
             try:
                 log.debug("about to long poll")

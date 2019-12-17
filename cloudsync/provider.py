@@ -150,9 +150,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 self._oauth_config.start_auth(self._oauth_info.auth_url, self._oauth_info.scopes)
                 token = self._oauth_config.wait_auth(self._oauth_info.token_url)
             except Exception as e:
-                log.exception("oauth error %s", e)
+                log.error("oauth error %s", repr(e))
                 self.disconnect()
-                raise CloudTokenError(str(e))
+                raise CloudTokenError(repr(e))
 
             return {"refresh_token": token.refresh_token,
                     "access_token": token.access_token}
