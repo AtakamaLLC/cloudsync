@@ -90,7 +90,7 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep, multiply=1):
+        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
@@ -226,7 +226,7 @@ class ProviderHelper(ProviderBase):
             yield from self.events()
             return
 
-        for _ in time_helper(timeout, sleep=self._test_event_sleep, multiply=2):
+        for _ in time_helper(timeout, sleep=self._test_event_sleep):
             got = False
             for e in self.events():
                 yield e
