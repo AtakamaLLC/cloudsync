@@ -323,7 +323,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Joins a list of path strings in a provider-specific manner.
 
         Args:
-            *paths: zero or more paths
+            \*paths: zero or more paths
         """
         res = ""
         rl: List[str] = []

@@ -16,4 +16,3 @@ class OAuthProviderInfo(NamedTuple):
     auth_url: str
     token_url: str
     scopes: List[str]
-
