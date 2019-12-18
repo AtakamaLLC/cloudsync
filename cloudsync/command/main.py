@@ -12,6 +12,7 @@ log.setLevel(logging.INFO)
 
 
 def main():
+    """cloudsync command line main"""
     parser = argparse.ArgumentParser(description='cloudsync - monitor and sync between cloud providers')
     cmds = parser.add_subparsers(title="Commands")
     cmds.metavar = "Commands:"

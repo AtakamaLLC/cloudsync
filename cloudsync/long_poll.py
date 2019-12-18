@@ -6,6 +6,10 @@ log = logging.getLogger(__name__)
 
 
 class LongPollManager(Runnable):
+    """
+    Class for helping providers with long poll support avoid potential threading issues
+    arising from long running api requests.
+    """
     long_poll_timeout = 120
 
     def __init__(self, short_poll: Callable[[], Generator[Event, None, None]],

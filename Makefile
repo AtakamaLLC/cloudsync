@@ -20,6 +20,7 @@ _lint:
 
 test:
 	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests --full-trace --timeout=10
+	docs/test.sh
 
 coverage:
 	pytest --cov-report html --cov=cloudsync -n=8 cloudsync/tests

@@ -9,3 +9,6 @@ Classes: Provider,  OAuth
    :members:
    :undoc-members:
 
+.. autoclass:: cloudsync.oauth.OAuthProviderInfo
+   :members:
+   :undoc-members:

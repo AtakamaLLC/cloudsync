@@ -42,6 +42,9 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    """
+    Box.com cloud provider
+    """
     _events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                         'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
@@ -56,6 +59,12 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     default_sleep = 10
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
+        """
+        Create a new Box.com cloud provider connection.
+
+        Args:
+            oauth_config: the oauth config for your client app
+        """
         super().__init__()
 
         self.__cursor: Optional[Cursor] = None

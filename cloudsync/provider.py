@@ -1,3 +1,6 @@
+"""
+Module exports the 'Provider' abstract base class as well as the 'Hash', 'Cursor' and 'Creds' types
+"""
 from abc import ABC, abstractmethod
 import re
 import os
@@ -316,6 +319,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 # HELPER
     @classmethod
     def join(cls, *paths):
+        """
+        Joins a list of path strings in a provider-specific manner.
+
+        Args:
+            paths: zero or more paths
+        """
         res = ""
         rl: List[str] = []
         for path in paths:
@@ -342,6 +351,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return res
 
     def split(self, path):
+        """Splits a path into a dirname, filename, just like 1os.path.split()1"""
         # todo cache regex
         index = path.rfind(self.sep)
         if self.alt_sep:
@@ -354,6 +364,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return path[:index], path[index+1:]
 
     def normalize_path(self, path: str):
+        """Used internally for comparing paths in a case and sep insensitive manner, as appropriate."""
         norm_path = path.rstrip(self.sep)
         if self.sep in ["\\", "/"]:
             parts = re.split(r'[\\/]+', norm_path)
@@ -365,6 +376,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return norm_path
 
     def is_subpath(self, folder, target, strict=False):
+        """True if the target is within the folder.
+
+        Args:
+            folder: the directory
+            target: the potential sub-file or folder
+            strict: whether to return True if folder==target
+        """
         sep = self.sep
         alt_sep = self.alt_sep
         if alt_sep:
@@ -395,6 +413,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return False
 
     def replace_path(self, path, from_dir, to_dir):
+        """Replaces from_dir with to_dir in path, but only if from_dir `is_subpath` of path."""
         relative = self.is_subpath(from_dir, path)
         if relative:
             retval = to_dir + (relative if relative != self.sep else "")
@@ -402,6 +421,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb):
+        """True if two paths are equal, uses normalize_path()."""
         if patha is None and pathb is None:
             return True
         elif patha is None or pathb is None:
@@ -410,10 +430,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self.normalize_path(patha) == self.normalize_path(pathb)
 
     def dirname(self, path: str):
+        """Just like `os.dirname`, but for provider paths."""
         ret, _ = self.split(path)
         return ret
 
     def basename(self, path: str):
+        """Just like `os.basename`, but for provider paths."""
         _, ret = self.split(path)
         return ret
 
@@ -429,6 +451,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 raise CloudFileExistsError(parent_path)
 
     def mkdirs(self, path):
+        """Makes a directory and intervening directories, returns the oid of the leaf"""
         log.debug("mkdirs %s", path)
         try:
             oid = self.mkdir(path)
