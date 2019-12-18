@@ -254,10 +254,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise CloudCursorError(val)
         self.__cursor = val
 
-    def _long_poll(self, timeout=None):
-        if timeout is None:
-            timeout = self._long_poll_timeout
-        log.debug("inside _long_poll")
+    def _long_poll(self, timeout: float) -> bool:
+        # we need to always return true, since box has no guarantees
+        # this is just an elaborate sleep function
+        log.debug("inside _long_poll %s", timeout)
         if not self.__access_token:
             log.warning("No access token in long poll")
         try:
@@ -280,10 +280,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                                                     timeout=timeout)  # long poll
             srv_resp_dict = srv_resp.json()
             log.debug("server message is %s", srv_resp_dict.get('message'))
-            return srv_resp_dict.get('message') == 'new_change'
+            return True
         except requests.exceptions.ReadTimeout:  # need new long poll server:
             log.debug('Timeout during long poll')
-            return False
+            return True
         # TODO except boxerror.too_many_retries (or whatever the exception is called)
         finally:
             self.__long_poll_config['retries_remaining'] = self.__long_poll_config.get('retries_remaining', 1) - 1
