@@ -1853,6 +1853,9 @@ def test_cache(two_scoped_providers):
 
     # apparently, the provider does use caching, so now proceed to ensure it is used correctly
 
+    # test to make sure the provider implements _clear_cache. all caching providers must do this.
+    assert prov1.prov._clear_cache()
+
     # test to make sure that deleting a folder causes the folder's kids to be uncached
     folder_name = "/folder"
     file_name = folder_name + "/file1"
@@ -1874,6 +1877,7 @@ def test_cache(two_scoped_providers):
     new_file_name = new_folder_name + "/file2"
     folder_oid = prov1.mkdir(old_folder_name)
     prov1.create(old_file_name, BytesIO(b"hello, world"))
+    prov1.prov._clear_cache()
     assert prov1.exists_path(old_file_name)
     prov1.rename(folder_oid, new_folder_name)
     assert not prov1.exists_path(old_file_name)

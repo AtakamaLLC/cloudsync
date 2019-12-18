@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
 
+
 class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
     pids: List[str] = []
     # oid, hash, otype and path are included here to satisfy a bug in mypy,
@@ -72,7 +73,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._creds = None
         self._client = None
         self._mutex = threading.Lock()
-        self._ids = {"/": "root"}
+        self._ids = {}
         self._trashed_ids: Dict[str, str] = {}
         self._oauth_config = oauth_config
 
@@ -250,7 +251,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                             fields='id',
                             )
             self.__root_id = res['id']
-            self._ids['/'] = self.__root_id
+            self._ids[self.sep] = self.__root_id
         return self.__root_id
 
     def disconnect(self):
@@ -624,7 +625,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return self._info_oid(oid) is not None
 
     def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:  # pylint: disable=too-many-locals
-        if path == "/":
+        if path == self.sep:
+            self._ids[self.sep] = self._root_id
             return self.info_oid(self._root_id)
 
         try:
@@ -676,18 +678,24 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         return GDriveInfo(otype, oid, fhash, path, shared=shared, readonly=readonly, pids=pids)
 
     def exists_path(self, path) -> bool:
-        if path in self._ids:
+        if self._cached_id(path):
             return True
         return self.info_path(path) is not None
 
-    def _get_parent_id(self, path):  # Public method?
+    def _cached_id(self, path):
+        if path == self.sep:
+            return self._root_id
+        else:
+            return self._ids.get(path)
+
+    def _get_parent_id(self, path):
         if not path:
             return None
 
         parent, _ = self.split(path)
 
         if parent == path:
-            return self._ids.get(parent)
+            return self._cached_id(parent)
 
         # get the latest version of the parent path
         # it may have changed, or case may be different, etc.
@@ -696,7 +704,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError("parent %s must exist" % parent)
 
         # cache the latest version
-        return self._ids[info.path]
+        return self._cached_id(info.path)
 
     def _path_oid(self, oid, info=None, use_cache=True) -> Optional[str]:
         """convert oid to path"""
@@ -730,6 +738,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         info.path = self._path_oid(oid, info, use_cache=use_cache)
         return info
 
+    # noinspection PyMethodOverriding
     @staticmethod
     def hash_data(file_like) -> str:
         # get a hash from a filelike that's the same as the hash i natively use
@@ -767,6 +776,19 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     @classmethod
     def test_instance(cls):
         return cls.oauth_test_instance(prefix="GDRIVE", token_sep=",")
+
+    def _clear_cache(self, *, oid=None, path=None):
+        if oid is None and (path is None or path == '/'):
+            self._ids = {}
+            self._trashed_ids = {}
+        else:
+            for coid, cpath in list(self._ids.items()):
+                if coid == oid or self.is_subpath(path, cpath):
+                    self._ids.pop(cpath)
+            for coid, cpath in list(self._trashed_ids.items()):
+                if coid == oid or self.is_subpath(path, cpath):
+                    self._ids.pop(cpath)
+        return True
 
 
 __cloudsync__ = GDriveProvider
