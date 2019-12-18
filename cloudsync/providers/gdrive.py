@@ -504,7 +504,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                         if possible_conflict.oid != oid:  # delete the target if we're not just changing case
                             self.delete(possible_conflict.oid)
 
-        if not old_path:
+        if not old_path:  # TODO: this will break if the kids are cached but not the parent folder
             for cpath, coid in list(self._ids.items()):
                 if coid == oid:
                     old_path = cpath
@@ -518,7 +518,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         self._api('files', 'update', body=body, fileId=oid, addParents=add_pids_str, removeParents=remove_pids_str, fields='id')
 
-        if old_path:
+        if old_path:  # TODO: this will break if the kids are cached but not the parent folder
             for cpath, coid in list(self._ids.items()):
                 relative = self.is_subpath(old_path, cpath)
                 if relative:

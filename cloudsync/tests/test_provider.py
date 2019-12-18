@@ -32,6 +32,7 @@ else:
     # but we can't actually derive from it or stuff will break
     ProviderBase = object
 
+
 def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     count = 4
     def wrapped(prov, *args, **kwargs):
@@ -1853,12 +1854,27 @@ def test_cache(two_scoped_providers):
     # apparently, the provider does use caching, so now proceed to ensure it is used correctly
 
     # test to make sure that deleting a folder causes the folder's kids to be uncached
-    folder_oid = prov1.mkdir("/folder")
-    file_info = prov1.create("/folder/file", BytesIO(b"hello, world"))
-    assert prov1.exists_path("/folder")
-    assert prov1.exists_path("/folder/file")
-
-    prov2.delete(file_info.oid)
+    folder_name = "/folder"
+    file_name = folder_name + "/file1"
+    folder_oid = prov1.mkdir(folder_name)
+    file1_info = prov1.create(file_name, BytesIO(b"hello, world"))
+    assert prov1.exists_path(folder_name)
+    assert prov1.exists_path(file_name)
+    # delete the file using provider2, emptying the folder, so that provider1 can delete the folder while the file
+    # still exists in the cache, but not on the shared filesystem
+    prov2.delete(file1_info.oid)
     prov1.delete(folder_oid)
-    assert not prov1.exists_path("/folder/file")  # file should have disappeared on prov1 when the folder was deleted
+    # file should have been removed from the cache on prov1 when the folder was deleted
+    assert not prov1.exists_path("/folder/file1")
 
+    # test to make sure that renaming a folder renames the kids
+    old_folder_name = "/folder2"
+    new_folder_name = "/folder3"
+    old_file_name = old_folder_name + "/file2"
+    new_file_name = new_folder_name + "/file2"
+    folder_oid = prov1.mkdir(old_folder_name)
+    prov1.create(old_file_name, BytesIO(b"hello, world"))
+    assert prov1.exists_path(old_file_name)
+    prov1.rename(folder_oid, new_folder_name)
+    assert not prov1.exists_path(old_file_name)
+    assert prov1.exists_path(new_file_name)
