@@ -612,10 +612,13 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             except PermissionError:
                 log.warning("Unable to delete oid %s.", debug_sig(oid))
 
+        path = self._path_oid(oid, info=info)
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
                 self._trashed_ids[currpath] = self._ids[currpath]
                 del self._ids[currpath]
+            elif self.is_subpath(path, currpath):
+                self._ids.pop(currpath)
 
     def exists_oid(self, oid):
         return self._info_oid(oid) is not None

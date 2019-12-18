@@ -10,6 +10,7 @@ import time
 
 import msgpack
 import pytest
+from _pytest.fixtures import FixtureLookupError
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
@@ -264,19 +265,21 @@ class ProviderHelper(ProviderBase):
         self.prov.connection_id = val
 
 
-def mixin_provider(prov, connect=True, isolation_string=None, instances=1):
+def mixin_provider(prov, connect=True):
     assert prov
-    assert isinstance(prov, Provider)
-    assert instances > 0
+    if not isinstance(prov, List):
+        prov = [prov]
+    for curr_prov in prov:
+        assert isinstance(curr_prov, Provider)
+    instances = len(prov)
 
-    providers = []
-
-    if not isolation_string and instances > 1:
+    isolation_string = None
+    if instances > 1:
         isolation_string = os.urandom(16).hex()
 
+    providers = []
     for i in range(instances):
-        curr_prov = ProviderHelper(prov, connect=connect, isolation_string=isolation_string)         # type: ignore
-        providers.append(curr_prov)
+        providers.append(ProviderHelper(prov[i], connect=connect, isolation_string=isolation_string))  # type: ignore
     if len(providers) == 1:
         yield providers[0]
     else:
@@ -292,15 +295,28 @@ def provider_params():
     return None
 
 
+def config_provider_impl(request, provider_name, instances):
+    provs = list()
+    for i in range(instances):
+        try:
+            provs.append(request.getfixturevalue("cloudsync_provider"))
+        except FixtureLookupError:
+            if provider_name == "external":
+                raise
+            provs.append(cloudsync.registry.get_provider(provider_name).test_instance())
+    if len(provs) == 1:
+        provs = provs[0]
+    yield provs
+
+
 @pytest.fixture(scope="module")
-def config_provider(request, provider_name):
-    try:
-        yield request.getfixturevalue("cloudsync_provider")
-    except Exception:
-        # this should be a _pytest.fixtures.FixtureLookupError
-        if provider_name == "external":
-            raise
-        yield cloudsync.registry.get_provider(provider_name).test_instance()
+def config_provider(request, provider_name, instances=1):
+    yield from config_provider_impl(request, provider_name, instances)
+
+
+@pytest.fixture(scope="module")
+def two_config_providers(request, provider_name, instances=2):
+    yield from config_provider_impl(request, provider_name, instances)
 
 
 @pytest.fixture(name="provider", scope="module")
@@ -314,8 +330,8 @@ def scoped_provider_fixture(config_provider):
 
 
 @pytest.fixture(name="two_scoped_providers")
-def two_scoped_provider_fixture(config_provider):
-    yield from mixin_provider(config_provider, instances=2)
+def two_scoped_provider_fixture(two_config_providers):
+    yield from mixin_provider(two_config_providers)
 
 
 @pytest.fixture(name="unconnected_provider")
@@ -324,8 +340,9 @@ def scoped_provider_fixture_unconnected(config_provider):
 
 
 import cloudsync.providers
-
 _registered = False
+
+
 def pytest_generate_tests(metafunc):
     global _registered
     if not _registered:
@@ -1819,14 +1836,29 @@ def test_provider_interface(unconnected_provider):
 def test_cache(two_scoped_providers):
     (prov1, prov2) = two_scoped_providers
     assert prov1 is not prov2
+    assert prov1.prov is not prov2.prov
+
+    # First, determine if the provider uses caching
+    #   - create a file using prov1
+    #   - check existence using prov2 to cache it
+    #   - delete the file using prov1
+    #   - check existence using prov2. If it exists, it's cached. If not, then the provider class isn't caching
+    cache_test_info = prov1.create("/cachetest", BytesIO(b"cachetests"))
+    if not prov2.exists_path("/cachetest"):
+        pytest.skip("can't test caching if provider does not implement shared storage mechanism")
+    prov1.delete(cache_test_info.oid)
+    if not prov2.exists_path("/cachetest"):
+        pytest.skip("provider apparently doesn't use caching")
+
+    # apparently, the provider does use caching, so now proceed to ensure it is used correctly
+
+    # test to make sure that deleting a folder causes the folder's kids to be uncached
     folder_oid = prov1.mkdir("/folder")
     file_info = prov1.create("/folder/file", BytesIO(b"hello, world"))
-    assert prov1.info_path("/folder")
-    assert prov2.info_path("/folder")
-    assert prov1.info_path("/folder/file")
-    assert prov2.info_path("/folder/file")
+    assert prov1.exists_path("/folder")
+    assert prov1.exists_path("/folder/file")
 
     prov2.delete(file_info.oid)
-    assert prov1.exists_path("/folder/file")
-    assert not prov2.exists_path("/folder/file")
+    prov1.delete(folder_oid)
+    assert not prov1.exists_path("/folder/file")  # file should have disappeared on prov1 when the folder was deleted
 
