@@ -1,7 +1,3 @@
-"""
-Locally running OAuth redirect server for desktop authentication
-"""
-
 import logging
 import sys
 import random
@@ -25,6 +21,11 @@ def _is_windows():
 
 
 class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
+    """
+    Locally running OAuth redirect server for desktop authentication
+
+    from cloudsync.oauth import OAuthRedirServer
+    """
     SHUFFLE_PORTS: bool = True
 
     def __init__(self, *, html_generator: Callable[[bool, str], str] = None,

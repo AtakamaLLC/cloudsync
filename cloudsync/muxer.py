@@ -1,7 +1,3 @@
-"""
- muxer.Muxer : turn generators into subscribable streams
-"""
-
 import queue
 from threading import Lock
 from collections import namedtuple
@@ -9,6 +5,11 @@ from typing import Dict, Any, Callable
 
 
 class Muxer:
+    """
+    Turn generators into subscribable streams
+
+    from cloudsync.muxer import Muxer
+    """
     Entry = namedtuple('Entry', 'genref listeners, lock')
 
     already: Dict[Any, Entry] = {}

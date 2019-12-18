@@ -178,6 +178,9 @@ def is_subpath(folder, target):
 # windows compatible temp files
 
 class TemporaryFile:
+    """
+    File-like for NamedTemporaryFile
+    """
     def __init__(self, name, io, delete):
         self.name = name
         self.__io = io
@@ -195,6 +198,7 @@ class TemporaryFile:
                 os.unlink(self.name)
             except FileNotFoundError:
                 pass
+
 
 def NamedTemporaryFile(mode='w+b', bufsize=-1, suffix='', prefix='tmp', dir=None, delete=True):         # pylint: disable=redefined-builtin
     """

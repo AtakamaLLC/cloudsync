@@ -19,7 +19,13 @@ OAuthError = OAuth2Error
 # this class delibarately not strict, since it can contain provider-specific configuration
 # applications can derive from this class and provide appropriate defaults
 
+
 class OAuthToken:       # pylint: disable=too-few-public-methods
+    """
+    Just a class representation of the oauth2 standard token.
+
+    See: https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
+    """
     def __init__(self, data=None, **kwargs):
         if data is None:
             data = kwargs
@@ -31,6 +37,17 @@ class OAuthToken:       # pylint: disable=too-few-public-methods
 
 
 class OAuthConfig:
+    """
+    Required argument for providers that return True to uses_oauth.
+
+    Args:
+        app_id: also known as "client id", provided for your application by the cloud provider
+        app_secret: also known as "client secret", provided for your application by the cloud provider
+        manual_mode: set to True, if you don't intend to use the redirect server
+        redirect_server: a server that, at a minimum, supports the uri() command, probably should just change this to uri()
+        port_range: the range of valid ports for your registered app (some providers burden you with this)
+        host_name: defaults to 127.0.0.1
+    """
     def __init__(self, *, app_id: str, app_secret: str, 
                  manual_mode: bool = False, 
                  redirect_server: Optional[OAuthRedirServer] = None, 
