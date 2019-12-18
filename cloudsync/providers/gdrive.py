@@ -73,7 +73,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         self._creds = None
         self._client = None
         self._mutex = threading.Lock()
-        self._ids = {}
+        self._ids: Dict[str, str] = {}
         self._trashed_ids: Dict[str, str] = {}
         self._oauth_config = oauth_config
 
