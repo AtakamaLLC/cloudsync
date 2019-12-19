@@ -34,7 +34,6 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
 from cloudsync.utils import debug_sig
-from json import JSONDecodeError
 
 
 class OneDriveFileDoneError(Exception):
@@ -306,7 +305,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 dat = req.json()
                 msg = dat["error"]["message"]
                 code = dat["error"]["code"]
-            except JSONDecodeError:
+            except json.JSONDecodeError:
                 msg = 'Bad Json'
                 code = 'BadRequest'
 
