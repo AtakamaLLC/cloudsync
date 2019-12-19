@@ -5,12 +5,41 @@ from typing import Dict, Any, Callable
 
 
 class Muxer:
+    """
+    Turn generators into subscribable streams
+
+    from cloudsync.muxer import Muxer
+    """
     Entry = namedtuple('Entry', 'genref listeners, lock')
 
     already: Dict[Any, Entry] = {}
     top_lock = Lock()
 
     def __init__(self, func, key=None, restart=False):
+        """
+        Create or subscribe to a generator function.
+
+        Args:
+            func: generator function
+            key: globally unique id (default is just func)
+            restart: make the generator infinite, by re-calling it forever
+
+        Synopsis:
+
+        ```
+            x = Muxer(generator_function)
+            y = Muxer(generator_function)
+
+            # putting these loops in threads is OK
+
+            for e in x:
+                do()
+
+            for e in y:
+                do()
+
+        ```
+        """
         self.restart = restart
         self.func: Callable = func
         self.queue: queue.Queue = queue.Queue()

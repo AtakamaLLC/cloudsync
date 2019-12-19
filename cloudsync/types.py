@@ -1,3 +1,6 @@
+"""
+Base types for cloudsync
+"""
 from typing import Optional, Any
 from enum import Enum
 from dataclasses import dataclass

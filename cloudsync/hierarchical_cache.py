@@ -16,6 +16,9 @@ class Casing(Enum):
 
 @strict
 class Node:
+    """
+    Represents one component of a path in the hierarchical cache of paths and oids.
+    """
     def __init__(self, provider: Provider, otype: OType, oid: Optional[str],  # pylint: disable=too-many-arguments
                  name: str, parent: 'Node', metadata: Dict[str, Any], is_root: bool = False):
         self._oid = oid
@@ -61,13 +64,16 @@ class Node:
         self._oid = val
 
     def full_path(self):
-        elements = self.full_path_nodes([])
+        elements = self._full_path_nodes([])
         if not elements[0].is_root:
             return None
         names = [x.name for x in elements]
         return self._provider.join(*names)
 
-    def full_path_nodes(self, seen: List['Node']):
+    def _full_path_nodes(self, seen: List['Node']):
+        """
+        Recursively walks up my tree to get my full path, asserting that we don't have cycles.
+        """
         if self in seen:
             log.error("hierarchical cache loop at node name=%s oid=%s", self.name, self.oid)
             for node in seen:
@@ -78,7 +84,7 @@ class Node:
         parent = self.parent
         if parent:
             # noinspection PyProtectedMember
-            return parent.full_path_nodes(seen)  # pylint: disable=protected-access
+            return parent._full_path_nodes(seen)  # pylint: disable=protected-access
         else:
             seen.reverse()  # This must only happen once at the end of the recursion
             return seen
@@ -95,6 +101,11 @@ class Node:
 
 @strict
 class HierarchicalCache:
+    """
+    Use this to cache path->oid and oid->path mappings.   Has nice helpers for clearing cache entries in response to provider-like functions.
+
+    Also allows metadata to be stored alongside each entry.
+    """
     def __init__(self, provider: Provider, root_oid: Any,
                  metadata_template: Optional[Dict[str, Type]] = None, root_metadata: Optional[Dict[str, Any]] = None):
         assert root_oid is not None

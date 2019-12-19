@@ -50,8 +50,9 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
         raise ex
     return wrapped
 
+
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov, connect=True, isolation_string=None):
+    def __init__(self, prov, connect=True, short_poll_only=True, isolation_string=None):
         self.api_retry = True
         self.prov = prov
 
@@ -65,6 +66,8 @@ class ProviderHelper(ProviderBase):
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
+
+        prov.test_short_poll_only(short_poll_only=short_poll_only)
 
         if connect:
             self.prov.connect(self._test_creds)
@@ -266,7 +269,7 @@ class ProviderHelper(ProviderBase):
         self.prov.connection_id = val
 
 
-def mixin_provider(prov, connect=True):
+def mixin_provider(prov, connect=True, short_poll_only=True):
     assert prov
     if not isinstance(prov, List):
         prov = [prov]
@@ -280,7 +283,7 @@ def mixin_provider(prov, connect=True):
 
     providers = []
     for i in range(instances):
-        providers.append(ProviderHelper(prov[i], connect=connect, isolation_string=isolation_string))  # type: ignore
+        providers.append(ProviderHelper(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
     if len(providers) == 1:
         yield providers[0]
     else:
@@ -338,6 +341,11 @@ def two_scoped_provider_fixture(two_config_providers):
 @pytest.fixture(name="unconnected_provider")
 def scoped_provider_fixture_unconnected(config_provider):
     yield from mixin_provider(config_provider, connect=False)
+
+
+@pytest.fixture(name="long_poll_provider")
+def scoped_provider_fixture_short_poll(config_provider):
+    yield from mixin_provider(config_provider, short_poll_only=False)
 
 
 import cloudsync.providers
@@ -849,7 +857,8 @@ def test_event_rename(provider):
         assert info1.oid in seen
 
 
-def test_event_longpoll(provider):
+def test_event_longpoll(long_poll_provider):
+    provider = long_poll_provider
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
@@ -875,12 +884,12 @@ def test_event_longpoll(provider):
     t = threading.Thread(target=waiter)
     t.start()
 
-    log.debug("create event")
-    provider.create(dest, temp, None)
+    saved_oid = provider.create(dest, temp, None)
+    log.debug("create file %s oid=%s", dest, saved_oid)
 
     t.join(timeout=provider._test_event_timeout)
 
-    assert received_event
+    assert received_event is not None
 
 def test_api_failure(scoped_provider):
     # assert that the cloud
@@ -1170,9 +1179,9 @@ def test_file_exists(provider):
     assert oid1 != oid2 or provider.oid_is_path
 
     #   upload: where target OID is a folder, raises FEx
-    _, oid = create_folder()
+    _, oid1 = create_folder()
     with pytest.raises(CloudFileExistsError):
-        provider.upload(oid, data(), None)
+        provider.upload(oid1, data(), None)
 
     #   delete: a non-empty folder, raises FEx
     name1, oid1 = create_folder()
@@ -1219,7 +1228,7 @@ def test_file_exists(provider):
     #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_folder()
     _, oid2 = create_file(name1)
-    assert oid1 != oid or provider.oid_is_path
+    assert oid1 != oid2 or provider.oid_is_path
 
     #   create: where target path has a parent folder that already exists as a file, raises FEx
     name, _ = create_file()
@@ -1360,11 +1369,6 @@ def test_cursor(provider):
         return
 
     assert current_csr1 != current_csr2
-
-    # if provider.name == 'box':
-    #     # box can't seem to handle going backwards reliably?
-    #     # this will be an issue if the event manager crashes and events were received but not yet processed...
-    #     return
 
     # check that we can go backwards
     provider.prov._clear_cache()
