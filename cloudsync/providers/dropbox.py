@@ -23,6 +23,7 @@ import dropbox
 from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
 
+from cloudsync.long_poll import LongPollManager
 from cloudsync.utils import debug_args, memoize
 from cloudsync.oauth import OAuthConfig
 from cloudsync import Provider, OInfo, DIRECTORY, FILE, Event, DirInfo
@@ -53,7 +54,6 @@ class _FolderIterator:
         self.path = path
         self.ls_res = None
         self.backoff = 0
-        self.longpoll = bool(cursor)
 
         if not cursor:
             self.ls_res = self.api('files_list_folder',
@@ -61,22 +61,10 @@ class _FolderIterator:
                                    recursive=recursive,
                                    limit=200)
         else:
-            self.longpoll_continue(cursor)
+            self.ls_res = self.api('files_list_folder_continue', cursor)
 
     def __iter__(self):
         return self
-
-    def longpoll_continue(self, cursor):
-        if self.backoff:
-            time.sleep(self.backoff)
-
-        lpres = self.api('files_list_folder_longpoll', cursor)
-
-        if lpres.backoff:
-            self.backoff = lpres.backoff
-
-        if lpres.changes:
-            self.ls_res = self.api('files_list_folder_continue', cursor)
 
     def __next__(self):
         if self.ls_res:
@@ -113,6 +101,7 @@ class DropboxProvider(Provider):
         self._longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config
+        self._long_poll_manager = LongPollManager(self._short_poll, self._long_poll, uses_cursor=True)
 
         self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
 
@@ -235,6 +224,7 @@ class DropboxProvider(Provider):
             try:
                 self.__memoize_quota.clear()
                 info = self.__memoize_quota()
+                self._long_poll_manager.start()
                 return info['uid']
             except CloudTokenError:
                 self.disconnect()
@@ -251,10 +241,6 @@ class DropboxProvider(Provider):
                 raise CloudDisconnectedError()
 
     def _lpapi(self, method, *args, **kwargs):
-        if self._longpoll_mutex.acquire(blocking=False):
-            self._longpoll_mutex.release()
-        else:
-            log.warning("multiple longpoll threads, probably going to wait for a long time")
         return self._real_api(self._longpoll_client, self._longpoll_mutex, method, *args, **kwargs)
 
     def _api(self, method, *args, **kwargs):    # pylint: disable=arguments-differ
@@ -366,7 +352,7 @@ class DropboxProvider(Provider):
                 raise
             except requests.exceptions.ConnectionError as e:
                 log.error('api error handled exception %s:%s',
-                              "dropbox", e.__class__.__name__)
+                          "dropbox", e.__class__.__name__)
                 self.disconnect()
                 raise CloudDisconnectedError()
 
@@ -375,6 +361,7 @@ class DropboxProvider(Provider):
         return ""
 
     def disconnect(self):
+        self._long_poll_manager.stop()
         self._client = None
         self._longpoll_client = None
         self.__memoize_quota.clear()      # pylint: disable=no-member
@@ -402,6 +389,14 @@ class DropboxProvider(Provider):
             raise CloudCursorError(val)
         self.__cursor = val
 
+    def _long_poll(self, timeout: float) -> bool:
+        if not self._longpoll_client:
+            time.sleep(0.1)
+            return False
+        log.debug("long poll %s", self.current_cursor)
+        lpres = self._lpapi('files_list_folder_longpoll', self.current_cursor, timeout=int(timeout))
+        return bool(lpres.changes)
+
     def _events(self, cursor, path=None):  # pylint: disable=too-many-branches
         if path and path != "/":
             info = self.info_path(path)
@@ -411,7 +406,7 @@ class DropboxProvider(Provider):
         else:
             oid = self._root_id
 
-        for res in _FolderIterator(self._lpapi, oid, recursive=True, cursor=cursor):
+        for res in _FolderIterator(self._api, oid, recursive=True, cursor=cursor):
             exists = True
 
             log.debug("event %s", res)
@@ -471,8 +466,11 @@ class DropboxProvider(Provider):
             if getattr(res, "cursor", False):
                 self.__cursor = res.cursor
 
-    def events(self) -> Generator[Event, None, None]:
+    def _short_poll(self) -> Generator[Event, None, None]:
         yield from self._events(self.current_cursor)
+
+    def events(self) -> Generator[Event, None, None]:
+        yield from self._long_poll_manager()
 
     def walk(self, path, since=None):
         yield from self._events(None, path=path)
