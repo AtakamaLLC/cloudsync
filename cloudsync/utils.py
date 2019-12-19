@@ -194,6 +194,8 @@ class TemporaryFile:
         Delete on going out of scope.  This isn't safe, but it ususally works.
         """
         if self.__delete:
+            if self.__io:
+                self.__io.close()
             try:
                 os.unlink(self.name)
             except FileNotFoundError:

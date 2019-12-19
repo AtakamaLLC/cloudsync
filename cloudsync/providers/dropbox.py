@@ -394,7 +394,7 @@ class DropboxProvider(Provider):
             time.sleep(0.1)
             return False
         log.debug("long poll %s", self.current_cursor)
-        lpres = self._lpapi('files_list_folder_longpoll', self.current_cursor, timeout=timeout)
+        lpres = self._lpapi('files_list_folder_longpoll', self.current_cursor, timeout=int(timeout))
         return bool(lpres.changes)
 
     def _events(self, cursor, path=None):  # pylint: disable=too-many-branches

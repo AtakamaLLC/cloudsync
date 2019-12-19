@@ -52,16 +52,23 @@ class LongPollManager(Runnable):
             self.interruptable_sleep(1)
         else:
             try:
+                log.debug("about to long poll")
                 # care should be taken to return "true" on timeouts for providers, like box that don't use cursors
                 if self.uses_cursor:
+                    log.debug("wait for got_events")
                     self.got_events.wait(timeout=self.long_poll_timeout)
                 self.got_events.clear()
                 assert not self.got_events.is_set()
 
                 # if a cursor is not used, we never trust the results
                 if self.long_poll(self.long_poll_timeout) or not self.uses_cursor:
+                    log.debug("LPSET: long poll finished, about to check events")
                     self.__provider_events_pending.set()
                     self.last_set = time.monotonic()
+                    log.debug("events check complete")
+                else:
+                    log.debug("long poll finished, not checking events")
+
             except Exception as e:
                 if self.last_set and (time.monotonic() > (self.last_set + self.long_poll_timeout)):
                     # if we're getting exceptions from long_poll, still trigger a short poll after timeout seconds
