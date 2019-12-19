@@ -25,6 +25,7 @@ from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig
 from cloudsync.notification import SourceEnum, Notification, NotificationType
 from cloudsync.types import LOCAL, REMOTE
+from cloudsync import Event
 from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN
 
 if TYPE_CHECKING:
@@ -598,10 +599,14 @@ class SyncManager(Runnable):
         # used internally
         self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype)
 
-    def change_state(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
+    def create_event(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
+
+    def insert_event(self, side, event: Event):
+        self.state.update(side, otype=event.otype, oid=event.oid, path=event.path, hash=event.path,
+                          exists=event.exists, prior_oid=event.prior_oid)
 
     def create_synced(self, changed, sync, translated_path):        # pylint: disable=too-many-branches
         synced = other_side(changed)

@@ -712,13 +712,14 @@ def test_event_del_create(provider):
     info2 = provider.create(dest, temp2)
 
     last_event = None
-    saw_first_delete = False
-    saw_first_create = False
-    disordered = False
     done = False
-
+    log.info("test oid 1 %s", info1.oid)
+    log.info("test oid 2 %s", info2.oid)
+    events = []
+    event_num = 1
+    create1, delete1, create2 = [None] * 3
     for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
-        log.debug("event %s", event)
+        log.info("test event %s", event)
         # you might get events for the root folder here or other setup stuff
         path = event.path
         if not event.path:
@@ -727,46 +728,40 @@ def test_event_del_create(provider):
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or event.oid == info1.oid):
+        if not (path == dest or event.oid in (info1.oid, info2.oid)):
             continue
 
-        last_event = event
+        events.append(event)
 
-        if event.oid == info1.oid:
-            if event.exists:
-                saw_first_create = True
-                if saw_first_delete and not provider.oid_is_path:  # TODO: this condition is not correct...
-                    log.debug("disordered!")
-                    disordered = True
-            else:
-                saw_first_delete = True
+        if event.exists:
+            if event.oid == info1.oid and (not provider.oid_is_path or create1 is None):
+                create1 = event_num
+            if event.oid == info2.oid or (provider.oid_is_path and event.oid == info1.oid and create1 is not None):
+                create2 = event_num
+        else:
+            if event.oid == info1.oid:
+                delete1 = event_num
 
-        if event.exists and event.oid == info2.oid:
-            if provider.oid_is_path:
-                if saw_first_delete and saw_first_create:
-                    done = True
-            else:
-                done = True
+        if create2 and (create1 is None or delete1 is not None):
+            done = True
+        event_num = event_num + 1
 
-    # the important thing is that we always get a create after the delete event
-    assert last_event, "Event loop timed out before getting any events"
-    assert done, "Event loop timed out after the delete, but before the create, " \
-                 "saw_first_delete=%s, saw_first_create=%s, disordered=%s" % (saw_first_delete, saw_first_create, disordered)
-    # The provider may compress out the first create, or compress out the first create and delete, or deliver both
-    # So, if we saw the first create, make sure we got the delete. If we didn't see the first create,
-    # it doesn't matter if we saw the first delete.
-    if saw_first_create:
-        if not saw_first_delete:
-            log.error("first delete not seen yet, about to fail, giving it a chance to come in so we can log it")
-            done = False
-            try:
-                for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
-                    done = (event.oid == info1.oid and not event.exists)
-            except TimeoutError:
-                pass
-        assert saw_first_delete
-    assert last_event.exists is True
-    assert not disordered
+    assert len(events), "Event loop timed out before getting any events"
+    if create1 is not None:
+        assert delete1 is not None  # make sure we got delete1 if we got create1
+    assert create2  # we definitely have to see the second create
+
+    if provider.oid_is_path:  # ordering is important for oid_is_path, so these are ordering tests
+        # The provider may compress out create1, or compress out the create1 and delete1, or deliver both
+        # So, if we saw create1, make sure we got delete1 and that it came after create1
+        # If we didn't see create1, it doesn't matter if we saw delete1.
+        if create1 is not None:
+            assert delete1 is not None
+            assert create1 < delete1
+
+        # If we got delete1, it needs to come before create2
+        if delete1 is not None:
+            assert delete1 < create2
     if provider.prov.name == 'box':
         logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
         logging.getLogger('urllib3.connectionpool').setLevel(cpll)
@@ -858,6 +853,7 @@ def test_event_longpoll(long_poll_provider):
     t.join(timeout=provider._test_event_timeout)
 
     assert received_event is not None
+
 
 def test_api_failure(scoped_provider):
     # assert that the cloud
