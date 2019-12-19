@@ -728,7 +728,7 @@ def test_event_del_create(provider):
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or event.oid == info1.oid):
+        if not (path == dest or event.oid in (info1.oid, info2.oid)):
             continue
 
         events.append(event)
@@ -738,6 +738,9 @@ def test_event_del_create(provider):
                 create1 = event_num
             if event.oid == info2.oid or (provider.oid_is_path and event.oid == info1.oid and create1 is not None):
                 create2 = event_num
+        else:
+            if event.oid == info1.oid:
+                delete1 = event_num
 
         if create2 and (create1 is None or delete1 is not None):
             done = True
