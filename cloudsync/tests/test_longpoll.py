@@ -115,5 +115,9 @@ def test_lpex(uses_cursor):
     assert list(man()) == lp.orig_q
     assert lp.raised > 0
 
+    with pytest.raises(TimeoutError):
+        # give the runnable system time to process the exception
+        man.wait(timeout=0.1)
+
     # lpman is backing off
     assert man.in_backoff > 0
