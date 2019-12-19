@@ -1,13 +1,18 @@
 from typing import Dict, Any, Optional, overload
 import logging
 import sqlite3
+from threading import Lock
 from .state import Storage
 
 log = logging.getLogger(__name__)
 
 
 class SqliteStorage(Storage):
+    """
+    Local disk storage using sqlite.
+    """
     def __init__(self, filename: str):
+        self._mutex = Lock()
         self._filename = filename
         self.db = None
         self.db = self.__db_connect()
@@ -26,12 +31,15 @@ class SqliteStorage(Storage):
         return self.db
 
     def __db_execute(self, sql, parameters=()):
-        try:
-            retval = self.db.execute(sql, parameters)
-        except sqlite3.OperationalError:
-            self.__db_connect()  # reconnect
-            retval = self.db.execute(sql, parameters)
-        return retval
+        # in python 3.6, this will randomly crash unless there's a mutex involved
+        # it's not supposed to be a problem... but it is
+        with self._mutex:
+            try:
+                retval = self.db.execute(sql, parameters)
+            except sqlite3.OperationalError:
+                self.__db_connect()  # reconnect
+                retval = self.db.execute(sql, parameters)
+            return retval
 
     def _ensure_table_exists(self):
         self.__db_execute("PRAGMA journal_mode=WAL;")

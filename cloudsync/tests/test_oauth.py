@@ -70,6 +70,7 @@ def test_oauth_threaded(wb):
 
     for t in threads:
         t.join(timeout=10)
+        assert not t.is_alive()
 
     log.debug("errs %s", tfail)
     assert tpass == 4
@@ -135,7 +136,7 @@ def test_oauth_defaults(wb):
     inst = Prov.test_instance()
     assert inst._oauth_config.app_id == "123"
     assert inst._oauth_config.app_secret == "456"
-    assert inst.test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
+    assert inst._test_creds in [{"refresh_token": "ABC"}, {"refresh_token": "DEF"}]
 
     # actually test the instance
     creds = None
@@ -176,7 +177,7 @@ def test_oauth_defaults(wb):
     th.start()
     while True:
         try:
-            wb.assert_called_once()
+            assert wb.call_count == 2
             inst.interrupt_auth()
             break
         except AssertionError:
@@ -186,3 +187,14 @@ def test_oauth_defaults(wb):
 
     assert creds is None
     assert type(creds_ex) is CloudTokenError
+
+
+def test_err():
+    with pytest.raises(OAuthError):
+        OAuthConfig(app_id=None, app_secret="secret").start_auth("whatever")
+
+    with pytest.raises(OAuthError):
+        OAuthConfig(app_id="id", app_secret=None).start_auth("whatever")
+
+    with pytest.raises(OAuthError):
+        OAuthConfig(app_id="id", app_secret="secret").start_auth(None)

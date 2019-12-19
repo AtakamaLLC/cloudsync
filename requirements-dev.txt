@@ -1,8 +1,9 @@
-pytest>=4.4.0
+pytest>=5.3.0
 pytest-xdist
 pytest-profiling
 pytest-repeat
 pytest-cov
+pytest-timeout
 pylint
 mypy
 flaky>=3.6

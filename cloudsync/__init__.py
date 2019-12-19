@@ -37,6 +37,7 @@ from .sync import *
 from .exceptions import *
 from .types import *
 from .cs import *
+from .long_poll import *
 from .registry import *
 
 from .providers import *

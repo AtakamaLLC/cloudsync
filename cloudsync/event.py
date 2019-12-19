@@ -31,6 +31,7 @@ class Event:
 
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
+    """Runnable that is owned by CloudSync, reading events and updating the SyncState."""
     def __init__(self, provider: "Provider", state: "SyncState", side: int,
                  notification_manager: Optional["NotificationManager"] = None,
                  walk_root: Optional[str] = None, reauth: Callable[[], None] = None):
@@ -111,10 +112,12 @@ class EventManager(Runnable):
             log.exception("Cursor error... resetting cursor. %s", e)
             self.provider.current_cursor = self.provider.latest_cursor
             self._save_current_cursor()
+            self.backoff()
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
             self.need_auth = True
+            self.backoff()
 
     def _do_unsafe(self):
         if self._first_do:
@@ -153,6 +156,19 @@ class EventManager(Runnable):
             pass
 
     def process_event(self, event: Event, from_walk=False):
+        """
+        Called once for each event.
+
+        Args:
+            event: the event received
+            from_walk: whether the event was a fake one received during a walk
+
+        This function updates the state database with information from the event.
+
+        Attempts are made to resolve the path.
+
+        The backing store is written to afterward.
+        """
         with self.state.lock:
             log.debug("%s got event %s", self.label, event)
             path = event.path

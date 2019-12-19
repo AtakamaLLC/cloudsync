@@ -1,8 +1,11 @@
 import time
 import threading
+import logging
 import pytest
 
 from cloudsync import Runnable
+
+log = logging.getLogger(__name__)
 
 
 def test_runnable():
@@ -30,12 +33,41 @@ def test_runnable():
 
     assert testrun.called == 1
 
-    thread = threading.Thread(target=testrun.run)
+    thread = threading.Thread(target=testrun.run, kwargs={"timeout": 10})
     thread.start()
+    while not testrun.started:
+        time.sleep(0.1)
     testrun.stop()
     thread.join(timeout=1)
+    assert testrun.stopped
+    assert not thread.is_alive()
 
     assert testrun.stopped == 1
+
+    testrun.called = 0
+    testrun.start(until=lambda: testrun.called > 0)
+    testrun.wait(timeout=2)
+
+
+def test_timeout():
+    class TestRun(Runnable):
+        def __init__(self):
+            self.cleaned = False
+            self.called = 0
+
+        def do(self):
+            self.called += 1
+            time.sleep(10)
+
+        def done(self):
+            self.cleaned = True
+
+    testrun = TestRun()
+    testrun.start()
+    while not testrun.started:
+        time.sleep(.01)
+    with pytest.raises(TimeoutError):
+        testrun.wait(timeout=.01)
 
 
 def test_runnable_wake():
@@ -53,17 +85,31 @@ def test_runnable_wake():
     testrun = TestRun()
 
     # noop
+    log.info("noop")
     testrun.wake()
 
     # this will sleep for a long time, doing nothing
-    thread = threading.Thread(target=testrun.run, kwargs={"sleep": 10})
+    thread = threading.Thread(target=testrun.run, kwargs={"sleep": 10, "timeout": 10})
     thread.start()
-    time.sleep(0.1)
-    assert not testrun.called
-    # that wakes it up
-    testrun.wake()
-    while not testrun.called:
+
+    # called once at start, then sleepz
+    while testrun.called == 0:
         time.sleep(0.1)
-    assert testrun.called
+    assert testrun.called == 1
+
+    while not testrun.started:
+        time.sleep(0.1)
+
+    # now sleeping for 10 secs, doing nothing
+    assert testrun.called == 1
+
+    log.info("wake")
+    # wake it up right away
+    testrun.wake()
+    while testrun.called == 1:
+        time.sleep(0.1)
+    assert testrun.called == 2
+
     testrun.stop()
-    thread.join(timeout=1)
+    thread.join(timeout=2)
+    assert not thread.is_alive()

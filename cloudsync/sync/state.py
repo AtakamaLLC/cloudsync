@@ -1,4 +1,4 @@
-# pylint: disable=attribute-defined-outside-init, protected-access, too-many-lines
+# pylint: disable=attribute-defined-outside-init, protected-access, too-many-lines, missing-docstring
 """
 SyncEntry[SideState, SideState] is a pair of entries, indexed by oid.  The SideState class makes
 extensive use of __getattr__ logic to keep indexes up to date.
@@ -36,12 +36,18 @@ __all__ = ['SyncState', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 
 class Exists(Enum):
+    """
+    Whether a file exists, used throughout the system instead of booleans
+    """
     UNKNOWN = "unknown"
     EXISTS = "exists"
     TRASHED = "trashed"
     MISSING = "missing"
 
     def __bool__(self):
+        """
+        Protect against bool use
+        """
         raise ValueError("never bool enums")
 
 
@@ -54,6 +60,9 @@ MISSING = Exists.MISSING
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
 class SideState():
+    """
+    One half of a sync
+    """
     hash: Any
     sync_hash: Any
 
@@ -150,6 +159,9 @@ def other_side(index):
 
 
 class Storage(ABC):
+    """
+    Abstract base storage class
+    """
     @abstractmethod
     def create(self, tag: str, serialization: bytes) -> Any:
         """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
@@ -191,6 +203,9 @@ class Storage(ABC):
 # single entry in the syncs state collection
 @strict         # pylint: disable=too-many-instance-attributes, too-many-public-methods
 class SyncEntry:
+    """
+    A pair of side states, as well as their storage information, and sync priority.
+    """
     def __init__(self, parent: 'SyncState',
                  otype: Optional[OType],
                  storage_init: Optional[Tuple[Any, bytes]] = None,
@@ -550,6 +565,16 @@ class SyncEntry:
 
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    """
+    Holds the entire sync engine state.
+
+    Args:
+        providers: pair of providers
+        storage: optional `Storage`
+        tag: unique string within `Storage` for this table of entries
+        prioritize: callable that, given a path, returns a priority
+
+    """
     headers = (
         "EID",  # _sig(id(self)),
         "SID",  # _sig(self.storage_id),
@@ -728,18 +753,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     # no longer indexed by oid, also clear change bit
                     prior_ent[side].oid = None
 
-        if oid:
+        if oid is not None:
             ent[side]._oid = oid
             self._oids[side][oid] = ent
 
             assert self.lookup_oid(side, oid) is ent
 
-        if oid and ent[side].path:
+        if oid is not None and ent[side].path:
             if ent[side].path not in self._paths[side]:
                 self._paths[side][ent[side].path] = {}
             self._paths[side][ent[side].path][oid] = ent
 
-        if oid:
+        if oid is not None:
             # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
             if ent[side].changed or ent[other_side(side)].changed:
@@ -1036,9 +1061,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 assert ent in self.lookup_path(LOCAL, ent[LOCAL].path), ("%s local path not indexed" % ent)
             if ent[REMOTE].path:
                 assert ent in self.lookup_path(REMOTE, ent[REMOTE].path), ("%s remote path not indexed" % ent)
-            if ent[LOCAL].oid:
+            if ent[LOCAL].oid is not None:
                 assert ent is self.lookup_oid(LOCAL, ent[LOCAL].oid), ("%s local oid not indexed" % ent)
-            if ent[REMOTE].oid:
+            if ent[REMOTE].oid is not None:
                 assert ent is self.lookup_oid(REMOTE, ent[REMOTE].oid), ("%s local oid not indexed" % ent)
 
             if ent[LOCAL].changed or ent[REMOTE].changed:
@@ -1076,7 +1101,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         replace_ent[replace] = ent[replace]
         assert replace_ent[replace].oid
 
-        if ent[replace].oid:
+        if ent[replace].oid is not None:
             assert replace_ent in self.get_all()
 
         if defer_ent[replace].path:
@@ -1106,7 +1131,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return defer_ent, defer, replace_ent, replace
 
     def unconditionally_get_latest(self, ent, i):
-        if not ent[i].oid:
+        if ent[i].oid is None:
             if ent[i].exists not in (TRASHED, MISSING):
                 ent[i].exists = UNKNOWN
             return

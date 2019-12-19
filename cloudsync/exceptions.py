@@ -1,3 +1,8 @@
+"""
+This is the complete list of exceptions that should be thrown by providers.
+"""
+
+
 class CloudException(Exception):                     # largely treated as a temporary error with a heavy backoff
     def __init__(self, *args, original_exception=None):
         super().__init__(*args)

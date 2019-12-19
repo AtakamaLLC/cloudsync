@@ -1248,8 +1248,8 @@ def test_cs_rename_folder_case(mock_provider_creator, left, right):
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
     log.debug("--- cs: %s ---", [e.case_sensitive for e in cs.providers])
-    cs.providers[LOCAL].log_debug_state()
-    cs.providers[REMOTE].log_debug_state()
+    cs.providers[LOCAL]._log_debug_state()
+    cs.providers[REMOTE]._log_debug_state()
 
     cs.providers[LOCAL].rename(ldir, local_path3)
 
@@ -1663,7 +1663,7 @@ def test_replace_dir(cs, oidless):
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
 
-    remote.oidless_folder_trash_events = oidless
+    remote._oidless_folder_trash_events = oidless
     local.mkdir("/local")
     remote.mkdir("/remote")
 
@@ -1720,7 +1720,7 @@ def test_out_of_space(cs):
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
 
-    remote.set_quota(1024)
+    remote._set_quota(1024)
 
     local.mkdir("/local")
     remote.mkdir("/remote")
@@ -1885,11 +1885,11 @@ def test_hash_mess(cs, side_locked):
 
         with patch("cloudsync.tests.fixtures.mock_provider.CloudTemporaryError", new=_called):
             for locked in locks:
-                cs.providers[locked].locked_for_test.add(renamed_path[locked])
+                cs.providers[locked]._locked_for_test.add(renamed_path[locked])
                 log.info("lock set: %s", renamed_path[locked])
             cs.run(until=lambda: _called.count > 0, timeout=2)  # type: ignore
             for locked in locks:
-                cs.providers[locked].locked_for_test.discard(renamed_path[locked])
+                cs.providers[locked]._locked_for_test.discard(renamed_path[locked])
 
     cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
 
@@ -2068,9 +2068,9 @@ def _setup_offline_state(request, mock_provider_creator):
     storage = MockStorage(storage_dict)
 
     providers = (mock_provider_creator(oid_is_path=local_uses_path, case_sensitive=True), mock_provider_creator(oid_is_path=False, case_sensitive=True))
-    providers[LOCAL].uses_cursor = False
+    providers[LOCAL]._uses_cursor = False
 
-    # all this setup is necessry, because we need the "uses_cursor" flag to be false before the syncmgr is initalized
+    # all this setup is necessry, because we need the "_uses_cursor" flag to be false before the syncmgr is initalized
     cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
 
     [(lp1, lp2)] = setup_remote_local(cs, "stuff1")
@@ -2111,7 +2111,7 @@ def test_walk_carefully1(setup_offline_state):
 def test_walk_carefully2(setup_offline_state):
     cs, storage, li1, ri1 = setup_offline_state
 
-    if cs.providers[LOCAL].oid_is_path and not cs.providers[LOCAL].uses_cursor:
+    if cs.providers[LOCAL].oid_is_path and not cs.providers[LOCAL]._uses_cursor:
         pytest.skip("offline events for cursorless path providers cannot be supported")
 
     log.info("TABLE 0\n%s", cs.state.pretty_print())
@@ -2171,7 +2171,7 @@ def test_notify_bad_name(cs):
     cs.handle_notification = _handle
 
     local, remote = cs.providers
-    remote.forbidden_chars = ['`']
+    remote._forbidden_chars = ['`']
     local.create('/local/bad`.txt', BytesIO(b'data'))
     cs.start(until=lambda: called, timeout=2)  # Need to use start() because the notification manager do() blocks
     log.debug("Now waiting")
@@ -2191,7 +2191,7 @@ def test_notify_disconnect(cs):
     cs.handle_notification = _handle
 
     local, remote = cs.providers
-    remote.forbidden_chars = ['`']
+    remote._forbidden_chars = ['`']
     local.create('/local/bad.txt', BytesIO(b'data'))
     cs.providers[0].disconnect()
     cs.providers[0].reconnect = lambda: None  # TODO: Revisit this after authorization has been redesigned

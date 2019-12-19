@@ -1,4 +1,7 @@
-#pylint: disable=too-many-lines
+"""
+Sync manager and associated tools.
+"""
+# pylint: disable=missing-docstring
 
 import os
 import logging
@@ -40,8 +43,16 @@ REQUEUE = 0
 def other_side(index):
     return 1-index
 
+
 @strict
 class ResolveFile():
+    """
+    File-like handed to caller when conflicts need resolving.
+
+    Args:
+        info: The side state that this instance holds a file for
+        provider: The provider for the file
+    """
     def __init__(self, info: SideState, provider: 'Provider'):
         self.info = info
         self.provider = provider
@@ -55,7 +66,13 @@ class ResolveFile():
             assert info.temp_file
         self.__fh: BinaryIO = None
 
-    def download(self):
+    def download(self) -> str:
+        """
+        Downloads the conflicted file in question to a temp file.
+
+        Returns:
+            Full path to the temp file
+        """
         if not os.path.exists(self.__temp_file):
             try:
                 with open(self.__temp_file + ".tmp", "wb") as f:
@@ -75,6 +92,7 @@ class ResolveFile():
 
     @property
     def fh(self):
+        """Readable file handle for contents"""
         if not self.__fh:
             self.download()  # NOOP if it was already downloaded
             self.__fh = open(self.__temp_file, "rb")
@@ -102,6 +120,17 @@ class ResolveFile():
 
 @strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
 class SyncManager(Runnable):
+    """
+    Watches the provided state for changes and copies files between providers
+
+    Args:
+        state: current state
+        providers: pair of providers
+        translate: a callable that converts paths between providers
+        resolve_conflict: a callable that is passed two `ResolveFile` instances
+        notification_manager: and instance of NotificationManager
+        sleep: a tuple of seconds to sleep
+    """
     def __init__(self, state: SyncState,
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
@@ -200,6 +229,9 @@ class SyncManager(Runnable):
         return count
 
     def path_conflict(self, ent):
+        """
+        Boolean true if there is a naming conflict
+        """
         # both are synced
         have_paths = ent[0].path and ent[1].path
         if not have_paths:
@@ -228,6 +260,9 @@ class SyncManager(Runnable):
             not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
 
     def check_revivify(self, sync: SyncEntry):
+        """
+        Revives a sync entrty if it was discarded, but is now relevant, because the new translated_path is relevant
+        """
         if sync.is_discarded:
             for i in (LOCAL, REMOTE):
                 changed = i
@@ -254,6 +289,9 @@ class SyncManager(Runnable):
                     sync[synced].clear()
 
     def sync(self, sync: SyncEntry):
+        """
+        Called on each changed entry.
+        """
         self.check_revivify(sync)
 
         if sync.is_discarded:
@@ -331,6 +369,9 @@ class SyncManager(Runnable):
             sync[side].clean_temp()
 
     def make_temp_file(self, ss: SideState):
+        """
+        Makes a new temporary file, tries to name it in a way that will be consistent between runs.
+        """
         if ss.otype == DIRECTORY:
             return
         tfn = None
@@ -347,6 +388,9 @@ class SyncManager(Runnable):
         ss.temp_file = self._temp_file(name=tfn)
 
     def download_changed(self, changed, sync):
+        """
+        Called when it seems a file has changed.  Sticks the result in `sync[changed].temp_file`
+        """
         self.make_temp_file(sync[changed])
 
         assert sync[changed].oid
@@ -392,6 +436,9 @@ class SyncManager(Runnable):
 
  
     def mkdir_synced(self, changed, sync, translated_path):
+        """
+        Called when it seems a folder has been made.
+        """
         synced = other_side(changed)
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
@@ -627,6 +674,12 @@ class SyncManager(Runnable):
 
     def __resolve_file_likes(self, side_states):
         class Guard:
+            """
+            Use this to protect against unclosed file handles.
+
+            Args:
+                side_states: Pair of states that will be `ResolveFile`s
+            """
             def __init__(guard, side_states):  # pylint: disable=no-self-argument
                 guard.side_states = side_states
                 guard.fhs: List[ResolveFile] = []

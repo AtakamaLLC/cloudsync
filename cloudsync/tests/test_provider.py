@@ -13,10 +13,12 @@ import pytest
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
+from cloudsync.tests.fixtures import Provider, mock_provider_instance
 from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 from os import SEEK_SET, SEEK_CUR, SEEK_END
+
 # from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
@@ -46,29 +48,32 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
         raise ex
     return wrapped
 
+
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov, connect=True):
+    def __init__(self, prov, connect=True, short_poll_only=True):
         self.api_retry = True
         self.prov = prov
 
         self.test_parent = getattr(self.prov, "test_root", "/")
-        self.test_event_timeout = getattr(self.prov, "test_event_timeout", 20)
-        self.test_event_sleep = getattr(self.prov, "test_event_sleep", 1)
-        self.test_creds = getattr(self.prov, "test_creds", {})
-        self.test_root = None
+        self._test_event_timeout = getattr(self.prov, "_test_event_timeout", 20)
+        self._test_event_sleep = getattr(self.prov, "_test_event_sleep", 1)
+        self._test_creds = getattr(self.prov, "_test_creds", {})
+        self.test_root: Optional[str] = None
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
+        prov.test_short_poll_only(short_poll_only=short_poll_only)
+
         if connect:
-            self.prov.connect(self.test_creds)
+            self.prov.connect(self._test_creds)
             assert prov.connection_id
             self.make_root()
 
     def make_root(self):
         ns = self.prov.list_ns()
         if ns:
-            self.prov.namespace = self.prov.test_namespace
+            self.prov.namespace = self.prov._test_namespace
 
         if not self.test_root:
             # if the provider class doesn't specify a testing root
@@ -88,7 +93,7 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self.test_event_timeout, sleep=self.test_event_sleep, multiply=2):
+        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep):
             try:
                 return func(*ar, **kw)
             except CloudTemporaryError:
@@ -101,7 +106,7 @@ class ProviderHelper(ProviderBase):
 
     def events(self) -> Generator[Event, None, None]:
         for e in self.prov.events():
-            if self.__filter_root(e):
+            if self.__filter_root(e) or not e.exists:
                 yield e
 
     def walk(self, path, since=None):
@@ -141,7 +146,13 @@ class ProviderHelper(ProviderBase):
         return self.__strip_root(self.prov.mkdir(path))
 
     @wrap_retry
+    def rmtree(self, *args, **kwargs):
+        log.debug("rmtree %s %s", args, kwargs)
+        return self.__strip_root(self.prov.rmtree(*args, **kwargs))
+
+    @wrap_retry
     def delete(self, *args, **kwargs):
+        log.debug("DELETE %s %s", args, kwargs)
         return self.__strip_root(self.prov.delete(*args, **kwargs))
 
     @wrap_retry
@@ -154,12 +165,12 @@ class ProviderHelper(ProviderBase):
         return self.prov.exists_path(path)
 
     @wrap_retry
-    def info_path(self, path: str) -> Optional[OInfo]:
+    def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         path = self.__add_root(path)
-        return self.__strip_root(self.prov.info_path(path))
+        return self.__strip_root(self.prov.info_path(path, use_cache))
 
     @wrap_retry
-    def info_oid(self, oid, use_cache=True) -> Optional[OInfo]:
+    def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
     @wrap_retry
@@ -199,6 +210,7 @@ class ProviderHelper(ProviderBase):
                 relative = self.prov.is_subpath(self.test_root, path)
                 assert relative
                 path = relative
+                # TODO: This does not obey provider control over paths. Frex, consider windows paths and "C:"
                 if not path.startswith(self.prov.sep):
                     path = self.prov.sep + path
                 obj.path = path
@@ -211,13 +223,13 @@ class ProviderHelper(ProviderBase):
 
     def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
-            timeout = self.test_event_timeout
+            timeout = self._test_event_timeout
 
         if timeout == 0:
             yield from self.events()
             return
 
-        for _ in time_helper(timeout, sleep=self.test_event_sleep, multiply=2):
+        for _ in time_helper(timeout, sleep=self._test_event_sleep):
             got = False
             for e in self.events():
                 yield e
@@ -229,29 +241,13 @@ class ProviderHelper(ProviderBase):
 
     def __cleanup(self, oid):
         try:
-            for info in self.listdir(oid):
-                if info.otype == FILE:
-                    log.debug("cleaning %s", info)
-                    self.delete(info.oid)
-                else:
-                    self.__cleanup(info.oid)
-                    log.debug("cleaning %s", info)
-                    self.delete(info.oid)
+            self.rmtree(oid)
         except CloudFileNotFoundError:
             pass
 
     def test_cleanup(self, timeout=None, until=None):
         info = self.prov.info_path(self.test_root)
         self.__cleanup(info.oid)
-
-        info = self.prov.info_path(self.test_root)
-        if info:
-            try:
-                log.debug("cleaning %s", info)
-                self.delete(info.oid)
-            except CloudFileExistsError:
-                # deleting the root might now be supported
-                pass
 
     def prime_events(self):
         self.current_cursor = self.latest_cursor
@@ -273,15 +269,16 @@ class ProviderHelper(ProviderBase):
         self.prov.connection_id = val
 
 
-def mixin_provider(prov, connect=True):
+def mixin_provider(prov, connect=True, short_poll_only=True):
     assert prov
     assert isinstance(prov, Provider)
 
-    prov = ProviderHelper(prov, connect=connect)         # type: ignore
+    prov = ProviderHelper(prov, connect=connect, short_poll_only=short_poll_only)         # type: ignore
 
     yield prov
 
-    prov.test_cleanup()
+    if connect:
+        prov.test_cleanup()
 
 
 @pytest.fixture
@@ -304,12 +301,23 @@ def config_provider(request, provider_name):
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
+
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
-from cloudsync.providers import *
+@pytest.fixture(name="unconnected_provider")
+def scoped_provider_fixture_unconnected(config_provider):
+    yield from mixin_provider(config_provider, connect=False)
+
+
+@pytest.fixture(name="long_poll_provider")
+def scoped_provider_fixture_short_poll(config_provider):
+    yield from mixin_provider(config_provider, short_poll_only=False)
+
+
+import cloudsync.providers
 
 _registered = False
 def pytest_generate_tests(metafunc):
@@ -339,6 +347,9 @@ def pytest_generate_tests(metafunc):
         kw = metafunc.config.getoption("keyword", "")
         if not provs and kw == "external":
             provs += ["external"]
+
+        if not provs and kw in cloudsync.registry.known_providers():
+            provs += [kw]
 
         if not provs:
             provs += ["mock_oid_cs"]
@@ -493,6 +504,7 @@ def test_rename(provider):
     # dup rename folder
     sfp2 = provider.info_path(sub_folder_path2)
     provider.rename(sfp2.oid, sub_folder_path2)
+    log.debug("finished rename test")
 
 
 def test_mkdir(provider):
@@ -511,6 +523,22 @@ def test_mkdir(provider):
     assert provider.exists_path(dest)
     log.debug("folder %s exists", dest)
     provider.create(sub_f, data(), None)
+
+
+def test_rmtree(provider):
+    root = "/testroot"
+    root_oid = provider.mkdir(root)
+    for i in range(2):
+        provider.mkdir(provider.join(root, str(i)))
+        for j in range(2):
+            provider.create(provider.join(root, str(i), str(j)), BytesIO(os.urandom(32)), None)
+    provider.rmtree(root_oid)
+    assert not provider.exists_oid(root_oid)
+    assert not provider.exists_path(root)
+    for i in range(2):
+        assert not provider.exists_path(provider.join(root, str(i)))
+        for j in range(2):
+            assert not provider.exists_path(provider.join(root, str(i), str(j)))
 
 
 def test_walk(scoped_provider):
@@ -565,8 +593,8 @@ def check_event_path(event: Event, provider, target_path):
             if event.exists:
                 raise
 
-## event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 
+# event tests use "prime events" to discard unrelated events, and ensure that the cursor is "ready"
 def test_event_basic(provider):
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
@@ -581,7 +609,8 @@ def test_event_basic(provider):
 
     received_event = None
     received_event2 = None
-    event_count = 0
+    event_count1 = 0
+    event_count2 = 0
     done = False
 
     for e in provider.events_poll(until=lambda: done):
@@ -595,13 +624,26 @@ def test_event_basic(provider):
 
             if e.path == dest:
                 received_event = e
-                event_count += 1
+                event_count1 += 1
 
             if e.path == dest2:
                 received_event2 = e
-                event_count += 1
+                event_count2 += 1
 
-            done = event_count == 2
+            done = event_count1 > 0 and event_count2 > 0
+
+            event = threading.Event()
+
+            def deadlocker(event):
+                # this hits the api in another thread
+                list(provider.listdir(info2))
+                event.set()
+
+            # make sure nobody holds an rlock during event yields
+            threading.Thread(target=deadlocker, daemon=True, args=(event,)).start()
+
+            # this will fail if there's a deadlock
+            assert event.wait(timeout=provider.default_sleep)
 
     assert done
     assert received_event is not None
@@ -625,7 +667,7 @@ def test_event_basic(provider):
     received_event = None
     received_event2 = None
     for e in provider.events_poll(until=lambda: received_event is not None and received_event2 is not None):
-        log.debug("event %s", e)
+        log.debug("event-before %s", e)
         if e.exists and e.path is None:
             info2 = provider.info_oid(e.oid)
             if info2:
@@ -636,7 +678,7 @@ def test_event_basic(provider):
 
         assert e.otype is not None
 
-        log.debug("event %s", e)
+        log.debug("event-after %s", e)
         if (not e.exists and e.oid == deleted_oid) or (e.path and path in e.path):
             received_event = e
         if (not e.exists and e.oid == deleted_oid2) or (e.path and path2 in e.path):
@@ -647,12 +689,18 @@ def test_event_basic(provider):
     assert received_event.oid
     assert not received_event.exists
     if received_event.path is not None:
-        assert received_event.path == dest
+        # assert that the basename of the path and dest are the same
+        assert provider.split(received_event.path)[1] == provider.split(dest)[1]
     assert received_event.oid == deleted_oid
     assert received_event.mtime
 
 
 def test_event_del_create(provider):
+    if provider.prov.name == 'box':
+        dnll = logging.getLogger('boxsdk.network.default_network').getEffectiveLevel()
+        cpll = logging.getLogger('urllib3.connectionpool').getEffectiveLevel()
+        logging.getLogger('boxsdk.network.default_network').setLevel(logging.INFO)
+        logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG)
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
@@ -670,7 +718,7 @@ def test_event_del_create(provider):
     events = []
     event_num = 1
     create1, delete1, create2 = [None] * 3
-    for event in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+    for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
         log.info("test event %s", event)
         # you might get events for the root folder here or other setup stuff
         path = event.path
@@ -711,6 +759,9 @@ def test_event_del_create(provider):
         # If we got delete1, it needs to come before create2
         if delete1 is not None:
             assert delete1 < create2
+    if provider.prov.name == 'box':
+        logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
+        logging.getLogger('urllib3.connectionpool').setLevel(cpll)
 
 
 def test_event_rename(provider):
@@ -733,7 +784,7 @@ def test_event_rename(provider):
     last_event = None
     second_to_last = None
     done = False
-    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+    for e in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
         if provider.oid_is_path:
             assert e.path
         log.debug("event %s", e)
@@ -766,7 +817,8 @@ def test_event_rename(provider):
         assert info1.oid in seen
 
 
-def test_event_longpoll(provider):
+def test_event_longpoll(long_poll_provider):
+    provider = long_poll_provider
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
 
@@ -776,7 +828,7 @@ def test_event_longpoll(provider):
 
     def waiter():
         nonlocal received_event
-        timeout = time.monotonic() + provider.test_event_timeout
+        timeout = time.monotonic() + provider._test_event_timeout
         while time.monotonic() < timeout:
             for e in provider.events_poll(until=lambda: received_event):
                 if e.exists:
@@ -792,12 +844,12 @@ def test_event_longpoll(provider):
     t = threading.Thread(target=waiter)
     t.start()
 
-    log.debug("create event")
-    provider.create(dest, temp, None)
+    saved_oid = provider.create(dest, temp, None)
+    log.debug("create file %s oid=%s", dest, saved_oid)
 
-    t.join(timeout=provider.test_event_timeout)
+    t.join(timeout=provider._test_event_timeout)
 
-    assert received_event
+    assert received_event is not None
 
 
 def test_api_failure(scoped_provider):
@@ -1088,9 +1140,9 @@ def test_file_exists(provider):
     assert oid1 != oid2 or provider.oid_is_path
 
     #   upload: where target OID is a folder, raises FEx
-    _, oid = create_folder()
+    _, oid1 = create_folder()
     with pytest.raises(CloudFileExistsError):
-        provider.upload(oid, data(), None)
+        provider.upload(oid1, data(), None)
 
     #   delete: a non-empty folder, raises FEx
     name1, oid1 = create_folder()
@@ -1137,7 +1189,7 @@ def test_file_exists(provider):
     #   create: creating a folder, deleting it, then creating a file at the same path, should not raise an FEx
     name1, oid1 = create_and_delete_folder()
     _, oid2 = create_file(name1)
-    assert oid1 != oid or provider.oid_is_path
+    assert oid1 != oid2 or provider.oid_is_path
 
     #   create: where target path has a parent folder that already exists as a file, raises FEx
     name, _ = create_file()
@@ -1256,8 +1308,11 @@ def test_cursor(provider):
     for i in provider.events():
         log.debug("event = %s", i)
     current_csr1 = provider.current_cursor
+    log.debug(f"type of cursor is {type(current_csr1)}")
+    provider.current_cursor = current_csr1  # test the setter
 
     # do something to create an event
+    log.debug(f"csr1={current_csr1} current={provider.current_cursor} latest={provider.latest_cursor}")
     info = provider.create("/file2", BytesIO(b"there"))
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
     found = False
@@ -1274,10 +1329,10 @@ def test_cursor(provider):
         # some providers don't support cursors... they will walk on start, always
         return
 
-    assert current_csr1 != current_csr2 
-    
+    assert current_csr1 != current_csr2
 
     # check that we can go backwards
+    provider.prov._clear_cache()
     provider.current_cursor = current_csr1
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
     found = False
@@ -1303,9 +1358,12 @@ def test_listdir(provider):
 
     assert provider.exists_path(outer)
     assert provider.exists_oid(outer_oid)
+    old_list = provider.listdir(outer_oid)
     inner = outer + temp_name
     inner_oid = provider.mkdir(inner)
     assert provider.exists_oid(inner_oid)
+    new_list = provider.listdir(outer_oid)
+    assert old_list != new_list  # confirm that the folder contents are not cached
     provider.create(outer + "/file1", BytesIO(b"hello"))
     provider.create(outer + "/file2", BytesIO(b"there"))
     provider.create(inner + "/file3", BytesIO(b"world"))
@@ -1314,6 +1372,21 @@ def test_listdir(provider):
     expected = ["file1", "file2", temp_name[1:]]
     log.info("contents %s", contents)
     assert sorted(contents) == sorted(expected)
+
+
+def test_listdir_paginates(provider):
+    root = '/' + os.urandom(16).hex()
+    root_oid = provider.mkdir(root)
+    if not provider._listdir_page_size:
+        pytest.skip("provider doesn't support listdir pagination")
+
+    provider._listdir_page_size = 5
+    for _ in range(provider._listdir_page_size):
+        provider.mkdir(root + "/" + os.urandom(16).hex())
+    assert len(list(provider.listdir(root_oid))) == provider._listdir_page_size
+
+    provider.mkdir(root + "/" + os.urandom(16).hex())
+    assert len(list(provider.listdir(root_oid))) == provider._listdir_page_size + 1
 
 
 def test_upload_to_a_path(provider):
@@ -1403,11 +1476,12 @@ def test_report_info(provider):
     # otherwise this info is not helpful for uploads
     # todo: more extensive provider requirements on cached quotas
 
+    log.info("info %s", pinfo2)
+
     assert pinfo2['used'] > 0
     assert pinfo2['limit'] > 0
-    assert pinfo2['used'] > u1
-
-    log.info("info %s", pinfo2)
+    if provider.name not in ("box",):
+        assert pinfo2['used'] > u1
 
     login = pinfo2.get('login')
 
@@ -1417,7 +1491,7 @@ def test_report_info(provider):
 
 
 def test_quota_limit(mock_provider):
-    mock_provider.set_quota(1024)
+    mock_provider._set_quota(1024)
     mock_provider.create("/foo", BytesIO(b'0' * 1024))
     with pytest.raises(CloudOutOfSpaceError):
         mock_provider.create("/bar", BytesIO(b'0' * 2))
@@ -1495,8 +1569,9 @@ def test_large_file_support(provider):
 
 
 def test_special_characters(provider):
+    log.debug("start")
     fname = ""
-    additional_invalid_characters = getattr(provider, "additional_invalid_characters", "")
+    additional_invalid_characters = getattr(provider, "_additional_invalid_characters", "")
     for i in range(32, 127):
         char = str(chr(i))
         if char in (provider.sep, provider.alt_sep):
@@ -1532,7 +1607,9 @@ def test_special_characters(provider):
     new_oid2 = provider.rename(new_oid, newfname2)
     test_newfname2 = provider.info_oid(new_oid2)
     newfname2info = provider.info_path(newfname2)
+    assert newfname2info
     assert newfname2info.oid == new_oid2
+    log.debug("done")
 
 
 def test_cursor_error_during_listdir(provider):
@@ -1559,11 +1636,13 @@ def test_cursor_error_during_listdir(provider):
 @pytest.mark.manual
 def test_authenticate(config_provider):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.test_creds:
+    if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
-    log.info(creds);
+    # log.info(creds)
+    provider.connect(creds)
+    provider.disconnect()
     provider.connect(creds)
 
     modded = False
@@ -1582,7 +1661,7 @@ def test_authenticate(config_provider):
 @pytest.mark.manual
 def test_interrupt_auth(config_provider):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.test_creds:
+    if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
     import time
@@ -1591,6 +1670,53 @@ def test_interrupt_auth(config_provider):
     with pytest.raises(CloudTokenError):
         provider.authenticate()
     assert not provider.connected
+
+
+def test_exists_immediately(provider):
+    if not provider.prov._clear_cache():
+        raise pytest.skip("test only runs if provider implements _clear_cache method")
+    root_oid = provider.info_path('/').oid
+    dir_name = "/testdir"  # provider.temp_name()
+    file_name1 = dir_name + "/file1"
+    file_name2 = dir_name + "/file2"
+
+    dir_oid = provider.mkdir(dir_name)
+    assert dir_oid
+    provider.prov._clear_cache()
+    contents = list(provider.listdir(root_oid))
+    log.debug("contents=%s", contents)
+    oids = [i.oid for i in contents]
+    assert dir_oid in oids
+    provider.prov._clear_cache()
+    oinfo = provider.info_path(dir_name)
+    assert oinfo
+
+    file_info1 = provider.create(file_name1, BytesIO(b"hello"))
+    file_info2 = provider.create(file_name2, BytesIO(b"hello"))
+    provider.prov._clear_cache()
+    contents = list(provider.listdir(dir_oid))
+    log.debug("contents=%s", contents)
+    oids = [i.oid for i in contents]
+    assert file_info1.oid in oids
+    assert file_info2.oid in oids
+    provider.prov._clear_cache()
+    oinfo1 = provider.info_path(file_name1)
+    oinfo2 = provider.info_path(file_name2)
+    assert oinfo1
+    assert oinfo2
+
+    provider.delete(file_info1.oid)
+    provider.prov._clear_cache()
+    contents = list(provider.listdir(dir_oid))
+    log.debug("contents=%s", contents)
+    oids = [i.oid for i in contents]
+    assert file_info1.oid not in oids
+    assert file_info2.oid in oids
+    provider.prov._clear_cache()
+    oinfo1 = provider.info_path(file_name1)
+    oinfo2 = provider.info_path(file_name2)
+    assert not oinfo1
+    assert oinfo2
 
 
 @pytest.fixture
@@ -1606,10 +1732,11 @@ def suspend_capture(pytestconfig):
     yield suspend_guard()
 
 
+# noinspection PyUnreachableCode
 @pytest.mark.manual
 def test_revoke_auth(config_provider, suspend_capture):
     provider = ProviderHelper(config_provider, connect=False)      # type: ignore
-    if not provider.test_creds:
+    if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
     provider.connect(creds)
@@ -1625,11 +1752,14 @@ def test_revoke_auth(config_provider, suspend_capture):
             log.error("still connected %s, %s", provider.prov.info_path("/"), provider.prov.get_quota())
     assert not provider.connected
 
-## provider helper test
+
+# testing the test framework
 def test_specific_test_root():
-    # assure that the provider helper uses the requested test root
-    # assure it never deletes it
-    # cryptvfs relies on this
+    """
+    assure that the provider helper uses the requested test root
+    assure it never deletes it
+    cryptvfs relies on this
+    """
 
     class MockProvRooted(MockProvider):
         test_root = "/banana"
@@ -1650,5 +1780,22 @@ def test_specific_test_root():
     # and i dont delete the test root
     assert list(base.listdir_path("/banana")) == []
 
+
+def test_provider_interface(unconnected_provider):
+    provider = unconnected_provider
+    base_dir = set([x for x in dir(Provider) if not x.startswith('_')])
+    base_dir = set(dir(Provider))
+    log.debug("basedir = %s", base_dir)
+    prov_dir = set([x for x in dir(provider.prov) if not x.startswith('_')])
+    log.debug("provdir = %s", prov_dir)
+    for x in base_dir:
+        if x in prov_dir:
+            prov_dir.remove(x)
+    if len(prov_dir) > 0:
+        msg = "provider %s exposes public interfaces not exposed by the base class:" % provider.prov.name
+        for x in prov_dir:
+            msg += "\n     %s" % x
+        log.error(msg)
+    assert len(prov_dir) == 0
 
 
