@@ -481,7 +481,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         pid = self._get_parent_id(path)
 
         add_pids = [pid]
-        if pid == 'root':
+        if pid == 'root':  # pragma: no cover
+            # cant ever get hit from the tests due to test root
             add_pids = [self._root_id]
 
         info = self._info_oid(oid)

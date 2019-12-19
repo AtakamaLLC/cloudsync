@@ -283,9 +283,15 @@ class DropboxProvider(Provider):
                             raise CloudFileNotFoundError(
                                 'Malformed path when executing %s(%s)' % debug_args(method, kwargs))
                         if inside_error.is_not_found():
-                            log.debug('file not found %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
+                            log.debug('File not found %s(%s %s) : %s', *debug_args(method, args, kwargs, e))
                             raise CloudFileNotFoundError(
                                 'File not found when executing %s(%s)' % debug_args(method, kwargs))
+                        if inside_error.is_not_folder():
+                            log.debug('Expected folder is actually a file when executing %s(%s %s) : %s',
+                                      *debug_args(method, args, kwargs, e))
+                            raise CloudFileExistsError(
+                                'Expected folder is actually a file when executing %s(%s %s)' %
+                                debug_args(method, args, kwargs))
 
                 if isinstance(e.error, files.UploadError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.UploadWriteFailed):
@@ -499,6 +505,9 @@ class DropboxProvider(Provider):
                     yield DirInfo(otype, oid, ohash, path, name=relative)
         except CloudCursorError as e:
             raise CloudTemporaryError("Cursor error %s during listdir" % e)
+        except CloudFileExistsError:
+            pass  # Listdir called on a path with file in it
+
 
     def create(self, path: str, file_like, metadata=None) -> OInfo:
         self._verify_parent_folder_exists(path)
@@ -588,6 +597,7 @@ class DropboxProvider(Provider):
             raise CloudFileExistsError(path)
 
     def rename(self, oid, path):
+        self._verify_parent_folder_exists(path)
         try:
             self._api('files_move_v2', oid, path)
         except CloudFileExistsError:

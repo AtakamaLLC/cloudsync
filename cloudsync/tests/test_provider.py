@@ -384,6 +384,14 @@ def test_connect(provider):
     provider.connection_id = None
     provider.reconnect()
 
+    provider.disconnect()
+    try:
+        provider.get_quota()
+        assert False
+    except CloudDisconnectedError:
+        pass
+    provider.reconnect()
+
 
 def test_info_root(provider):
     info = provider.info_path("/")
@@ -400,6 +408,12 @@ def test_create_upload_download(provider):
         return BytesIO(dat)
 
     dest = provider.temp_name("dest")
+
+    try:
+        provider.download_path(dest, BytesIO())
+        assert False
+    except CloudFileNotFoundError:
+        pass
 
     info1 = provider.create(dest, data())
 
@@ -540,11 +554,22 @@ def test_rmtree(provider):
         for j in range(2):
             assert not provider.exists_path(provider.join(root, str(i), str(j)))
 
+    provider.rmtree(root_oid)
+
+    new_file_name = provider.temp_name()
+    new_file_info = provider.create(new_file_name, BytesIO(os.urandom(32)))
+    provider.rmtree(new_file_info.oid)
+
 
 def test_walk(scoped_provider):
     provider = scoped_provider
     temp = BytesIO(os.urandom(32))
     folder = provider.temp_name("folder")
+    try:
+        list(provider.walk(folder))
+        assert False
+    except CloudFileNotFoundError:
+        pass
     provider.mkdir(folder)
     subfolder = provider.join(folder, provider.temp_name("subfolder"))
     provider.mkdir(subfolder)
@@ -883,6 +908,12 @@ def test_file_not_found(provider):
     def data():
         return BytesIO(dat)
 
+    def new_fake_oid(oid=None):
+        retval = oid if oid else os.urandom(16).hex()
+        if provider.name == "dropbox":
+            retval = 'id:' + retval
+        return retval
+
     test_file_deleted_path = provider.temp_name("dest1")  # Created, then deleted
     test_file_deleted_info = provider.create(test_file_deleted_path, data(), None)
     test_file_deleted_oid = test_file_deleted_info.oid
@@ -893,7 +924,15 @@ def test_file_not_found(provider):
     provider.delete(test_folder_deleted_oid)
 
     test_path_made_up = provider.temp_name("dest2")  # Never created
-    test_oid_made_up = "nevercreated"
+    test_oid_made_up = new_fake_oid(oid="nevercreated")
+
+    test_existent_file_path = provider.temp_name("dest3")
+    test_existent_file_info = provider.create(test_existent_file_path, data(), None)
+    test_existent_file_oid = test_existent_file_info.oid
+
+    test_existent_folder_path = provider.temp_name("dest4")
+    test_existent_folder_oid = provider.mkdir(test_existent_folder_path)
+
     # TODO: consider mocking info_path to always return None, and then call all the provider methods
     #  to see if they are handling the None, and not raising exceptions other than FNF
 
@@ -980,17 +1019,33 @@ def test_file_not_found(provider):
         provider.download(test_oid_made_up, data())
 
     #   rename
+
     #       from a deleted oid raises FNF
-    #       from a made up oid raises FNF
-    #       to a non-existent folder raises [something], conditionally
-    #       to a previously deleted folder raises
-    #       check the rename source to see if there are others
     with pytest.raises(CloudFileNotFoundError):
         provider.rename(test_file_deleted_oid, test_file_deleted_path)
+    #       from a deleted oid raises FNF
     with pytest.raises(CloudFileNotFoundError):
         provider.rename(test_folder_deleted_oid, test_folder_deleted_path)
+    #       from a made up oid raises FNF
     with pytest.raises(CloudFileNotFoundError):
         provider.rename(test_oid_made_up, test_path_made_up)
+    #       rename /a to /b/c where b does not exist, raises file not found
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_existent_file_oid, test_path_made_up + "/junk")
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_existent_folder_oid, test_path_made_up + "/junk")
+    #       rename /a to /b/c where b was previously deleted, raises file not found
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_existent_file_oid, test_file_deleted_path + "/junk")
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_existent_folder_oid, test_folder_deleted_path + "/junk")
+    #       TODO: check the rename source to see if there are others
+    #       TODO: rename /a to /a/b raises [something]
+    #       TODO: rename /a to /a/b/c where b exists, raises [the same something]
+    #       rename /a to /a/b/c where b does not exist, raises file not found
+    with pytest.raises(CloudFileNotFoundError):
+        provider.rename(test_existent_file_oid, test_existent_folder_path + "/junk/junkier")
+        provider.rename(test_existent_folder_oid, test_existent_folder_path + "/junk/junkier")
 
     #   mkdir
     #       to a non-existent folder raises FNF
@@ -1309,6 +1364,36 @@ def test_file_exists(provider):
     provider.rename(oid2, name1)
 
 
+def test_file_exists_error_file_in_path(provider):
+    dat = os.urandom(32)
+
+    def data():
+        return BytesIO(dat)
+
+    def create_file(create_file_name=None):
+        if create_file_name is None:
+            create_file_name = provider.temp_name()
+        file_info = provider.create(create_file_name, data(), None)
+        return create_file_name, file_info.oid
+
+    def create_folder(create_folder_name=None):
+        if create_folder_name is None:
+            create_folder_name = provider.temp_name()
+        create_folder_oid = provider.mkdir(create_folder_name)
+        return create_folder_name, create_folder_oid
+
+    #   rename: target file path contains a file, raises FEx
+    name1, oid1 = create_file()
+    name2, oid2 = create_file()
+    with pytest.raises(CloudFileExistsError):
+        provider.rename(oid1, name2 + provider.temp_name())
+
+    #   rename target folder path contains a file raises FEx
+    name1, oid1 = create_folder()
+    name2, oid2 = create_file()
+    with pytest.raises(CloudFileExistsError):
+        provider.rename(oid1, name2 + provider.temp_name())
+
 def test_cursor(provider):
     # get the ball rolling
     provider.create("/file1", BytesIO(b"hello"))
@@ -1356,6 +1441,12 @@ def test_listdir(provider):
     outer = provider.temp_name()
     root = provider.dirname(outer)
     temp_name = provider.is_subpath(root, outer)
+
+    try:
+        provider.listdir_path(outer)
+        assert False
+    except CloudFileNotFoundError:
+        pass
 
     outer_oid_rm = provider.mkdir(outer)
     assert [] == list(provider.listdir(outer_oid_rm))
@@ -1406,6 +1497,13 @@ def test_upload_to_a_path(provider):
         info = provider.upload(temp_name, BytesIO(b"test2"))
 
 
+def test_upload(provider):
+    temp_name = provider.temp_name()
+    info = provider.create(temp_name, BytesIO(b"test"))
+    assert info.hash
+    provider.upload(info.oid, BytesIO(b"test2"))
+
+
 def test_upload_zero_bytes(provider):
     temp_name = provider.temp_name()
     info = provider.create(temp_name, BytesIO(b""))
@@ -1436,6 +1534,16 @@ def test_delete_doesnt_cross_oids(provider):
     # This test will need to flag off whether the provider uses paths as OIDs or not
     with pytest.raises(Exception):
         provider.upload(temp_name, BytesIO(b"test2"))
+
+
+def test_exists_oid(provider):
+    file_name = provider.temp_name()
+    file_info = provider.create(file_name, BytesIO(os.urandom(32)))
+    provider._clear_cache()
+    assert(provider.exists_oid(file_info.oid))
+
+    provider.delete(file_info.oid)
+    assert(not provider.exists_oid(file_info.oid))
 
 
 @pytest.mark.parametrize("otype", ["file", "folder"])
@@ -1647,7 +1755,7 @@ def test_authenticate(config_provider):
         pytest.skip("provider doesn't support testing auth")
 
     creds = provider.authenticate()
-    # log.info(creds)
+    log.info(creds)
     provider.connect(creds)
     provider.disconnect()
     provider.connect(creds)
