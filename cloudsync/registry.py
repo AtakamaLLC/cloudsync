@@ -4,19 +4,22 @@ The registry maintains a map of provider classes by name.
 
 
 import sys
+from typing import List, Type
+from cloudsync.provider import Provider
 
-
-__all__ = ["create_provider", "get_provider"]
+__all__ = ["create_provider", "get_provider", "known_providers", "register_provider"]
 
 
 providers = {}
 
 
-def register_provider(prov):
+def register_provider(prov: Type[Provider]):
+    """Add a provider class to the registry"""
     providers[prov.name] = prov
 
 
 def discover_providers():
+    """Loop through imported modules, and autoregister providers"""
     for m in sys.modules:
         mod = sys.modules[m]
         if hasattr(mod, "__cloudsync__"):
@@ -24,7 +27,8 @@ def discover_providers():
                 register_provider(mod.__cloudsync__)                # type: ignore
 
 
-def get_provider(name):
+def get_provider(name: str):
+    """Get a provider class with the given name"""
     if name not in providers:
         discover_providers()
 
@@ -34,10 +38,12 @@ def get_provider(name):
     return providers[name]
 
 
-def create_provider(name, *args, **kws):
+def create_provider(name: str, *args, **kws) -> Provider:
+    """Construct a provider instance"""
     return get_provider(name)(*args, *kws)
 
 
-def known_providers():
+def known_providers() -> List[str]:
+    """List all known provider names"""
     discover_providers()
     return list(providers.keys())

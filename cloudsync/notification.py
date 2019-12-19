@@ -9,16 +9,18 @@ import cloudsync.exceptions as ex
 
 
 log = logging.getLogger(__name__)
+__all__ = ["Notification", "NotificationType", "NotificationManager"]
 
 
+# pylint: disable=multiple-statements
 class NotificationType(enum.Enum):
     """These types roughly correspond to the exceptions defined in exceptions.py"""
-    STARTED = 'started'
-    CONNECTED = 'connected'
-    STOPPED = 'stopped'
-    FILE_NAME_ERROR = 'file_name_error'
-    OUT_OF_SPACE_ERROR = 'out_of_space_error'
-    DISCONNECTED_ERROR = 'disconnected_error'
+    STARTED = 'started'                             ; """Sync has started"""
+    CONNECTED = 'connected'                         ; """Provider has connected"""
+    STOPPED = 'stopped'                             ; """Sync engine was stopped"""
+    FILE_NAME_ERROR = 'file_name_error'             ; """File name is invalid, and is being ignored"""
+    OUT_OF_SPACE_ERROR = 'out_of_space_error'       ; """Sync is halted because one provider is out of space"""
+    DISCONNECTED_ERROR = 'disconnected_error'       ; """Provider was disconnected"""
 
 
 class SourceEnum(enum.Enum):
@@ -31,9 +33,10 @@ class SourceEnum(enum.Enum):
 @dataclass
 class Notification:
     """Notification from cloudsync about something."""
-    source: SourceEnum  # Source of the event as defined in the SourceEnum
-    ntype: NotificationType  # Type of notification as defined by the enum
-    path: typing.Optional[str]  # Path to the file in question, if applicable
+    source: SourceEnum                              ; """Source of the event as defined in the SourceEnum"""
+    ntype: NotificationType                         ; """Type of notification as defined by the enum"""
+    path: typing.Optional[str]                      ; """Path to the file in question, if applicable"""
+# pylint: enable=multiple-statements
 
 
 class NotificationManager(Runnable):
@@ -50,7 +53,8 @@ class NotificationManager(Runnable):
             if e is not None:
                 self.__handler(e)
             else:
-                self.stopped = True
+                # None event == stop
+                self.stop()
         except queue.Empty:
             pass
         except Exception:
@@ -67,8 +71,10 @@ class NotificationManager(Runnable):
             log.debug("Encountered a cloud exception: %s (type %s)", e, type(e))
 
     def notify(self, e: Notification):
+        """Add notification to the queue"""
         self.__queue.put(e)
 
     def stop(self, forever=True):
+        """Stop the server"""
         self.__queue.put(None)
         super().stop(forever=forever)

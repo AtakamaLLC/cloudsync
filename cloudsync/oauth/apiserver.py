@@ -1,5 +1,7 @@
 """
-A threaded wsgi web server, free of dependencies on 3rd party libraries.
+A threaded wsgi web server.
+
+Very simple, no dependencies.
 
 Exports ApiServer, ApiError and api_route
 """
@@ -21,6 +23,8 @@ import unittest
 import requests
 
 log = logging.getLogger(__name__)
+
+__all__ = ['ApiServer', 'ApiError', 'api_route']
 
 
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
@@ -70,6 +74,12 @@ class ApiError(Exception):
 def api_route(path):
     """
     Decorator for handling specific urls.
+
+    Args:
+        path: the route to handle
+
+
+    If this ends in a '/', it will handle all routes starting with that path.
     """
     def outer(func):
         if not hasattr(func, "_routes"):
@@ -89,8 +99,6 @@ def sanitize_for_status(e):
 
 class ApiServer:
     """
-    Create a new server on address, port.  Port can be zero.
-
     from apiserver import ApiServer, ApiError, api_route
 
     Create your handlers by inheriting from ApiServer and tagging them with @api_route("/path").
@@ -106,7 +114,17 @@ class ApiServer:
     Query arguments are shoved into the dict via urllib.parse_qs
 
     """
-    def __init__(self, addr, port, headers=None, log_level=ApiServerLogLevel.ARGS, allow_reuse=False):
+    def __init__(self, addr: str, port: int, headers=None, log_level=ApiServerLogLevel.ARGS, allow_reuse=False):
+        """
+        Create a new server on address, port.  Port can be zero.
+
+        Args:
+            addr: ip address
+            port: port number, can be zero
+            headers: dict of headers to include on every response
+            log_level: how much logging to do
+            allow_reuse: whether to allow port reuse
+        """
         self.__addr = addr
         self.__port = port
         self.__headers = headers if headers else []
@@ -136,6 +154,9 @@ class ApiServer:
         log.debug("routes %s", list(self.__routes.keys()))
 
     def add_route(self, path, meth, content_type='application/json'):
+        """
+        Add a new route handler.
+        """
         self.__routes[path] = (meth, content_type)
 
     def port(self):
@@ -155,6 +176,7 @@ class ApiServer:
         return uri
 
     def serve_forever(self):
+        """Start listening and responding."""
         self.__started = True
         try:
             self.__server.serve_forever()
@@ -166,6 +188,7 @@ class ApiServer:
             print("note: didn't shut down oauth server", file=sys.stderr)
 
     def shutdown(self):
+        """Stops the current server, if started"""
         try:
             if self.__started:
                 with self.__shutdown_lock:

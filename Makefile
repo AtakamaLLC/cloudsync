@@ -19,7 +19,7 @@ _lint:
 	pylint cloudsync --enable=duplicate-code --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
 
 test:
-	pytest --cov=cloudsync --durations=0 -n=8 cloudsync/tests --full-trace --timeout=10
+	pytest --cov=cloudsync --durations=1 -n=8 cloudsync/tests --full-trace --timeout=10
 	docs/test.sh
 
 coverage:

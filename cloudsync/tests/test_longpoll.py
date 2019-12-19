@@ -75,6 +75,7 @@ def test_lpwait(uses_cursor):
     else:
         # we dont trust the return value from longpoll without cursors
         assert list(man()) == lp.orig_q
+    man.stop()
 
 
 def test_cursor_mode():
@@ -99,6 +100,7 @@ def test_cursor_mode():
         with pytest.raises(TimeoutError):
             wait_for(lambda: log.debug("to: %s", list(man())), timeout=0.1)
         assert lp.lpcalls == 1
+    man.stop()
 
 
 @pytest.mark.parametrize("uses_cursor", [0, 1])
@@ -121,3 +123,4 @@ def test_lpex(uses_cursor):
 
     # lpman is backing off
     assert man.in_backoff > 0
+    man.stop()

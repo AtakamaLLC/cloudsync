@@ -1,4 +1,4 @@
-Class: CloudSync
+cloudsync.CloudSync
 ===================
 
 The main sync class, instance this to initiate a sync.
