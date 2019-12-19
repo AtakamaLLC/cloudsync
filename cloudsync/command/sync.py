@@ -13,6 +13,11 @@ log = logging.getLogger()
 
 
 class CloudURI:     # pylint: disable=too-few-public-methods
+    """
+    Represents a faux-URI passed on the command line.
+
+    For example: gdrive:/path/to/file
+    """
     def __init__(self, uri):
         if ':' in uri:
             m = re.match(r"([^:]+):(.*)", uri)
@@ -37,6 +42,7 @@ _config = None
 
 
 def config(args):
+    """The global config singleton, parsed from ~/.config/cloudsync"""
     global _config      # pylint: disable=global-statement
     if _config is None:
         try:
@@ -51,6 +57,7 @@ def config(args):
 
 
 def get_oauth_config(args, name):
+    """Reads oauth config from the global config singleton, or uses the defaults"""
     top = config(args).get("oauth", {})
     oauth = top.get(name, {})
     default = OAUTH_CONFIG.get(name, {})
@@ -63,6 +70,7 @@ def get_oauth_config(args, name):
 
 
 def do_sync(args):
+    """Processes the 'sync' command, which begins syncing two providers from the command line"""
     if args.quiet:
         log.setLevel(logging.ERROR)
 

@@ -13,6 +13,7 @@ log = logging.getLogger()
 
 
 def to_jsonable(d):
+    """Make something jsonable, for pretty printing reasons."""
     r = d
     if type(d) is dict:
         r = {}
@@ -28,6 +29,7 @@ def to_jsonable(d):
 
 
 def output_json_for_tag(args, ss, tag, first):
+    """Outputs json for a given state tag, for debugging only"""
     stuff: Iterable[SyncEntry]
     if args.changed:
         stuff = ss.changes
@@ -53,6 +55,7 @@ def output_json_for_tag(args, ss, tag, first):
 
 
 def do_debug(args):
+    """Implements the 'debug' command, mostly for diagnosing state databases"""
     if args.state:
         fake_state = MagicMock()
         fake_state._pretty_time = 0                                         # pylint: disable=protected-access

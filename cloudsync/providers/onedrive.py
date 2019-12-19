@@ -1,3 +1,9 @@
+"""
+Onedrive provider
+"""
+
+# pylint: disable=missing-docstring
+
 # https://dev.onedrive.com/
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/concepts/upload?view=odsp-graph-online
 # https://github.com/OneDrive/onedrive-sdk-python
@@ -49,6 +55,9 @@ class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-metho
     pid: str = None
 
     def __init__(self, *a, pid=None, **kws):
+        """
+        Adds "pid (parent id)" to the DirInfo
+        """
         super().__init__(*a, **kws)
         self.pid = pid
 

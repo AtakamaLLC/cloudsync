@@ -42,6 +42,9 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 
 
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    """
+    Box.com cloud provider
+    """
     _events_to_track = ['ITEM_COPY', 'ITEM_CREATE', 'ITEM_MODIFY', 'ITEM_MOVE', 'ITEM_RENAME', 'ITEM_TRASH',
                         'ITEM_UNDELETE_VIA_TRASH', 'ITEM_UPLOAD']
 
@@ -56,6 +59,12 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     default_sleep = 10
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
+        """
+        Create a new Box.com cloud provider connection.
+
+        Args:
+            oauth_config: the oauth config for your client app
+        """
         super().__init__()
 
         self.__cursor: Optional[Cursor] = None
@@ -69,7 +78,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self._mutex = threading.RLock()
 
         self._oauth_config = oauth_config
-        self._long_poll_manager = LongPollManager(self._short_poll, self._long_poll, short_poll_only=True)
+        self._long_poll_manager = LongPollManager(self._short_poll, self._long_poll, short_poll_only=False)
         self._ids: Dict[str, str] = {}
         self.__seen_events: Dict[str, float] = {}
         self.__event_sequence: Dict[str, int] = {}
@@ -105,8 +114,10 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def _store_refresh_token(self, access_token, refresh_token):
         self.__creds = {"access_token": access_token, "refresh_token": refresh_token}
+        self.__access_token = access_token
         self._oauth_config.creds_changed(self.__creds)
 
+    # noinspection PyUnresolvedReferences
     def connect_impl(self, creds):
         log.debug('Connecting to box')
         if not self.__client:
@@ -128,7 +139,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     if jwt_token:
                         jwt_dict = json.loads(jwt_token)
                         user_id = creds.get('user_id')
-                        auth = JWTAuth.from_settings_dictionary(jwt_dict, user=user_id)
+                        auth = JWTAuth.from_settings_dictionary(jwt_dict, user=user_id,
+                                                                store_tokens=self._store_refresh_token)
                         self.__client = Client(auth)
                     else:
                         if not refresh_token:
@@ -147,11 +159,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 with self._api():
                     self.__access_token = auth.access_token
                     self._long_poll_manager.start()
-            except (BoxNetworkException) as e:
+            except BoxNetworkException as e:
                 log.exception("Error during connect %s", e)
                 self.disconnect()
                 raise CloudDisconnectedError()
-            except CloudTokenError as e:
+            except CloudTokenError:
                 raise
             except Exception as e:
                 log.exception("Error during connect %s", e)
@@ -167,7 +179,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         self.__client = None
         self.connection_id = None
 
-    # noinspection PyBroadException
+    # noinspection PyBroadException,PyProtectedMember
     class _BoxProviderGuard:
         def __init__(self, client: Client, box):
             assert isinstance(client, Client)
@@ -178,7 +190,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             self.__box._mutex.__enter__()
             return self.__client
 
-        def __exit__(self, ty, ex, tb):     # pylint: disable=too-many-branches
+        def __exit__(self, ty, ex, tb):  # pylint: disable=too-many-branches
             self.__box._mutex.__exit__(ty, ex, tb)
 
             if ex:
@@ -189,7 +201,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     raise CloudDisconnectedError("disconnected on timeout")
                 except BoxOAuthException as e:
                     self.__box.disconnect()
-                    raise CloudTokenError("oauth fail %s" %e)
+                    raise CloudTokenError("oauth fail %s" % e)
                 except BoxNetworkException as e:
                     self.__box.disconenct()
                     raise CloudDisconnectedError("disconnected %s" % e)
@@ -212,6 +224,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 except Exception:
                     pass  # this will not swallow the exception, because this is in a context manager
 
+    # noinspection PyProtectedMember
     def _api(self, *args, **kwargs) -> 'BoxProvider._BoxProviderGuard':
         needs_client = kwargs.get('needs_client', True)
         if needs_client and not self.__client:
@@ -245,6 +258,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if timeout is None:
             timeout = self._long_poll_timeout
         log.debug("inside _long_poll")
+        if not self.__access_token:
+            log.warning("No access token in long poll")
         try:
             if self.__long_poll_config.get('retries_remaining', 0) < 1:
                 log.debug("creds = %s", self.__creds)
@@ -254,7 +269,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                                                                                headers=headers)
                 log.debug("response content is %s, %s", srv_resp.status_code, srv_resp.content)
                 if not 200 <= srv_resp.status_code < 300:
-                    raise CloudTokenError
+                    raise CloudTokenError(srv_resp)
                 server_json = srv_resp.json().get('entries')[0]
                 self.__long_poll_config = {
                     "url": server_json.get('url'),
@@ -281,17 +296,26 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         log.debug("inside _short_poll() cursor = %s", self.current_cursor)
         with self._api() as client:
             response = client.events().get_events(limit=100, stream_position=self.current_cursor)
-            new_position = response.get('next_stream_position')
-            change: BoxEvent
-            for change in (i for i in response.get('entries') if i.get('event_type')):
+        new_position = response.get('next_stream_position')
+        change: BoxEvent
+        if new_position:
+            self.current_cursor = new_position
+        else:
+            log.error("No new cursor from Box\n", stack_info=True)
+        for change in (i for i in response.get('entries') if i.get('event_type')):
+            change_source = change.get('source')
+            with self._api() as client:
                 if self.__seen_events.get(change.event_id):
-                    log.debug("skipped duplicate event %s", change.event_id)
+                    change_source_info = ""
+                    if change_source:
+                        change_source_info = str(change_source)
+                    log.debug("skipped duplicate event %s, %s", change.event_id, change_source_info)
                     continue
                 log.debug("got event %s %s", change.event_id, self.current_cursor)
                 log.debug("event type is %s", change.get('event_type'))
                 self.__seen_events[change.event_id] = time.monotonic()
                 ts = arrow.get(change.get('created_at')).float_timestamp
-                change_source = change.get('source')
+                log.debug("change source is %s", change_source)
                 previous_sequence: int = self.__event_sequence.get(change_source.id)
                 if previous_sequence:
                     try:
@@ -314,17 +338,15 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                     log.debug("ignoring event type %s source type %s", change.get('event_type'), type(change_source))
                     continue
 
-                event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_position)
+            event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_position)
 
-                old_path = self.__cache.get_path(oid)
-                old_type = self.__cache.get_type(oid=oid)
-                if (path and old_path != path) or old_type == DIRECTORY:
-                    self.__cache.delete(path=path)
+            old_path = self.__cache.get_path(oid)
+            old_type = self.__cache.get_type(oid=oid)
+            if (path and old_path != path) or old_type == DIRECTORY:
+                self.__cache.delete(path=path)
 
-                yield event
-
-            if new_position:  # todo: do we want to raise if we don't have a new position?
-                self.current_cursor = new_position
+            # this MUST NOT BE IN A WITH BLOCK
+            yield event
 
     # noinspection DuplicatedCode
     def _walk(self, path, oid):
@@ -888,7 +910,15 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     @classmethod
     def test_instance(cls):
-        return cls.oauth_test_instance(prefix=cls.name.upper(), token_key='jwt_token')
+        instance = cls.oauth_test_instance(prefix=cls.name.upper(), token_key='jwt_token')
+        instance._test_event_timeout = LongPollManager.long_poll_timeout + 10  # pylint: disable=protected-access, attribute-defined-outside-init
+        return instance
+
+    def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
+        self._long_poll_manager.short_poll_only = short_poll_only
+        if self.connected:  # stops the event polling, and restarts it, ensuring the new setting is obeyed
+            self.disconnect()
+            self.reconnect()
 
 
 __cloudsync__ = BoxProvider
