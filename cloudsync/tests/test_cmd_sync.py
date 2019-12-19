@@ -1,5 +1,6 @@
 import os
 import logging
+import importlib
 from tempfile import NamedTemporaryFile
 
 from unittest.mock import MagicMock, patch
@@ -7,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cloudsync.exceptions import CloudTokenError
-from cloudsync.command.sync import do_sync
+import cloudsync.command.sync as csync
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def test_sync_basic(caplog):
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
 
-    do_sync(args)
+    csync.do_sync(args)
 
     logs = caplog.record_tuples
 
@@ -51,7 +52,7 @@ def test_sync_oauth(caplog, conf):
 
         log.info("start sync")
         with pytest.raises(CloudTokenError):
-            do_sync(args)
+            csync.do_sync(args)
     finally:
         os.unlink(tf.name)
 
@@ -60,18 +61,25 @@ def test_sync_oauth(caplog, conf):
     assert any("connecting to google" in t[2].lower() for t in logs)
 
 
-def test_sync_daemon():
+@pytest.mark.parametrize("daemon", ["with_daemon", "no_daemon"])
+def test_sync_daemon(daemon):
     args = MagicMock()
 
     args.src = "mock_oid_cs:/a"
     args.dest = "mock_path_cs:/b"
     args.daemon = True         # don't keep running after i quit
 
-    try:
-        with patch("daemon.DaemonContext") as dc:
-            # if you don't patch, then this will fork... not what you want
-            do_sync(args)
-    except ImportError:
-        pytest.skip("no daemon mode, skipping")
-
-    dc.assert_called_once()
+    if daemon == "with_daemon":
+        # daemon module is available - forcibly
+        dm = MagicMock()
+        with patch.dict("sys.modules", {'daemon': dm}):
+            importlib.reload(csync)
+            csync.do_sync(args)
+            dm.DaemonContext.assert_called_once()
+    else:
+        # daemon module is not available
+        with patch.dict("sys.modules", {'daemon': None}):
+            importlib.reload(csync)
+            # import will fail here, which is ok
+            with pytest.raises(NotImplementedError):
+                csync.do_sync(args)
