@@ -670,25 +670,25 @@ def test_event_del_create(provider):
     events = []
     event_num = 1
     create1, delete1, create2 = [None] * 3
-    for e in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
-        log.info("test event %s", e)
+    for event in provider.events_poll(provider.test_event_timeout * 2, until=lambda: done):
+        log.info("test event %s", event)
         # you might get events for the root folder here or other setup stuff
-        path = e.path
-        if not e.path:
-            info = provider.info_oid(e.oid)
+        path = event.path
+        if not event.path:
+            info = provider.info_oid(event.oid)
             if info:
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or e.oid == info1.oid):
+        if not (path == dest or event.oid == info1.oid):
             continue
 
-        events.append(e)
+        events.append(event)
 
-        if e.exists:
-            if e.oid == info1.oid and create1 is None:
+        if event.exists:
+            if event.oid == info1.oid and create1 is None:
                 create1 = event_num
-            if e.oid == info2.oid or (provider.oid_is_path and e.oid == info1.oid and create1 is not None):
+            if event.oid == info2.oid or (provider.oid_is_path and event.oid == info1.oid and create1 is not None):
                 create2 = event_num
 
         if create2 and (create1 is None or delete1 is not None):
