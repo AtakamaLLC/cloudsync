@@ -619,7 +619,7 @@ def test_event_order_del_create(sync):
 
 @pytest.mark.manual
 @pytest.mark.parametrize("order", list(permutations(range(6), 6)))
-def test_event_order_permute(order, sync):
+def test_event_order_permute(order, sync): # pragma: no cover
     local_parent, remote_parent = ("/local", "/remote")
     local, remote = sync.providers
     local.mkdir(local_parent)
