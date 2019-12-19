@@ -1,3 +1,8 @@
+"""
+The registry maintains a map of provider classes by name.
+"""
+
+
 import sys
 
 

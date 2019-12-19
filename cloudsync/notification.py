@@ -5,12 +5,14 @@ import enum
 from dataclasses import dataclass
 from cloudsync.runnable import Runnable
 import cloudsync.types as typ
-from cloudsync.exceptions import *  # pylint: disable=unused-wildcard-import,wildcard-import
+import cloudsync.exceptions as ex
+
+
 log = logging.getLogger(__name__)
 
 
 class NotificationType(enum.Enum):
-    # These types roughly correspond to the exceptions defined in exceptions.py
+    """These types roughly correspond to the exceptions defined in exceptions.py"""
     STARTED = 'started'
     CONNECTED = 'connected'
     STOPPED = 'stopped'
@@ -20,6 +22,7 @@ class NotificationType(enum.Enum):
 
 
 class SourceEnum(enum.Enum):
+    """Local and remote, probably belongs in types.py"""
     LOCAL = typ.LOCAL
     REMOTE = typ.REMOTE
     SYNC = 2
@@ -27,12 +30,14 @@ class SourceEnum(enum.Enum):
 
 @dataclass
 class Notification:
+    """Notification from cloudsync about something."""
     source: SourceEnum  # Source of the event as defined in the SourceEnum
     ntype: NotificationType  # Type of notification as defined by the enum
     path: typing.Optional[str]  # Path to the file in question, if applicable
 
 
 class NotificationManager(Runnable):
+    """Service that receives notifications in a queue, and calls a handler for each."""
     def __init__(self, evt_handler: typing.Callable[[Notification], None]):
         self.__queue: queue.Queue = queue.Queue()
         self.__handler: typing.Callable = evt_handler
@@ -51,12 +56,12 @@ class NotificationManager(Runnable):
         except Exception:
             log.exception("Error while handling a notification: %s", e)
 
-    def notify_from_exception(self, source: SourceEnum, e: CloudException, path: typing.Optional[str] = None):
-        if isinstance(e, CloudDisconnectedError):
+    def notify_from_exception(self, source: SourceEnum, e: ex.CloudException, path: typing.Optional[str] = None):
+        if isinstance(e, ex.CloudDisconnectedError):
             self.notify(Notification(source, NotificationType.DISCONNECTED_ERROR, path))
-        elif isinstance(e, CloudOutOfSpaceError):
+        elif isinstance(e, ex.CloudOutOfSpaceError):
             self.notify(Notification(source, NotificationType.OUT_OF_SPACE_ERROR, path))
-        elif isinstance(e, CloudFileNameError):
+        elif isinstance(e, ex.CloudFileNameError):
             self.notify(Notification(source, NotificationType.FILE_NAME_ERROR, path))
         else:
             log.debug("Encountered a cloud exception: %s (type %s)", e, type(e))

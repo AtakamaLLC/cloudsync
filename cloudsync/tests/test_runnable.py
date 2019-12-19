@@ -97,7 +97,7 @@ def test_runnable_wake():
         time.sleep(0.1)
     assert testrun.called == 1
 
-    while not testrun.interrupt:
+    while not testrun.started:
         time.sleep(0.1)
 
     # now sleeping for 10 secs, doing nothing

@@ -1,4 +1,4 @@
-# pylint: disable=attribute-defined-outside-init, protected-access, too-many-lines
+# pylint: disable=attribute-defined-outside-init, protected-access, too-many-lines, missing-docstring
 """
 SyncEntry[SideState, SideState] is a pair of entries, indexed by oid.  The SideState class makes
 extensive use of __getattr__ logic to keep indexes up to date.
@@ -36,12 +36,18 @@ __all__ = ['SyncState', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 
 class Exists(Enum):
+    """
+    Whether a file exists, used throughout the system instead of booleans
+    """
     UNKNOWN = "unknown"
     EXISTS = "exists"
     TRASHED = "trashed"
     MISSING = "missing"
 
     def __bool__(self):
+        """
+        Protect against bool use
+        """
         raise ValueError("never bool enums")
 
 
@@ -54,6 +60,9 @@ MISSING = Exists.MISSING
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
 class SideState():
+    """
+    One half of a sync
+    """
     hash: Any
     sync_hash: Any
 
@@ -150,6 +159,9 @@ def other_side(index):
 
 
 class Storage(ABC):
+    """
+    Abstract base storage class
+    """
     @abstractmethod
     def create(self, tag: str, serialization: bytes) -> Any:
         """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
@@ -191,6 +203,9 @@ class Storage(ABC):
 # single entry in the syncs state collection
 @strict         # pylint: disable=too-many-instance-attributes, too-many-public-methods
 class SyncEntry:
+    """
+    A pair of side states, as well as their storage information, and sync priority.
+    """
     def __init__(self, parent: 'SyncState',
                  otype: Optional[OType],
                  storage_init: Optional[Tuple[Any, bytes]] = None,
@@ -550,6 +565,16 @@ class SyncEntry:
 
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    """
+    Holds the entire sync engine state.
+
+    Args:
+        providers: pair of providers
+        storage: optional `Storage`
+        tag: unique string within `Storage` for this table of entries
+        prioritize: callable that, given a path, returns a priority
+
+    """
     headers = (
         "EID",  # _sig(id(self)),
         "SID",  # _sig(self.storage_id),
