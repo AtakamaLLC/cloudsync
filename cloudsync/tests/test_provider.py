@@ -685,13 +685,11 @@ def test_event_del_create(provider):
 
         events.append(e)
 
-        if e.oid == info1.oid:
-            if e.exists and create1 is None:
+        if e.exists:
+            if e.oid == info1.oid and create1 is None:
                 create1 = event_num
-            if not e.exists and delete1 is None:
-                delete1 = event_num
-        if e.oid == info2.oid and e.exists and create2 is None:
-            create2 = event_num
+            if e.oid == info2.oid or (provider.oid_is_path and e.oid == info1.oid and create1 is not None):
+                create2 = event_num
 
         if create2 and (create1 is None or delete1 is not None):
             done = True
