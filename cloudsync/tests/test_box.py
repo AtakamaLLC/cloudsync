@@ -214,12 +214,14 @@ def test_upload():
     prov.large_file_size = 10
     prov.create("/small", io.BytesIO(b'123'))
     assert srv.calls["upload/files"]
+    prov.disconnect()
 
 def test_mkdir():
     srv, prov = fake_prov()
     log.info("calls %s", list(srv.calls.keys()))
     prov.mkdir("/dir")
     assert srv.calls["mkdir"]
+    prov.disconnect()
 
 def test_nocred():
     srv, prov = fake_prov()

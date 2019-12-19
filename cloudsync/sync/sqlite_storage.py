@@ -8,6 +8,9 @@ log = logging.getLogger(__name__)
 
 
 class SqliteStorage(Storage):
+    """
+    Local disk storage using sqlite.
+    """
     def __init__(self, filename: str):
         self._mutex = Lock()
         self._filename = filename

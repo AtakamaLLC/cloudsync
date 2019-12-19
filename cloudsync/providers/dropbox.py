@@ -1,3 +1,9 @@
+"""
+Dropbox provider
+"""
+
+# pylint: disable=missing-docstring
+
 import io
 import os
 import time

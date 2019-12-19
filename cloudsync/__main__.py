@@ -1,3 +1,7 @@
+"""
+Used when running cloudsync as a command-line utility
+"""
+
 from cloudsync.command import main
 
 if __name__ == "__main__":

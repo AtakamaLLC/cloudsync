@@ -1,3 +1,8 @@
+"""
+Log initialization for cloudsync.  Adds the 'TRACE' level to the logger, which
+only shows while unit testing cloudsync itself.
+"""
+
 # add TRACE named level, because libraries need it
 
 import logging
