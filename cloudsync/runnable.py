@@ -62,8 +62,10 @@ class Runnable(ABC):
             until: lambda returns bool
             sleep: seconds
         """
-        service_name = self.thread_name or self.__class__
-        log.debug("starting %s", service_name)
+        if self.thread_name is None:
+            self.thread_name = self.__class__.__name__
+
+        log.debug("starting %s", self.thread_name)
 
         # ordering of these two prevents race condition if you start/stop quickly
         # see `def started`
@@ -78,22 +80,22 @@ class Runnable(ABC):
                 self.do()
                 if self.in_backoff > 0:
                     self.in_backoff = 0
-                    log.debug("%s: clear backoff", service_name)
+                    log.debug("%s: clear backoff", self.thread_name)
             except BackoffError:
                 self.__increment_backoff()
-                log.debug("%s: backing off %s", service_name, self.in_backoff)
+                log.debug("%s: backing off %s", self.thread_name, self.in_backoff)
             except Exception:
                 self.__increment_backoff()
-                log.exception("unhandled exception in %s", service_name)
+                log.exception("unhandled exception in %s", self.thread_name)
             except BaseException:
                 self.__increment_backoff()
-                log.exception("very serious exception in %s", service_name)
+                log.exception("very serious exception in %s", self.thread_name)
 
             if self.stopped or (until is not None and until()):
                 break
 
             if self.in_backoff > 0:
-                log.debug("%s: backoff sleep %s", service_name, self.in_backoff)
+                log.debug("%s: backoff sleep %s", self.thread_name, self.in_backoff)
                 self.interruptable_sleep(self.in_backoff)
             else:
                 self.interruptable_sleep(sleep)
@@ -106,6 +108,9 @@ class Runnable(ABC):
 
     @property
     def started(self):
+        """
+        True if currently running
+        """
         return self.__interrupt is not None
 
     @staticmethod
@@ -168,4 +173,3 @@ class Runnable(ABC):
             self.thread.join(timeout=timeout)
             if self.thread.is_alive():
                 raise TimeoutError()
-

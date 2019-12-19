@@ -16,7 +16,7 @@ from .notification import NotificationManager, Notification, NotificationType, S
 log = logging.getLogger(__name__)
 
 
-@strict # pylint: disable=too-many-instance-attributes
+@strict  # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
     """
     The main syncrhonization class used.
@@ -28,6 +28,29 @@ class CloudSync(Runnable):
                  sleep: Optional[Tuple[float, float]] = None,
                  ):
 
+        """
+        Construct a new synchronizer between two providers.
+
+        Args:
+            providers: Two connected, authenticated providers.
+            roots: The folder to synchronize
+            storage: The back end storage mechanism for long-running sync information.
+            sleep: The amount of time to sleep between event processing loops for each provider.
+                   Defaults to the provider's default_sleep value.
+
+        When run, will receive events from each provider, and use those events to trigger
+            copying files from one provider to the other.
+
+        Conflicts (changes made on both sides) are handled by renaming files, unless py::meth::`resolve_conflict`
+            is overridden.
+
+        The first time a sync starts up, it checks storage. If event cursors are invalid, or a walk has never
+            been done, then the sync engine will trigger a walk of all files.
+
+        File names are translated between both sides using the `translate` function, which can be overriden
+            to deal with incompatible naming conventions, special character translation, etc.  By default,
+            invalid names are not synced, and notifications about this are sent to py::method::`handle_notification`.
+        """
         if not roots and self.translate == CloudSync.translate:     # pylint: disable=comparison-with-callable
             raise ValueError("Either override the translate() function, or pass in a pair of roots")
 
@@ -42,9 +65,9 @@ class CloudSync(Runnable):
 
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
 
-        # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through 
+        # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through
         state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
-                prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
+                          prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, self.nmgr, sleep=sleep)
 
@@ -72,7 +95,7 @@ class CloudSync(Runnable):
 
     def forget(self):
         """
-        Forget and discard all state information, and drop any events in the queue.
+        Forget and discard all state information, and drop any events in the queue.  This will trigger a walk.
         """
         self.state.forget()
         self.emgrs[0].forget()
@@ -80,9 +103,9 @@ class CloudSync(Runnable):
 
     @property
     def aging(self) -> float:
-        """float: The number of seconds to wait before syncing a file.   
+        """float: The number of seconds to wait before syncing a file.
 
-        Reduces storage provider traffic at the expense of increased conflict risk.  
+        Reduces storage provider traffic at the expense of increased conflict risk.
 
         Default is based on the max(provider.default_sleep) value
         """
@@ -143,7 +166,7 @@ class CloudSync(Runnable):
     def translate(self, side: int, path: str):
         """Override this method to translate between local and remote paths
 
-        By default uses `self.roots` to strip the path provided, and 
+        By default uses `self.roots` to strip the path provided, and
         join the result to the root of the other side.
 
         If `self.roots` is None, this function must be overridden.
@@ -186,14 +209,23 @@ class CloudSync(Runnable):
 
     @property
     def change_count(self):
+        """
+        Number of relevant changes to be processed.
+        """
         return self.smgr.change_count
 
     @property
     def busy(self):
+        """
+        True if there are any changes or events to be processed
+        """
         return self.smgr.busy or self.emgrs[0].busy or self.emgrs[1].busy
 
     def start(self, *, daemon=True, **kwargs):
-        # override Runnable start/stop so that events can be processed in separate threads
+        """
+        Starts the cloudsync service.
+        """
+        # Replaces :py:meth:`cloudsync.Runnable.start` so that events are processed asynchronously.
         self.sthread = threading.Thread(target=self.smgr.run, kwargs={'sleep': 0.1, **kwargs}, daemon=daemon)
         self.ethreads = (
             threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': self.sleep[0], **kwargs}, daemon=daemon),
@@ -207,6 +239,12 @@ class CloudSync(Runnable):
         self.nmgr.start(**kwargs)
 
     def stop(self, forever=True):
+        """
+        Stops the cloudsync service.
+
+        Args:
+            forever: If false is passed, then handles are left open for a future start.  Generally used for tests only.
+        """
         log.info("stopping sync: %s", self.storage_label())
         self.smgr.stop(forever=forever)
         self.emgrs[0].stop(forever=forever)
@@ -221,42 +259,51 @@ class CloudSync(Runnable):
 
     # for tests, make this manually runnable
     def do(self):
+        """
+        One loop of sync, used for *tests only*.
+
+        This randomly chooses to process local events, remote events or local syncs.
+        """
         # imports are in the body of this test-only function
         import random  # pylint: disable=import-outside-toplevel
         mgrs = [*self.emgrs, self.smgr]
         random.shuffle(mgrs)
+        # conceptually, we should save the order of operations
+        # self.test_mgr_order.append(order_of(mgrs))
         caught = None
         for m in mgrs:
             try:
                 m.do()
             except Exception as e:
+                log.error("exception in %s : %s", m.thread_name, repr(e))
                 caught = e
         if caught is not None:
             raise caught
 
-        #  conceptually this should work, but our tests rely on changeset_len
-        # instead we need to expose a stuff-to-do property in cs
-        # if self.test_mgr_iter:
-        #    try:
-        #        r = next(self.test_mgr_iter)
-        #    except StopIteration:
-        #        r = random.randint(0, 2)
-        # else:
-        #    r = random.randint(0, 2)
-        # self.test_mgr_order.append(r)
-        # mgrs[r].do()
-
     def done(self):
+        """
+        Called at shutdown, override if you need some shutdown code.
+        """
         self.smgr.done()
         self.emgrs[0].done()
         self.emgrs[1].done()
         self.nmgr.done()
 
     def wait(self, timeout=None):
+        """
+        Wait for all threads.
+
+        Will wait forever, unless stop() is called or timeout is specified.
+        """
         for t in (self.sthread, self.ethreads[0], self.ethreads[1]):
             t.join(timeout=timeout)
             if t.is_alive():
                 raise TimeoutError()
 
-    def handle_notification(self, notification):
-        pass
+    def handle_notification(self, notification: Notification):
+        """
+        Override to receive notifications during sync processing.
+
+        Args:
+            notification: Information about errors, or other sync events.
+        """

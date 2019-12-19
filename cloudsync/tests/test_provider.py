@@ -10,6 +10,7 @@ import time
 
 import msgpack
 import pytest
+from _pytest.fixtures import FixtureLookupError
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
@@ -31,6 +32,7 @@ else:
     # but we can't actually derive from it or stuff will break
     ProviderBase = object
 
+
 def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     count = 4
     def wrapped(prov, *args, **kwargs):
@@ -50,7 +52,7 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
 
 
 class ProviderHelper(ProviderBase):
-    def __init__(self, prov, connect=True, short_poll_only=True):
+    def __init__(self, prov, connect=True, short_poll_only=True, isolation_string=None):
         self.api_retry = True
         self.prov = prov
 
@@ -58,7 +60,9 @@ class ProviderHelper(ProviderBase):
         self._test_event_timeout = getattr(self.prov, "_test_event_timeout", 20)
         self._test_event_sleep = getattr(self.prov, "_test_event_sleep", 1)
         self._test_creds = getattr(self.prov, "_test_creds", {})
-        self.test_root: Optional[str] = None
+        if not isolation_string:
+            isolation_string = os.urandom(16).hex()
+        self.test_root: str = self.join(self.test_parent, isolation_string)
 
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
@@ -74,11 +78,6 @@ class ProviderHelper(ProviderBase):
         ns = self.prov.list_ns()
         if ns:
             self.prov.namespace = self.prov._test_namespace
-
-        if not self.test_root:
-            # if the provider class doesn't specify a testing root
-            # then just make one up
-            self.test_root = self.join(self.test_parent, os.urandom(16).hex())
 
         log.debug("mkdir %s", self.test_root)
         self.prov.mkdir(self.test_root)
@@ -247,7 +246,8 @@ class ProviderHelper(ProviderBase):
 
     def test_cleanup(self, timeout=None, until=None):
         info = self.prov.info_path(self.test_root)
-        self.__cleanup(info.oid)
+        if info:
+            self.__cleanup(info.oid)
 
     def prime_events(self):
         self.current_cursor = self.latest_cursor
@@ -271,14 +271,27 @@ class ProviderHelper(ProviderBase):
 
 def mixin_provider(prov, connect=True, short_poll_only=True):
     assert prov
-    assert isinstance(prov, Provider)
+    if not isinstance(prov, List):
+        prov = [prov]
+    for curr_prov in prov:
+        assert isinstance(curr_prov, Provider)
+    instances = len(prov)
 
-    prov = ProviderHelper(prov, connect=connect, short_poll_only=short_poll_only)         # type: ignore
+    isolation_string = None
+    if instances > 1:
+        isolation_string = os.urandom(16).hex()
 
-    yield prov
+    providers = []
+    for i in range(instances):
+        providers.append(ProviderHelper(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
+    if len(providers) == 1:
+        yield providers[0]
+    else:
+        yield providers
 
     if connect:
-        prov.test_cleanup()
+        for curr_prov in providers:
+            curr_prov.test_cleanup()
 
 
 @pytest.fixture
@@ -286,15 +299,28 @@ def provider_params():
     return None
 
 
+def config_provider_impl(request, provider_name, instances):
+    provs = list()
+    for i in range(instances):
+        try:
+            provs.append(request.getfixturevalue("cloudsync_provider"))
+        except FixtureLookupError:
+            if provider_name == "external":
+                raise
+            provs.append(cloudsync.registry.get_provider(provider_name).test_instance())
+    if len(provs) == 1:
+        provs = provs[0]
+    yield provs
+
+
 @pytest.fixture(scope="module")
-def config_provider(request, provider_name):
-    try:
-        yield request.getfixturevalue("cloudsync_provider")
-    except Exception:
-        # this should be a _pytest.fixtures.FixtureLookupError
-        if provider_name == "external":
-            raise
-        yield cloudsync.registry.get_provider(provider_name).test_instance()
+def config_provider(request, provider_name, instances=1):
+    yield from config_provider_impl(request, provider_name, instances)
+
+
+@pytest.fixture(scope="module")
+def two_config_providers(request, provider_name, instances=2):
+    yield from config_provider_impl(request, provider_name, instances)
 
 
 @pytest.fixture(name="provider", scope="module")
@@ -305,6 +331,11 @@ def provider_fixture(config_provider):
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
+
+
+@pytest.fixture(name="two_scoped_providers")
+def two_scoped_provider_fixture(two_config_providers):
+    yield from mixin_provider(two_config_providers)
 
 
 @pytest.fixture(name="unconnected_provider")
@@ -318,8 +349,9 @@ def scoped_provider_fixture_short_poll(config_provider):
 
 
 import cloudsync.providers
-
 _registered = False
+
+
 def pytest_generate_tests(metafunc):
     global _registered
     if not _registered:
@@ -737,13 +769,14 @@ def test_event_del_create(provider):
     info2 = provider.create(dest, temp2)
 
     last_event = None
-    saw_first_delete = False
-    saw_first_create = False
-    disordered = False
     done = False
-
+    log.info("test oid 1 %s", info1.oid)
+    log.info("test oid 2 %s", info2.oid)
+    events = []
+    event_num = 1
+    create1, delete1, create2 = [None] * 3
     for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
-        log.debug("event %s", event)
+        log.info("test event %s", event)
         # you might get events for the root folder here or other setup stuff
         path = event.path
         if not event.path:
@@ -752,46 +785,40 @@ def test_event_del_create(provider):
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or event.oid == info1.oid):
+        if not (path == dest or event.oid in (info1.oid, info2.oid)):
             continue
 
-        last_event = event
+        events.append(event)
 
-        if event.oid == info1.oid:
-            if event.exists:
-                saw_first_create = True
-                if saw_first_delete and not provider.oid_is_path:  # TODO: this condition is not correct...
-                    log.debug("disordered!")
-                    disordered = True
-            else:
-                saw_first_delete = True
+        if event.exists:
+            if event.oid == info1.oid and (not provider.oid_is_path or create1 is None):
+                create1 = event_num
+            if event.oid == info2.oid or (provider.oid_is_path and event.oid == info1.oid and create1 is not None):
+                create2 = event_num
+        else:
+            if event.oid == info1.oid:
+                delete1 = event_num
 
-        if event.exists and event.oid == info2.oid:
-            if provider.oid_is_path:
-                if saw_first_delete and saw_first_create:
-                    done = True
-            else:
-                done = True
+        if create2 and (create1 is None or delete1 is not None):
+            done = True
+        event_num = event_num + 1
 
-    # the important thing is that we always get a create after the delete event
-    assert last_event, "Event loop timed out before getting any events"
-    assert done, "Event loop timed out after the delete, but before the create, " \
-                 "saw_first_delete=%s, saw_first_create=%s, disordered=%s" % (saw_first_delete, saw_first_create, disordered)
-    # The provider may compress out the first create, or compress out the first create and delete, or deliver both
-    # So, if we saw the first create, make sure we got the delete. If we didn't see the first create,
-    # it doesn't matter if we saw the first delete.
-    if saw_first_create:
-        if not saw_first_delete:
-            log.error("first delete not seen yet, about to fail, giving it a chance to come in so we can log it")
-            done = False
-            try:
-                for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
-                    done = (event.oid == info1.oid and not event.exists)
-            except TimeoutError:
-                pass
-        assert saw_first_delete
-    assert last_event.exists is True
-    assert not disordered
+    assert len(events), "Event loop timed out before getting any events"
+    if create1 is not None:
+        assert delete1 is not None  # make sure we got delete1 if we got create1
+    assert create2  # we definitely have to see the second create
+
+    if provider.oid_is_path:  # ordering is important for oid_is_path, so these are ordering tests
+        # The provider may compress out create1, or compress out the create1 and delete1, or deliver both
+        # So, if we saw create1, make sure we got delete1 and that it came after create1
+        # If we didn't see create1, it doesn't matter if we saw delete1.
+        if create1 is not None:
+            assert delete1 is not None
+            assert create1 < delete1
+
+        # If we got delete1, it needs to come before create2
+        if delete1 is not None:
+            assert delete1 < create2
     if provider.prov.name == 'box':
         logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
         logging.getLogger('urllib3.connectionpool').setLevel(cpll)
@@ -883,6 +910,7 @@ def test_event_longpoll(long_poll_provider):
     t.join(timeout=provider._test_event_timeout)
 
     assert received_event is not None
+
 
 def test_api_failure(scoped_provider):
     # assert that the cloud
@@ -1914,3 +1942,51 @@ def test_provider_interface(unconnected_provider):
     assert len(prov_dir) == 0
 
 
+def test_cache(two_scoped_providers):
+    (prov1, prov2) = two_scoped_providers
+    assert prov1 is not prov2
+    assert prov1.prov is not prov2.prov
+
+    # First, determine if the provider uses caching
+    #   - create a file using prov1
+    #   - check existence using prov2 to cache it
+    #   - delete the file using prov1
+    #   - check existence using prov2. If it exists, it's cached. If not, then the provider class isn't caching
+    cache_test_info = prov1.create("/cachetest", BytesIO(b"cachetests"))
+    if not prov2.exists_path("/cachetest"):
+        pytest.skip("can't test caching if provider does not implement shared storage mechanism")
+    prov1.delete(cache_test_info.oid)
+    if not prov2.exists_path("/cachetest"):
+        pytest.skip("provider apparently doesn't use caching")
+
+    # apparently, the provider does use caching, so now proceed to ensure it is used correctly
+
+    # test to make sure the provider implements _clear_cache. all caching providers must do this.
+    assert prov1.prov._clear_cache()
+
+    # test to make sure that deleting a folder causes the folder's kids to be uncached
+    folder_name = "/folder"
+    file_name = folder_name + "/file1"
+    folder_oid = prov1.mkdir(folder_name)
+    file1_info = prov1.create(file_name, BytesIO(b"hello, world"))
+    assert prov1.exists_path(folder_name)
+    assert prov1.exists_path(file_name)
+    # delete the file using provider2, emptying the folder, so that provider1 can delete the folder while the file
+    # still exists in the cache, but not on the shared filesystem
+    prov2.delete(file1_info.oid)
+    prov1.delete(folder_oid)
+    # file should have been removed from the cache on prov1 when the folder was deleted
+    assert not prov1.exists_path("/folder/file1")
+
+    # test to make sure that renaming a folder renames the kids
+    old_folder_name = "/folder2"
+    new_folder_name = "/folder3"
+    old_file_name = old_folder_name + "/file2"
+    new_file_name = new_folder_name + "/file2"
+    folder_oid = prov1.mkdir(old_folder_name)
+    prov1.create(old_file_name, BytesIO(b"hello, world"))
+    prov1.prov._clear_cache()
+    assert prov1.exists_path(old_file_name)
+    prov1.rename(folder_oid, new_folder_name)
+    assert not prov1.exists_path(old_file_name)
+    assert prov1.exists_path(new_file_name)
