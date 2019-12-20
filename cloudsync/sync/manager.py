@@ -973,7 +973,7 @@ class SyncManager(Runnable):
                             log.debug("merge split entries")
                             sync[synced] = e[synced]
                         else:
-                            found = e
+                            found = False
 
         if not found:
             log.debug("disjoint conflict with something I don't understand")
