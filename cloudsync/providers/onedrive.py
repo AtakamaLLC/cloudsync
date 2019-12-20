@@ -249,7 +249,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return res
 
-    def _set_drive_list(self):
+    def _set_drive_list(self):      # pylint: disable=too-many-locals
         all_drives: Dict[str, str] = {}
 
         # personal drive, including shared folders
