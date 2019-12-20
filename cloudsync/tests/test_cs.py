@@ -1322,16 +1322,19 @@ def test_cs_rename_tmp(cs):
     def mover():
         nonlocal done
         nonlocal ok
-        for _ in range(10):
+        for i in range(10):
             try:
-                linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file"))
+                log.info("create local")
+                linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"file" + bytes(str(i), "utf8")))
                 linfo2 = cs.providers[LOCAL].info_path(local_path2)
                 if linfo2:
                     without_event = isinstance(cs.providers[LOCAL], MockProvider)
+                    log.info("delete prev")
                     if without_event:
                         cs.providers[LOCAL]._delete(linfo2.oid, without_event=True)
                     else:
                         cs.providers[LOCAL].delete(linfo2.oid)
+                log.info("rename local")
                 cs.providers[LOCAL].rename(linfo1.oid, local_path2)
                 time.sleep(0.001)
             except Exception as e:

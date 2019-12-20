@@ -345,6 +345,7 @@ class MockProvider(Provider):
             self.delete(possible_conflict.oid)
 
         if object_to_rename.path == path:
+            log.debug("same oid %s", oid)
             return oid
 
         prior_oid = None
@@ -363,6 +364,7 @@ class MockProvider(Provider):
             self._rename_single_object(object_to_rename, path, event=True)
 
         if self.oid_is_path:
+            log.debug("new oid %s", debug_sig(object_to_rename.oid))
             assert object_to_rename.oid != prior_oid, "rename %s to %s" % (prior_oid, path)
         else:
             assert object_to_rename.oid == oid, "rename %s to %s" % (object_to_rename.oid, oid)

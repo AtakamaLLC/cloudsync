@@ -918,11 +918,11 @@ class SyncManager(Runnable):
         log.debug("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
-            
+
         sync.punt()
         return REQUEUE
 
-    def _get_unstrashed_peers(self, sync, changed, synced, translated_path):
+    def _get_untrashed_peers(self, sync, changed, synced, translated_path):
         # check for creation of a new file with another in the table
         if sync[changed].otype != FILE:
             return None
@@ -938,20 +938,20 @@ class SyncManager(Runnable):
                   translated_path, other_ents)
 
         # ignoring trashed entries with different oids on the same path
-        if all(ent[synced].exists != EXISTS or ent[changed].exists != EXISTS for ent in other_ents):
+        if all(ent[synced].exists != EXISTS for ent in other_ents):
             for ent in other_ents:
                 if ent[synced].exists in (TRASHED, MISSING):
                     # old trashed entries can be safely ignored
-                    log.debug("discard ent %s", ent)
                     ent.ignore(IgnoreReason.DISCARDED)
             return None
 
-        other_untrashed_ents = [ent for ent in other_ents if ent[synced].exists == EXISTS and ent[changed].exists == EXISTS]
+        # filter to the ones that exist remotely
+        other_untrashed_ents = [ent for ent in other_ents if ent[synced].exists == EXISTS]
 
         return other_untrashed_ents
 
     def check_disjoint_create(self, sync, changed, synced, translated_path):
-        other_untrashed_ents = self._get_unstrashed_peers(sync, changed, synced, translated_path)
+        other_untrashed_ents = self._get_untrashed_peers(sync, changed, synced, translated_path)
 
         if not other_untrashed_ents:
             return False
@@ -966,6 +966,7 @@ class SyncManager(Runnable):
         if info:
             for e in other_untrashed_ents:
                 if e[synced].oid == info.oid:
+                    log.debug("same remote oid")
                     if e[synced].sync_hash != e[synced].hash:
                         found = e
                     else:
@@ -973,7 +974,7 @@ class SyncManager(Runnable):
                             log.debug("merge split entries")
                             sync[synced] = e[synced]
                         else:
-                            found = e
+                            found = False
 
         if not found:
             log.debug("disjoint conflict with something I don't understand")
@@ -1231,6 +1232,7 @@ class SyncManager(Runnable):
             return FINISHED
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
+            log.debug("is_path_change %s", sync.is_path_change(changed))
             ret = self.handle_path_change_or_creation(sync, changed, synced)
             if ret == REQUEUE:
                 log.debug("requeue, not handled")
