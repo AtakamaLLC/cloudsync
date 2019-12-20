@@ -249,12 +249,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return res
 
-    def _set_drive_list(self):
+    def _set_drive_list(self):      # pylint: disable=too-many-locals
         all_drives: Dict[str, str] = {}
 
         # personal drive, including shared folders
-        dat = self._direct_api("get", "/me/drive/")
-        all_drives[dat['id']] = "personal"
+        try:
+            dat = self._direct_api("get", "/me/drive/")
+            all_drives[dat['id']] = "personal"
+        except Exception as e:
+            log.debug("error getting info about onedrive %s", repr(e))
+            raise CloudTokenError("Invalid account, or no onedrive access")
 
         # team sharepoint drives
         groups = self._direct_api("get", "/groups")
@@ -326,6 +330,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileExistsError(msg)
         if code == ErrorCode.AccessDenied:
             raise CloudFileExistsError(msg)
+        if status == 401:
+            self.disconnect()
+            raise CloudTokenError(msg)
         if code == "BadRequest":
             if status == 400:
                 raise CloudFileNotFoundError(msg)
@@ -462,7 +469,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return None
 
     def disconnect(self):
-        self.__client = None
+        with self._mutex:
+            self.__client = None
 
     @property
     def latest_cursor(self):
