@@ -180,6 +180,8 @@ class MockProvider(Provider):
         self._quota = quota
 
     def get_quota(self):
+        if not self.connected:
+            raise CloudDisconnectedError()
         return {
             "used": self._total_size,
             "limit": self._quota or self._total_size,
@@ -250,6 +252,8 @@ class MockProvider(Provider):
     def walk(self, path, since=None):
         # TODO: implement "since" parameter
         self._api()
+        if not (path is '/' or path in list(self._fs_by_oid.keys())):
+            raise CloudFileNotFoundError()
         for obj in list(self._fs_by_oid.values()):
             if obj.path and self.is_subpath(path, obj.path, strict=False):
                 yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
