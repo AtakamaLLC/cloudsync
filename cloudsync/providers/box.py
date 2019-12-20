@@ -420,7 +420,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                             raise
                         # are we renaming a folder over another empty folder?
                         box_conflict = self._get_box_object(client, path=path, object_type=NOTKNOWN, strict=False)  # todo: get type from cache
-                        if box_conflict is None:  # should't happen... we just got a FEx error, and we're not moving
+
+                        # should't happen... we just got a FEx error, and we're not moving
+                        if box_conflict is None:  # pragma: no cover
                             raise
                         items = self._box_get_items(client, box_conflict, new_parent)
                         if box_conflict.object_type == 'folder' and len(items) == 0:
@@ -789,7 +791,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                                          use_cache: bool) -> Optional[BoxItem]:
         assert isinstance(client, Client)
         assert object_type in (FILE, DIRECTORY)
-        if path in ('/', ''):
+        if path in ('/', ''):  # pragma: no cover
+            # no cover because the tests always use a test root
             root: BoxItem = client.root_folder()
             root = self._unsafe_box_object_populate(client, root)
             return root
