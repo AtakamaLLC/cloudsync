@@ -3,7 +3,7 @@ import time
 from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass
 from pystrict import strict
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType, DIRECTORY
@@ -130,8 +130,12 @@ class EventManager(Runnable):
         if self.need_walk:
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
                       self.provider.name, self.walk_root)
-            for event in self.provider.walk(self.walk_root):
-                self.process_event(event, from_walk=True)
+            try:
+                for event in self.provider.walk(self.walk_root):
+                    self.process_event(event, from_walk=True)
+            except CloudFileNotFoundError as e:
+                log.debug('File to walk not found %s', e)
+
             self.state.storage_update_data(self._walk_tag, time.time())
             self.need_walk = False
 

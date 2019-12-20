@@ -947,6 +947,8 @@ def test_storage(storage):
 
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
+    p1.mkdir(roots[0])
+    p2.mkdir(roots[1])
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
@@ -1243,6 +1245,7 @@ def test_cs_rename_folder_case(mock_provider_creator, left, right):
     cs.providers[LOCAL].mkdir(local_parent)
     ldir = cs.providers[LOCAL].mkdir(local_path1)
     linfo = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello"), None)
+    cs.providers[REMOTE].mkdir(remote_parent)
 
     cs.do()
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)

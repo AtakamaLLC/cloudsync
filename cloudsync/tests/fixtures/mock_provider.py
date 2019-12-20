@@ -252,7 +252,7 @@ class MockProvider(Provider):
     def walk(self, path, since=None):
         # TODO: implement "since" parameter
         self._api()
-        if not (path is '/' or path in list(self._fs_by_oid.keys())):
+        if not (path is self.sep or path is self.alt_sep or path in list(self._fs_by_path.keys())):
             raise CloudFileNotFoundError()
         for obj in list(self._fs_by_oid.values()):
             if obj.path and self.is_subpath(path, obj.path, strict=False):
