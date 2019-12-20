@@ -962,7 +962,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                         if ent[1-side].oid:
                             _copy = ent[1-side]
                     ent = prior_ent
-                    if _copy:
+                    if _copy and not ent[1-side].oid:
                         log.debug("ent was abandoned with copy")
                         ent[1-side] = _copy
                     else:
