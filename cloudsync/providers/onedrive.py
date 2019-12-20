@@ -676,6 +676,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
         with self._api() as client:
+            self._verify_parent_folder_exists(path)
             parent, base = self.split(path)
 
             item = self._get_item(client, oid=oid)
