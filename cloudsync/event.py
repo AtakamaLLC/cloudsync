@@ -48,14 +48,6 @@ class EventManager(Runnable):
 
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
-        if self.cursor is not None:
-            log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
-            try:
-                self.provider.current_cursor = self.cursor
-            except CloudCursorError as e:
-                log.exception("Cursor error... resetting cursor. %s", e)
-                self.cursor = None
-
         self.walk_root = walk_root
         self.need_walk = False
         self._first_do = True
@@ -125,6 +117,16 @@ class EventManager(Runnable):
                 self.cursor = self.provider.current_cursor
                 if self.cursor is not None:
                     self.state.storage_update_data(self._cursor_tag, self.cursor)
+            else:
+                log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
+                try:
+                    # valid exceptions here are Disconnected, Token, and Cursor
+                    self.provider.current_cursor = self.cursor
+                except CloudCursorError:
+                    if self.state.storage_get_data(self._walk_tag) is None:
+                        self.need_walk = True
+                    raise
+
         self._first_do = False
 
         if self.need_walk:
