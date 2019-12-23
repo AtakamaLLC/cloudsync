@@ -122,14 +122,10 @@ class EventManager(Runnable):
                 try:
                     # valid exceptions here are Disconnected, Token, and Cursor
                     self.provider.current_cursor = self.cursor
-                except (CloudDisconnectedError, CloudTokenError):
-                    # any other exception should be handled as cursor==None
-                    raise
-                except (CloudCursorError, Exception) as e:
-                    log.exception("Cursor error... assuming no cursor. %s", e)
-                    self.cursor = None
+                except CloudCursorError:
                     if self.state.storage_get_data(self._walk_tag) is None:
                         self.need_walk = True
+                    raise
 
         self._first_do = False
 
