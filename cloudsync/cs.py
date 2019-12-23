@@ -275,7 +275,7 @@ class CloudSync(Runnable):
             try:
                 m.do()
             except Exception as e:
-                log.error("exception in %s : %s", m.thread_name, repr(e))
+                log.error("exception in %s : %s", m.service_name, repr(e))
                 caught = e
         if caught is not None:
             raise caught
