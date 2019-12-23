@@ -249,12 +249,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         return res
 
-    def _set_drive_list(self):
+    def _set_drive_list(self):      # pylint: disable=too-many-locals
         all_drives: Dict[str, str] = {}
 
         # personal drive, including shared folders
-        dat = self._direct_api("get", "/me/drive/")
-        all_drives[dat['id']] = "personal"
+        try:
+            dat = self._direct_api("get", "/me/drive/")
+            all_drives[dat['id']] = "personal"
+        except Exception as e:
+            log.debug("error getting info about onedrive %s", repr(e))
+            raise CloudTokenError("Invalid account, or no onedrive access")
 
         # team sharepoint drives
         groups = self._direct_api("get", "/groups")
@@ -301,9 +305,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         if req is not None:
             status = req.status_code
-            dat = req.json()
-            msg = dat["error"]["message"]
-            code = dat["error"]["code"]
+            try:
+                dat = req.json()
+                msg = dat["error"]["message"]
+                code = dat["error"]["code"]
+            except json.JSONDecodeError:
+                msg = 'Bad Json'
+                code = 'BadRequest'
 
         if status < 300:
             log.error("Not converting err %s %s", ex, req)
@@ -326,6 +334,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudFileExistsError(msg)
         if code == ErrorCode.AccessDenied:
             raise CloudFileExistsError(msg)
+        if status == 401:
+            self.disconnect()
+            raise CloudTokenError(msg)
         if code == "BadRequest":
             if status == 400:
                 raise CloudFileNotFoundError(msg)
@@ -462,7 +473,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return None
 
     def disconnect(self):
-        self.__client = None
+        with self._mutex:
+            self.__client = None
 
     @property
     def latest_cursor(self):
@@ -672,6 +684,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def rename(self, oid, path):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
         with self._api() as client:
+            self._verify_parent_folder_exists(path)
             parent, base = self.split(path)
 
             item = self._get_item(client, oid=oid)
@@ -695,7 +708,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                         new_info.name = base + os.urandom(8).hex()
                         item.update(new_info)
                     new_info.name = base
-                    item.update(new_info)
                     updated = True
                 if old_parent_id != new_parent_info.id:
                     new_info.parent_reference = onedrivesdk.ItemReference()
@@ -704,6 +716,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 if updated:
                     item.update(new_info)
             except onedrivesdk.error.OneDriveError as e:
+                if e.code == ErrorCode.InvalidRequest:
+                    base, location = self.split(path)
+                    parent_item = self.info_path(base, use_cache=False)
+                    while location:
+                        if parent_item and parent_item.otype is OType.FILE:
+                            raise CloudFileExistsError()
+                        base, location = self.split(base)
+                        parent_item = self.info_path(base, use_cache=False)
                 if not (e.code == "nameAlreadyExists" and info.folder):
                     log.debug("self not a folder, or not an exists error")
                     raise

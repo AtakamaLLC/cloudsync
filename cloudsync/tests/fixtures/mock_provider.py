@@ -180,6 +180,8 @@ class MockProvider(Provider):
         self._quota = quota
 
     def get_quota(self):
+        if not self.connected:
+            raise CloudDisconnectedError()
         return {
             "used": self._total_size,
             "limit": self._quota or self._total_size,
@@ -250,6 +252,8 @@ class MockProvider(Provider):
     def walk(self, path, since=None):
         # TODO: implement "since" parameter
         self._api()
+        if not (path is self.sep or path is self.alt_sep or path in list(self._fs_by_path.keys())):
+            raise CloudFileNotFoundError()
         for obj in list(self._fs_by_oid.values()):
             if obj.path and self.is_subpath(path, obj.path, strict=False):
                 yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
@@ -341,6 +345,7 @@ class MockProvider(Provider):
             self.delete(possible_conflict.oid)
 
         if object_to_rename.path == path:
+            log.debug("same oid %s", oid)
             return oid
 
         prior_oid = None
@@ -359,6 +364,7 @@ class MockProvider(Provider):
             self._rename_single_object(object_to_rename, path, event=True)
 
         if self.oid_is_path:
+            log.debug("new oid %s", debug_sig(object_to_rename.oid))
             assert object_to_rename.oid != prior_oid, "rename %s to %s" % (prior_oid, path)
         else:
             assert object_to_rename.oid == oid, "rename %s to %s" % (object_to_rename.oid, oid)

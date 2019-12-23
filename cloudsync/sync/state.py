@@ -955,7 +955,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
             if prior_ent and not prior_ent.is_discarded:
                 if not ent or not ent.is_conflicted:
+                    # reuse prior_ent
+                    _copy = None
+                    if ent:
+                        # copy information about the other side
+                        if ent[1-side].oid:
+                            _copy = ent[1-side]
                     ent = prior_ent
+                    if _copy and not ent[1-side].oid:
+                        log.debug("ent was abandoned with copy")
+                        ent[1-side] = _copy
+                    else:
+                        log.debug("ent was abandoned without copy")
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:

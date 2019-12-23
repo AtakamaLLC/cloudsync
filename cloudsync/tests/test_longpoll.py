@@ -123,4 +123,5 @@ def test_lpex(uses_cursor):
 
     # lpman is backing off
     assert man.in_backoff > 0
+
     man.stop()

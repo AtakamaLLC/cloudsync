@@ -3,7 +3,7 @@ import time
 from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass
 from pystrict import strict
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType, DIRECTORY
@@ -47,14 +47,6 @@ class EventManager(Runnable):
         self.need_auth = False
 
         self.cursor = self.state.storage_get_data(self._cursor_tag)
-
-        if self.cursor is not None:
-            log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
-            try:
-                self.provider.current_cursor = self.cursor
-            except CloudCursorError as e:
-                log.exception("Cursor error... resetting cursor. %s", e)
-                self.cursor = None
 
         self.walk_root = walk_root
         self.need_walk = False
@@ -125,13 +117,27 @@ class EventManager(Runnable):
                 self.cursor = self.provider.current_cursor
                 if self.cursor is not None:
                     self.state.storage_update_data(self._cursor_tag, self.cursor)
+            else:
+                log.debug("retrieved existing cursor %s for %s", self.cursor, self.provider.name)
+                try:
+                    # valid exceptions here are Disconnected, Token, and Cursor
+                    self.provider.current_cursor = self.cursor
+                except CloudCursorError:
+                    if self.state.storage_get_data(self._walk_tag) is None:
+                        self.need_walk = True
+                    raise
+
         self._first_do = False
 
         if self.need_walk:
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
                       self.provider.name, self.walk_root)
-            for event in self.provider.walk(self.walk_root):
-                self.process_event(event, from_walk=True)
+            try:
+                for event in self.provider.walk(self.walk_root):
+                    self.process_event(event, from_walk=True)
+            except CloudFileNotFoundError as e:
+                log.debug('File to walk not found %s', e)
+
             self.state.storage_update_data(self._walk_tag, time.time())
             self.need_walk = False
 

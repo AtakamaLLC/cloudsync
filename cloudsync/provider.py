@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict,
 from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from .event import Event
 
 log = logging.getLogger(__name__)
