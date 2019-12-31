@@ -188,9 +188,14 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self._oauth_config = oauth_config
         self.__team_id = None
         self._namespace: str = None
-        self._is_biz = None
+        self.__is_biz = None
         self.__drive_to_name: Dict[str, str] = None
         self.__name_to_drive: Dict[str, str] = None
+
+    @property
+    def _is_biz(self):
+        assert self.__is_biz is not None
+        return self.__is_biz
 
     @property
     def connected(self):
@@ -351,11 +356,18 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         log.error("Not converting err %s %s", ex, req)
         return False
 
+    def _set_is_biz(self, drive_id):
+        dat = self._direct_api("get", "/drives/%s/" % drive_id)
+        self.__is_biz = dat["driveType"] != 'personal'
+
     def _get_drive_id(self):
         if not self.__client:
             raise CloudDisconnectedError()
         try:
-            return self.__name_to_drive[self.namespace]
+            return_value = self.__name_to_drive[self.namespace]
+            if self.__is_biz is None:
+                self._set_is_biz(return_value)
+            return return_value
         except KeyError:
             raise CloudFileNotFoundError("Unknown drive %s" % self.namespace)
 
@@ -872,6 +884,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         else:
             otype = FILE
 
+            log.debug("is_biz=%s, hashes=%s", self._is_biz, item.file.hashes.to_dict())
             if self._is_biz:
                 ohash = item.file.hashes.to_dict()["quickXorHash"]
             else:
@@ -999,8 +1012,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @namespace.setter
     def namespace(self, ns: str):
         self._namespace = ns
-        dat = self._direct_api("get", "/drives/%s/" % self._get_drive_id())
-        self._is_biz = dat["driveType"] != 'personal'
+        self._set_is_biz(self._get_drive_id())
 
     @property
     def namespace_id(self) -> Optional[str]:
