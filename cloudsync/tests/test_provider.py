@@ -92,11 +92,16 @@ class ProviderHelper(ProviderBase):
         if not self.api_retry:
             return func(*ar, **kw)
 
-        for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep):
-            try:
-                return func(*ar, **kw)
-            except CloudTemporaryError:
-                log.info("api retry %s %s %s", func, ar, kw)
+        ex = None
+        try:
+            for _ in time_helper(timeout=self._test_event_timeout, sleep=self._test_event_sleep):
+                try:
+                    return func(*ar, **kw)
+                except CloudTemporaryError as e:
+                    log.info("api retry %s %s %s", func, ar, kw)
+                    ex = e
+        except TimeoutError:
+            raise ex
 
     # TEST-ROOT WRAPPER
 
@@ -1990,3 +1995,19 @@ def test_cache(two_scoped_providers):
     prov1.rename(folder_oid, new_folder_name)
     assert not prov1.exists_path(old_file_name)
     assert prov1.exists_path(new_file_name)
+
+
+def test_bug_create(provider):
+    with patch.object(provider, "api_retry", False):
+        file_like = BytesIO(b"hello")
+
+        def fake_read(size=None):
+            raise OSError("some os problem reading - not a base exception")
+
+        file_like.read = fake_read
+
+        with pytest.raises(CloudTemporaryError):
+            provider.create("/bug_create", file_like)
+
+        assert not provider.exists_path("/bug_create")
+
