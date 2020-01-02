@@ -290,10 +290,10 @@ class MockProvider(Provider):
         for c in self._forbidden_chars:
             if c in path:
                 raise CloudFileNameError()
-        file = self._get_by_path(path)
-        if file is not None and file.exists:
-            raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
         try:
+            file = self._get_by_path(path)
+            if file is not None and file.exists:
+                raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
             self._verify_parent_folder_exists(path)
             if file is None or not file.exists:
                 file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self._hash_func)
