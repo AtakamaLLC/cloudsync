@@ -2004,7 +2004,7 @@ def test_bug_create(provider):
         def fake_read(size=None):
             raise OSError("some os problem reading - not a base exception")
 
-        file_like.read = fake_read
+        file_like.read = fake_read          # type: ignore
 
         with pytest.raises(CloudTemporaryError):
             provider.create("/bug_create", file_like)
