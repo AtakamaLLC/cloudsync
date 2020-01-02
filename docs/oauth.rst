@@ -1,9 +1,5 @@
-Classes: Provider,  OAuth
+cloudsync.oauth
 ===============================================
-
-.. autoclass:: cloudsync.Provider
-   :members:
-   :undoc-members:
 
 .. autoclass:: cloudsync.oauth.OAuthConfig
    :members:

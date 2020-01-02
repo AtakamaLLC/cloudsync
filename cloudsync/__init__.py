@@ -39,5 +39,6 @@ from .types import *
 from .cs import *
 from .long_poll import *
 from .registry import *
+from .notification import *
 
 from .providers import *

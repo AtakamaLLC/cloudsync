@@ -68,6 +68,7 @@ class LongPollManager(Runnable):
                     log.debug("events check complete")
                 else:
                     log.debug("long poll finished, not checking events")
+
             except Exception as e:
                 if self.last_set and (time.monotonic() > (self.last_set + self.long_poll_timeout)):
                     # if we're getting exceptions from long_poll, still trigger a short poll after timeout seconds

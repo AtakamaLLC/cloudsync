@@ -7,4 +7,9 @@ cloudsync
    Synopsis <README>
    Developer Notes <DEVELOP>
    cs
-   autodoc
+   provider
+   registry
+   oauth
+   notification
+   runnable
+   apiserver

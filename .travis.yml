@@ -3,7 +3,7 @@ cache: pip
 sudo: false
 
 jobs:
-    include: 
+    include:
     - name: lint
       stage: lint/unit
       script:
@@ -31,14 +31,14 @@ jobs:
         - '3.6'
     - stage: deploy
       if: type = push and tag =~ ^v
-      python: 
+      python:
         - '3.6'
-      script: 
+      script:
         - ./deploy.sh
 
 after_success:
     - ./coverage.sh
-      
+
 branches:
     only:
     - master
