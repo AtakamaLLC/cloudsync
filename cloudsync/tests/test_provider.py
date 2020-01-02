@@ -100,8 +100,8 @@ class ProviderHelper(ProviderBase):
                 except CloudTemporaryError as e:
                     log.info("api retry %s %s %s", func, ar, kw)
                     ex = e
-        except TimeoutError:
-            raise ex
+        except TimeoutError as e:
+            raise ex or e
 
     # TEST-ROOT WRAPPER
 
