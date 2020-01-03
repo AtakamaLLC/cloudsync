@@ -12,14 +12,6 @@ except Exception as _e:
         raise _ex
 
 try:
-    from .onedrive import OneDriveProvider
-except Exception as _e:
-    _ex = _e
-
-    def OneDriveProvider(*a, **k):          # type: ignore
-        raise _ex
-
-try:
     from .gdrive import GDriveProvider
 except Exception as _e:
     _ex = _e

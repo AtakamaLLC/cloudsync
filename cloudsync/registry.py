@@ -4,6 +4,7 @@ The registry maintains a map of provider classes by name.
 
 
 import sys
+import pkg_resources
 from typing import List, Type
 from cloudsync.provider import Provider
 
@@ -19,12 +20,15 @@ def register_provider(prov: Type[Provider]):
 
 
 def discover_providers():
-    """Loop through imported modules, and autoregister providers"""
+    """Loop through imported modules, and autoregister providers, including plugins"""
     for m in sys.modules:
         mod = sys.modules[m]
         if hasattr(mod, "__cloudsync__"):
             if mod.__cloudsync__.name not in providers:             # type: ignore
                 register_provider(mod.__cloudsync__)                # type: ignore
+
+    for entry_point in pkg_resources.iter_entry_points('cloudsync.providers'):
+        register_provider(entry_point.load())
 
 
 def get_provider(name: str):

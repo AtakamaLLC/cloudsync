@@ -22,7 +22,6 @@ box = [ "boxsdk", ]
 dropbox = [ "dropbox", ]
 gdrive = [ "google-oauth", "google-auth-httplib2", "google-api-python-client" ]
 boxcom = [ "boxsdk[jwt]", ]
-onedrive = [ "onedrivesdk_fork", "quickxorhash"]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
