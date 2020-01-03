@@ -3,6 +3,7 @@ import io
 import threading
 import logging
 from unittest.mock import patch
+import re
 
 from onedrivesdk_fork.error import ErrorCode
 from cloudsync.providers import OneDriveProvider
@@ -44,6 +45,9 @@ class FakeGraphApi(FakeApi):
         if meth == "GET":
             self.called("get", (uri,))
             log.debug("getting")
+            if re.match(r"^/drives/[^/]+/$", uri):
+                return {'@odata.context': 'https://graph.microsoft.com/v1.0/$metadata#drives/$entity', 'id': 'bdd46067213df13', 'driveType': 'personal', 'owner': {'user': {'displayName': 'Atakama --', 'id': 'bdd46067213df13'}}, 'quota': {'deleted': 519205504, 'remaining': 1104878758982, 'state': 'normal', 'total': 1104880336896, 'used': 1577914}}
+
             err = ApiError(404, json={"error": {"code": ErrorCode.ItemNotFound, "message": "whatever"}}) 
             log.debug("raising %s", err)
             raise err
