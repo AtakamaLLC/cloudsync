@@ -501,6 +501,53 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             raise CloudCursorError(val)
         self.__cursor = val
 
+    def _convert_to_event(self, change, new_cursor) -> Optional[Event]:
+        # uncomment only while debugging, semicolon left in to cause linter to fail
+        # log.debug("got event\n%s", pformat(change));
+
+        # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
+        #  'createdBy': {'application': {'id': '4805d153'},
+        #                'user': {'displayName': 'erik aronesty', 'id': '4ab5f266fc495e74'}},
+        #  'createdDateTime': '2015-09-19T11:14:15.9Z', 'eTag': 'aNEFCNUYyNjZGQzQ5NUU3NCEzMzguMA',
+        #  'fileSystemInfo': {
+        #      'createdDateTime': '2015-09-19T11:14:15.9Z',
+        #      'lastModifiedDateTime': '2015-09-19T11:14:15.9Z'},
+        #  'folder': {'childCount': 0, 'folderType': 'document',
+        #             'folderView': {'sortBy': 'name', 'sortOrder': 'ascending', 'viewType': 'thumbnails'}},
+        #  'id': '4AB5F266FC495E74!338',
+        #  'lastModifiedBy': {'application': {'id': '4805d153'}, 'user': {'displayName': 'erik aronesty', 'id': '4ab5f266fc495e74'}},
+        #  'lastModifiedDateTime': '2019-11-08T22:13:20.56Z', 'name': 'root',
+        #  'parentReference': {'driveId': '4ab5f266fc495e74', 'driveType': 'personal', 'id': '4AB5F266FC495E74!0', 'path': '/drive/root:'},
+        #  'root': {}, 'size': 156, 'webUrl': 'https://onedrive.live.com/?cid=4ab5f266fc495e74'}
+        if change['parentReference'].get('id') is None:
+            # this is an event on the root folder... ignore it
+            return None
+
+        ts = arrow.get(change.get('lastModifiedDateTime')).float_timestamp
+        oid = change.get('id')
+        exists = not change.get('deleted')
+
+        fil = change.get('file')
+        fol = change.get('folder')
+        if fil:
+            otype = FILE
+        elif fol:
+            otype = DIRECTORY
+        else:
+            otype = NOTKNOWN
+
+        log.debug("event %s", change)
+
+        ohash = None
+        path = None
+        if exists:
+            if otype == FILE:
+                ohash = self._hash_from_dict(change)
+
+            path = self._join_parent_reference_path_and_name(change['parentReference'].get('path'), change['name'])
+
+        return Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
+
     def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
         page_token = self.current_cursor
         assert page_token
@@ -519,52 +566,12 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 events = reversed(cast(List, events))
 
             for change in events:
-                # uncomment only while debugging, demicolon left in to cause linter to fail
-                # log.debug("got event\n%s", pformat(change));
-
-                # {'cTag': 'adDo0QUI1RjI2NkZDNDk1RTc0ITMzOC42MzcwODg0ODAwMDU2MDAwMDA',
-                #  'createdBy': {'application': {'id': '4805d153'},
-                #                'user': {'displayName': 'erik aronesty', 'id': '4ab5f266fc495e74'}},
-                #  'createdDateTime': '2015-09-19T11:14:15.9Z', 'eTag': 'aNEFCNUYyNjZGQzQ5NUU3NCEzMzguMA',
-                #  'fileSystemInfo': {
-                #      'createdDateTime': '2015-09-19T11:14:15.9Z',
-                #      'lastModifiedDateTime': '2015-09-19T11:14:15.9Z'},
-                #  'folder': {'childCount': 0, 'folderType': 'document',
-                #             'folderView': {'sortBy': 'name', 'sortOrder': 'ascending', 'viewType': 'thumbnails'}},
-                #  'id': '4AB5F266FC495E74!338',
-                #  'lastModifiedBy': {'application': {'id': '4805d153'}, 'user': {'displayName': 'erik aronesty', 'id': '4ab5f266fc495e74'}},
-                #  'lastModifiedDateTime': '2019-11-08T22:13:20.56Z', 'name': 'root',
-                #  'parentReference': {'driveId': '4ab5f266fc495e74', 'driveType': 'personal', 'id': '4AB5F266FC495E74!0', 'path': '/drive/root:'},
-                #  'root': {}, 'size': 156, 'webUrl': 'https://onedrive.live.com/?cid=4ab5f266fc495e74'}
-
-                ts = arrow.get(change.get('lastModifiedDateTime')).float_timestamp
-                oid = change.get('id')
-                exists = not change.get('deleted')
-
-                fil = change.get('file')
-                fol = change.get('folder')
-                if fil:
-                    otype = FILE
-                elif fol:
-                    otype = DIRECTORY
-                else:
-                    otype = NOTKNOWN
-
-                log.debug("event %s", change)
-
-                ohash = None
-                path = None
-                if exists:
-                    if otype == FILE:
-                        ohash = self._hash_from_dict(change)
-
-                    path = self._join_parent_reference_path_and_name(change['parentReference'].get('path', '/'), change['name'])
-
-                event = Event(otype, oid, path, ohash, exists, ts, new_cursor=new_cursor)
-
+                event = self._convert_to_event(change, new_cursor)
                 log.debug("converted event %s as %s", change, event)
-
-                yield event
+                if event is not None:
+                    yield event
+                else:
+                    log.debug("Ignoring event")
 
             if new_cursor and page_token and new_cursor != page_token:
                 self.__cursor = new_cursor
@@ -688,6 +695,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             parent, base = self.split(path)
 
             item = self._get_item(client, oid=oid)
+
             info = item.get()
 
             old_parent_id = info.parent_reference.id
@@ -924,6 +932,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         return "/drives/%s/root:" % name + path
 
     def _join_parent_reference_path_and_name(self, pr_path, name):
+        assert pr_path
         path = self.join(pr_path, name)
         preambles = ["/drive/root:", "/me/drive/root:", "/drives/%s/root:" % self.connection_id]
         for did in self.__drive_to_name:
