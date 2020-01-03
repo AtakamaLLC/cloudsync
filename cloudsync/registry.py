@@ -4,8 +4,8 @@ The registry maintains a map of provider classes by name.
 
 
 import sys
-import pkg_resources
 from typing import List, Type
+import pkg_resources
 from cloudsync.provider import Provider
 
 __all__ = ["create_provider", "get_provider", "known_providers", "register_provider"]
