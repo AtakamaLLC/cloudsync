@@ -519,7 +519,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         #  'lastModifiedDateTime': '2019-11-08T22:13:20.56Z', 'name': 'root',
         #  'parentReference': {'driveId': '4ab5f266fc495e74', 'driveType': 'personal', 'id': '4AB5F266FC495E74!0', 'path': '/drive/root:'},
         #  'root': {}, 'size': 156, 'webUrl': 'https://onedrive.live.com/?cid=4ab5f266fc495e74'}
-        if change['parentReference'].get('path') is None:
+        if change['parentReference'].get('id') is None:
             # this is an event on the root folder... ignore it
             return None
 
