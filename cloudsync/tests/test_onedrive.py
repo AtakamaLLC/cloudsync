@@ -64,6 +64,7 @@ class FakeGraphApi(FakeApi):
         log.debug("api: %s, %s %s", meth, uri, req)
         return {}
 
+
 def fake_odp():
     # TODO: shutting this down is slow, fix that and then fix all tests using the api server to shut down, or use fixtures or something
     srv = FakeGraphApi()
@@ -75,6 +76,7 @@ def fake_odp():
         assert srv.calls["quota"]
         return srv, prov
 
+
 def test_upload():
     srv, odp = fake_odp()
     odp.large_file_size = 10
@@ -84,9 +86,21 @@ def test_upload():
     assert srv.calls["upload.session"]
     assert srv.calls["upload"]
 
+
 def test_mkdir():
     srv, odp = fake_odp()
     log.info("calls %s", list(srv.calls.keys()))
     odp.mkdir("/dir")
     assert srv.calls["mkdir"]
+
+
+def test_root_event():
+    srv, odp = fake_odp()
+    root_event = {'@odata.type': '#microsoft.graph.driveItem', 'createdDateTime': '2019-10-27T05:46:04Z', 'id': '01LYWINUF6Y2GOVW7725BZO354PWSELRRZ', 'lastModifiedDateTime': '2020-01-02T15:45:55Z', 'name': 'root', 'webUrl': 'https://vidaid-my.sharepoint.com/personal/jack_vidaid_onmicrosoft_com/Documents', 'size': 6642351, 'parentReference': {'driveId': 'root', 'driveType': 'business'}, 'fileSystemInfo': {'createdDateTime': '2019-10-27T05:46:04Z', 'lastModifiedDateTime': '2020-01-02T15:45:55Z'}, 'folder': {'childCount': 5}, 'root': {}}
+    non_root_event = {'@odata.type': '#microsoft.graph.driveItem', 'createdDateTime': '2020-01-02T15:44:44Z', 'eTag': '"{F0D504AA-C7E0-4B49-B529-63DEB72E09FE},1"', 'id': '01LYWINUFKATK7BYGHJFF3KKLD323S4CP6', 'lastModifiedDateTime': '2020-01-02T15:44:44Z', 'name': '20200102-02', 'webUrl': 'https://vidaid-my.sharepoint.com/personal/jack_vidaid_onmicrosoft_com/Documents/20200102-02', 'cTag': '"c:{F0D504AA-C7E0-4B49-B529-63DEB72E09FE},0"', 'size': 0, 'createdBy': {'application': {'displayName': 'Atakama'}, 'user': {'email': 'jack@vidaid.onmicrosoft.com', 'displayName': 'jack'}}, 'parentReference': {'driveId': 'root', 'driveType': 'business', 'id': '01LYWINUF6Y2GOVW7725BZO354PWSELRRZ', 'path': '/drive/root:'}, 'fileSystemInfo': {'createdDateTime': '2020-01-02T15:44:44Z', 'lastModifiedDateTime': '2020-01-02T15:44:44Z'}, 'folder': {'childCount': 2}}
+
+    assert odp._convert_to_event(root_event, "123") is None
+    assert odp._convert_to_event(non_root_event, "123") is not None
+
+
 
