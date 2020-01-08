@@ -44,6 +44,6 @@ def create_provider(name: str, *args, **kws) -> Provider:
 
 
 def known_providers() -> List[str]:
-    """List all known provider names"""
+    """List all known provider names, sorted order."""
     discover_providers()
-    return list(providers.keys())
+    return list(sorted(providers.keys()))
