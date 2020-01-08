@@ -289,9 +289,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except Exception:
             pass
 
-        log.info("ALL DRIVES %s", all_drives)
+        log.info("all drives %s", all_drives)
         self.__drive_to_name = all_drives
-        self.__name_to_drive = {v:k for k, v in all_drives.items()}
+        self.__name_to_drive = {v: k for k, v in all_drives.items()}
 
         # default namespace to personal
         if not self.namespace:
@@ -1008,6 +1008,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     @namespace.setter
     def namespace(self, ns: str):
+        if ns != self._namespace:
+            log.info("namespace changing to %s", ns)
         self._namespace = ns
         dat = self._direct_api("get", "/drives/%s/" % self._get_drive_id())
         self._is_biz = dat["driveType"] != 'personal'

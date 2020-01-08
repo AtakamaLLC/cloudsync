@@ -273,6 +273,15 @@ class ProviderHelper(ProviderBase):
     def connection_id(self, val: str):  # type: ignore
         self.prov.connection_id = val
 
+    @property
+    def namespace(self):
+        return self.prov.namespace
+
+    @namespace.setter
+    def namespace(self, val):
+        self.prov.namespace = val
+
+
 
 def mixin_provider(prov, connect=True, short_poll_only=True):
     assert prov
@@ -485,6 +494,17 @@ def test_namespace(provider):
     provider.namespace_id = nid
 
     assert provider.namespace == ns[0]
+
+    if len(ns) > 1:
+        provider.namespace = ns[1]
+        log.info("test recon persist %s", ns[1])
+        provider.disconnect()
+        provider.reconnect()
+        log.info("namespace is %s", provider.namespace)
+        assert provider.namespace == ns[1]
+    else:
+        log.info("not test recon persist")
+
 
 
 def test_rename(provider):
