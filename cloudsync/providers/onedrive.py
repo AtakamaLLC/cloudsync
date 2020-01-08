@@ -294,7 +294,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__name_to_drive = {v:k for k, v in all_drives.items()}
 
         # default namespace to personal
-        self.namespace = "personal"
+        if not self.namespace:
+            self.namespace = "personal"
 
     def _raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
         status = 0
