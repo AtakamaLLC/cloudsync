@@ -489,22 +489,26 @@ def test_namespace(provider):
     if not ns:
         return
 
-    provider.namespace = ns[0]
-    nid = provider.namespace_id
-    provider.namespace_id = nid
+    saved = provider.namespace
 
-    assert provider.namespace == ns[0]
+    try:
+        provider.namespace = ns[0]
+        nid = provider.namespace_id
+        provider.namespace_id = nid
 
-    if len(ns) > 1:
-        provider.namespace = ns[1]
-        log.info("test recon persist %s", ns[1])
-        provider.disconnect()
-        provider.reconnect()
-        log.info("namespace is %s", provider.namespace)
-        assert provider.namespace == ns[1]
-    else:
-        log.info("not test recon persist")
+        assert provider.namespace == ns[0]
 
+        if len(ns) > 1:
+            provider.namespace = ns[1]
+            log.info("test recon persist %s", ns[1])
+            provider.disconnect()
+            provider.reconnect()
+            log.info("namespace is %s", provider.namespace)
+            assert provider.namespace == ns[1]
+        else:
+            log.info("not test recon persist")
+    finally:
+        provider.namespace = saved
 
 
 def test_rename(provider):
