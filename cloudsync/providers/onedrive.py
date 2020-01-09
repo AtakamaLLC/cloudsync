@@ -269,6 +269,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         try:
             dat = self._direct_api("get", "/me/drive/")
             all_drives[dat['id']] = "personal"
+        except CloudDisconnectedError:
+            raise
         except Exception as e:
             log.debug("error getting info about onedrive %s", repr(e))
             raise CloudTokenError("Invalid account, or no onedrive access")
@@ -447,6 +449,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self._personal_id = q["drive_id"]
 
         if self._drive_id:
+            log.info("USING NS %s", self._drive_id)
             self.namespace_id = self._drive_id
         else:
             self._drive_id = self._personal_id
@@ -1037,8 +1040,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @namespace_id.setter
     def namespace_id(self, ns_id: str):
         self._drive_id = ns_id
-        self.__cached_is_biz = None
-        log.debug("set namespace to %s -> %s", self.namespace, self._drive_id)
 
     @classmethod
     def test_instance(cls):

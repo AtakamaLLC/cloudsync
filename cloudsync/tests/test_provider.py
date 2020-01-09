@@ -282,6 +282,14 @@ class ProviderHelper(ProviderBase):
     def namespace(self, val):
         self.prov.namespace = val
 
+    @property
+    def namespace_id(self):
+        return self.prov.namespace_id
+
+    @namespace_id.setter
+    def namespace_id(self, val):
+        self.prov.namespace_id = val
+
 
 
 def mixin_provider(prov, connect=True, short_poll_only=True):
@@ -1813,6 +1821,21 @@ def test_set_creds(config_provider):
     provider.set_creds(provider._test_creds)
     provider.reconnect()
     assert provider.connected
+
+
+def test_set_ns_offline(config_provider):
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    try:
+        provider.list_ns()
+        pytest.skip("provider doesn't use online namespace listings")
+    except CloudDisconnectedError:
+        pass
+
+    provider.namespace_id = 'bad-namespace-is-ok-at-least-when-offline'
+    provider.connect(provider._test_creds)
+    log.info("ns id %s", provider.namespace_id)
+    with pytest.raises(CloudException):
+        log.info("ns list %s", list(provider.listdir_path("/")))
 
 
 @pytest.mark.manual
