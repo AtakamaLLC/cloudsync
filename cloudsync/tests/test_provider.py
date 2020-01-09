@@ -805,6 +805,8 @@ def test_event_del_create(provider):
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
 
+    done = False
+
     log.info("test oid 1 %s", info1.oid)
     log.info("test oid 2 %s", info2.oid)
     events = []
