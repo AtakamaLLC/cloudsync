@@ -3,7 +3,7 @@ import logging
 import json
 import hashlib
 import time
-from typing import Optional, Generator, Dict, Tuple, Any
+from typing import Optional, Generator, Dict, Tuple, Any, List
 import requests
 import arrow
 
@@ -526,7 +526,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         # optionally takes a path, to make creating the OInfo cheaper, so that it doesn't need to figure out the path
-        entries = []
+        entries: List[BoxItem] = []
         with self._api() as client:
             parent_object = self._get_box_object(client, oid=oid, object_type=DIRECTORY)
             if parent_object is None:
