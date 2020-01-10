@@ -62,6 +62,7 @@ class ResolveFile():
         self.sync_hash = info.sync_hash
         self.otype = info.otype
         self.__temp_file = info.temp_file
+        self._len = None
         if self.otype == FILE:
             assert info.temp_file
         self.__fh: BinaryIO = None
@@ -103,6 +104,7 @@ class ResolveFile():
         return self.fh.read(*a)
 
     def write(self, buf):
+        # if this changes, then __len__ also needs to change
         raise NotImplementedError()
 
     def close(self):
@@ -116,6 +118,15 @@ class ResolveFile():
 
     def tell(self):
         return self.fh.tell()
+
+    def __len__(self):
+        if self._len is None:
+            cur_pos = self.tell()
+            self.fh.seek(0, os.SEEK_END)
+            self._len = self.tell()
+            self.seek(cur_pos)
+        return self._len
+
 
 
 @strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
