@@ -164,7 +164,6 @@ class OneDriveItem():
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
-    large_file_size = 1 * 1024 * 1024
     upload_block_size = 4 * 1024 * 1024
 
     name = 'onedrive'
@@ -611,56 +610,20 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         yield from self._walk(path, info.oid)
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
-        size = _get_size_and_seek0(file_like)
-        if size <= self.large_file_size:
-            with self._api() as client:
-                req = self._get_item(client, oid=oid).content.request()
-                req.method = "PUT"
-                try:
-                    resp = req.send(data=file_like)
-                except onedrivesdk.error.OneDriveError as e:
-                    if e.code == ErrorCode.NotSupported:
-                        raise CloudFileExistsError("Cannot upload to folder")
-                    if e.code == ErrorCode.ResourceModified:
-                        # onedrive ocassionally reports etag mismatch errors, even when there's no possibility of conflict
-                        # simply retrying here vastly reduces the number of false positive failures
-                        resp = req.send(data=file_like)
-                    else:
-                        raise
-
-                log.debug("uploaded: %s", resp.content)
-                # TODO: why not just info_from_rest?
-                item = onedrivesdk.Item(json.loads(resp.content))
-                return self._info_item(item)
-        else:
-            with self._api() as client:
-                _unused_resp = self._upload_large(self._get_item(client, oid=oid).api_path, file_like, "replace")
-            # todo: maybe use the returned item dict to speed this up
-            return self.info_oid(oid)
+        with self._api() as client:
+            _unused_resp = self._upload_large(self._get_item(client, oid=oid).api_path, file_like, "replace")
+        # todo: maybe use the returned item dict to speed this up
+        return self.info_oid(oid)
 
     def create(self, path, file_like, metadata=None) -> 'OInfo':
         if not metadata:
             metadata = {}
 
-        pid = self._get_parent_id(path=path)
         dirname, base = self.split(path)
-        size = _get_size_and_seek0(file_like)
 
-        use_large = size > self.large_file_size
-        if not use_large:
-            if self.exists_path(path):
-                raise CloudFileExistsError()
-            with self._api() as client:
-                api_path = self._get_item(client, oid=pid).api_path
-                base = base.replace("'", "''")
-                name = urllib.parse.quote(base)
-                api_path += "/children('" + name + "')/content"
-                r = self._direct_api("put", api_path, data=file_like, headers={'content-type': 'text/plain'})
-            return self._info_from_rest(r, root=dirname)
-        else:
-            with self._api() as client:
-                r = self._upload_large(self._get_item(client, path=path).api_path + ":", file_like, conflict="fail")
-            return self._info_from_rest(r, root=self.dirname(path))
+        with self._api() as client:
+            r = self._upload_large(self._get_item(client, path=path).api_path + ":", file_like, conflict="fail")
+        return self._info_from_rest(r, root=self.dirname(path))
 
     def _upload_large(self, drive_path, file_like, conflict):
         size = _get_size_and_seek0(file_like)
