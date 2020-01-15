@@ -164,7 +164,6 @@ class OneDriveItem():
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
-    large_file_size = 1 * 1024 * 1024
     upload_block_size = 4 * 1024 * 1024
 
     name = 'onedrive'
@@ -622,7 +621,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         size = _get_size_and_seek0(file_like)
-        if size <= self.large_file_size:
+        if size == 0:
             with self._api() as client:
                 req = self._get_item(client, oid=oid).content.request()
                 req.method = "PUT"
@@ -656,8 +655,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         dirname, base = self.split(path)
         size = _get_size_and_seek0(file_like)
 
-        use_large = size > self.large_file_size
-        if not use_large:
+        if size == 0:
             if self.exists_path(path):
                 raise CloudFileExistsError()
             with self._api() as client:
