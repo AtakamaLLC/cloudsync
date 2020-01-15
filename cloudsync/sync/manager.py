@@ -18,7 +18,7 @@ from pystrict import strict
 __all__ = ['SyncManager']
 
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
-        CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError
+        CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError, CloudNamespaceError
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -172,7 +172,7 @@ class SyncManager(Runnable):
                 try:
                     self.sync(sync)
                     self.state.storage_commit()
-                except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError) as e:
+                except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError, CloudNamespaceError) as e:
                     if self.__nmgr:
                         self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
                     log.warning(

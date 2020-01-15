@@ -3,7 +3,7 @@ import time
 from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass
 from pystrict import strict
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
 from .runnable import Runnable
 from .muxer import Muxer
 from .types import OType, DIRECTORY
@@ -95,7 +95,7 @@ class EventManager(Runnable):
                     log.info("reconnect to %s", self.provider.name)
                     self.provider.reconnect()
             self._do_unsafe()
-        except (CloudTemporaryError, CloudDisconnectedError) as e:
+        except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
