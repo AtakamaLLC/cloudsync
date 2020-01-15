@@ -5,8 +5,11 @@ import logging
 from unittest.mock import patch
 import re
 
+import pytest
+
 from onedrivesdk_fork.error import ErrorCode
 from cloudsync.providers import OneDriveProvider
+from cloudsync.exceptions import CloudNamespaceError, CloudDisconnectedError, CloudTokenError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.oauth.apiserver import ApiServer, ApiError, api_route
 from .fixtures import FakeApi, fake_oauth_provider
@@ -107,4 +110,37 @@ def test_root_event():
     assert odp._convert_to_event(non_root_event, "123") is not None
 
 
+def test_namespace_get():
+    srv, odp = fake_odp()
+    ns = odp.namespace
+    nsid = odp.namespace_id
+    assert ns
+    assert nsid
+
+def test_namespace_set():
+    srv, odp = fake_odp()
+    odp.namespace = "personal"
+    nsid = odp.namespace_id
+    assert nsid
+
+def test_namespace_set_err():
+    srv, odp = fake_odp()
+    with pytest.raises(CloudNamespaceError):
+        odp.namespace = "bad-namespace"
+
+def test_namespace_set_disconn():
+    srv, odp = fake_odp()
+    odp.disconnect()
+    with pytest.raises(CloudDisconnectedError):
+        odp.namespace = "whatever"
+
+def test_namespace_set_other():
+    srv, odp = fake_odp()
+
+    def raise_error():
+        raise CloudTokenError("yo")
+
+    with patch.object(odp, '_direct_api', side_effect=raise_error):
+        with pytest.raises(CloudTokenError):
+            odp.namespace = "whatever"
 

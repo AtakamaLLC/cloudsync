@@ -96,7 +96,7 @@ class OneDriveItem():
         if path:
             self.__sdk_kws = {"path": path}
 
-        self.__drive_id = self.__prov._get_drive_id()
+        self._drive_id: str = self.__prov._drive_id
         self.__get = None
 
     @property
@@ -128,7 +128,7 @@ class OneDriveItem():
 
         with self.__prov._api() as client:       # pylint:disable=protected-access
             try:
-                self.__item = client.item(drive=self.__drive_id, **self.__sdk_kws)
+                self.__item = client.item(drive=self._drive_id, **self.__sdk_kws)
             except ValueError:
                 raise CloudFileNotFoundError("Invalid item: %s" % self.__sdk_kws)
             if self.__item is None:
@@ -139,9 +139,9 @@ class OneDriveItem():
     @property
     def api_path(self):
         if self.__oid:
-            return "/drives/%s/items/%s" % (self.__drive_id, self.__oid)
+            return "/drives/%s/items/%s" % (self._drive_id, self.__oid)
         if self.__path:
-            return "/drives/%s/root:%s" % (self.__drive_id, self.__path)
+            return "/drives/%s/root:%s" % (self._drive_id, self.__path)
         raise AssertionError("This should not happen, since __init__ verifies that there is one or the other")
 
     def get(self):
@@ -151,7 +151,7 @@ class OneDriveItem():
 
     @property
     def drive_id(self):
-        return self.__drive_id
+        return self._drive_id
 
     @property
     def children(self):
@@ -191,10 +191,23 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self._mutex = threading.RLock()
         self._oauth_config = oauth_config
         self.__team_id = None
-        self._namespace: str = None
-        self._is_biz: bool
-        self.__drive_to_name: Dict[str, str] = None
-        self.__name_to_drive: Dict[str, str] = None
+        self._drive_id: str = None
+        self._personal_id: str = None
+        self.__cached_drive_to_name: Dict[str, str] = None
+        self.__cached_name_to_drive: Dict[str, str] = None
+        self.__cached_is_biz = None
+
+    @property
+    def __drive_to_name(self):
+        if self.__cached_drive_to_name is None:
+            self._set_drive_list()
+        return self.__cached_drive_to_name
+
+    @property
+    def __name_to_drive(self):
+        if self.__cached_name_to_drive is None:
+            self._set_drive_list()
+        return self.__cached_name_to_drive
 
     @property
     def connected(self):
@@ -260,6 +273,8 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         try:
             dat = self._direct_api("get", "/me/drive/")
             all_drives[dat['id']] = "personal"
+        except CloudDisconnectedError:
+            raise
         except Exception as e:
             log.debug("error getting info about onedrive %s", repr(e))
             raise CloudTokenError("Invalid account, or no onedrive access")
@@ -293,13 +308,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         except Exception:
             pass
 
-        log.info("all drives %s", all_drives)
-        self.__drive_to_name = all_drives
-        self.__name_to_drive = {v: k for k, v in all_drives.items()}
-
-        # default namespace to personal
-        if not self.namespace:
-            self.namespace = "personal"
+        log.debug("all drives %s", all_drives)
+        self.__cached_drive_to_name = all_drives
+        self.__cached_name_to_drive = {v: k for k, v in all_drives.items()}
 
     def _raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
         status = 0
@@ -356,18 +367,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         log.error("Not converting err %s %s", ex, req)
         return False
 
-    def _get_drive_id(self):
-        if not self.__client:
-            raise CloudDisconnectedError()
-        try:
-            return self.__name_to_drive[self.namespace]
-        except KeyError:
-            raise CloudFileNotFoundError("Unknown drive %s" % self.namespace)
-
     def get_quota(self):
         dat = self._direct_api("get", "/me/drive/")
+        self.__cached_is_biz = dat["driveType"] != 'personal'
 
-        log.info("my drive %s", dat)
+        log.debug("my drive %s", dat)
 
         display_name = dat["owner"].get("user", {}).get("displayName")
         if not display_name:
@@ -445,10 +449,16 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 self.__client.item = self.__client.item  # satisfies a lint confusion
                 self._creds = creds
 
-            self._set_drive_list()
-
         q = self.get_quota()
-        return q["drive_id"]
+        self._personal_id = q["drive_id"]
+
+        if self._drive_id:
+            log.info("USING NS %s", self._drive_id)
+            self.namespace_id = self._drive_id
+        else:
+            self._drive_id = self._personal_id
+
+        return self._personal_id
 
     def _api(self, *args, needs_client=True, **kwargs):  # pylint: disable=arguments-differ
         if needs_client and not self.__client:
@@ -484,7 +494,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     @property
     def latest_cursor(self):
         save_cursor = self.__cursor
-        self.__cursor = self._get_url("/drives/%s/root/delta" % self._get_drive_id())
+        self.__cursor = self._get_url("/drives/%s/root/delta" % self._drive_id)
         log.debug("cursor %s", self.__cursor)
         for _ in self.events():
             pass
@@ -755,7 +765,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
                 if confl.oid == oid:
                     raise
-                
+
                 log.debug("remove conflict out of the way : %s", e)
                 self.delete(confl.oid)
                 self.rename(oid, path)
@@ -807,7 +817,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
         while items:
             for item in items:
-#                log.debug("listdir %s", item)
                 yield self._info_from_rest(item, root=root)
 
             items = []
@@ -868,7 +877,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         try:
             if path == "/":
                 return OneDriveInfo(oid="root", otype=DIRECTORY, hash=None, path="/", pid=None, name="",
-                        mtime=None, shared=False)
+                                    mtime=None, shared=False)
 
             with self._api() as client:
                 api_path = self._get_item(client, path=path).api_path
@@ -940,8 +949,6 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         assert pr_path
         path = self.join(pr_path, name)
         preambles = ["/drive/root:", "/me/drive/root:", "/drives/%s/root:" % self.connection_id]
-        for did in self.__drive_to_name:
-            preambles.append("/drives/%s/root:" % did)
 
         if ':' in path:
             found = False
@@ -1008,25 +1015,35 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     @property                                # type: ignore
     def namespace(self) -> str:              # type: ignore
-        return self._namespace
+        if self._drive_id:
+            return self.__drive_to_name[self._drive_id]
+        return None
 
     @namespace.setter
     def namespace(self, ns: str):
-        if ns != self._namespace:
-            log.info("namespace changing to %s", ns)
-        self._namespace = ns
-        dat = self._direct_api("get", "/drives/%s/" % self._get_drive_id())
-        self._is_biz = dat["driveType"] != 'personal'
+        if ns not in self.__name_to_drive:
+            raise CloudNamespaceError("Unknown namespace %s" % ns)
+
+        if self.__name_to_drive[ns] != self._drive_id:
+            log.debug("namespace changing to %s", ns)
+
+        self.namespace_id = self.__name_to_drive[ns]
+        assert self.namespace == ns
+
+    @property
+    def _is_biz(self):
+        if self.__cached_is_biz is None:
+            dat = self._direct_api("get", "/drives/%s/" % self._drive_id)
+            self.__cached_is_biz = dat["driveType"] != 'personal'
+        return self.__cached_is_biz
 
     @property
     def namespace_id(self) -> Optional[str]:
-        return self._get_drive_id()
+        return self._drive_id
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):
-        if ns_id not in self.__drive_to_name:
-            raise CloudNamespaceError("The namespace id specified was invalid")
-        self.namespace = self.__drive_to_name[ns_id]
+        self._drive_id = ns_id
 
     @classmethod
     def test_instance(cls):
