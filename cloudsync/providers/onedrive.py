@@ -82,6 +82,10 @@ class OneDriveItem():
         if (oid is None and path is None):
             raise ValueError("Must specify oid or path")
 
+        if path == "/":
+            path = None
+            oid = "root"
+
         self.__oid = oid
         self.__path = path
         self.__pid = pid

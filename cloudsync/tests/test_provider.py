@@ -2062,3 +2062,14 @@ def test_bug_create(provider):
             provider.create("/bug_create", file_like)
 
     assert not provider.exists_path("/bug_create")
+
+
+def test_root_rename(config_provider):
+    provider = config_provider
+    provider.connect(provider._test_creds)
+    tfn1 = "/" + os.urandom(24).hex()
+    tfn2 = "/" + os.urandom(24).hex()
+    oinfo = provider.create(tfn1, BytesIO(b'hello'))
+    oid = provider.rename(oinfo.oid, tfn2)
+    provider.delete(oid)
+
