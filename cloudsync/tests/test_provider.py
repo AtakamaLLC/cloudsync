@@ -13,8 +13,8 @@ import pytest
 from _pytest.fixtures import FixtureLookupError
 import cloudsync
 
-from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
-from cloudsync.tests.fixtures import Provider, mock_provider_instance
+from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
+        CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -35,6 +35,7 @@ else:
 
 def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     count = 4
+
     def wrapped(prov, *args, **kwargs):
         ex: CloudException = None
         for i in range(count):
@@ -280,6 +281,14 @@ class ProviderHelper(ProviderBase):
     @namespace.setter
     def namespace(self, val):
         self.prov.namespace = val
+
+    @property
+    def namespace_id(self):
+        return self.prov.namespace_id
+
+    @namespace_id.setter
+    def namespace_id(self, val):
+        self.prov.namespace_id = val
 
 
 
@@ -1811,6 +1820,30 @@ def test_cursor_error_during_listdir(provider):
     with pytest.raises(CloudTemporaryError):
         list(provider.listdir(dir_oid))
     provider._api = orig_api
+
+
+def test_set_creds(config_provider):
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    if not provider._test_creds:
+        pytest.skip("provider doesn't support testing creds")
+    provider.set_creds(provider._test_creds)
+    provider.reconnect()
+    assert provider.connected
+
+
+def test_set_ns_offline(config_provider):
+    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    try:
+        provider.list_ns()
+        pytest.skip("provider doesn't use online namespace listings")
+    except CloudDisconnectedError:
+        pass
+
+    provider.namespace_id = 'bad-namespace-is-ok-at-least-when-offline'
+    provider.connect(provider._test_creds)
+    log.info("ns id %s", provider.namespace_id)
+    with pytest.raises(CloudException):
+        log.info("ns list %s", list(provider.listdir_path("/")))
 
 
 @pytest.mark.manual
