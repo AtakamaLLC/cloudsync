@@ -643,6 +643,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 return self._info_item(item)
         else:
             with self._api() as client:
+                info = self.info_oid(oid)
+                if not info:
+                    raise CloudFileNotFoundError("Uploading to nonexistent oid")
+
+                if info.otype == DIRECTORY:
+                    raise CloudFileExistsError("Trying to upload on top of directory")
+
                 _unused_resp = self._upload_large(self._get_item(client, oid=oid).api_path, file_like, "replace")
             # todo: maybe use the returned item dict to speed this up
             return self.info_oid(oid)
