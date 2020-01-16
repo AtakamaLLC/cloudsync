@@ -122,7 +122,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         log.debug('Connecting to box')
         if not self.__client or creds != self.__creds:
             try:
-                if not creds:
+                if creds:
                     self.__creds = creds
                 else:
                     raise CloudTokenError("no creds")
