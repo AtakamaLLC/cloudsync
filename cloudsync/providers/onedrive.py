@@ -896,7 +896,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             otype = FILE
 
             if self._is_biz:
-                ohash = item.file.hashes.to_dict()["quickXorHash"]
+                if item.file.hashes is None:
+                    # This is the quickxor hash of b""
+                    ohash = b"\0" * 20
+                else:
+                    ohash = item.file.hashes.to_dict()["quickXorHash"]
             else:
                 ohash = item.file.hashes.to_dict()["sha1Hash"]
 
