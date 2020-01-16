@@ -382,7 +382,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def connect_impl(self, creds):
         if not self.__client or creds != self._creds:
-            if not creds:
+            if creds:
+                self._creds = creds
+            else:
                 raise CloudTokenError("no credentials")
             log.debug('Connecting to One Drive')
             refresh_token = creds.get("refresh", creds.get("refresh_token"))
@@ -423,8 +425,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 auth_provider.load_session()
                 try:
                     auth_provider.refresh_token()
+                except requests.exceptions.ConnectionError as e:
+                    raise CloudDisconnectedError("ConnectionError while authenticating")
                 except Exception as e:
-                    log.error(e)
+                    log.exception("exception while authenticating: %s", e)
                     raise CloudTokenError(str(e))
                 token = auth_provider.access_token
                 try:

@@ -2030,3 +2030,22 @@ def test_bug_create(provider):
             provider.create("/bug_create", file_like)
 
     assert not provider.exists_path("/bug_create")
+
+
+def test_connect_saves_creds(unconnected_provider):
+    # assert that the cloud
+    # a) uses an api function
+    # b) does not trap CloudTemporaryError's
+    # c) saves the creds even if the api raises
+
+    provider = unconnected_provider
+
+    def side_effect(*a, **k):
+        raise CloudDisconnectedError("fake disconnect")
+
+    with patch.object(provider, "_api", side_effect=side_effect):
+        with patch.object(provider, "api_retry", False):
+            provider.prov._creds = None
+            with pytest.raises(CloudDisconnectedError):
+                provider.connect_impl({"creds": True})
+            assert provider.prov._creds is not None
