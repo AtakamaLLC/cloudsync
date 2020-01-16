@@ -412,11 +412,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         fields = 'id, md5Checksum'
 
-        res = self._api('files', 'update',
-                        body=gdrive_info,
-                        fileId=oid,
-                        media_body=ul,
-                        fields=fields)
+        try:
+            res = self._api('files', 'update',
+                            body=gdrive_info,
+                            fileId=oid,
+                            media_body=ul,
+                            fields=fields)
+        except OSError as e:
+            self.disconnect()
+            raise CloudDisconnectedError("OSError in file upload: %s" % repr(e))
 
         log.debug("response from upload %s", res)
 
@@ -446,10 +450,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         gdrive_info['parents'] = [parent_oid]
 
-        res = self._api('files', 'create',
-                        body=gdrive_info,
-                        media_body=ul,
-                        fields=fields)
+        try:
+            res = self._api('files', 'create',
+                            body=gdrive_info,
+                            media_body=ul,
+                            fields=fields)
+        except OSError as e:
+            self.disconnect()
+            raise CloudDisconnectedError("OSError in file create: %s" % repr(e))
 
         log.debug("response from create %s : %s", path, res)
 
