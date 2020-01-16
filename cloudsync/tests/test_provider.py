@@ -14,13 +14,12 @@ from _pytest.fixtures import FixtureLookupError
 import cloudsync
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
-        CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError
+        CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError, CloudNamespaceError
 from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
 from os import SEEK_SET, SEEK_CUR, SEEK_END
 
-# from cloudsync.providers import GDriveProvider, DropboxProvider
 
 log = logging.getLogger(__name__)
 
@@ -289,7 +288,6 @@ class ProviderHelper(ProviderBase):
     @namespace_id.setter
     def namespace_id(self, val):
         self.prov.namespace_id = val
-
 
 
 def mixin_provider(prov, connect=True, short_poll_only=True):
@@ -1842,7 +1840,7 @@ def test_set_ns_offline(config_provider):
     provider.namespace_id = 'bad-namespace-is-ok-at-least-when-offline'
     provider.connect(provider._test_creds)
     log.info("ns id %s", provider.namespace_id)
-    with pytest.raises(CloudException):
+    with pytest.raises(CloudNamespaceError):
         log.info("ns list %s", list(provider.listdir_path("/")))
 
 

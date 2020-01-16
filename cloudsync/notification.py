@@ -21,6 +21,7 @@ class NotificationType(enum.Enum):
     FILE_NAME_ERROR = 'file_name_error'             ; """File name is invalid, and is being ignored"""
     OUT_OF_SPACE_ERROR = 'out_of_space_error'       ; """Sync is halted because one provider is out of space"""
     DISCONNECTED_ERROR = 'disconnected_error'       ; """Provider was disconnected"""
+    NAMESPACE_ERROR = 'namespace_error'             ; """Specified namespace is invalid/unavailable (could be auth issue)"""
 
 
 class SourceEnum(enum.Enum):
@@ -61,12 +62,15 @@ class NotificationManager(Runnable):
             log.exception("Error while handling a notification: %s", e)
 
     def notify_from_exception(self, source: SourceEnum, e: ex.CloudException, path: typing.Optional[str] = None):
+        """Insert notification into the queue based on exception information."""
         if isinstance(e, ex.CloudDisconnectedError):
             self.notify(Notification(source, NotificationType.DISCONNECTED_ERROR, path))
         elif isinstance(e, ex.CloudOutOfSpaceError):
             self.notify(Notification(source, NotificationType.OUT_OF_SPACE_ERROR, path))
         elif isinstance(e, ex.CloudFileNameError):
             self.notify(Notification(source, NotificationType.FILE_NAME_ERROR, path))
+        elif isinstance(e, ex.CloudNamespaceError):
+            self.notify(Notification(source, NotificationType.NAMESPACE_ERROR, path))
         else:
             log.debug("Encountered a cloud exception: %s (type %s)", e, type(e))
 
