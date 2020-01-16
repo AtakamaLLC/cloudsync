@@ -101,6 +101,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Generally providers should overload connect_impl, instead.
         """
         log.debug("connect %s (%s)", self.name, self.connection_id)
+        self._creds = creds
         new_id = self.connect_impl(creds)
         if self.connection_id:
             if self.connection_id != new_id:
@@ -108,7 +109,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 raise CloudTokenError("Cannot connect with mismatched credentials")
         else:
             self.connection_id = new_id
-        self._creds = creds
         self.__connected = True
         assert self.connected
 

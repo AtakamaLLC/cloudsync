@@ -2045,7 +2045,9 @@ def test_connect_saves_creds(unconnected_provider):
 
     with patch.object(provider, "_api", side_effect=side_effect):
         with patch.object(provider, "api_retry", False):
-            provider.prov._creds = None
+            assert not provider.connected
+            creds = provider._test_creds
             with pytest.raises(CloudDisconnectedError):
-                provider.connect_impl({"creds": True})
-            assert provider.prov._creds is not None
+                provider.connect(creds)
+    provider.reconnect()
+    assert provider.connected

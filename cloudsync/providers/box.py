@@ -122,7 +122,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         log.debug('Connecting to box')
         if not self.__client or creds != self.__creds:
             try:
-                if creds:
+                if not creds:
                     self.__creds = creds
                 else:
                     raise CloudTokenError("no creds")
@@ -163,7 +163,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 log.exception("Error during connect %s", e)
                 self.disconnect()
                 raise CloudDisconnectedError()
-            except CloudTokenError:
+            except (CloudTokenError, CloudDisconnectedError):
                 raise
             except Exception as e:
                 log.exception("Error during connect %s", e)
