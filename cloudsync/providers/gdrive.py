@@ -126,7 +126,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 new = self._oauth_config.refresh(self._oauth_info.token_url, refresh_token, scope=self._oauth_info.scopes)
                 google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._oauth_info.scopes)
                 self._client = build(
-                    'drive', 'v3', credentials=google_creds)
+                    'drive', 'v3', credentials=google_creds, cache_discovery=False)
                 try:
                     self.get_quota.clear()          # pylint: disable=no-member
                     quota = self.get_quota()
