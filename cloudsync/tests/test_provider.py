@@ -1,4 +1,5 @@
 import os
+import errno
 import logging
 import io
 from io import BytesIO
@@ -2095,3 +2096,94 @@ def test_bug_create(provider):
             provider.create("/bug_create", file_like)
 
     assert not provider.exists_path("/bug_create")
+
+
+small_fsize = 600 * 1024  # 600 KiB
+large_fsize = (4 * 1024 * 1024) * 5  # 20 MiB. Note that we upload in chunks of 4 MiB.
+
+@pytest.mark.parametrize("content_len", (small_fsize, large_fsize), ids=("small", "large"))
+@pytest.mark.parametrize("operation", ["create", "upload"])
+def test_broken_upload(provider, content_len, operation):
+    # Explicitly disable API retries to make logs simpler
+    provider.api_retry = False
+
+    contents = b"a" * content_len
+
+    class SleepyIO:
+        """Simulate BytesIO, with the addition of an EIO on reads after the
+        first half of the file.
+
+        Used to simulate strange, unexpected errors in the uploader.
+        """
+        def __init__(self, *args, **kwargs):
+            self._b = BytesIO(*args, **kwargs)
+            self.len = len(self._b.getvalue())
+
+            # Pass these functions through
+            self.seek = self._b.seek
+            self.tell = self._b.tell
+
+        def read(self, size=-1):
+            max_offset = content_len // 2
+            req_offset = self._b.tell() + size
+
+            # Check if the requested offset would go too far, or whether a read
+            # of the entire file was requested.
+            if req_offset > max_offset or (size < 0 or size is None):
+                log.info("SleepyIO: Raising EIO")
+                raise OSError(errno.EIO, "Fake IOError")
+
+            return self._b.read(size)
+
+    path = f"/truncated_file_{content_len}_{operation}.txt"
+
+    # By default, assume that the full file will be uploaded
+    expected_fsize = content_len
+
+    # If we're testing upload, we need to pre-create the file
+    if operation == "upload":
+        upload_info = provider.create(path, BytesIO())
+
+    # Note: reenable this patch to get extra logging
+    try:
+        if operation == "create":
+            info = provider.create(path, SleepyIO(contents))
+        else:
+            info = provider.upload(upload_info.oid, SleepyIO(contents))
+
+        log.info("Exception not raised: info is %s", info)
+
+        # If we get an oid, we expect the file to exist now
+        expect_path_exists = info is not None
+    except (OSError, CloudDisconnectedError, CloudTemporaryError) as e:
+        log.info("Got exception in op: %s", repr(e))
+
+        if operation == "create":
+            expect_path_exists = False
+        else:
+            expect_path_exists = True
+            expected_fsize = 0
+
+    log.info("Done with upload. File expected to exist: %s", expect_path_exists)
+
+    for _ in range(10):
+        if provider.exists_path(path):
+            break
+        time.sleep(0.1)
+
+    path_exists = provider.exists_path(path)
+
+    if expect_path_exists:
+        assert path_exists
+    else:
+        assert not path_exists
+
+    if path_exists:
+        log.info("Downloading file")
+        data = BytesIO()
+        provider.download_path(path, data)
+
+        data_len = len(data.getvalue())
+        assert (
+            expected_fsize == data_len
+        ), "File existed in the cloud, but had incorrect size"
