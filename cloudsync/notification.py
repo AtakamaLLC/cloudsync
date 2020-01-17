@@ -63,6 +63,9 @@ class NotificationManager(Runnable):
 
     def notify_from_exception(self, source: SourceEnum, e: ex.CloudException, path: typing.Optional[str] = None):
         """Insert notification into the queue based on exception information."""
+
+        log.debug("notify from exception %s, %s : %s", source, repr(e), path)
+
         if isinstance(e, ex.CloudDisconnectedError):
             self.notify(Notification(source, NotificationType.DISCONNECTED_ERROR, path))
         elif isinstance(e, ex.CloudOutOfSpaceError):

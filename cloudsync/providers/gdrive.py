@@ -117,6 +117,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
         if not self._client or creds != self._creds:
+            if creds:
+                self._creds = creds
+            else:
+                raise CloudTokenError("no creds")
+
             refresh_token = creds and creds.get('refresh_token')
 
             if not refresh_token:

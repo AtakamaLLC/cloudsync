@@ -436,8 +436,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 auth_provider.load_session()
                 try:
                     auth_provider.refresh_token()
+                except requests.exceptions.ConnectionError as e:
+                    raise CloudDisconnectedError("ConnectionError while authenticating")
                 except Exception as e:
-                    log.error(e)
+                    log.exception("exception while authenticating: %s", e)
                     raise CloudTokenError(str(e))
                 token = auth_provider.access_token
                 try:

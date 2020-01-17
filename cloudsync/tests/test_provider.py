@@ -3,24 +3,28 @@ import errno
 import logging
 import io
 from io import BytesIO
-from unittest.mock import patch
-from typing import Union, Optional, Generator, TYPE_CHECKING, List, cast
-
+from os import SEEK_SET, SEEK_CUR, SEEK_END
 import threading
 import time
+
+from typing import Optional, Generator, TYPE_CHECKING, List, cast
+from unittest.mock import patch
 
 import msgpack
 import pytest
 from _pytest.fixtures import FixtureLookupError
+
 import cloudsync
+import cloudsync.providers
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
-        CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError, CloudNamespaceError
-from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
+        CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
+from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
-from os import SEEK_SET, SEEK_CUR, SEEK_END
 
+
+# pylint: disable=missing-docstring
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +58,8 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
 
 class ProviderHelper(ProviderBase):
     def __init__(self, prov, connect=True, short_poll_only=True, isolation_string=None):
+        # if you plan on patching _api you must use a scoped_provider!!!
+
         self.api_retry = True
         self.prov = prov
 
@@ -74,6 +80,8 @@ class ProviderHelper(ProviderBase):
             self.prov.connect(self._test_creds)
             assert prov.connection_id
             self.make_root()
+        else:
+            self.prov.disconnect()
 
     def make_root(self):
         ns = self.prov.list_ns()
@@ -241,7 +249,7 @@ class ProviderHelper(ProviderBase):
                 got = True
             if not until and got:
                 break
-            elif until and until():
+            if until and until():
                 break
 
     def __cleanup(self, oid):
@@ -250,7 +258,9 @@ class ProviderHelper(ProviderBase):
         except CloudFileNotFoundError:
             pass
 
-    def test_cleanup(self, timeout=None, until=None):
+    def test_cleanup(self):
+        if not self.prov.connected:
+            self.prov.connect(self._test_creds)
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
@@ -293,6 +303,8 @@ class ProviderHelper(ProviderBase):
 
 def mixin_provider(prov, connect=True, short_poll_only=True):
     assert prov
+    if isinstance(prov, Generator):
+        prov = next(prov)
     if not isinstance(prov, List):
         prov = [prov]
     for curr_prov in prov:
@@ -335,8 +347,8 @@ def config_provider_impl(request, provider_name, instances):
     yield provs
 
 
-@pytest.fixture(scope="module")
-def config_provider(request, provider_name, instances=1):
+@pytest.fixture(name="config_provider", scope="module")
+def config_provider_fixture(request, provider_name, instances=1):
     yield from config_provider_impl(request, provider_name, instances)
 
 
@@ -350,27 +362,27 @@ def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
+# === function scoped, less efficient, good for connect/disconnect tests
+
+@pytest.fixture(name="unconnected_provider")
+def provider_fixture_unconnected(config_provider):
+    yield from mixin_provider(config_provider, connect=False)
+
+
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
-
 @pytest.fixture(name="two_scoped_providers")
-def two_scoped_provider_fixture(two_config_providers):
-    yield from mixin_provider(two_config_providers)
+def two_scoped_provider_fixture(request, provider_name):
+    yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
 
-
-@pytest.fixture(name="unconnected_provider")
-def scoped_provider_fixture_unconnected(config_provider):
-    yield from mixin_provider(config_provider, connect=False)
-
-
+# must be scoped because makes non-patched modification to provider
 @pytest.fixture(name="long_poll_provider")
 def scoped_provider_fixture_short_poll(config_provider):
     yield from mixin_provider(config_provider, short_poll_only=False)
 
 
-import cloudsync.providers
 _registered = False
 
 
@@ -958,11 +970,10 @@ def test_event_longpoll(long_poll_provider):
 
 
 def test_api_failure(scoped_provider):
+    provider = scoped_provider
     # assert that the cloud
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
-
-    provider = scoped_provider
 
     def side_effect(*a, **k):
         raise CloudTemporaryError("fake disconnect")
@@ -1976,6 +1987,7 @@ def test_specific_test_root():
     class MockProvRooted(MockProvider):
         test_root = "/banana"
     base = MockProvRooted(False, False)
+    base.connect("whatever")
     base.mkdir("/banana")
 
     provider = ProviderHelper(base)                             # type: ignore
@@ -2061,7 +2073,8 @@ def test_cache(two_scoped_providers):
     assert prov1.exists_path(new_file_name)
 
 
-def test_bug_create(provider):
+def test_bug_create(scoped_provider):
+    provider = scoped_provider
     if provider.name == "box":
         # TODO: box needs some mechanism for failing an upload
         # right now, it just creates a zero byte file
@@ -2096,14 +2109,38 @@ def test_bug_create(provider):
     assert not provider.exists_path("/bug_create")
 
 
+def test_connect_saves_creds(unconnected_provider):
+    # assert that the cloud
+    # a) uses an api function
+    # b) does not trap CloudTemporaryError's
+    # c) saves the creds even if the api raises
+
+    provider = unconnected_provider
+
+    def side_effect(*a, **k):
+        raise CloudDisconnectedError("fake disconnect")
+
+    with patch.object(provider, "_api", side_effect=side_effect):
+        with patch.object(provider, "api_retry", False):
+            assert not provider.connected
+            creds = provider._test_creds
+            with pytest.raises(CloudDisconnectedError):
+                provider.connect(creds)
+    provider.reconnect()
+    assert provider.connected
+
+
 small_fsize = 600 * 1024  # 600 KiB
 large_fsize = (4 * 1024 * 1024) * 5  # 20 MiB. Note that we upload in chunks of 4 MiB.
 
+
 @pytest.mark.parametrize("content_len", (small_fsize, large_fsize), ids=("small", "large"))
 @pytest.mark.parametrize("operation", ["create", "upload"])
-def test_broken_upload(provider, content_len, operation):
+def test_broken_upload(scoped_provider, content_len, operation):
+    provider = scoped_provider
     # Explicitly disable API retries to make logs simpler
     provider.api_retry = False
+    assert provider.connected
 
     contents = b"a" * content_len
 
