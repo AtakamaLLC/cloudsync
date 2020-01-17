@@ -86,8 +86,7 @@ def fake_odp():
 
 def test_upload():
     srv, odp = fake_odp()
-    odp.large_file_size = 10
-    odp.create("/small", io.BytesIO(b'123'))
+    odp.create("/small", io.BytesIO())
     assert srv.calls["upload.put"]
     odp.create("/big", io.BytesIO(b'12345678901234567890'))
     assert srv.calls["upload.session"]
