@@ -3,24 +3,28 @@ import errno
 import logging
 import io
 from io import BytesIO
-from unittest.mock import patch
-from typing import Union, Optional, Generator, TYPE_CHECKING, List, cast
-
+from os import SEEK_SET, SEEK_CUR, SEEK_END
 import threading
 import time
+
+from typing import Optional, Generator, TYPE_CHECKING, List, cast
+from unittest.mock import patch
 
 import msgpack
 import pytest
 from _pytest.fixtures import FixtureLookupError
+
 import cloudsync
+import cloudsync.providers
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
-        CloudOutOfSpaceError, FILE, CloudCursorError, CloudTokenError, CloudNamespaceError
-from cloudsync.tests.fixtures import Provider, mock_provider_instance, MockProvider
+        CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
+from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
-from os import SEEK_SET, SEEK_CUR, SEEK_END
 
+
+# pylint: disable=missing-docstring
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +78,8 @@ class ProviderHelper(ProviderBase):
             self.prov.connect(self._test_creds)
             assert prov.connection_id
             self.make_root()
+        else:
+            self.prov.disconnect()
 
     def make_root(self):
         ns = self.prov.list_ns()
@@ -241,7 +247,7 @@ class ProviderHelper(ProviderBase):
                 got = True
             if not until and got:
                 break
-            elif until and until():
+            if until and until():
                 break
 
     def __cleanup(self, oid):
@@ -250,7 +256,9 @@ class ProviderHelper(ProviderBase):
         except CloudFileNotFoundError:
             pass
 
-    def test_cleanup(self, timeout=None, until=None):
+    def test_cleanup(self):
+        if not self.prov.connected:
+            self.prov.connect(self._test_creds)
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
@@ -293,6 +301,8 @@ class ProviderHelper(ProviderBase):
 
 def mixin_provider(prov, connect=True, short_poll_only=True):
     assert prov
+    if isinstance(prov, Generator):
+        prov = next(prov)
     if not isinstance(prov, List):
         prov = [prov]
     for curr_prov in prov:
@@ -335,8 +345,8 @@ def config_provider_impl(request, provider_name, instances):
     yield provs
 
 
-@pytest.fixture(scope="module")
-def config_provider(request, provider_name, instances=1):
+@pytest.fixture(name="config_provider", scope="module")
+def config_provider_fixture(request, provider_name, instances=1):
     yield from config_provider_impl(request, provider_name, instances)
 
 
@@ -350,27 +360,28 @@ def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
+# === function scoped, less efficient, good for connect/disconnect tests
+
+@pytest.fixture(name="unconnected_provider")
+def provider_fixture_unconnected(config_provider):
+    yield from mixin_provider(config_provider, connect=False)
+
+
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
 @pytest.fixture(name="two_scoped_providers")
-def two_scoped_provider_fixture(two_config_providers):
-    yield from mixin_provider(two_config_providers)
+def two_scoped_provider_fixture(request, provider_name):
+    yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
 
-
-@pytest.fixture(name="unconnected_provider")
-def scoped_provider_fixture_unconnected(config_provider):
-    yield from mixin_provider(config_provider, connect=False)
-
-
+# must be scoped because makes non-patched modification to provider
 @pytest.fixture(name="long_poll_provider")
 def scoped_provider_fixture_short_poll(config_provider):
     yield from mixin_provider(config_provider, short_poll_only=False)
 
 
-import cloudsync.providers
 _registered = False
 
 
@@ -633,8 +644,7 @@ def test_rmtree(provider):
     provider.rmtree(new_file_info.oid)
 
 
-def test_walk(scoped_provider):
-    provider = scoped_provider
+def test_walk(provider):
     temp = BytesIO(os.urandom(32))
     folder = provider.temp_name("folder")
     try:
@@ -957,12 +967,10 @@ def test_event_longpoll(long_poll_provider):
     assert received_event is not None
 
 
-def test_api_failure(scoped_provider):
+def test_api_failure(provider):
     # assert that the cloud
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
-
-    provider = scoped_provider
 
     def side_effect(*a, **k):
         raise CloudTemporaryError("fake disconnect")
@@ -1976,6 +1984,7 @@ def test_specific_test_root():
     class MockProvRooted(MockProvider):
         test_root = "/banana"
     base = MockProvRooted(False, False)
+    base.connect("whatever")
     base.mkdir("/banana")
 
     provider = ProviderHelper(base)                             # type: ignore
@@ -2126,6 +2135,7 @@ large_fsize = (4 * 1024 * 1024) * 5  # 20 MiB. Note that we upload in chunks of 
 def test_broken_upload(provider, content_len, operation):
     # Explicitly disable API retries to make logs simpler
     provider.api_retry = False
+    assert provider.connected
 
     contents = b"a" * content_len
 

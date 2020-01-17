@@ -114,7 +114,6 @@ class MockProvider(Provider):
         self._quota = quota
         self._locked_for_test: Set[str] = set()
         self._total_size = 0
-        self._creds = None
         self._type_map = {
             MockFSObject.FILE: OType.FILE,
             MockFSObject.DIR: OType.DIRECTORY,
@@ -132,15 +131,17 @@ class MockProvider(Provider):
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
+
         if not creds:
             raise CloudTokenError()
-        else:
-            self._creds = creds
+
+        self.__in_connect = True
+        self._api()
+        self.__in_connect = False
+
         if self.connection_id is None or self.connection_id == "invalid":
-            self.__in_connect = True
-            self._api()
-            self.__in_connect = False
             return os.urandom(16).hex()
+
         return self.connection_id
 
     def _register_event(self, action, target_object, prior_oid=None):
@@ -502,6 +503,7 @@ class MockProvider(Provider):
 
 def mock_provider_instance(*args, **kws):
     prov = MockProvider(*args, **kws)
+    prov.connect({"key": "val"})
     return prov
 
 
