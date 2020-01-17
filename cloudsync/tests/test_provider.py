@@ -58,6 +58,8 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
 
 class ProviderHelper(ProviderBase):
     def __init__(self, prov, connect=True, short_poll_only=True, isolation_string=None):
+        # if you plan on patching _api you must use a scoped_provider!!!
+
         self.api_retry = True
         self.prov = prov
 
@@ -371,7 +373,6 @@ def provider_fixture_unconnected(config_provider):
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
-
 @pytest.fixture(name="two_scoped_providers")
 def two_scoped_provider_fixture(request, provider_name):
     yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
@@ -644,7 +645,8 @@ def test_rmtree(provider):
     provider.rmtree(new_file_info.oid)
 
 
-def test_walk(provider):
+def test_walk(scoped_provider):
+    provider = scoped_provider
     temp = BytesIO(os.urandom(32))
     folder = provider.temp_name("folder")
     try:
@@ -967,7 +969,8 @@ def test_event_longpoll(long_poll_provider):
     assert received_event is not None
 
 
-def test_api_failure(provider):
+def test_api_failure(scoped_provider):
+    provider = scoped_provider
     # assert that the cloud
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
@@ -2070,7 +2073,8 @@ def test_cache(two_scoped_providers):
     assert prov1.exists_path(new_file_name)
 
 
-def test_bug_create(provider):
+def test_bug_create(scoped_provider):
+    provider = scoped_provider
     if provider.name == "box":
         # TODO: box needs some mechanism for failing an upload
         # right now, it just creates a zero byte file
@@ -2132,7 +2136,8 @@ large_fsize = (4 * 1024 * 1024) * 5  # 20 MiB. Note that we upload in chunks of 
 
 @pytest.mark.parametrize("content_len", (small_fsize, large_fsize), ids=("small", "large"))
 @pytest.mark.parametrize("operation", ["create", "upload"])
-def test_broken_upload(provider, content_len, operation):
+def test_broken_upload(scoped_provider, content_len, operation):
+    provider = scoped_provider
     # Explicitly disable API retries to make logs simpler
     provider.api_retry = False
     assert provider.connected
