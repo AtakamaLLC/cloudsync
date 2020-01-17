@@ -12,10 +12,7 @@ requirements: env
 	. env/$(ENVBIN)/activate && pip install -r requirements-dev.txt
 	. env/$(ENVBIN)/activate && pip install -r requirements.txt
 
-lint: _lint
-	git fetch origin master
-
-_lint:
+lint:
 	pylint cloudsync --enable=duplicate-code --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
 
 test:

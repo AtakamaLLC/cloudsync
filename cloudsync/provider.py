@@ -112,6 +112,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         self.__connected = True
         assert self.connected
 
+    def set_creds(self, creds):
+        """Set credentials without connecting."""
+        self._creds = creds
+
     def reconnect(self):
         """Reconnect to provider, using existing creds.
 
