@@ -117,6 +117,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def connect_impl(self, creds):
         log.debug('Connecting to googledrive')
         if not self._client or creds != self._creds:
+            if creds:
+                self._creds = creds
+            else:
+                raise CloudTokenError("no creds")
+
             refresh_token = creds and creds.get('refresh_token')
 
             if not refresh_token:
@@ -412,11 +417,15 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         fields = 'id, md5Checksum'
 
-        res = self._api('files', 'update',
-                        body=gdrive_info,
-                        fileId=oid,
-                        media_body=ul,
-                        fields=fields)
+        try:
+            res = self._api('files', 'update',
+                            body=gdrive_info,
+                            fileId=oid,
+                            media_body=ul,
+                            fields=fields)
+        except OSError as e:
+            self.disconnect()
+            raise CloudDisconnectedError("OSError in file upload: %s" % repr(e))
 
         log.debug("response from upload %s", res)
 
@@ -446,10 +455,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         gdrive_info['parents'] = [parent_oid]
 
-        res = self._api('files', 'create',
-                        body=gdrive_info,
-                        media_body=ul,
-                        fields=fields)
+        try:
+            res = self._api('files', 'create',
+                            body=gdrive_info,
+                            media_body=ul,
+                            fields=fields)
+        except OSError as e:
+            self.disconnect()
+            raise CloudDisconnectedError("OSError in file create: %s" % repr(e))
 
         log.debug("response from create %s : %s", path, res)
 

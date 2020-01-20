@@ -213,10 +213,10 @@ class DropboxProvider(Provider):
                     self._creds = creds
                     api_key = creds.get('key', creds.get('access_token'))
                 else:
-                    api_key = None
+                    raise CloudTokenError("no creds")
 
                 if not api_key:
-                    raise CloudTokenError()
+                    raise CloudTokenError("no api key/access token")
 
                 self._client = Dropbox(api_key)
                 self._longpoll_client = Dropbox(api_key)

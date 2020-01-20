@@ -3,7 +3,7 @@ import logging
 import json
 import hashlib
 import time
-from typing import Optional, Generator, Dict, Tuple, Any
+from typing import Optional, Generator, Dict, Tuple, Any, List
 import requests
 import arrow
 
@@ -120,11 +120,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     # noinspection PyUnresolvedReferences
     def connect_impl(self, creds):
         log.debug('Connecting to box')
-        if not self.__client:
-            self.__creds = creds
-
+        if not self.__client or creds != self.__creds:
             try:
-                if not creds:
+                if creds:
+                    self.__creds = creds
+                else:
                     raise CloudTokenError("no creds")
 
                 jwt_token = creds.get('jwt_token')
@@ -163,7 +163,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 log.exception("Error during connect %s", e)
                 self.disconnect()
                 raise CloudDisconnectedError()
-            except CloudTokenError:
+            except (CloudTokenError, CloudDisconnectedError):
                 raise
             except Exception as e:
                 log.exception("Error during connect %s", e)
@@ -526,6 +526,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         # optionally takes a path, to make creating the OInfo cheaper, so that it doesn't need to figure out the path
+        entries: List[BoxItem] = []
         with self._api() as client:
             parent_object = self._get_box_object(client, oid=oid, object_type=DIRECTORY)
             if parent_object is None:
@@ -537,12 +538,14 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
             # shitty attempt 2 that fails due to caching in the sdk:
             entries = self._box_get_items(client, parent_object, parent_path, page_size=self._listdir_page_size)
-            for entry in entries:
+        for entry in entries:
+            retval = None
+            with self._api() as client:
                 if type(entry) is dict:  # Apparently, get_box_object by path returns dicts and by oid returns objects?
                     raise NotImplementedError
                 retval = self._box_get_dirinfo(client, entry, parent_path)
-                if retval is not None:
-                    yield retval
+            if retval is not None:
+                yield retval
 
             # attempt 3 that (hopefully) avoids those issues, and gets newly created items
             # see https://github.com/box/box-python-sdk#making-api-calls-manually

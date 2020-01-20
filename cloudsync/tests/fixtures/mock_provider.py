@@ -121,19 +121,27 @@ class MockProvider(Provider):
         self._test_event_timeout = 1
         self._test_event_sleep = 0.001
         self._test_creds = {"key": "val"}
-        self.connect(self._test_creds)
+        # self.connect(self._test_creds)
         self._hash_func = hash_func
         if hash_func is None:
             self._hash_func = lambda a: md5(a).digest()
         self._uses_cursor = True
         self._forbidden_chars: list = []
+        self.__in_connect = False
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
+
         if not creds:
             raise CloudTokenError()
+
+        self.__in_connect = True
+        self._api()
+        self.__in_connect = False
+
         if self.connection_id is None or self.connection_id == "invalid":
             return os.urandom(16).hex()
+
         return self.connection_id
 
     def _register_event(self, action, target_object, prior_oid=None):
@@ -219,7 +227,7 @@ class MockProvider(Provider):
         return retval
 
     def _api(self, *args, **kwargs):
-        if not self.connected:
+        if not self.connected and not self.__in_connect:
             raise CloudDisconnectedError()
 
     @property
@@ -495,6 +503,7 @@ class MockProvider(Provider):
 
 def mock_provider_instance(*args, **kws):
     prov = MockProvider(*args, **kws)
+    prov.connect({"key": "val"})
     return prov
 
 
