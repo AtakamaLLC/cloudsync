@@ -2105,17 +2105,26 @@ def test_bug_create(scoped_provider):
 
     file_like = BytesIO(b"hello")
 
-
-    # if the underlying api calls raise a temp error, then... 
     def raises_tmp(*a, **kw):
+        # if the underlying api calls raise a temp error, then...
         raise CloudTemporaryError("cloud temp error")
 
     with patch.object(provider, "_api", raises_tmp), \
          patch.object(provider, "_test_event_timeout", .0001):
-         with pytest.raises(CloudTemporaryError):
+        with pytest.raises(CloudTemporaryError):
             provider.create("/bug_create", file_like)
 
     assert not provider.exists_path("/bug_create")
+
+
+def test_root_rename(config_provider):
+    provider = config_provider
+    provider.connect(provider._test_creds)
+    tfn1 = "/" + os.urandom(24).hex()
+    tfn2 = "/" + os.urandom(24).hex()
+    oinfo = provider.create(tfn1, BytesIO(b'hello'))
+    oid = provider.rename(oinfo.oid, tfn2)
+    provider.delete(oid)
 
 
 def test_connect_saves_creds(unconnected_provider):

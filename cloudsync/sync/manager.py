@@ -44,7 +44,7 @@ def other_side(index):
     return 1-index
 
 
-@strict
+@strict                         # pylint: disable=too-many-instance-attributes
 class ResolveFile():
     """
     File-like handed to caller when conflicts need resolving.
@@ -65,6 +65,7 @@ class ResolveFile():
         if self.otype == FILE:
             assert info.temp_file
         self.__fh: BinaryIO = None
+        self.__len: int = None
 
     def download(self) -> str:
         """
@@ -116,6 +117,15 @@ class ResolveFile():
 
     def tell(self):
         return self.fh.tell()
+
+    def __len__(self):
+        """This is for requests_toolbox, which apparently requires it."""
+        if self.__len is None:
+            ptr = self.fh.tell()
+            self.fh.seek(0, os.SEEK_END)
+            self.__len = self.fh.tell()
+            self.fh.seek(ptr)
+        return self.__len
 
 
 @strict     # pylint: disable=too-many-public-methods, too-many-instance-attributes
