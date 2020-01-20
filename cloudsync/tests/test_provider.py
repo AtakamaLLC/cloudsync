@@ -2246,4 +2246,3 @@ def test_broken_upload(scoped_provider, content_len, operation):
         assert (
             expected_fsize == data_len
         ), "File existed in the cloud, but had incorrect size"
->>>>>>> 66d97f946d37faa444c2fce8ede3b715d9cd038b
