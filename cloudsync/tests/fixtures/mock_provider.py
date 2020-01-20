@@ -543,17 +543,3 @@ class MockOidCs(MockProvider):
 
 
 register_provider(MockOidCs)
-
-
-def test_mock_basic():
-    """
-    basic spot-check, more tests are in test_providers with mock as one of the providers
-    """
-    from io import BytesIO
-    m = MockProvider(False, True)
-    info = m.create("/hi.txt", BytesIO(b'hello'))
-    assert info.hash
-    assert info.oid
-    b = BytesIO()
-    m.download(info.oid, b)
-    assert b.getvalue() == b'hello'
