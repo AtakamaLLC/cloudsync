@@ -33,7 +33,7 @@ from cloudsync.exceptions import CloudTokenError, CloudDisconnectedError, CloudF
     CloudFileExistsError, CloudCursorError, CloudTemporaryError, CloudException, CloudNamespaceError
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
 from cloudsync.registry import register_provider
-from cloudsync.utils import debug_sig
+from cloudsync.utils import debug_sig, memoize
 
 
 class OneDriveFileDoneError(Exception):
@@ -41,8 +41,6 @@ class OneDriveFileDoneError(Exception):
 
 
 log = logging.getLogger(__name__)
-logging.getLogger('googleapiclient').setLevel(logging.INFO)
-logging.getLogger('googleapiclient.discovery').setLevel(logging.WARN)
 
 
 class OneDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
@@ -168,7 +166,6 @@ class OneDriveItem():
 class OneDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
-    large_file_size = 1 * 1024 * 1024
     upload_block_size = 4 * 1024 * 1024
 
     name = 'onedrive'
@@ -226,7 +223,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return client.base_url.rstrip("/") + "/" + api_path
 
     # names of args are compat with requests module
-    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None):  # pylint: disable=redefined-outer-name
+    def _direct_api(self, action, path=None, *, url=None, stream=None, data=None, headers=None, json=None, raw_response=False):  # pylint: disable=redefined-outer-name
         assert path or url
 
         if not url:
@@ -250,6 +247,9 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 headers=head,
                 json=json,
                 data=data)
+
+        if raw_response:
+            return req
 
         if req.status_code == 204:
             return {}
@@ -312,6 +312,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         self.__cached_drive_to_name = all_drives
         self.__cached_name_to_drive = {v: k for k, v in all_drives.items()}
 
+    @memoize
+    def _check_ns(self, nsid, conn_id_for_memo):                                 # pylint: disable=unused-argument
+        res = self._direct_api("get", "/drives/%s/items/%s" % (nsid, "root"), raw_response=True)
+        return res.status_code < 300
+
     def _raise_converted_error(self, *, ex=None, req=None):      # pylint: disable=too-many-branches
         status = 0
         if ex is not None:
@@ -329,8 +334,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 msg = 'Bad Json'
                 code = 'BadRequest'
 
+        if status == 400 and not self._check_ns(self.namespace_id, self.connection_id):
+            raise CloudNamespaceError(msg)
+
         if status < 300:
-            log.error("Not converting err %s %s", ex, req)
+            log.error("Not converting err %s: %s %s", status, ex, req)
             return False
 
         if status == 404:
@@ -432,8 +440,10 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 auth_provider.load_session()
                 try:
                     auth_provider.refresh_token()
+                except requests.exceptions.ConnectionError as e:
+                    raise CloudDisconnectedError("ConnectionError while authenticating")
                 except Exception as e:
-                    log.error(e)
+                    log.exception("exception while authenticating: %s", e)
                     raise CloudTokenError(str(e))
                 token = auth_provider.access_token
                 try:
@@ -626,7 +636,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         size = _get_size_and_seek0(file_like)
-        if size <= self.large_file_size:
+        if size == 0:
             with self._api() as client:
                 req = self._get_item(client, oid=oid).content.request()
                 req.method = "PUT"
@@ -648,6 +658,13 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 return self._info_item(item)
         else:
             with self._api() as client:
+                info = self.info_oid(oid)
+                if not info:
+                    raise CloudFileNotFoundError("Uploading to nonexistent oid")
+
+                if info.otype == DIRECTORY:
+                    raise CloudFileExistsError("Trying to upload on top of directory")
+
                 _unused_resp = self._upload_large(self._get_item(client, oid=oid).api_path, file_like, "replace")
             # todo: maybe use the returned item dict to speed this up
             return self.info_oid(oid)
@@ -660,8 +677,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
         dirname, base = self.split(path)
         size = _get_size_and_seek0(file_like)
 
-        use_large = size > self.large_file_size
-        if not use_large:
+        if size == 0:
             if self.exists_path(path):
                 raise CloudFileExistsError()
             with self._api() as client:
@@ -895,7 +911,11 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             otype = FILE
 
             if self._is_biz:
-                ohash = item.file.hashes.to_dict()["quickXorHash"]
+                if item.file.hashes is None:
+                    # This is the quickxor hash of b""
+                    ohash = b"\0" * 20
+                else:
+                    ohash = item.file.hashes.to_dict()["quickXorHash"]
             else:
                 ohash = item.file.hashes.to_dict()["sha1Hash"]
 
@@ -991,6 +1011,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 try:
                     item = self._get_item(client, oid=oid).get()
                 except OneDriveError as e:
+                    log.info("info failure %s / %s", e, e.code)
                     if e.code == 400:
                         log.debug("malformed oid %s: %s", oid, e)
                         # malformed oid == not found

@@ -947,6 +947,8 @@ def test_storage(storage):
 
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
+    p1.connect("creds")
+    p2.connect("creds")
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
@@ -2279,8 +2281,15 @@ def test_two_level_rename(cs):
 
 def test_reconn_after_disconn():
     (local, remote) = MockProvider(False, False), MockProvider(False, False)
+
+    # they have connection ids
+    local.connect("some creds")
+    remote.connection_id = '6789'
+
+    # but we're offline
     remote.disconnect()
     remote._creds = None
+
     cs = CloudSyncMixin((local, remote), roots, storage=None, sleep=None)
     local.mkdir("/local")
 

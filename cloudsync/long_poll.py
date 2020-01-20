@@ -39,10 +39,12 @@ class LongPollManager(Runnable):
         while has_items:
             has_items = False
             log.debug("about to short poll")
-            for event in self.short_poll():
-                log.debug("short poll returned an event, yielding %s", event)
-                has_items = True
-                yield event
+            generator = self.short_poll()
+            if generator is not None:
+                for event in self.short_poll():
+                    log.debug("short poll returned an event, yielding %s", event)
+                    has_items = True
+                    yield event
         log.debug("EVSET: set got_events")
         self.got_events.set()
 

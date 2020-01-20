@@ -120,11 +120,11 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     # noinspection PyUnresolvedReferences
     def connect_impl(self, creds):
         log.debug('Connecting to box')
-        if not self.__client:
-            self.__creds = creds
-
+        if not self.__client or creds != self.__creds:
             try:
-                if not creds:
+                if creds:
+                    self.__creds = creds
+                else:
                     raise CloudTokenError("no creds")
 
                 jwt_token = creds.get('jwt_token')
@@ -163,7 +163,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 log.exception("Error during connect %s", e)
                 self.disconnect()
                 raise CloudDisconnectedError()
-            except CloudTokenError:
+            except (CloudTokenError, CloudDisconnectedError):
                 raise
             except Exception as e:
                 log.exception("Error during connect %s", e)
