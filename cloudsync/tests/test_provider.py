@@ -364,6 +364,11 @@ def provider_fixture(config_provider):
 
 # === function scoped, less efficient, good for connect/disconnect tests
 
+@pytest.fixture(name="unwrapped_provider")
+def unwrapped_provider_fixture(request, provider_name, instances=1):
+    yield from config_provider_impl(request, provider_name, instances)
+
+
 @pytest.fixture(name="unconnected_provider")
 def provider_fixture_unconnected(config_provider):
     yield from mixin_provider(config_provider, connect=False)
@@ -373,9 +378,11 @@ def provider_fixture_unconnected(config_provider):
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
+
 @pytest.fixture(name="two_scoped_providers")
 def two_scoped_provider_fixture(request, provider_name):
     yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
+
 
 # must be scoped because makes non-patched modification to provider
 @pytest.fixture(name="long_poll_provider")
@@ -1858,8 +1865,8 @@ def test_set_creds(config_provider):
     assert provider.connected
 
 
-def test_set_ns_offline(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_set_ns_offline(unwrapped_provider):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     try:
         provider.list_ns()
         pytest.skip("provider doesn't use online namespace listings")
@@ -1874,8 +1881,8 @@ def test_set_ns_offline(config_provider):
 
 
 @pytest.mark.manual
-def test_authenticate(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_authenticate(unwrapped_provider):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -1899,8 +1906,8 @@ def test_authenticate(config_provider):
 
 
 @pytest.mark.manual
-def test_interrupt_auth(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_interrupt_auth(unwrapped_provider):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -1974,8 +1981,8 @@ def suspend_capture(pytestconfig):
 
 # noinspection PyUnreachableCode
 @pytest.mark.manual
-def test_revoke_auth(config_provider, suspend_capture):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_revoke_auth(unwrapped_provider, suspend_capture):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
@@ -2125,8 +2132,8 @@ def test_bug_create(scoped_provider):
     assert not provider.exists_path("/bug_create")
 
 
-def test_root_rename(config_provider):
-    provider = config_provider
+def test_root_rename(unwrapped_provider):
+    provider = unwrapped_provider
     provider.connect(provider._test_creds)
     tfn1 = "/" + os.urandom(24).hex()
     tfn2 = "/" + os.urandom(24).hex()
