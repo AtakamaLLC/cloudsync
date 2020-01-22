@@ -445,6 +445,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             raise
 
     def mkdir(self, path) -> str:
+        info = self.info_path(path)
+        if info.otype == DIRECTORY:
+            return info.oid
         log.debug("MKDIR ---------------- path=%s", path)
         with self._api() as client:  # gives us the client we can use in the exception handling block
             try:

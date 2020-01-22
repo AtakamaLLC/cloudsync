@@ -611,7 +611,9 @@ def test_mkdir(provider):
     def data():
         return BytesIO(dat)
     dest = provider.temp_name("dest")
-    provider.mkdir(dest)
+    o1 = provider.mkdir(dest)
+    o2 = provider.mkdir(dest)
+    assert o1 == o2
     info = provider.info_path(dest)
     assert info.otype == cloudsync.DIRECTORY
     sub_f = provider.temp_name("dest", folder=dest)
