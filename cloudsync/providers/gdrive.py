@@ -249,9 +249,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudTemporaryError("unknown error %s" % e)
                 log.error("Unhandled %s error %s", e.resp.status, reason)
                 raise
-            except (TimeoutError, HttpLib2Error):
+            except (TimeoutError, HttpLib2Error) as e:
                 self.disconnect()
-                raise CloudDisconnectedError("disconnected on timeout")
+                raise CloudDisconnectedError("disconnected on timeout, %s" % repr(e))
 
     @property
     def _root_id(self):
