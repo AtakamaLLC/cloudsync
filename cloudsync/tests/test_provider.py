@@ -436,7 +436,9 @@ def test_join(mock_provider):
     assert "/a/c" == mock_provider.join("a", "/", "c")
 
 
-def test_connect(provider):
+def test_connect(scoped_provider):
+    provider = scoped_provider
+
     assert provider.connected
     provider.disconnect()
     assert not provider.connected
