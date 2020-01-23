@@ -3,7 +3,6 @@ Provider "gdrive", exports GDriveProvider
 """
 # pylint: disable=missing-docstring
 
-from unittest.mock import patch
 import io
 import time
 import logging
@@ -12,6 +11,7 @@ import hashlib
 from ssl import SSLError
 import json
 from typing import Generator, Optional, List, Dict, Any, Tuple
+from unittest.mock import patch
 
 import arrow
 import google.oauth2.credentials
