@@ -694,21 +694,22 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
             return self._info_from_rest(r, root=self.dirname(path))
 
     def _upload_large(self, drive_path, file_like, conflict):
-        size = _get_size_and_seek0(file_like)
-        r = self._direct_api("post", "%s/createUploadSession" % drive_path, json={"item": {"@microsoft.graph.conflictBehavior": conflict}})
-        upload_url = r["uploadUrl"]
+        with self._api():
+            size = _get_size_and_seek0(file_like)
+            r = self._direct_api("post", "%s/createUploadSession" % drive_path, json={"item": {"@microsoft.graph.conflictBehavior": conflict}})
+            upload_url = r["uploadUrl"]
 
-        data = file_like.read(self.upload_block_size)
-
-        cbfrom = 0
-        while data:
-            clen = len(data)             # fragment content size
-            cbto = cbfrom + clen - 1     # inclusive content byte range
-            cbrange = "bytes %s-%s/%s" % (cbfrom, cbto, size)
-            r = self._direct_api("put", url=upload_url, data=data, headers={"Content-Length": clen, "Content-Range": cbrange})
             data = file_like.read(self.upload_block_size)
-            cbfrom = cbto + 1
-        return r
+
+            cbfrom = 0
+            while data:
+                clen = len(data)             # fragment content size
+                cbto = cbfrom + clen - 1     # inclusive content byte range
+                cbrange = "bytes %s-%s/%s" % (cbfrom, cbto, size)
+                r = self._direct_api("put", url=upload_url, data=data, headers={"Content-Length": clen, "Content-Range": cbrange})
+                data = file_like.read(self.upload_block_size)
+                cbfrom = cbto + 1
+            return r
 
     def list_ns(self):
         return list(n for n in self.__name_to_drive)

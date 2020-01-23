@@ -77,7 +77,11 @@ class ProviderHelper(ProviderBase):
         prov.test_short_poll_only(short_poll_only=short_poll_only)
 
         if connect:
-            self.prov.connect(self._test_creds)
+            try:
+                self.prov.connect(self._test_creds)
+            except CloudTokenError:
+                prov.connection_id = None
+                self.prov.connect(self._test_creds)
             assert prov.connection_id
             self.make_root()
         else:
@@ -255,7 +259,11 @@ class ProviderHelper(ProviderBase):
     def __cleanup(self, oid):
         try:
             self.rmtree(oid)
-        except CloudFileNotFoundError:
+        except (CloudFileNotFoundError, CloudFileExistsError):
+            # exists error can happen when deleting root oid
+            pass
+        except Exception as e:
+            log.error("error during cleanup %s", repr(e))
             pass
 
     def test_cleanup(self):
@@ -364,6 +372,11 @@ def provider_fixture(config_provider):
 
 # === function scoped, less efficient, good for connect/disconnect tests
 
+@pytest.fixture(name="unwrapped_provider")
+def unwrapped_provider_fixture(request, provider_name, instances=1):
+    yield from config_provider_impl(request, provider_name, instances)
+
+
 @pytest.fixture(name="unconnected_provider")
 def provider_fixture_unconnected(config_provider):
     yield from mixin_provider(config_provider, connect=False)
@@ -373,9 +386,16 @@ def provider_fixture_unconnected(config_provider):
 def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
+
+@pytest.fixture(name="very_scoped_provider")
+def very_scoped_provider_fixture(request, provider_name):
+    yield from mixin_provider(config_provider_impl(request, provider_name, instances=1))
+
+
 @pytest.fixture(name="two_scoped_providers")
 def two_scoped_provider_fixture(request, provider_name):
     yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
+
 
 # must be scoped because makes non-patched modification to provider
 @pytest.fixture(name="long_poll_provider")
@@ -436,7 +456,9 @@ def test_join(mock_provider):
     assert "/a/c" == mock_provider.join("a", "/", "c")
 
 
-def test_connect(provider):
+def test_connect(scoped_provider):
+    provider = scoped_provider
+
     assert provider.connected
     provider.disconnect()
     assert not provider.connected
@@ -611,7 +633,9 @@ def test_mkdir(provider):
     def data():
         return BytesIO(dat)
     dest = provider.temp_name("dest")
-    provider.mkdir(dest)
+    o1 = provider.mkdir(dest)
+    o2 = provider.mkdir(dest)
+    assert o1 == o2
     info = provider.info_path(dest)
     assert info.otype == cloudsync.DIRECTORY
     sub_f = provider.temp_name("dest", folder=dest)
@@ -1761,7 +1785,7 @@ def test_large_file_support(provider):
 
     provider.large_file_size = 4 * 1024 * 1024
     provider.upload_block_size = 1 * 1024 * 1024
-    target_size = 5 * 1024 * 1024
+    target_size = 6 * 1024 * 1024
     fh = FakeFile(target_size, repeat=b'0')
     provider.create("/foo", fh)
     info = provider.info_path("/foo")
@@ -1856,8 +1880,8 @@ def test_set_creds(config_provider):
     assert provider.connected
 
 
-def test_set_ns_offline(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_set_ns_offline(unwrapped_provider):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     try:
         provider.list_ns()
         pytest.skip("provider doesn't use online namespace listings")
@@ -1872,8 +1896,8 @@ def test_set_ns_offline(config_provider):
 
 
 @pytest.mark.manual
-def test_authenticate(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_authenticate(unwrapped_provider):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -1897,8 +1921,8 @@ def test_authenticate(config_provider):
 
 
 @pytest.mark.manual
-def test_interrupt_auth(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_interrupt_auth(unwrapped_provider):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -1972,8 +1996,8 @@ def suspend_capture(pytestconfig):
 
 # noinspection PyUnreachableCode
 @pytest.mark.manual
-def test_revoke_auth(config_provider, suspend_capture):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+def test_revoke_auth(unwrapped_provider, suspend_capture):
+    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
@@ -2088,8 +2112,8 @@ def test_cache(two_scoped_providers):
     assert prov1.exists_path(new_file_name)
 
 
-def test_bug_create(scoped_provider):
-    provider = scoped_provider
+def test_bug_create(very_scoped_provider):
+    provider = very_scoped_provider
     if provider.name == "box":
         # TODO: box needs some mechanism for failing an upload
         # right now, it just creates a zero byte file
@@ -2115,17 +2139,17 @@ def test_bug_create(scoped_provider):
         # if the underlying api calls raise a temp error, then...
         raise CloudTemporaryError("cloud temp error")
 
-    with patch.object(provider, "_api", raises_tmp), \
-         patch.object(provider, "_test_event_timeout", .0001):
+    with patch.object(provider, "_api", raises_tmp), patch.object(provider, "_test_event_timeout", .0001):
         with pytest.raises(CloudTemporaryError):
             provider.create("/bug_create", file_like)
 
     assert not provider.exists_path("/bug_create")
 
 
-def test_root_rename(config_provider):
-    provider = config_provider
-    provider.connect(provider._test_creds)
+def test_root_rename(unwrapped_provider):
+    provider = unwrapped_provider
+    if hasattr(provider, "_test_creds"):
+        provider.connect(provider._test_creds)
     tfn1 = "/" + os.urandom(24).hex()
     tfn2 = "/" + os.urandom(24).hex()
     oinfo = provider.create(tfn1, BytesIO(b'hello'))
@@ -2133,23 +2157,22 @@ def test_root_rename(config_provider):
     provider.delete(oid)
 
 
-def test_connect_saves_creds(unconnected_provider):
-    # assert that the cloud
+def test_connect_saves_creds(unwrapped_provider):
+    provider = unwrapped_provider
+    if not hasattr(provider, "_test_creds") or not provider._test_creds:
+        pytest.skip("need creds")
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
     # c) saves the creds even if the api raises
-
-    provider = unconnected_provider
 
     def side_effect(*a, **k):
         raise CloudDisconnectedError("fake disconnect")
 
     with patch.object(provider, "_api", side_effect=side_effect):
-        with patch.object(provider, "api_retry", False):
-            assert not provider.connected
-            creds = provider._test_creds
-            with pytest.raises(CloudDisconnectedError):
-                provider.connect(creds)
+        assert not provider.connected
+        creds = provider._test_creds
+        with pytest.raises(CloudDisconnectedError):
+            provider.connect(creds)
     provider.reconnect()
     assert provider.connected
 
@@ -2160,8 +2183,8 @@ large_fsize = (4 * 1024 * 1024) * 5  # 20 MiB. Note that we upload in chunks of 
 
 @pytest.mark.parametrize("content_len", (small_fsize, large_fsize), ids=("small", "large"))
 @pytest.mark.parametrize("operation", ["create", "upload"])
-def test_broken_upload(scoped_provider, content_len, operation):
-    provider = scoped_provider
+def test_broken_upload(very_scoped_provider, content_len, operation):
+    provider = very_scoped_provider
     # Explicitly disable API retries to make logs simpler
     provider.api_retry = False
     assert provider.connected
