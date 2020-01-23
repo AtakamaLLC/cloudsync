@@ -480,8 +480,12 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             box_object = self._get_box_object(client, oid=oid, object_type=DIRECTORY, strict=False)  # todo: get type from cache
             if box_object is None:
                 return
+
             if box_object.object_type == 'file':
                 box_object.delete()
+            elif self._box_object_is_root(client, box_object):
+                for info in self.listdir(oid):
+                    self.rmtree(info.oid)
             else:
                 box_object.delete(recursive=True)
         self.__cache.delete(oid=oid)
@@ -789,7 +793,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         assert isinstance(client, Client)
         retval: BoxItem = box_object.get()
         return retval
-    
+
     def _unsafe_get_box_object_from_path(self, client: Client,  # pylint: disable=too-many-locals
                                          path: str,
                                          object_type: OType,

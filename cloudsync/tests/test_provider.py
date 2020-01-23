@@ -77,7 +77,11 @@ class ProviderHelper(ProviderBase):
         prov.test_short_poll_only(short_poll_only=short_poll_only)
 
         if connect:
-            self.prov.connect(self._test_creds)
+            try:
+                self.prov.connect(self._test_creds)
+            except CloudTokenError:
+                prov.connection_id = None
+                self.prov.connect(self._test_creds)
             assert prov.connection_id
             self.make_root()
         else:
