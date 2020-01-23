@@ -11,11 +11,12 @@ import hashlib
 from ssl import SSLError
 import json
 from typing import Generator, Optional, List, Dict, Any, Tuple
+from unittest.mock import patch
 
 import arrow
 import google.oauth2.credentials
 import google.auth.exceptions
-from googleapiclient.discovery import build   # pylint: disable=import-error
+from googleapiclient.discovery import build  # pylint: disable=import-error
 from googleapiclient.errors import HttpError  # pylint: disable=import-error
 from httplib2 import HttpLib2Error
 from googleapiclient.http import _should_retry_response  # This is necessary because google masks errors
@@ -29,6 +30,7 @@ from cloudsync.oauth import OAuthConfig, OAuthError, OAuthProviderInfo
 
 CACHE_QUOTA_TIME = 120
 
+
 class GDriveFileDoneError(Exception):
     pass
 
@@ -38,7 +40,7 @@ logging.getLogger('googleapiclient').setLevel(logging.INFO)
 logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
 
 
-class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
+class GDriveInfo(DirInfo):  # pylint: disable=too-few-public-methods
     pids: List[str] = []
     # oid, hash, otype and path are included here to satisfy a bug in mypy,
     # which does not recognize that they are already inherited from the grandparent class
@@ -55,9 +57,11 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
         self.pids = pids
 
 
-class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
+class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
+    large_file_size = 4 * 1024 * 1024
+    upload_block_size = 4 * 1024 * 1024
 
     name = 'gdrive'
     _oauth_info = OAuthProviderInfo(
@@ -65,7 +69,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         token_url='https://accounts.google.com/o/oauth2/token',
         scopes=['https://www.googleapis.com/auth/drive',
                 'https://www.googleapis.com/auth/drive.activity.readonly'
-               ],
+                ],
     )
     _redir = 'urn:ietf:wg:oauth:2.0:oob'
     _folder_mime_type = 'application/vnd.google-apps.folder'
@@ -128,12 +132,14 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudTokenError("acquire a token using authenticate() first")
 
             try:
-                new = self._oauth_config.refresh(self._oauth_info.token_url, refresh_token, scope=self._oauth_info.scopes)
-                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token, scopes=self._oauth_info.scopes)
+                new = self._oauth_config.refresh(self._oauth_info.token_url, refresh_token,
+                                                 scope=self._oauth_info.scopes)
+                google_creds = google.oauth2.credentials.Credentials(new.access_token, new.refresh_token,
+                                                                     scopes=self._oauth_info.scopes)
                 self._client = build(
                     'drive', 'v3', credentials=google_creds, cache_discovery=False)
                 try:
-                    self.get_quota.clear()          # pylint: disable=no-member
+                    self.get_quota.clear()  # pylint: disable=no-member
                     quota = self.get_quota()
                 except SSLError:  # pragma: no cover
                     # Seeing some intermittent SSL failures that resolve on retry
@@ -176,7 +182,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         ret = ret.replace("'", "\\'")
         return ret
 
-    def _api(self, resource, method, *args, **kwargs):          # pylint: disable=arguments-differ, too-many-branches, too-many-statements
+    def _api(self, resource, method, *args,
+             **kwargs):  # pylint: disable=arguments-differ, too-many-branches, too-many-statements
         if not self._client:
             raise CloudDisconnectedError("currently disconnected")
 
@@ -234,7 +241,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 if str(e.resp.status) == '403' and str(reason) == 'insufficientFilePermissions':
                     raise PermissionError("PermissionError")
 
-                if (str(e.resp.status) == '403' and reason in ('userRateLimitExceeded', 'rateLimitExceeded', 'dailyLimitExceeded')) \
+                if (str(e.resp.status) == '403' and reason in (
+                        'userRateLimitExceeded', 'rateLimitExceeded', 'dailyLimitExceeded')) \
                         or str(e.resp.status) == '429':
                     raise CloudTemporaryError("rate limit hit")
 
@@ -267,7 +275,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def disconnect(self):
         self._client = None
         # clear cached session info!
-        self.get_quota.clear()          # pylint: disable=no-member
+        self.get_quota.clear()  # pylint: disable=no-member
 
     @property
     def latest_cursor(self):
@@ -291,7 +299,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             raise CloudCursorError(val)
         self.__cursor = val
 
-    def events(self) -> Generator[Event, None, None]:      # pylint: disable=too-many-locals, too-many-branches
+    def events(self) -> Generator[Event, None, None]:  # pylint: disable=too-many-locals, too-many-branches
         page_token = self.current_cursor
         while page_token is not None:
             # log.debug("looking for events, timeout: %s", timeout)
@@ -353,7 +361,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
     def _walk(self, path, oid):
         for ent in self.listdir(oid):
             current_path = self.join(path, ent.name)
-            event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
+            event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True,
+                          mtime=time.time())
             log.debug("walk %s", event)
             yield event
             if ent.otype == DIRECTORY:
@@ -371,7 +380,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         mtime = metadata.get("modifiedTime", time.time())
         mtime = arrow.get(mtime).isoformat()
         gdrive_info = {
-            'modifiedTime':  mtime
+            'modifiedTime': mtime
         }
 
         # mime type, if provided
@@ -405,9 +414,10 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         file_size = file_like.tell()
         file_like.seek(0, io.SEEK_SET)
 
-        chunksize = 4 * 1024 * 1024
+        chunksize = self.upload_block_size
         resumable = file_size > chunksize
-        return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable), file_size
+        return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize,
+                                 resumable=resumable), file_size
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
         if not metadata:
@@ -418,11 +428,17 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         fields = 'id, md5Checksum'
 
         try:
-            res = self._api('files', 'update',
-                            body=gdrive_info,
-                            fileId=oid,
-                            media_body=ul,
-                            fields=fields)
+            def api_call():
+                return self._api('files', 'update',
+                                 body=gdrive_info,
+                                 fileId=oid,
+                                 media_body=ul,
+                                 fields=fields)
+            if self._client:
+                with patch.object(self._client._http.http, "follow_redirects", False):  # pylint: disable=protected-access
+                    res = api_call()
+            else:
+                res = api_call()
         except OSError as e:
             self.disconnect()
             raise CloudDisconnectedError("OSError in file upload: %s" % repr(e))
@@ -456,10 +472,16 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         gdrive_info['parents'] = [parent_oid]
 
         try:
-            res = self._api('files', 'create',
-                            body=gdrive_info,
-                            media_body=ul,
-                            fields=fields)
+            def api_call():
+                return self._api('files', 'create',
+                                 body=gdrive_info,
+                                 media_body=ul,
+                                 fields=fields)
+            if self._client:
+                with patch.object(self._client._http.http, "follow_redirects", False):  # pylint: disable=protected-access
+                    res = api_call()
+            else:
+                res = api_call()
         except OSError as e:
             self.disconnect()
             raise CloudDisconnectedError("OSError in file create: %s" % repr(e))
@@ -475,7 +497,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
         size = int(res.get("size", 0))
 
-        cache_ent = self.get_quota.get()            # pylint: disable=no-member
+        cache_ent = self.get_quota.get()  # pylint: disable=no-member
         if cache_ent:
             cache_ent["used"] += size
 
@@ -536,7 +558,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             add_pids_str = ",".join(add_pids)
             remove_pids_str = ",".join(remove_pids)
 
-        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids_str, removeParents=remove_pids_str, fields='id')
+        self._api('files', 'update', body=body, fileId=oid, addParents=add_pids_str, removeParents=remove_pids_str,
+                  fields='id')
 
         if old_path:
             # TODO: this will break if the kids are cached but not the parent folder, I'm not convinced that can
@@ -588,7 +611,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
             if not trashed:
                 yield GDriveInfo(otype, fid, fhash, None, shared=shared, readonly=readonly, pids=pids, name=name)
 
-    def mkdir(self, path, metadata=None) -> str:    # pylint: disable=arguments-differ
+    def mkdir(self, path, metadata=None) -> str:  # pylint: disable=arguments-differ
         info = self.info_path(path)
         if info:
             if info.otype == FILE:
