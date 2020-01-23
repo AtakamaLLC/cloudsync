@@ -259,7 +259,8 @@ class ProviderHelper(ProviderBase):
     def __cleanup(self, oid):
         try:
             self.rmtree(oid)
-        except CloudFileNotFoundError:
+        except (CloudFileNotFoundError, CloudFileExistsError):
+            # exists error can happen when deleting root oid
             pass
         except Exception as e:
             log.error("error during cleanup %s", repr(e))
