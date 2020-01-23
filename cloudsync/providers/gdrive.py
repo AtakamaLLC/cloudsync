@@ -409,6 +409,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         file_like.seek(0, io.SEEK_SET)
 
         chunksize = self.upload_block_size
+        resumable = file_size > chunksize
         return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable), file_size
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
