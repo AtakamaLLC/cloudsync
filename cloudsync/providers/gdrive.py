@@ -622,6 +622,8 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 raise CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, info.name))
             except StopIteration:
                 pass  # Folder is empty, delete it no problem
+        if oid == self.__root_id:
+            raise CloudFileExistsError("Cannot delete root folder")
         try:
             self._api('files', 'delete', fileId=oid)
         except CloudFileNotFoundError:
