@@ -492,9 +492,6 @@ def test_create_upload_download(provider):
     info2_oid = provider.info_oid(info2.oid)
     assert info2_oid.path == dest
 
-    info2_path = provider.info_path(dest)
-    assert info2_path.path == dest
-
     assert info1.hash
     assert info2.hash
 
