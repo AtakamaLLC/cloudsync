@@ -476,7 +476,7 @@ def test_create_upload_download(provider):
     def data():
         return BytesIO(dat)
 
-    dest = provider.temp_name("dest")
+    dest = provider.temp_name("Dest")
 
     try:
         provider.download_path(dest, BytesIO())
@@ -484,9 +484,16 @@ def test_create_upload_download(provider):
     except CloudFileNotFoundError:
         pass
 
-    info1 = provider.create(dest, data())
+    info1: OInfo = provider.create(dest, data())
 
     info2 = provider.upload(info1.oid, data())
+    assert info2.path == dest
+
+    info2_oid = provider.info_oid(info2.oid)
+    assert info2_oid.path == dest
+
+    info2_path = provider.info_path(dest)
+    assert info2_path.path == dest
 
     assert info1.hash
     assert info2.hash
@@ -2246,3 +2253,4 @@ def test_broken_upload(scoped_provider, content_len, operation):
         assert (
             expected_fsize == data_len
         ), "File existed in the cloud, but had incorrect size"
+
