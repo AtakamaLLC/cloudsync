@@ -205,6 +205,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                 self.disconnect()
                 raise CloudTokenError("refresh error")
             except HttpError as e:
+                log.debug("api: %s (%s) -> %s", method, debug_args(args, kwargs), e.resp.status)
                 if str(e.resp.status) == '416':
                     raise GDriveFileDoneError()
 
@@ -649,10 +650,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
 
     def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:  # pylint: disable=too-many-locals
         if path == self.sep:
+            log.debug("info %s", path)
             self._ids[self.sep] = self._root_id
             return self.info_oid(self._root_id)
 
         try:
+            log.debug("info %s", path)
             parent_id = self._get_parent_id(path)
             _, name = self.split(path)
 

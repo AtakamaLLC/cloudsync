@@ -2112,8 +2112,8 @@ def test_cache(two_scoped_providers):
     assert prov1.exists_path(new_file_name)
 
 
-def test_bug_create(scoped_provider):
-    provider = scoped_provider
+def test_bug_create(very_scoped_provider):
+    provider = very_scoped_provider
     if provider.name == "box":
         # TODO: box needs some mechanism for failing an upload
         # right now, it just creates a zero byte file
