@@ -3,6 +3,7 @@ Provider "gdrive", exports GDriveProvider
 """
 # pylint: disable=missing-docstring
 
+from unittest.mock import patch
 import io
 import time
 import logging
@@ -58,6 +59,8 @@ class GDriveInfo(DirInfo):              # pylint: disable=too-few-public-methods
 class GDriveProvider(Provider):         # pylint: disable=too-many-public-methods, too-many-instance-attributes
     case_sensitive = False
     default_sleep = 15
+    large_file_size = 4 * 1024 * 1024
+    upload_block_size = 4 * 1024 * 1024
 
     name = 'gdrive'
     _oauth_info = OAuthProviderInfo(
@@ -249,9 +252,9 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
                     raise CloudTemporaryError("unknown error %s" % e)
                 log.error("Unhandled %s error %s", e.resp.status, reason)
                 raise
-            except (TimeoutError, HttpLib2Error) as e:
+            except (TimeoutError, HttpLib2Error):
                 self.disconnect()
-                raise CloudDisconnectedError("disconnected on timeout, %s" % repr(e))
+                raise CloudDisconnectedError("disconnected on timeout")
 
     @property
     def _root_id(self):
@@ -405,8 +408,7 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         file_size = file_like.tell()
         file_like.seek(0, io.SEEK_SET)
 
-        chunksize = 4 * 1024 * 1024
-        resumable = file_size > chunksize
+        chunksize = self.upload_block_size
         return MediaIoBaseUpload(file_like, mimetype=self._io_mime_type, chunksize=chunksize, resumable=resumable), file_size
 
     def upload(self, oid, file_like, metadata=None) -> 'OInfo':
@@ -418,11 +420,12 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         fields = 'id, md5Checksum'
 
         try:
-            res = self._api('files', 'update',
-                            body=gdrive_info,
-                            fileId=oid,
-                            media_body=ul,
-                            fields=fields)
+            with patch.object(self._client._http.http, "follow_redirects", False):
+                res = self._api('files', 'update',
+                                body=gdrive_info,
+                                fileId=oid,
+                                media_body=ul,
+                                fields=fields)
         except OSError as e:
             self.disconnect()
             raise CloudDisconnectedError("OSError in file upload: %s" % repr(e))
@@ -456,10 +459,11 @@ class GDriveProvider(Provider):         # pylint: disable=too-many-public-method
         gdrive_info['parents'] = [parent_oid]
 
         try:
-            res = self._api('files', 'create',
-                            body=gdrive_info,
-                            media_body=ul,
-                            fields=fields)
+            with patch.object(self._client._http.http, "follow_redirects", False):
+                res = self._api('files', 'create',
+                                body=gdrive_info,
+                                media_body=ul,
+                                fields=fields)
         except OSError as e:
             self.disconnect()
             raise CloudDisconnectedError("OSError in file create: %s" % repr(e))

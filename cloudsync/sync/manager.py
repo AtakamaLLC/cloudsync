@@ -590,7 +590,7 @@ class SyncManager(Runnable):
                 raise
             log.debug("use existing %s", info)
         except Exception as e:
-            log.debug("failed to create %s, %s", translated_path, e)
+            log.exception("failed to create %s, %s", translated_path, e)
             raise
 
         assert info.hash
