@@ -1785,7 +1785,7 @@ def test_large_file_support(provider):
 
     provider.large_file_size = 4 * 1024 * 1024
     provider.upload_block_size = 1 * 1024 * 1024
-    target_size = 5 * 1024 * 1024
+    target_size = 6 * 1024 * 1024
     fh = FakeFile(target_size, repeat=b'0')
     provider.create("/foo", fh)
     info = provider.info_path("/foo")
