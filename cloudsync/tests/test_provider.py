@@ -387,6 +387,11 @@ def scoped_provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
 
+@pytest.fixture(name="very_scoped_provider")
+def very_scoped_provider_fixture(request, provider_name):
+    yield from mixin_provider(config_provider_impl(request, provider_name, instances=1))
+
+
 @pytest.fixture(name="two_scoped_providers")
 def two_scoped_provider_fixture(request, provider_name):
     yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
@@ -2178,8 +2183,8 @@ large_fsize = (4 * 1024 * 1024) * 5  # 20 MiB. Note that we upload in chunks of 
 
 @pytest.mark.parametrize("content_len", (small_fsize, large_fsize), ids=("small", "large"))
 @pytest.mark.parametrize("operation", ["create", "upload"])
-def test_broken_upload(scoped_provider, content_len, operation):
-    provider = scoped_provider
+def test_broken_upload(very_scoped_provider, content_len, operation):
+    provider = very_scoped_provider
     # Explicitly disable API retries to make logs simpler
     provider.api_retry = False
     assert provider.connected
