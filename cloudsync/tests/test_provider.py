@@ -261,6 +261,9 @@ class ProviderHelper(ProviderBase):
             self.rmtree(oid)
         except CloudFileNotFoundError:
             pass
+        except Exception as e:
+            log.error("error during cleanup %s", repr(e))
+            pass
 
     def test_cleanup(self):
         if not self.prov.connected:
