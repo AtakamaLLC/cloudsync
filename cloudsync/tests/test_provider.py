@@ -2134,8 +2134,7 @@ def test_bug_create(scoped_provider):
         # if the underlying api calls raise a temp error, then...
         raise CloudTemporaryError("cloud temp error")
 
-    with patch.object(provider, "_api", raises_tmp), \
-         patch.object(provider, "_test_event_timeout", .0001):
+    with patch.object(provider, "_api", raises_tmp), patch.object(provider, "_test_event_timeout", .0001):
         with pytest.raises(CloudTemporaryError):
             provider.create("/bug_create", file_like)
 
@@ -2144,7 +2143,8 @@ def test_bug_create(scoped_provider):
 
 def test_root_rename(unwrapped_provider):
     provider = unwrapped_provider
-    provider.connect(provider._test_creds)
+    if hasattr(provider, "_test_creds"):
+        provider.connect(provider._test_creds)
     tfn1 = "/" + os.urandom(24).hex()
     tfn2 = "/" + os.urandom(24).hex()
     oinfo = provider.create(tfn1, BytesIO(b'hello'))
@@ -2152,23 +2152,22 @@ def test_root_rename(unwrapped_provider):
     provider.delete(oid)
 
 
-def test_connect_saves_creds(unconnected_provider):
-    # assert that the cloud
+def test_connect_saves_creds(unwrapped_provider):
+    provider = unwrapped_provider
+    if not hasattr(provider, "_test_creds") or not provider._test_creds:
+        pytest.skip("need creds")
     # a) uses an api function
     # b) does not trap CloudTemporaryError's
     # c) saves the creds even if the api raises
-
-    provider = unconnected_provider
 
     def side_effect(*a, **k):
         raise CloudDisconnectedError("fake disconnect")
 
     with patch.object(provider, "_api", side_effect=side_effect):
-        with patch.object(provider, "api_retry", False):
-            assert not provider.connected
-            creds = provider._test_creds
-            with pytest.raises(CloudDisconnectedError):
-                provider.connect(creds)
+        assert not provider.connected
+        creds = provider._test_creds
+        with pytest.raises(CloudDisconnectedError):
+            provider.connect(creds)
     provider.reconnect()
     assert provider.connected
 
