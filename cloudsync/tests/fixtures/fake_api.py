@@ -41,6 +41,7 @@ class FakeApi(ApiServer):
 
     @api_route(None)
     def __default(self, ctx, req):
+        log.debug("url %s %s", ctx["REQUEST_METHOD"], ctx["PATH_INFO"])
         self.called("default", (ctx, req))
         return {}
 

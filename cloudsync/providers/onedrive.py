@@ -10,6 +10,7 @@ Onedrive provider
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/msa-oauth?view=odsp-graph-online
 # https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/app-registration?view=odsp-graph-online
 import os
+import re
 import time
 import logging
 from pprint import pformat
@@ -968,13 +969,15 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
     def _join_parent_reference_path_and_name(self, pr_path, name):
         assert pr_path
         path = self.join(pr_path, name)
-        preambles = ["/drive/root:", "/me/drive/root:", "/drives/%s/root:" % self.connection_id]
+        preambles = [r"/drive/root:", r"/me/drive/root:", r"/drives/.*?/root:"]
 
         if ':' in path:
             found = False
             for preamble in preambles:
-                if path.startswith(preamble):
-                    path = path[len(preamble):]
+                m = re.match(preamble, path)
+                if m:
+                    pre = m[0]
+                    path = path[len(pre):]
                     found = True
                     break
             if not found:
