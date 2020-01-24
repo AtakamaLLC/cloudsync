@@ -40,6 +40,27 @@ class FakeBoxApi(FakeApi):
                 'timezone': 'America/Los_Angeles',
                 'type': 'user'}
 
+    @api_route("/folders/0/items")
+    def folder_items(self, ctx, req):
+        return {
+            'entries':
+            [{'etag': '0',
+                'id': '95401994626',
+                'name': '0109d27be3d76224f640e6076c77184d',
+                'sequence_id': '0',
+                'type': 'folder'},
+                {'etag': '0',
+                    'id': '95382018330',
+                    'name': '037c2561c96ec54635d50f71ae13ab72',
+                    'sequence_id': '0',
+                    'type': 'folder'},
+             ],
+            'limit': 1000,
+            'offset': 0,
+            'order': [{'by': 'type', 'direction': 'ASC'},
+                      {'by': 'name', 'direction': 'ASC'}],
+            'total_count': 2}
+ 
     @api_route("/folders/")
     def folders(self, ctx, req):
         if ctx.get("REQUEST_METHOD") == "POST":
