@@ -128,6 +128,7 @@ class MockProvider(Provider):
         self._uses_cursor = True
         self._forbidden_chars: list = []
         self.__in_connect = False
+        self.walk_on_startup = True
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)

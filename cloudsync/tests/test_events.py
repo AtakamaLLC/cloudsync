@@ -45,6 +45,7 @@ def test_event_basic(manager):
 
 
 def test_events_shutdown_event_shouldnt_process(manager):
+    manager.provider.walk_on_startup = False
     handle = threading.Thread(target=manager.run, kwargs={'sleep': .3}, daemon=True)
     handle.start()
     try:
