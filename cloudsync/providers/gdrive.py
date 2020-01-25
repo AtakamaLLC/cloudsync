@@ -58,6 +58,7 @@ class GDriveInfo(DirInfo):  # pylint: disable=too-few-public-methods
 
 
 class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-many-instance-attributes
+    # pylint: disable=multiple-statements
     case_sensitive = False
     default_sleep = 15
     large_file_size = 4 * 1024 * 1024
