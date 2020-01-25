@@ -48,6 +48,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None         ; """OAuth providers can set this in init"""
     _listdir_page_size: Optional[int] = None  ; """Used for testing listdir"""
+    walk_on_startup = False                   ; """stopgap for gdrive until we create an on-demand resync feature"""
 
     # these are defined here for testing purposes only
     # providers setting these values will have them overridden and used for

@@ -85,6 +85,7 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
         self._ids: Dict[str, str] = {}
         self._trashed_ids: Dict[str, str] = {}
         self._oauth_config = oauth_config
+        self.walk_on_startup = True; """stopgap for gdrive until we create an on-demand resync feature"""
 
     @property
     def connected(self):

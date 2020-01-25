@@ -113,6 +113,8 @@ class EventManager(Runnable):
 
     def _do_unsafe(self):
         if self._first_do:
+            if self.provider.walk_on_startup:
+                self.need_walk = True
             if self.cursor is None:
                 self.cursor = self.provider.current_cursor
                 if self.cursor is not None:
@@ -130,7 +132,7 @@ class EventManager(Runnable):
         self._first_do = False
 
         if self.need_walk:
-            log.debug("walking all %s/%s files as events, because no working cursor on startup",
+            log.debug("walking all %s/%s files as events",
                       self.provider.name, self.walk_root)
             try:
                 for event in self.provider.walk(self.walk_root):
