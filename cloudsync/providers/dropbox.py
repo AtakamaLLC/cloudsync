@@ -404,7 +404,7 @@ class DropboxProvider(Provider):
         lpres = self._lpapi('files_list_folder_longpoll', self.current_cursor, timeout=int(timeout))
         return bool(lpres.changes)
 
-    def _events(self, cursor, path=None):  # pylint: disable=too-many-branches
+    def _events(self, cursor, path=None):  # pylint: disable=too-many-branches, too-many-statements
         if path and path != "/":
             info = self.info_path(path)
             if not info:
