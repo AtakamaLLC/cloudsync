@@ -136,7 +136,7 @@ class MockProvider(Provider):
             raise CloudTokenError()
 
         self.__in_connect = True
-        self._api()
+        self._api("connect_impl", creds)
         self.__in_connect = False
 
         if self.connection_id is None or self.connection_id == "invalid":
@@ -151,7 +151,7 @@ class MockProvider(Provider):
         self._latest_cursor = len(self._events) - 1
 
     def _get_by_oid(self, oid):
-        self._api()
+        self._api("_get_by_oid", oid)
         return self._fs_by_oid.get(oid, None)
 
     def normalize_path(self, path):
@@ -163,7 +163,7 @@ class MockProvider(Provider):
     def _get_by_path(self, path):
         path = self.normalize_path(path)
         # TODO: normalize the path, support case insensitive lookups, etc
-        self._api()
+        self._api("_get_by_path", path)
         return self._fs_by_path.get(path, None)
 
     def _store_object(self, fo: MockFSObject):
@@ -251,7 +251,7 @@ class MockProvider(Provider):
         self._cursor = val
 
     def events(self) -> Generator[Event, None, None]:
-        self._api()
+        self._api("events")
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
@@ -259,15 +259,16 @@ class MockProvider(Provider):
 
     def walk(self, path, since=None):
         # TODO: implement "since" parameter
-        self._api()
+        self._api("walk", path)
         if not (path is self.sep or path is self.alt_sep or path in list(self._fs_by_path.keys())):
             raise CloudFileNotFoundError()
         for obj in list(self._fs_by_oid.values()):
             if obj.path and self.is_subpath(path, obj.path, strict=False):
-                yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
+                if obj.exists:
+                    yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:
-        self._api()
+        self._api("upload", oid)
         file = self._fs_by_oid.get(oid, None)
         if file is None or not file.exists:
             raise CloudFileNotFoundError(oid)
@@ -316,7 +317,7 @@ class MockProvider(Provider):
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
-        self._api()
+        self._api("download", oid)
         file = self._fs_by_oid.get(oid, None)
         if file is None or file.exists is False:
             raise CloudFileNotFoundError(oid)
@@ -326,7 +327,7 @@ class MockProvider(Provider):
 
     def rename(self, oid, path) -> str:
         log.debug("renaming %s -> %s", debug_sig(oid), path)
-        self._api()
+        self._api("rename", oid, path)
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
         object_to_rename = self._fs_by_oid.get(oid, None)
@@ -429,7 +430,7 @@ class MockProvider(Provider):
 
     def _delete(self, oid, without_event=False):
         log.debug("delete %s", debug_sig(oid))
-        self._api()
+        self._api("delete", oid)
         file = self._fs_by_oid.get(oid, None)
         if file and file.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (file.path))
@@ -453,7 +454,7 @@ class MockProvider(Provider):
             self._register_event(MockEvent.ACTION_DELETE, file)
 
     def exists_oid(self, oid):
-        self._api()
+        self._api("exists_oid", oid)
         file = self._fs_by_oid.get(oid, None)
         return file is not None and file.exists
 
@@ -478,7 +479,7 @@ class MockProvider(Provider):
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
-        self._api()
+        self._api("info_oid", oid)
         file: MockFSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             return None

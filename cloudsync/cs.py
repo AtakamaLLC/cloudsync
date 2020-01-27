@@ -7,7 +7,7 @@ from pystrict import strict
 
 from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
-from .event import EventManager
+from .event import EventManager, Event
 from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
@@ -95,7 +95,7 @@ class CloudSync(Runnable):
 
     def forget(self):
         """
-        Forget and discard all state information, and drop any events in the queue.  This will trigger a walk.
+        Forget and discard state information, and drop any events in the queue.  This will trigger a walk.
         """
         self.state.forget()
         self.emgrs[0].forget()
@@ -132,11 +132,29 @@ class CloudSync(Runnable):
         return f"{self.providers[0].name}:{self.providers[0].connection_id}:{roots[0]}."\
                f"{self.providers[1].name}:{self.providers[1].connection_id}:{roots[1]}"
 
-    def walk(self):
+    def walk(self, side=None, root=None, recursive=True):
+        """Manually run a walk on a provider, causing a single-direction sync."""
         roots = self.roots or ('/', '/')
+        if root is not None:
+            if side is None:
+                raise ValueError("Root only with side")
+
         for index, provider in enumerate(self.providers):
-            for event in provider.walk(roots[index]):
-                self.emgrs[index].process_event(event)
+            if side is not None:
+                if index != side:
+                    continue
+
+            path = root
+            if path is None:
+                path = roots[index]
+
+            if recursive:
+                for event in provider.walk(path):
+                    self.emgrs[index].queue(event, from_walk=True)
+            else:
+                for info in provider.listdir_path(path):
+                    event = Event(info.otype, info.oid, info.path, info.hash, True)
+                    self.emgrs[index].queue(event, from_walk=True)
 
     def authenticate(self, side: int):     # pylint: disable=unused-argument, no-self-use
         """Override this method to change (re)authentication
