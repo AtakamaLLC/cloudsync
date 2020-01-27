@@ -5,6 +5,7 @@ Dropbox provider
 # pylint: disable=missing-docstring
 
 import io
+import re
 import os
 import time
 import logging
@@ -417,6 +418,9 @@ class DropboxProvider(Provider):
 
             log.debug("event %s", res)
 
+            if self._is_rtmp(res.path_display):
+                continue
+
             if isinstance(res, files.DeletedMetadata):
                 # dropbox doesn't give you the id that was deleted
                 # we need to get the ids of every revision
@@ -594,6 +598,14 @@ class DropboxProvider(Provider):
         else:  # conflict is a file, and we already know that the rename is on a folder
             raise CloudFileExistsError(path)
 
+    @staticmethod
+    def _is_rtmp(path):
+        return re.search(r".*-\(\[[a-f0-9]{32}\>\)$", path)
+
+    @staticmethod
+    def _gen_rtmp(path):
+        return path + ".-([" + os.urandom(16).hex() + ">)"
+
     def rename(self, oid, path):
         self._verify_parent_folder_exists(path)
         try:
@@ -604,7 +616,7 @@ class DropboxProvider(Provider):
             if self.paths_match(old_info.path, path):
                 new_info = self.info_path(path)
                 if oid == new_info.oid and old_info.path != path:
-                    temp_path = path + "." + os.urandom(16).hex()
+                    temp_path = self._gen_rtmp(path)
                     self._api('files_move_v2', oid, temp_path)
                     self.rename(oid, path)
                 return oid
