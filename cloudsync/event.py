@@ -242,6 +242,11 @@ class EventManager(Runnable):
             self.state.storage_commit()
 
     def _fill_event_path(self, event):
+        # certain providers have "expensive path getting"
+        # it's possible we don't need to get the path in all cases
+        # the most obvious example is a "delete" event
+        # we should investigate better ways of doing this to save api hits
+
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
             # other events can get paths from cache

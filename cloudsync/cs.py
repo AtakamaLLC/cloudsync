@@ -135,10 +135,9 @@ class CloudSync(Runnable):
     def walk(self, side=None, root=None, recursive=True):
         """Manually run a walk on a provider, causing a single-direction sync."""
         roots = self.roots or ('/', '/')
-        if root is not None:
-            if side is None:
-                # a root without a side makes no sense (which root ?)
-                raise ValueError("Root only with specified side")
+        if root is not None and side is None:
+            # a root without a side makes no sense (which root ?)
+            raise ValueError("If you specify a root, you need to specify which side")
 
         for index, provider in enumerate(self.providers):
             if side is not None and index != side:
