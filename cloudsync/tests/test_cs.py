@@ -2330,7 +2330,7 @@ def test_forget_walk(cs, method):
     (local, remote) = cs.providers
 
     # set up a large tree
-    ret = setup_remote_local(cs, "a", "b", "c", "d/", "d/e", "d/f", "d/g", "h", "i", "j", "k")
+    ret = setup_remote_local(cs, "a", "b", "c", "d/", "d/e", "d/f", "d/g", *list(map(str, range(20))))
 
     log.debug("setup ret == %s", ret)
     (la, ra) = get_infos(cs, ret)[0]
@@ -2370,7 +2370,7 @@ def test_forget_walk(cs, method):
     log.info("calls %s", remote._api.mock_calls)
 
     if method != "forget":
-        assert remote._api.call_count <= 6
+        assert remote._api.call_count <= 7
 
 
 def test_walk_bad_vals(cs):

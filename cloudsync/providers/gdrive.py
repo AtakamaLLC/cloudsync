@@ -358,24 +358,6 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
                 self.__cursor = new_cursor
             page_token = response.get('nextPageToken')
 
-    # noinspection DuplicatedCode
-    def _walk(self, path, oid):
-        for ent in self.listdir(oid):
-            current_path = self.join(path, ent.name)
-            event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True,
-                          mtime=time.time())
-            log.debug("walk %s", event)
-            yield event
-            if ent.otype == DIRECTORY:
-                if self.exists_oid(ent.oid):
-                    yield from self._walk(current_path, ent.oid)
-
-    def walk(self, path, since=None):
-        info = self.info_path(path)
-        if not info:
-            raise CloudFileNotFoundError(path)
-        yield from self._walk(path, info.oid)
-
     def __prep_upload(self, path, metadata):
         # modification time
         mtime = metadata.get("modifiedTime", time.time())

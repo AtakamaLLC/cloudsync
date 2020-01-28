@@ -7,7 +7,7 @@ from pystrict import strict
 
 from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
-from .event import EventManager, Event
+from .event import EventManager
 from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
@@ -148,13 +148,8 @@ class CloudSync(Runnable):
             if path is None:
                 path = roots[index]
 
-            if recursive:
-                for event in provider.walk(path):
-                    self.emgrs[index].queue(event, from_walk=True)
-            else:
-                for info in provider.listdir_path(path):
-                    event = Event(info.otype, info.oid, info.path, info.hash, True)
-                    self.emgrs[index].queue(event, from_walk=True)
+            for event in provider.walk(path, recursive=recursive):
+                self.emgrs[index].queue(event, from_walk=True)
 
     def authenticate(self, side: int):     # pylint: disable=unused-argument, no-self-use
         """Override this method to change (re)authentication

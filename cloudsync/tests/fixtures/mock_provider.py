@@ -257,16 +257,6 @@ class MockProvider(Provider):
             pe = self._events[self._cursor]
             yield self._translate_event(pe, self._cursor)
 
-    def walk(self, path, since=None):
-        # TODO: implement "since" parameter
-        self._api("walk", path)
-        if not (path is self.sep or path is self.alt_sep or path in list(self._fs_by_path.keys())):
-            raise CloudFileNotFoundError()
-        for obj in list(self._fs_by_oid.values()):
-            if obj.path and self.is_subpath(path, obj.path, strict=False):
-                if obj.exists:
-                    yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
-
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         self._api("upload", oid)
         file = self._fs_by_oid.get(oid, None)
@@ -496,7 +486,10 @@ class MockProvider(Provider):
     #         x.write(contents)
 
     def _log_debug_state(self, msg=""):
-        files = list(self.walk("/"))
+        try:
+            files = list(self.walk("/"))
+        except CloudFileNotFoundError:
+            files = []
         log.debug("%s: mock provider state %s:%s", msg, len(files), files)
 
 ###################
