@@ -27,7 +27,7 @@ class Event:
     hash: Any                                   # fsobject hash     (better name: ohash)
     exists: Optional[bool]
     mtime: Optional[float] = None
-    prior_oid: Optional[str] = None             # path basesd systems use this on renames
+    prior_oid: Optional[str] = None             # path based systems use this on renames
     new_cursor: Optional[str] = None
 
 
