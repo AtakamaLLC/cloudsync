@@ -137,12 +137,12 @@ class CloudSync(Runnable):
         roots = self.roots or ('/', '/')
         if root is not None:
             if side is None:
-                raise ValueError("Root only with side")
+                # a root without a side makes no sense (which root ?)
+                raise ValueError("Root only with specified side")
 
         for index, provider in enumerate(self.providers):
-            if side is not None:
-                if index != side:
-                    continue
+            if side is not None and index != side:
+                continue
 
             path = root
             if path is None:
