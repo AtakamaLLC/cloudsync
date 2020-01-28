@@ -39,7 +39,10 @@ class EventManager(Runnable):
                  walk_root: Optional[str] = None, reauth: Callable[[], None] = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
-        assert self.provider.connection_id
+
+        if not self.provider.connection_id:
+            raise ValueError("provider must be connected when starting the event manager")
+
         self.label: str = f"{self.provider.name}:{self.provider.connection_id}"
         self.events = Muxer(provider.events, restart=True)
         self.state: 'SyncState' = state
@@ -117,7 +120,7 @@ class EventManager(Runnable):
             self.need_auth = True
             self.backoff()
 
-    def _do_walk(self):
+    def _do_walk_if_needed(self):
         if self.need_walk:
             log.debug("walking all %s/%s files as events, because no working cursor on startup",
                       self.provider.name, self.walk_root)
@@ -150,7 +153,7 @@ class EventManager(Runnable):
 
     def _do_unsafe(self):
         self._do_first_init()
-        self._do_walk()
+        self._do_walk_if_needed()
 
         # user supplied events
         if self._queue:
