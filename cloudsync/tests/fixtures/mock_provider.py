@@ -532,7 +532,11 @@ class MockPathCs(MockProvider):
         super().__init__(oid_is_path=True, case_sensitive=True)
 
 
-register_provider(MockPathCs)
+class MockPathCi(MockProvider):
+    name = "mock_path_ci"
+
+    def __init__(self):
+        super().__init__(oid_is_path=True, case_sensitive=False)
 
 
 class MockOidCs(MockProvider):
@@ -542,4 +546,6 @@ class MockOidCs(MockProvider):
         super().__init__(oid_is_path=True, case_sensitive=True)
 
 
+register_provider(MockPathCs)
+register_provider(MockPathCi)
 register_provider(MockOidCs)

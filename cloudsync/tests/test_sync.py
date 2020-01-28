@@ -1,9 +1,13 @@
+# pylint: disable=missing-docstring,protected-access
+
 import logging
 from io import BytesIO
-import pytest
-from typing import List, Optional
-from unittest.mock import patch
+from typing import List
 from itertools import permutations
+
+from unittest.mock import patch
+
+import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY, Event
@@ -25,10 +29,8 @@ class SyncMgrMixin(SyncManager, RunUntilHelper):
                     self.state.update(i, e.otype, path=e.path, oid=e.oid, hash=e.hash, prior_oid=e.prior_oid, exists=e.exists)
 
 
-def make_sync(request, mock_provider_generator, shuffle):
-    shuffle = shuffle
-
-    providers = (mock_provider_generator(), mock_provider_generator(oid_is_path=False))
+def make_sync(request, mock_provider_generator, shuffle, case_sensitive=True):
+    providers = (mock_provider_generator(case_sensitive=case_sensitive), mock_provider_generator(oid_is_path=False, case_sensitive=case_sensitive))
 
     state = SyncState(providers, shuffle=shuffle)
 
@@ -39,7 +41,7 @@ def make_sync(request, mock_provider_generator, shuffle):
         if to == REMOTE:
             return "/remote" + path.replace("/local", "")
 
-        raise ValueError("bad path: %s", path)
+        raise ValueError("bad path: %s" % path)
 
     def resolve(f1, f2):
         return None
@@ -56,12 +58,18 @@ def make_sync(request, mock_provider_generator, shuffle):
 
 @pytest.fixture(name="sync")
 def fixture_sync(request, mock_provider_generator):
-    yield from make_sync(request, mock_provider_generator, True)
+    yield from make_sync(request, mock_provider_generator, shuffle=True)
 
 
 @pytest.fixture(name="sync_sh", params=[0, 1], ids=["sh0", "sh1"])
 def fixture_sync_sh(request, mock_provider_generator):
-    yield from make_sync(request, mock_provider_generator, request.param)
+    yield from make_sync(request, mock_provider_generator, shuffle=request.param)
+
+
+@pytest.fixture(name="sync_ci")
+def fixture_sync_ci(request, mock_provider_generator):
+    yield from make_sync(request, mock_provider_generator, shuffle=True, case_sensitive=False)
+
 
 
 def setup_remote_local(sync, *names, content=b'hello'):
@@ -154,6 +162,7 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     assert done()
 
     info = sync.providers[LOCAL].info_path("/local/stuff2")
+    assert info
     assert info.hash == sync.providers[LOCAL].hash_oid(info.oid)
     assert info.oid
     log.debug("all state %s", sync.state.get_all())
@@ -531,6 +540,10 @@ def test_sync_cycle(sync: SyncMgrMixin):
     assert i2
     assert i3
 
+    assert rinfo1
+    assert rinfo2
+    assert rinfo3
+
     assert i1.hash == rinfo3.hash
     assert i2.hash == rinfo1.hash
     assert i3.hash == rinfo2.hash
@@ -760,6 +773,7 @@ def _test_rename_folder_with_kids(sync, source, dest):
 def test_rename_folder_with_kids(sync_sh, ordering):
     _test_rename_folder_with_kids(sync_sh, *ordering)
 
+
 def test_aging(sync):
     local_parent = "/local"
     local_file1 = "/local/file"
@@ -794,6 +808,7 @@ def test_aging(sync):
 
     assert sync.providers[REMOTE].info_path(remote_file2)
     # but withotu it, things are fast
+
 
 def test_remove_folder_with_kids(sync_sh):
     sync = sync_sh
@@ -1076,6 +1091,38 @@ def test_replace_rename(sync, order):
     bio = BytesIO()
     remote.download_path(ra.path, bio)
     assert bio.getvalue() == b'b'
+
+
+def test_rename_same_name(sync_ci):
+    sync = sync_ci
+    (local, remote) = sync.providers
+
+    (
+        (ld, rd),
+        (la, ra),
+        (lb, rb),
+    ) = setup_remote_local(sync, "d/", "d/a", "d/b", content=(None, b'a', b'b'))
+
+    # this is case insensitive
+    assert remote.exists_path("/remote/d")
+    assert remote.exists_path("/remote/D")
+
+    ra.oid = remote.rename(ra.oid, "/remote/D/a")
+
+    assert remote.exists_path("/remote/D/a")
+    assert remote.exists_path("/remote/d/a")
+
+    sync.create_event(REMOTE, FILE, path="/remote/D/a", oid=ra.oid, hash=ra.hash)
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    log.info("remote %s", list(remote.listdir_path("/remote/d")))
+
+    with patch.object(local, "rename") as m:
+        sync.run(until=lambda: not sync.busy, timeout=3)
+        assert not m.called
+
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
 
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
