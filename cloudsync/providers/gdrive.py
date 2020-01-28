@@ -702,8 +702,6 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
             # then assert it shows up "file not found" in all queries
             return None
 
-        log.debug("res is %s", res)
-
         oid = ent['id']
         pids = ent['parents']
         fhash = ent.get('md5Checksum')

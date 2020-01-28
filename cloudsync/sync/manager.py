@@ -641,11 +641,19 @@ class SyncManager(Runnable):
                     # Clear the sync_path, and set synced to MISSING,
                     # that way, we will recognize that this dir needs to be created
                     if parent_ent[changed].exists == EXISTS:
-                        parent_ent[changed].sync_path = None
-                        parent_ent[changed].changed = True
-                        parent_ent[synced].exists = MISSING
-                        assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                        log.debug("updated entry %s", parent)
+                        # double-check using info_oid to see if the the parent DOES in fact exist
+                        # even though we got a FNF error before. Providers can take some time to
+                        # process a rename, so if we rename the parent folder, the exists check
+                        # on the path may still return false even though it exists with the correct name
+                        # just fine.
+                        parent_info = self.providers[synced].info_oid(parent_ent[synced].oid)
+                        sync_parent = self.translate(synced, parent)
+                        if not parent_info.path == sync_parent:
+                            parent_ent[changed].sync_path = None
+                            parent_ent[changed].changed = True
+                            parent_ent[synced].exists = MISSING
+                            assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
+                            log.debug("updated entry %s", parent)
 
             sync.punt()
         except CloudFileExistsError:
