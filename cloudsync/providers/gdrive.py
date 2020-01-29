@@ -692,6 +692,13 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
             return None
 
         if not res['files']:
+            if use_cache:  # double check against the cache -- google sometimes lies
+                alt_oid = self._cached_id(path)
+                if alt_oid is not None:
+                    alt_info = self.info_oid(alt_oid)
+                    if alt_info is not None and alt_info.path == path:
+                        log.error("gdrive misreported NotFound for %s, it actually does exist")
+                        return alt_info
             return None
 
         ent = res['files'][0]

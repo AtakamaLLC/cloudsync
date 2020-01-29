@@ -638,23 +638,33 @@ class SyncManager(Runnable):
             else:
                 parent_ent = ents[0]
                 if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
-                    # Clear the sync_path, and set synced to MISSING,
-                    # that way, we will recognize that this dir needs to be created
+                    if sync.priority <= 2:  # punt if not already punted, meaning, punt at least once
+                        sync.punt()
+                        return
                     if parent_ent[changed].exists == EXISTS:
+                        # this condition indicates the provider has said the parent folder
+                        # doesn't exist, but the statedb says it does exist. First,
                         # double-check using info_oid to see if the the parent DOES in fact exist
                         # even though we got a FNF error before. Providers can take some time to
-                        # process a rename, so if we rename the parent folder, the exists check
-                        # on the path may still return false even though it exists with the correct name
-                        # just fine.
+                        # process a rename or create, so if we rename/create the parent folder,
+                        # the exists check on the path may still return false, even though an
+                        # exists check on the oid may reveal it does actually exist with the
+                        # correct path
                         parent_info = self.providers[synced].info_oid(parent_ent[synced].oid)
                         sync_parent = self.translate(synced, parent)
-                        if not parent_info.path == sync_parent:
+                        if parent_info and parent_info.path == sync_parent:
+                            log.debug("Provider %s misreported parent folder %s missing, but parent folder exists. "
+                                      "punting", self.providers[synced].name, parent)
+                        else:
+                            # oddly, everything we know about the file is that it exists, but
+                            # the provider insists it doesn't
+                            # Clear the sync_path, and set synced to MISSING,
+                            # that way, we will recognize that this dir needs to be created
                             parent_ent[changed].sync_path = None
                             parent_ent[changed].changed = True
                             parent_ent[synced].exists = MISSING
                             assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
                             log.debug("updated entry %s", parent)
-
             sync.punt()
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
