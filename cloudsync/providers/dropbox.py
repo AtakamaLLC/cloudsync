@@ -615,7 +615,7 @@ class DropboxProvider(Provider):
 
             if self.paths_match(old_info.path, path):
                 new_info = self.info_path(path)
-                if oid == new_info.oid and os.path.basename(old_info.path) != os.path.basename(path):
+                if oid == new_info.oid and self.basename(old_info.path) != self.basename(path):
                     temp_path = self._gen_rtmp(path)
                     self._api('files_move_v2', oid, temp_path)
                     self.rename(oid, path)
