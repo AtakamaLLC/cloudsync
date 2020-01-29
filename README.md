@@ -15,8 +15,8 @@ pip install cloudsync
 
 ## Links
 
-*  [Documentation](https://atakama-llc-cloudsync.readthedocs-hosted.com/en/latest/)
-*  [Source Code + Issue Tracker](https://github.com/AtakamaLLC/cloudsync)
+*   [Documentation](https://atakama-llc-cloudsync.readthedocs-hosted.com/en/latest/)
+*   [Source Code + Issue Tracker](https://github.com/AtakamaLLC/cloudsync)
 
 ## Example
 
