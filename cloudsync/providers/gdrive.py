@@ -661,6 +661,12 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
                 log.warning("Unable to delete oid %s.", debug_sig(oid))
 
         path = self._path_oid(oid, info=info)
+        self._uncache(path)
+
+    def _uncache(self, path):
+        oid = self._cached_id(path)
+        if oid is None:
+            return
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
                 self._trashed_ids[currpath] = self._ids[currpath]
@@ -699,6 +705,8 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
                     if alt_info is not None and alt_info.path == path:
                         log.error("gdrive misreported NotFound for %s, it actually does exist")
                         return alt_info
+                else:  # Turns out the cache was wrong, according to info_oid. Clear the cache entry for path
+                    self._uncache(path)
             return None
 
         ent = res['files'][0]

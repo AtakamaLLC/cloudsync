@@ -300,21 +300,18 @@ class MockProvider(Provider):
                 raise CloudFileNameError()
         try:
             file_info = self.info_path(path)
-            file = self._get_by_path(path)
-            if file is not None and file_info is not None:
-                raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
+            if file_info is not None:
+                raise CloudFileExistsError("Cannot create, '%s' already exists" % path)
             self._verify_parent_folder_exists(path)
-            if file is None or not file.exists:
-                file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self._hash_func)
+            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self._hash_func)
             file.contents = file_like.read()
             file.exists = True
             self._store_object(file)
+            log.debug("created %s %s", debug_sig(file.oid), file.type)
+            self._register_event(MockEvent.ACTION_CREATE, file)
+            return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
         except OSError as e:
             raise CloudTemporaryError("error %s" % repr(e))
-
-        log.debug("created %s %s", debug_sig(file.oid), file.type)
-        self._register_event(MockEvent.ACTION_CREATE, file)
-        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
     def download(self, oid, file_like):
         self._api()
@@ -404,13 +401,12 @@ class MockProvider(Provider):
             if c in path:
                 raise CloudFileNameError()
         file_info = self.info_path(path)
-        file = self._get_by_path(path)
-        if file and file_info is not None:
-            if file.type == MockFSObject.FILE:
+        if file_info is not None:
+            if file_info.otype == OType.FILE:
                 raise CloudFileExistsError(path)
             else:
                 log.debug("Skipped creating already existing folder: %s", path)
-                return file.oid
+                return file_info.oid
         new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
