@@ -369,7 +369,7 @@ class OneDriveProvider(Provider):         # pylint: disable=too-many-public-meth
                 raise CloudFileExistsError(msg)
             if status == 400:
                 raise CloudFileNotFoundError(msg)
-        if code == "UnknownError":
+        if code == "UnknownError" or code == "generalException":
             raise CloudTemporaryError(msg)
 
         log.error("Not converting err %s %s", ex, req)
