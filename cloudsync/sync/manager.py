@@ -618,7 +618,7 @@ class SyncManager(Runnable):
         self.state.update(side, otype=event.otype, oid=event.oid, path=event.path, hash=event.path,
                           exists=event.exists, prior_oid=event.prior_oid)
 
-    def create_synced(self, changed, sync, translated_path):        # pylint: disable=too-many-branches
+    def create_synced(self, changed, sync, translated_path):  # pylint: disable=too-many-branches, too-many-statements
         synced = other_side(changed)
         try:
             self._create_synced(changed, sync, translated_path)
@@ -639,8 +639,9 @@ class SyncManager(Runnable):
                 parent_ent = ents[0]
                 if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
                     if sync.priority <= 2:  # punt if not already punted, meaning, punt at least once
+                        log.debug("Provider %s parent folder %s reported missing. punting", self.providers[synced].name, parent)
                         sync.punt()
-                        return
+                        return REQUEUE
                     if parent_ent[changed].exists == EXISTS:
                         # this condition indicates the provider has said the parent folder
                         # doesn't exist, but the statedb says it does exist. First,
@@ -653,7 +654,7 @@ class SyncManager(Runnable):
                         parent_info = self.providers[synced].info_oid(parent_ent[synced].oid)
                         sync_parent = self.translate(synced, parent)
                         if parent_info and parent_info.path == sync_parent:
-                            log.debug("Provider %s misreported parent folder %s missing, but parent folder exists. "
+                            log.debug("Provider %s parent folder %s misreported missing, but parent folder exists. "
                                       "punting", self.providers[synced].name, parent)
                         else:
                             # oddly, everything we know about the file is that it exists, but
