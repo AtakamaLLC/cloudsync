@@ -348,23 +348,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             # this MUST NOT BE IN A WITH BLOCK
             yield event
 
-    # noinspection DuplicatedCode
-    def _walk(self, path, oid):
-        for ent in self.listdir(oid):
-            current_path = self.join(path, ent.name)
-            event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
-            log.debug("walk %s", event)
-            yield event
-            if ent.otype == DIRECTORY:
-                if self.exists_oid(ent.oid):
-                    yield from self._walk(current_path, ent.oid)
-
-    def walk(self, path, since=None):
-        info = self.info_path(path)
-        if not info:
-            raise CloudFileNotFoundError(path)
-        yield from self._walk(path, info.oid)
-
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         with self._api() as client:
             box_object: BoxItem = self._get_box_object(client, oid=oid, object_type=FILE, strict=False)

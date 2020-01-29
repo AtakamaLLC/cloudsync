@@ -1,15 +1,18 @@
+# pylint: disable=protected-access,too-many-lines,missing-docstring
+
 from io import BytesIO
 import logging
+from typing import List, Dict, Any, Tuple
+from unittest.mock import patch, Mock
+
 import pytest
-from typing import List, Dict, Any
-from unittest.mock import patch
 
-
-from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
-from cloudsync.types import IgnoreReason
+from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.notification import Notification, NotificationType
+
+from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -39,6 +42,9 @@ def fixture_cs(mock_provider_generator, mock_provider_creator):
 
 def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
     cs = CloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
+
+    cs.providers[LOCAL].name += '-l'
+    cs.providers[REMOTE].name += '-r'
 
     yield cs
 
@@ -1911,7 +1917,6 @@ def test_hash_mess(cs, side_locked):
     assert bool(r_l) == bool(l_l)
 
 
-
 def test_temp_dropped(cs):
     local_parent = "/local"
     remote_parent = "/remote"
@@ -2035,12 +2040,12 @@ def test_multihash_one_side_equiv(mock_provider_creator, side):
 
     rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
 
-    if (side == LOCAL):
+    if side == LOCAL:
         linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"b-diff"))
-        rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"c-same"))
+        cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"c-same"))
     else:
         linfo1 = cs.providers[LOCAL].upload(linfo1.oid, BytesIO(b"c-same"))
-        rinfo2 = cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"b-diff"))
+        cs.providers[REMOTE].upload(rinfo1.oid, BytesIO(b"b-diff"))
 
     # run event managers only... not sync
     cs.emgrs[LOCAL].do()
@@ -2054,7 +2059,7 @@ def test_multihash_one_side_equiv(mock_provider_creator, side):
 
     # conflicted files are discarded, not in table
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert(len(cs.state) == 2)
+    assert len(cs.state) == 2
 
     assert not cs.providers[LOCAL].info_path(local_path1 + ".conflicted") \
         and not cs.providers[REMOTE].info_path(remote_path1 + ".conflicted")
@@ -2199,8 +2204,8 @@ def test_notify_disconnect(cs):
     remote._forbidden_chars = ['`']
     local.create('/local/bad.txt', BytesIO(b'data'))
     cs.providers[0].disconnect()
-    cs.providers[0].reconnect = lambda: None  # TODO: Revisit this after authorization has been redesigned
-    cs.start(until=lambda: called, timeout=2)  # Need to use start() because the notification manager do() blocks
+    cs.providers[0].reconnect = lambda: None    # TODO: Revisit this after authorization has been redesigned
+    cs.start(until=lambda: called, timeout=2)   # Need to use start() because the notification manager do() blocks
     log.debug("Now waiting")
     cs.wait()
     assert called
@@ -2312,9 +2317,62 @@ def test_reconn_after_disconn():
     assert not remote.connected
 
     # syncs on reconnect
-    remote._creds = {"ok":"ok"}
+    remote._creds = {"ok": "ok"}
     remote.reconnect()
 
     # yay
     cs.wait_until_found((REMOTE, "/remote"))
     cs.stop()
+
+
+@pytest.mark.parametrize("method", ["nonrec", "rec", "side", "all", "forget"])
+def test_forget_walk(cs, method):
+    (local, remote) = cs.providers
+
+    # set up a large tree
+    ret = setup_remote_local(cs, "a", "b", "c", "d/", "d/e", "d/f", "d/g", *list(map(str, range(20))))
+
+    log.debug("setup ret == %s", ret)
+    (la, ra) = get_infos(cs, ret)[0]
+
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+
+    # we forgot to sync la, because of a missing event
+    local._delete(la.oid, without_event=True)
+    cs.state.forget_oid(REMOTE, ra.oid)
+
+    for _ in range(5):
+        cs.do()
+
+    assert not local.exists_path(la.path)
+
+    log.info("start walk")
+
+    remote._api = Mock(side_effect=remote._api)
+
+    # different ways to call walk
+    if method == "nonrec":
+        # ok to do non-recursive walk
+        cs.walk(REMOTE, "/remote", recursive=False)
+    elif method == "rec":
+        cs.walk(REMOTE, "/remote", recursive=True)
+    elif method == "side":
+        cs.walk(REMOTE)
+    elif method == "all":
+        cs.walk()
+    elif method == "forget":
+        cs.forget()
+
+    log.info("done walk")
+
+    cs.run_until_found((LOCAL, la.path))
+
+    log.info("calls %s", remote._api.mock_calls)
+
+    if method != "forget":
+        assert remote._api.call_count <= 7
+
+
+def test_walk_bad_vals(cs):
+    with pytest.raises(ValueError):
+        cs.walk(root="foo")

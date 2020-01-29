@@ -127,10 +127,10 @@ class ProviderHelper(ProviderBase):
             if self.__filter_root(e) or not e.exists:
                 yield e
 
-    def walk(self, path, since=None):
+    def walk(self, path, recursive=True):
         path = self.__add_root(path)
         log.debug("TEST WALK %s", path)
-        for e in self.prov.walk(path):
+        for e in self.prov.walk(path, recursive=recursive):
             if self.__filter_root(e):
                 yield e
 
@@ -711,7 +711,28 @@ def test_walk(scoped_provider):
     for x in [dest0, dest1, dest2]:
         assert found.get(x, False) is True
         log.debug("found %s", x)
+
     assert got_event
+
+    ## check non-rec
+    found = {}
+    for e in provider.walk("/", recursive=False):
+        if e.otype == cloudsync.DIRECTORY:
+            continue
+        log.debug("WALK %s", e)
+        path = e.path
+        if path is None:
+            path = provider.info_oid(e.oid).path
+        assert oids[path] == e.oid
+        found[path] = True
+
+    for x in [dest0]:
+        log.debug("found %s", x)
+        assert found.get(x, False) is True
+
+    for x in [dest1, dest2]:
+        log.debug("found %s", x)
+        assert found.get(x, False) is False
 
 
 def check_event_path(event: Event, provider, target_path):
