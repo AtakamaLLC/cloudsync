@@ -1,48 +1,60 @@
-<!-- 
-[![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master)](https://travis-ci.com/AtakamaLLC/cloudsync)
+<!--
+[![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master&token=WD7aozR2wQ3ePGe1QpA8)](https://travis-ci.com/AtakamaLLC/cloudsync)
+[![Code Coverage](https://codecov.io/gh/AtakamaLLC/cloudsync/branch/master/graph/badge.svg?token=ebhElkq1eO)](https://codecov.io/gh/AtakamaLLC/cloudsync)
 -->
 
-## cloudsync README
+# cloudsync README
 
 Python Cloud Synchronization Library
 
-    pip install cloudsync
+## Installation
 
-Contrived Example:
+```bash
+pip install cloudsync
+```
 
-    import cloudsync
+## Links
 
-    # local file provide + gdrive provider
-    local = cloudsync.get_provider("file")
-    remote = cloudsync.get_provider("gdrive")
+* [Documentation](https://atakama-llc-cloudsync.readthedocs-hosted.com/en/latest/)
+* [Source Code + Issue Tracker](https://github.com/AtakamaLLC/cloudsync)
 
-    # oauth
-    creds = remote.authorize()
+## Example
 
-    # connect with creds
-    remote.connect(creds)
+```python
+import cloudsync
 
-    # root for sync
-    roots = ("/home/me/gd", "/")
+# local file provide + gdrive provider
+local = cloudsync.get_provider("file")
+remote = cloudsync.get_provider("gdrive")
 
-    # new sync engine
-    sync = cloudsync.CloudSync((local, remote), roots)
+# oauth
+creds = remote.authorize()
 
-    sync.start()
+# connect with creds
+remote.connect(creds)
 
-    # should sync this file as soon as it's noticed by watchdog
-    with open("/home/me/gd/hello.txt", "w") as f:
-        f.write("hello")
+# root for sync
+roots = ("/home/me/gd", "/")
 
-    # wait for sync
-    while not remote.exists_path("/home/alice/hello.txt"):
-        time.sleep(1)
+# new sync engine
+sync = cloudsync.CloudSync((local, remote), roots)
 
-    # rename in the cloud
-    remote.rename("/hello.txt", "/goodbye.txt")
+sync.start()
 
-    # wait for sync
-    while not local.exists_path("/home/alice/goodbye.txt"):
-        time.sleep(1)
+# should sync this file as soon as it's noticed by watchdog
+with open("/home/me/gd/hello.txt", "w") as f:
+    f.write("hello")
 
-    print("synced")
+# wait for sync
+while not remote.exists_path("/home/alice/hello.txt"):
+    time.sleep(1)
+
+# rename in the cloud
+remote.rename("/hello.txt", "/goodbye.txt")
+
+# wait for sync
+while not local.exists_path("/home/alice/goodbye.txt"):
+    time.sleep(1)
+
+print("synced")
+```
