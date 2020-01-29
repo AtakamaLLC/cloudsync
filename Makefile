@@ -19,8 +19,10 @@ test:
 	pytest --cov=cloudsync --durations=1 -n=8 cloudsync/tests --full-trace --timeout=10
 	docs/test.sh
 
-coverage:
-	pytest --cov-report html --cov=cloudsync -n=8 cloudsync/tests
+coverage: test
+	coverage xml
+	diff-cover coverage.xml --compare-branch=$(git merge-base HEAD origin/master)
+
 
 format:
 	autopep8 --in-place -r -j 8 cloudsync/
