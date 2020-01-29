@@ -1,41 +1,60 @@
-<!-- 
-[![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master)](https://travis-ci.com/AtakamaLLC/cloudsync)
+<!--
+[![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master&token=WD7aozR2wQ3ePGe1QpA8)](https://travis-ci.com/AtakamaLLC/cloudsync)
+[![Code Coverage](https://codecov.io/gh/AtakamaLLC/cloudsync/branch/master/graph/badge.svg?token=ebhElkq1eO)](https://codecov.io/gh/AtakamaLLC/cloudsync)
 -->
 
-## cloudsync README
+# cloudsync README
 
 Python Cloud Synchronization Library
 
-    pip install cloudsync
+## Installation
 
-Example:
+```bash
+pip install cloudsync
+```
 
-    from cloudsync import CloudSync, CloudSyncProvider
+## Links
 
-    local = CloudSyncProvider("local", path="/usr/home/alice/test", monitor=True)
+*   [Documentation](https://atakama-llc-cloudsync.readthedocs-hosted.com/en/latest/)
+*   [Source Code + Issue Tracker](https://github.com/AtakamaLLC/cloudsync)
 
-    remote = CloudSyncProvider("gdrive", path="/test-folder")
+## Example
 
-    remote.connect()
+```python
+import cloudsync
 
-    sync = CloudSync(local, remote)
+# local file provide + gdrive provider
+local = cloudsync.get_provider("file")
+remote = cloudsync.get_provider("gdrive")
 
-    sync.start()
+# oauth
+creds = remote.authorize()
 
-    with open("/usr/home/alice/test/hello.txt", "w") as f:
-        f.write("hello")
+# connect with creds
+remote.connect(creds)
 
-    # give the monitor a second to notice the change
-    # alternatively we can "poke" the local provider, forcing a sync
+# root for sync
+roots = ("/home/me/gd", "/")
 
+# new sync engine
+sync = cloudsync.CloudSync((local, remote), roots)
+
+sync.start()
+
+# should sync this file as soon as it's noticed by watchdog
+with open("/home/me/gd/hello.txt", "w") as f:
+    f.write("hello")
+
+# wait for sync
+while not remote.exists_path("/home/alice/hello.txt"):
     time.sleep(1)
-    
-    sync.wait(timeout=10)
 
-    # using no_poke to deliberately trick our sync into *not* knowing about the rename 
-    remote.rename("/test-folder/hello.txt", "/test-folder/goodbye.txt", no_poke=True)
+# rename in the cloud
+remote.rename("/hello.txt", "/goodbye.txt")
 
-    # we should still sync properly because of the event cursor
-    while not os.path.exists("/usr/home/alice/test/goodbye.txt"):
-        time.sleep(1)
+# wait for sync
+while not local.exists_path("/home/alice/goodbye.txt"):
+    time.sleep(1)
 
+print("synced")
+```
