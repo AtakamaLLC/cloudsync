@@ -26,7 +26,7 @@ test-py:
 test-doc:
 	docs/test.sh
 
-.coverage:
+.coverage: test-py
 
 coverage.xml: .coverage
 	coverage xml
