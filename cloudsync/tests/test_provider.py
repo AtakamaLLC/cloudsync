@@ -52,6 +52,7 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
             except CloudDisconnectedError as e:
                 prov.reconnect()
                 ex = e
+            time.sleep(prov._test_event_timeout / 5)
         raise ex
     return wrapped
 
