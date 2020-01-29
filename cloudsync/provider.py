@@ -6,13 +6,13 @@ import re
 import os
 import logging
 import random
-from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
+import time
+from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
-from cloudsync.types import OInfo, DIRECTORY, DirInfo, Any
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
-from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
-if TYPE_CHECKING:  # pragma: no cover
-    from .event import Event
+from .types import OInfo, DIRECTORY, DirInfo, Any
+from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
+from .oauth import OAuthConfig, OAuthProviderInfo
+from .event import Event
 
 log = logging.getLogger(__name__)
 
@@ -198,11 +198,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def walk(self, path, since=None) -> Generator["Event", None, None]:
-        """List all files recursively, yielded as events"""
-        ...
-
-    @abstractmethod
     def upload(self, oid, file_like: BinaryIO, metadata=None) -> 'OInfo':
         """Upload a filelike to an existing object id, optionally setting metadata"""
         ...
@@ -277,6 +272,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @property
     def namespace(self) -> Optional[str]:
+        """Some providers have multiple 'namespaces', that can be listed and changed.
+
+        Cannot be set when not connected.
+        """
         return self._namespace
 
     @namespace.setter
@@ -285,6 +284,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @property
     def namespace_id(self) -> Optional[str]:
+        """Unique id corresponding to a namespace name.
+
+        Can be set when not connected.
+        """
         return self._namespace_id
 
     @namespace_id.setter
@@ -293,6 +296,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @classmethod
     def uses_oauth(cls):
+        """Return True if provider uses OAuthConfig initialization"""
         return cls._oauth_info is not None
 
 # CONVENIENCE
@@ -309,6 +313,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return self.listdir(info.oid)
 
     def rmtree(self, oid):
+        """Recursively remove all folders including the folder/file specified.
+
+        Override this if your provider has a more efficient implementation.
+        """
         try:
             for info in self.listdir(oid):
                 if info.otype == DIRECTORY:
@@ -318,6 +326,26 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             self.delete(oid)
         except CloudFileNotFoundError:
             pass
+
+    def _walk(self, path, oid, recursive):
+        try:
+            for ent in self.listdir(oid):
+                current_path = self.join(path, ent.name)
+                event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
+                log.debug("walk %s", event)
+                yield event
+                if ent.otype == DIRECTORY and recursive:
+                    yield from self._walk(current_path, ent.oid, recursive)
+        except CloudFileNotFoundError:
+            # folders that disappear are not in the walk
+            pass
+
+    def walk(self, path, recursive=True):
+        """List all files recursively, yielded as events"""
+        info = self.info_path(path)
+        if not info:
+            raise CloudFileNotFoundError(path)
+        yield from self._walk(path, info.oid, recursive)
 
 
 # HELPER
