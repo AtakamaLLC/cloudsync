@@ -1746,6 +1746,76 @@ def test_out_of_space(cs):
     assert cs.state.changeset_len
 
 
+def test_provider_negative_caches(cs):
+    (lbase, rbase) = ("/local", "/remote")
+    (parent, child) = ("/parent", "/child")
+    (lparent, rparent) = (lbase + parent, rbase + parent)
+    (lchild, rchild) = (lparent + child, rparent + child)
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+    local.mkdir(lbase)
+    remote.mkdir(rbase)
+    old_mkdir = remote.mkdir
+    old_info_path = remote.info_path
+    mkdir_count = 0
+    info_path_lie_count = 0
+    info_path_lie_max = 10
+
+    def new_mkdir(path) -> str:
+        """counts how many times rparent is made, while also making all the folders"""
+        nonlocal mkdir_count
+        if path == rparent:
+            mkdir_count += 1
+        return old_mkdir(path)
+
+    def new_info_path(path: str, use_cache=True):
+        """forces rparent to NOT exist, up to [info_path_lie_max] times, then tell the truth"""
+        nonlocal rparent, info_path_lie_count, info_path_lie_max
+        if path == rparent:
+            info_path_lie_count += 1
+            if info_path_lie_count < info_path_lie_max:
+                log.debug("lying and saying that %s doesn't exist: %s/%s", path, info_path_lie_count, info_path_lie_max)
+                return None
+            else:
+                log.debug("telling the truth about %s: %s/%s", path, info_path_lie_count, info_path_lie_max)
+        return old_info_path(path, use_cache=use_cache)
+
+    # mock the remote provider mkdir to count how many times it makes the parent folder
+    with patch.object(remote, "mkdir", side_effect=new_mkdir) as mock_mkdir:
+        # create parent folder in the local provider
+        lparent_oid = local.mkdir(lparent)
+        log.info("START TABLE\n%s", cs.state.pretty_print())
+        # sync until remote parent folder is found
+        cs.run_until_found((REMOTE, rparent))
+        log.info("END TABLE\n%s", cs.state.pretty_print())
+        log.error("ldir=%s", list(local.listdir_path(lbase)))
+        log.error("rdir=%s", list(remote.listdir_path(rbase)))
+        # confirm it exists remotely using info_path
+        rparent_info = remote.info_path(rparent)
+        assert rparent_info is not None
+        # confirm mkdir_count is 1
+        assert mkdir_count == 1
+        # create a file in the local provider, in the folder
+        local.create(lchild, BytesIO(b'contents'))
+
+        # mock the provider to lie and say the folder doesn't exist using info_path
+        with patch.object(remote, "info_path", side_effect=new_info_path) as mock_info_path:
+            # confirm the remote folder doesn't exist using info_path (because remote lies)
+            testval = remote.info_path(rparent)
+            assert testval is None
+            # confirm the remote folder does exist using info_oid (because we assume info_oid will ALWAYS be accurate)
+            assert remote.info_oid(rparent_info.oid) is not None
+            # sync until remote child file is found
+            cs.run_until_found((REMOTE, rchild))
+            # confirm the mkdir count is still 1 (the sync engine did not try to make the folder again, that is the big problem we are worried about)
+            assert mkdir_count == 1
+
+            # actually DO the second mkdir, and confirm we have only one rparent on the drive
+            second_rparent_oid = remote.mkdir(rparent)
+            assert mkdir_count == 2
+            assert second_rparent_oid == rparent_info.oid
+
+
 @pytest.mark.parametrize("recover", [True, False])
 def test_backoff(cs, recover):
     local = cs.providers[LOCAL]
