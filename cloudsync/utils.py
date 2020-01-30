@@ -2,7 +2,7 @@
 The ubuquitous "misc utilities" file required in every library
 """
 
-import os, tempfile, sys
+import os, tempfile
 from typing import IO
 
 import logging
@@ -13,9 +13,9 @@ from base64 import b64encode
 from typing import Any, List, Dict, Callable, cast
 from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
+import xxhash
 
 log = logging.getLogger(__name__)
-import xxhash
 
 
 MAX_DEBUG_STR = 64
