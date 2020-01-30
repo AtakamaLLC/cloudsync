@@ -66,9 +66,8 @@ def debug_sig(t: Any, size: int = 3) -> str:
     if not t:
         return "0"
     th = xxhash.xxh64()
-    th.update(t)
-    results = b64encode(th.digest()).decode("utf8")[0:size]
-    log.debug("debug_sig: %s %s", t, results)
+    th.update(str(t))
+    return b64encode(th.digest()).decode("utf8")[0:size]
 
 
 class disable_log_multiline:
