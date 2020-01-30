@@ -197,6 +197,20 @@ class ProviderHelper(ProviderBase):
             if self.__filter_root(e):
                 yield e
 
+    @wrap_retry
+    def listdir_path(self, path):
+        path = self.__add_root(path)
+        for e in self.prov.listdir_path(path):
+            if self.__filter_root(e):
+                yield e
+
+    @wrap_retry
+    def listdir_oid(self, oid, path=None):
+        path = self.__add_root(path)
+        for e in self.prov.listdir_oid(oid, path):
+            if self.__filter_root(e):
+                yield e
+
     def __add_root(self, path):
         return self.prov.join(self.test_root, path)
 
@@ -1588,7 +1602,7 @@ def test_listdir(provider):
     temp_name = provider.is_subpath(root, outer)
 
     try:
-        provider.listdir_path(outer)
+        list(provider.listdir_path(outer))
         assert False
     except CloudFileNotFoundError:
         pass
@@ -1610,11 +1624,19 @@ def test_listdir(provider):
     provider.create(outer + "/file1", BytesIO(b"hello"))
     provider.create(outer + "/file2", BytesIO(b"there"))
     provider.create(inner + "/file3", BytesIO(b"world"))
-    contents = [x.name for x in provider.listdir(outer_oid)]
-    assert len(contents) == 3
+    contents = list(provider.listdir(outer_oid))
+    names = [x.name for x in contents]
+    assert len(names) == 3
     expected = ["file1", "file2", temp_name[1:]]
-    log.info("contents %s", contents)
-    assert sorted(contents) == sorted(expected)
+    log.info("names %s", names)
+    assert sorted(names) == sorted(expected)
+
+    paths1 = [x.path for x in contents]
+    contents2 = list(provider.listdir_oid(outer_oid, path=outer))
+    paths2 = [x.path for x in contents2]
+    assert all(paths2)
+    if any(paths1):
+        assert sorted(paths1) == sorted(paths2)
 
 
 def test_listdir_paginates(provider):

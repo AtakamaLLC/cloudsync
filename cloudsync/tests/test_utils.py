@@ -2,7 +2,7 @@ import os
 import pytest
 import logging
 
-from cloudsync.utils import debug_args, memoize, NamedTemporaryFile
+from cloudsync.utils import debug_args, memoize, NamedTemporaryFile, debug_sig
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def test_multiline():
 
 
 def test_memoize1():
-    func = lambda *a: (a, os.urandom(32))
+    func = lambda *c: (c, os.urandom(32))
     cached = memoize(func, 60)
 
     a = cached()
@@ -72,10 +72,11 @@ def test_memoize1():
     assert cached.get(3, b=4) == 44
     assert cached(3, b=4) == 44
 
+
 def test_memoize2():
     @memoize
     def fun(a):
-        return (a, os.urandom(32))
+        return a, os.urandom(32)
 
     x = fun(1)
     y = fun(1)
@@ -85,7 +86,7 @@ def test_memoize2():
 
     @memoize(expire_secs=3)
     def fun2(a):
-        return (a, os.urandom(32))
+        return a, os.urandom(32)
 
     x = fun2(1)
     y = fun2(1)
@@ -98,7 +99,7 @@ def test_memoize3():
     class Cls:
         @memoize
         def fun(self, a):
-            return (a, os.urandom(32))
+            return a, os.urandom(32)
 
         @memoize
         def fun2(self):
@@ -123,6 +124,7 @@ def test_memoize3():
     assert m
     assert c.fun2.get() == m
 
+
 def test_alt_ntp():
     x = NamedTemporaryFile()
     x.write(b"foo")
@@ -133,10 +135,12 @@ def test_alt_ntp():
     del x
     assert not os.path.exists(name)
 
+
 def test_alt_ntp_win():
     x = NamedTemporaryFile(mode=None)
     name = x.name
     assert not os.path.exists(name)
+
 
 def test_alt_ntp_clos():
     x = NamedTemporaryFile(mode=None)
@@ -146,6 +150,12 @@ def test_alt_ntp_clos():
     del x
     assert not os.path.exists(name)
 
+
 def test_already_gone():
     x = NamedTemporaryFile(mode=None)
     del x
+
+
+def test_debug_sig():
+    test_sig = debug_sig("Hello, world!")
+    assert test_sig == '9YM'  # debug_sig should be deterministic across runs

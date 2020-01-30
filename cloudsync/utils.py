@@ -2,7 +2,7 @@
 The ubuquitous "misc utilities" file required in every library
 """
 
-import os, tempfile
+import os, tempfile, sys
 from typing import IO
 
 import logging
@@ -15,6 +15,7 @@ from unittest.mock import patch
 from _pytest.logging import PercentStyleMultiline
 
 log = logging.getLogger(__name__)
+import xxhash
 
 
 MAX_DEBUG_STR = 64
@@ -60,16 +61,19 @@ def debug_args(*stuff: Any):
 
 def debug_sig(t: Any, size: int = 3) -> str:
     """
-    Useful for converting oids and pointer nubmers into short digestible nonces
+    Useful for converting oids and pointer numbers into short digestible nonces
     """
     if not t:
         return "0"
-    return b64encode(abs(hash(str(t))).to_bytes(8, "big")).decode()[0:size]
+    th = xxhash.xxh64()
+    th.update(t)
+    results = b64encode(th.digest()).decode("utf8")[0:size]
+    log.debug("debug_sig: %s %s", t, results)
 
 
 class disable_log_multiline:
     """
-    Decortator that deals with : https://github.com/pytest-dev/pytest/pull/5926
+    Decorator that deals with : https://github.com/pytest-dev/pytest/pull/5926
     TODO: remove this, and just bump the pytest version
     """
     @staticmethod
@@ -216,3 +220,5 @@ def NamedTemporaryFile(mode='w+b', bufsize=-1, suffix='', prefix='tmp', dir=None
         fh.close()
         fh = open(name, mode)
     return TemporaryFile(name, fh, delete)
+
+
