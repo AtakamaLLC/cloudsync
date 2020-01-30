@@ -5,6 +5,7 @@ Dropbox provider
 # pylint: disable=missing-docstring
 
 import io
+import re
 import os
 import time
 import logging
@@ -403,7 +404,7 @@ class DropboxProvider(Provider):
         lpres = self._lpapi('files_list_folder_longpoll', self.current_cursor, timeout=int(timeout))
         return bool(lpres.changes)
 
-    def _events(self, cursor, path=None):  # pylint: disable=too-many-branches
+    def _events(self, cursor, path=None, recursive=True):  # pylint: disable=too-many-branches, too-many-statements
         if path and path != "/":
             info = self.info_path(path)
             if not info:
@@ -412,10 +413,13 @@ class DropboxProvider(Provider):
         else:
             oid = self._root_id
 
-        for res in _FolderIterator(self._api, oid, recursive=True, cursor=cursor):
+        for res in _FolderIterator(self._api, oid, recursive=recursive, cursor=cursor):
             exists = True
 
             log.debug("event %s", res)
+
+            if self._is_rtmp(res.path_display):
+                continue
 
             if isinstance(res, files.DeletedMetadata):
                 # dropbox doesn't give you the id that was deleted
@@ -478,8 +482,8 @@ class DropboxProvider(Provider):
     def events(self) -> Generator[Event, None, None]:
         yield from self._long_poll_manager()
 
-    def walk(self, path, since=None):
-        yield from self._events(None, path=path)
+    def walk(self, path, recursive=True):
+        yield from self._events(None, path=path, recursive=recursive)
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         yield from self._listdir(oid, recursive=False)
@@ -594,6 +598,14 @@ class DropboxProvider(Provider):
         else:  # conflict is a file, and we already know that the rename is on a folder
             raise CloudFileExistsError(path)
 
+    @staticmethod
+    def _is_rtmp(path):
+        return re.search(r".*-\(\[[a-f0-9]{32}\>\)$", path)
+
+    @staticmethod
+    def _gen_rtmp(path):
+        return path + ".-([" + os.urandom(16).hex() + ">)"
+
     def rename(self, oid, path):
         self._verify_parent_folder_exists(path)
         try:
@@ -603,8 +615,8 @@ class DropboxProvider(Provider):
 
             if self.paths_match(old_info.path, path):
                 new_info = self.info_path(path)
-                if oid == new_info.oid and old_info.path != path:
-                    temp_path = path + "." + os.urandom(16).hex()
+                if oid == new_info.oid and self.basename(old_info.path) != self.basename(path):
+                    temp_path = self._gen_rtmp(path)
                     self._api('files_move_v2', oid, temp_path)
                     self.rename(oid, path)
                 return oid

@@ -136,7 +136,7 @@ class MockProvider(Provider):
             raise CloudTokenError()
 
         self.__in_connect = True
-        self._api()
+        self._api("connect_impl", creds)
         self.__in_connect = False
 
         if self.connection_id is None or self.connection_id == "invalid":
@@ -151,7 +151,7 @@ class MockProvider(Provider):
         self._latest_cursor = len(self._events) - 1
 
     def _get_by_oid(self, oid):
-        self._api()
+        self._api("_get_by_oid", oid)
         return self._fs_by_oid.get(oid, None)
 
     def normalize_path(self, path):
@@ -163,7 +163,7 @@ class MockProvider(Provider):
     def _get_by_path(self, path):
         path = self.normalize_path(path)
         # TODO: normalize the path, support case insensitive lookups, etc
-        self._api()
+        self._api("_get_by_path", path)
         return self._fs_by_path.get(path, None)
 
     def _store_object(self, fo: MockFSObject):
@@ -251,23 +251,14 @@ class MockProvider(Provider):
         self._cursor = val
 
     def events(self) -> Generator[Event, None, None]:
-        self._api()
+        self._api("events")
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
             yield self._translate_event(pe, self._cursor)
 
-    def walk(self, path, since=None):
-        # TODO: implement "since" parameter
-        self._api()
-        if not (path is self.sep or path is self.alt_sep or path in list(self._fs_by_path.keys())):
-            raise CloudFileNotFoundError()
-        for obj in list(self._fs_by_oid.values()):
-            if obj.path and self.is_subpath(path, obj.path, strict=False):
-                yield Event(obj.otype, obj.oid, obj.path, obj.hash(), obj.exists, obj.mtime)
-
     def upload(self, oid, file_like, metadata=None) -> OInfo:
-        self._api()
+        self._api("upload", oid)
         file = self._fs_by_oid.get(oid, None)
         if file is None or not file.exists:
             raise CloudFileNotFoundError(oid)
@@ -299,24 +290,22 @@ class MockProvider(Provider):
             if c in path:
                 raise CloudFileNameError()
         try:
-            file = self._get_by_path(path)
-            if file is not None and file.exists:
-                raise CloudFileExistsError("Cannot create, '%s' already exists" % file.path)
+            file_info = self.info_path(path)
+            if file_info is not None:
+                raise CloudFileExistsError("Cannot create, '%s' already exists" % path)
             self._verify_parent_folder_exists(path)
-            if file is None or not file.exists:
-                file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self._hash_func)
+            file = MockFSObject(path, MockFSObject.FILE, self.oid_is_path, hash_func=self._hash_func)
             file.contents = file_like.read()
             file.exists = True
             self._store_object(file)
+            log.debug("created %s %s", debug_sig(file.oid), file.type)
+            self._register_event(MockEvent.ACTION_CREATE, file)
+            return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
         except OSError as e:
             raise CloudTemporaryError("error %s" % repr(e))
 
-        log.debug("created %s %s", debug_sig(file.oid), file.type)
-        self._register_event(MockEvent.ACTION_CREATE, file)
-        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
-
     def download(self, oid, file_like):
-        self._api()
+        self._api("download", oid)
         file = self._fs_by_oid.get(oid, None)
         if file is None or file.exists is False:
             raise CloudFileNotFoundError(oid)
@@ -326,7 +315,7 @@ class MockProvider(Provider):
 
     def rename(self, oid, path) -> str:
         log.debug("renaming %s -> %s", debug_sig(oid), path)
-        self._api()
+        self._api("rename", oid, path)
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
         object_to_rename = self._fs_by_oid.get(oid, None)
@@ -402,13 +391,13 @@ class MockProvider(Provider):
         for c in self._forbidden_chars:
             if c in path:
                 raise CloudFileNameError()
-        file = self._get_by_path(path)
-        if file and file.exists:
-            if file.type == MockFSObject.FILE:
+        file_info = self.info_path(path)
+        if file_info is not None:
+            if file_info.otype == OType.FILE:
                 raise CloudFileExistsError(path)
             else:
                 log.debug("Skipped creating already existing folder: %s", path)
-                return file.oid
+                return file_info.oid
         new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
@@ -429,7 +418,7 @@ class MockProvider(Provider):
 
     def _delete(self, oid, without_event=False):
         log.debug("delete %s", debug_sig(oid))
-        self._api()
+        self._api("delete", oid)
         file = self._fs_by_oid.get(oid, None)
         if file and file.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (file.path))
@@ -453,7 +442,7 @@ class MockProvider(Provider):
             self._register_event(MockEvent.ACTION_DELETE, file)
 
     def exists_oid(self, oid):
-        self._api()
+        self._api("exists_oid", oid)
         file = self._fs_by_oid.get(oid, None)
         return file is not None and file.exists
 
@@ -478,7 +467,7 @@ class MockProvider(Provider):
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
-        self._api()
+        self._api("info_oid", oid)
         file: MockFSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             return None
@@ -495,7 +484,10 @@ class MockProvider(Provider):
     #         x.write(contents)
 
     def _log_debug_state(self, msg=""):
-        files = list(self.walk("/"))
+        try:
+            files = list(self.walk("/"))
+        except CloudFileNotFoundError:
+            files = []
         log.debug("%s: mock provider state %s:%s", msg, len(files), files)
 
 ###################
@@ -532,7 +524,11 @@ class MockPathCs(MockProvider):
         super().__init__(oid_is_path=True, case_sensitive=True)
 
 
-register_provider(MockPathCs)
+class MockPathCi(MockProvider):
+    name = "mock_path_ci"
+
+    def __init__(self):
+        super().__init__(oid_is_path=True, case_sensitive=False)
 
 
 class MockOidCs(MockProvider):
@@ -542,4 +538,6 @@ class MockOidCs(MockProvider):
         super().__init__(oid_is_path=True, case_sensitive=True)
 
 
+register_provider(MockPathCs)
+register_provider(MockPathCi)
 register_provider(MockOidCs)

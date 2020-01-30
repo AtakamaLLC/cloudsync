@@ -618,7 +618,7 @@ class SyncManager(Runnable):
         self.state.update(side, otype=event.otype, oid=event.oid, path=event.path, hash=event.path,
                           exists=event.exists, prior_oid=event.prior_oid)
 
-    def create_synced(self, changed, sync, translated_path):        # pylint: disable=too-many-branches
+    def create_synced(self, changed, sync, translated_path):  # pylint: disable=too-many-branches, too-many-statements
         synced = other_side(changed)
         try:
             self._create_synced(changed, sync, translated_path)
@@ -638,15 +638,34 @@ class SyncManager(Runnable):
             else:
                 parent_ent = ents[0]
                 if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
-                    # Clear the sync_path, and set synced to MISSING,
-                    # that way, we will recognize that this dir needs to be created
+                    if sync.priority <= 2:  # punt if not already punted, meaning, punt at least once
+                        log.debug("Provider %s parent folder %s reported missing. punting", self.providers[synced].name, parent)
+                        sync.punt()
+                        return REQUEUE
                     if parent_ent[changed].exists == EXISTS:
-                        parent_ent[changed].sync_path = None
-                        parent_ent[changed].changed = True
-                        parent_ent[synced].exists = MISSING
-                        assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                        log.debug("updated entry %s", parent)
-
+                        # this condition indicates the provider has said the parent folder
+                        # doesn't exist, but the statedb says it does exist. First,
+                        # double-check using info_oid to see if the the parent DOES in fact exist
+                        # even though we got a FNF error before. Providers can take some time to
+                        # process a rename or create, so if we rename/create the parent folder,
+                        # the exists check on the path may still return false, even though an
+                        # exists check on the oid may reveal it does actually exist with the
+                        # correct path
+                        parent_info = self.providers[synced].info_oid(parent_ent[synced].oid)
+                        sync_parent = self.translate(synced, parent)
+                        if parent_info and parent_info.path == sync_parent:
+                            log.debug("Provider %s parent folder %s misreported missing, but parent folder exists. "
+                                      "punting", self.providers[synced].name, parent)
+                        else:
+                            # oddly, everything we know about the file is that it exists, but
+                            # the provider insists it doesn't
+                            # Clear the sync_path, and set synced to MISSING,
+                            # that way, we will recognize that this dir needs to be created
+                            parent_ent[changed].sync_path = None
+                            parent_ent[changed].changed = True
+                            parent_ent[synced].exists = MISSING
+                            assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
+                            log.debug("updated entry %s", parent)
             sync.punt()
         except CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
@@ -1062,7 +1081,7 @@ class SyncManager(Runnable):
 
         return self.handle_rename(sync, changed, synced, translated_path)
 
-    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches
+    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
         # handle rename
         # use == to allow rename for case reasons
         # todo: need a paths_match flag instead, so slashes don't break this line
@@ -1070,6 +1089,13 @@ class SyncManager(Runnable):
             return FINISHED
 
         assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
+
+        sdir, sbase = self.providers[synced].split(translated_path)
+        cdir, cbase = self.providers[synced].split(sync[synced].sync_path)
+
+        if self.providers[synced].paths_match(sdir, cdir) and sbase == cbase:
+            log.debug("no rename %s %s", translated_path, sync[synced].sync_path)
+            return FINISHED
 
         log.debug("rename %s %s", sync[synced].sync_path, translated_path)
         try:

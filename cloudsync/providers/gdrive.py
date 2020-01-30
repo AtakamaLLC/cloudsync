@@ -358,24 +358,6 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
                 self.__cursor = new_cursor
             page_token = response.get('nextPageToken')
 
-    # noinspection DuplicatedCode
-    def _walk(self, path, oid):
-        for ent in self.listdir(oid):
-            current_path = self.join(path, ent.name)
-            event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True,
-                          mtime=time.time())
-            log.debug("walk %s", event)
-            yield event
-            if ent.otype == DIRECTORY:
-                if self.exists_oid(ent.oid):
-                    yield from self._walk(current_path, ent.oid)
-
-    def walk(self, path, since=None):
-        info = self.info_path(path)
-        if not info:
-            raise CloudFileNotFoundError(path)
-        yield from self._walk(path, info.oid)
-
     def __prep_upload(self, path, metadata):
         # modification time
         mtime = metadata.get("modifiedTime", time.time())
@@ -661,6 +643,12 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
                 log.warning("Unable to delete oid %s.", debug_sig(oid))
 
         path = self._path_oid(oid, info=info)
+        self._uncache(path)
+
+    def _uncache(self, path):
+        oid = self._cached_id(path)
+        if oid is None:
+            return
         for currpath, curroid in list(self._ids.items()):
             if curroid == oid:
                 self._trashed_ids[currpath] = self._ids[currpath]
@@ -692,6 +680,15 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
             return None
 
         if not res['files']:
+            if use_cache:  # double check against the cache -- google sometimes lies
+                alt_oid = self._cached_id(path)
+                if alt_oid is not None:
+                    alt_info = self.info_oid(alt_oid)
+                    if alt_info is not None and alt_info.path == path:
+                        log.error("gdrive misreported NotFound for %s, it actually does exist")
+                        return alt_info
+                else:  # Turns out the cache was wrong, according to info_oid. Clear the cache entry for path
+                    self._uncache(path)
             return None
 
         ent = res['files'][0]
@@ -701,8 +698,6 @@ class GDriveProvider(Provider):  # pylint: disable=too-many-public-methods, too-
             # need to write a tests that moves files to the trash, as if a user moved the file to the trash
             # then assert it shows up "file not found" in all queries
             return None
-
-        log.debug("res is %s", res)
 
         oid = ent['id']
         pids = ent['parents']

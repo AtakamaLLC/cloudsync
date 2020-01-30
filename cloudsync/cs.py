@@ -95,7 +95,7 @@ class CloudSync(Runnable):
 
     def forget(self):
         """
-        Forget and discard all state information, and drop any events in the queue.  This will trigger a walk.
+        Forget and discard state information, and drop any events in the queue.  This will trigger a walk.
         """
         self.state.forget()
         self.emgrs[0].forget()
@@ -132,11 +132,23 @@ class CloudSync(Runnable):
         return f"{self.providers[0].name}:{self.providers[0].connection_id}:{roots[0]}."\
                f"{self.providers[1].name}:{self.providers[1].connection_id}:{roots[1]}"
 
-    def walk(self):
+    def walk(self, side=None, root=None, recursive=True):
+        """Manually run a walk on a provider, causing a single-direction sync."""
         roots = self.roots or ('/', '/')
+        if root is not None and side is None:
+            # a root without a side makes no sense (which root ?)
+            raise ValueError("If you specify a root, you need to specify which side")
+
         for index, provider in enumerate(self.providers):
-            for event in provider.walk(roots[index]):
-                self.emgrs[index].process_event(event)
+            if side is not None and index != side:
+                continue
+
+            path = root
+            if path is None:
+                path = roots[index]
+
+            for event in provider.walk(path, recursive=recursive):
+                self.emgrs[index].queue(event, from_walk=True)
 
     def authenticate(self, side: int):     # pylint: disable=unused-argument, no-self-use
         """Override this method to change (re)authentication
