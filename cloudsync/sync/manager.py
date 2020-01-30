@@ -1062,7 +1062,7 @@ class SyncManager(Runnable):
 
         return self.handle_rename(sync, changed, synced, translated_path)
 
-    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches
+    def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
         # handle rename
         # use == to allow rename for case reasons
         # todo: need a paths_match flag instead, so slashes don't break this line
@@ -1070,6 +1070,13 @@ class SyncManager(Runnable):
             return FINISHED
 
         assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
+
+        sdir, sbase = self.providers[synced].split(translated_path)
+        cdir, cbase = self.providers[synced].split(sync[synced].sync_path)
+
+        if self.providers[synced].paths_match(sdir, cdir) and sbase == cbase:
+            log.debug("no rename %s %s", translated_path, sync[synced].sync_path)
+            return FINISHED
 
         log.debug("rename %s %s", sync[synced].sync_path, translated_path)
         try:
