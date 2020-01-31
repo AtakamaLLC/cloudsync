@@ -1,3 +1,20 @@
+# pylint: disable=protected-access, too-many-lines
+
+"""Exported provider tests.
+
+This test suite can be imported by using:
+
+```
+from cloudsync.tests import *
+```
+
+Plugins seeking to implement providers should import these tests to be sure they conform.
+
+Conforming providers should work well with the real-time sync engines.
+
+Under the LGPL, there is no obligation to publish your plugins.
+"""
+
 import os
 import errno
 import logging
@@ -42,6 +59,7 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
 
     def wrapped(prov, *args, **kwargs):
         ex: CloudException = None
+        mult = 1.0
         for i in range(count):
             if i > 0:
                 log.warning("retry %s after %s", func.__name__, repr(ex))
@@ -52,12 +70,21 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
             except CloudDisconnectedError as e:
                 prov.reconnect()
                 ex = e
-            time.sleep(prov._test_event_timeout / 5)
+            time.sleep(mult * (prov._test_event_timeout / 5))
+            mult = mult * 1.4
         raise ex
     return wrapped
 
 
-class ProviderHelper(ProviderBase):
+class ProviderTextMixin(ProviderBase):
+    """Mixin class that supports testing providers.
+
+    Features:
+        - automatic retry and reconnect from CloudTemporaryError and CloudDisconnectedError
+        - use of test_ exports for timeouts, CI creds, etc.
+        - automatic root for tests inside a test folder, with automatic translation
+    """
+
     def __init__(self, prov, connect=True, short_poll_only=True, isolation_string=None):
         # if you plan on patching _api you must use a scoped_provider!!!
 
@@ -94,7 +121,7 @@ class ProviderHelper(ProviderBase):
             self.prov.namespace = self.prov._test_namespace
 
         log.debug("mkdir %s", self.test_root)
-        self.prov.mkdir(self.test_root)
+        wrap_retry(self.prov.mkdir)(self.test_root)
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -119,6 +146,7 @@ class ProviderHelper(ProviderBase):
 
     # TEST-ROOT WRAPPER
 
+    @wrap_retry
     def __getattr__(self, k):
         return getattr(self.prov, k)
 
@@ -265,7 +293,6 @@ class ProviderHelper(ProviderBase):
             pass
         except Exception as e:
             log.error("error during cleanup %s", repr(e))
-            pass
 
     def test_cleanup(self):
         if not self.prov.connected:
@@ -274,6 +301,7 @@ class ProviderHelper(ProviderBase):
         if info:
             self.__cleanup(info.oid)
 
+    @wrap_retry
     def prime_events(self):
         self.current_cursor = self.latest_cursor
 
@@ -293,11 +321,13 @@ class ProviderHelper(ProviderBase):
     def connection_id(self, val: str):  # type: ignore
         self.prov.connection_id = val
 
-    @property
+    @property           # type: ignore
+    @wrap_retry
     def namespace(self):
         return self.prov.namespace
 
-    @namespace.setter
+    @namespace.setter   # type: ignore
+    @wrap_retry
     def namespace(self, val):
         self.prov.namespace = val
 
@@ -326,7 +356,7 @@ def mixin_provider(prov, connect=True, short_poll_only=True):
 
     providers = []
     for i in range(instances):
-        providers.append(ProviderHelper(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
+        providers.append(ProviderTextMixin(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
     if len(providers) == 1:
         yield providers[0]
     else:
@@ -1888,7 +1918,7 @@ def test_cursor_error_during_listdir(provider):
 
 
 def test_set_creds(config_provider):
-    provider = ProviderHelper(config_provider, connect=False)      # type: ignore
+    provider = ProviderTextMixin(config_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing creds")
     provider.set_creds(provider._test_creds)
@@ -1897,7 +1927,7 @@ def test_set_creds(config_provider):
 
 
 def test_set_ns_offline(unwrapped_provider):
-    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
     try:
         provider.list_ns()
         pytest.skip("provider doesn't use online namespace listings")
@@ -1913,7 +1943,7 @@ def test_set_ns_offline(unwrapped_provider):
 
 @pytest.mark.manual
 def test_authenticate(unwrapped_provider):
-    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -1938,7 +1968,7 @@ def test_authenticate(unwrapped_provider):
 
 @pytest.mark.manual
 def test_interrupt_auth(unwrapped_provider):
-    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -2013,7 +2043,7 @@ def suspend_capture(pytestconfig):
 # noinspection PyUnreachableCode
 @pytest.mark.manual
 def test_revoke_auth(unwrapped_provider, suspend_capture):
-    provider = ProviderHelper(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
@@ -2045,7 +2075,7 @@ def test_specific_test_root():
     base.connect("whatever")
     base.mkdir("/banana")
 
-    provider = ProviderHelper(base)                             # type: ignore
+    provider = ProviderTextMixin(base)                             # type: ignore
     # i use whatever root the test instance specified
     assert provider.test_root.startswith("/banana/")
     # i but i put my tests in their own folder
