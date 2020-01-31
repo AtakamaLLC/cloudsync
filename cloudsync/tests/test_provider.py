@@ -1725,7 +1725,7 @@ def test_report_info(provider):
     u1 = provider.get_quota()["used"]
     log.info("used %s", u1)
 
-    provider.create(temp_name, BytesIO(b"test"))
+    provider.create(temp_name, BytesIO(b"test" * 10000))
 
     pinfo2 = provider.get_quota()
 
