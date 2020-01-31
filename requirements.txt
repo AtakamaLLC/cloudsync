@@ -16,7 +16,8 @@ dropbox
 # box provider
 boxsdk[jwt]
 
-# onedrive provider
-onedrivesdk_fork
-quickxorhash
+# onedrive
+cloudsync-onedrive
+
+# command line 
 python-daemon

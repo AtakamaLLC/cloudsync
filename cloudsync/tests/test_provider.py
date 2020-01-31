@@ -1725,7 +1725,7 @@ def test_report_info(provider):
     u1 = provider.get_quota()["used"]
     log.info("used %s", u1)
 
-    provider.create(temp_name, BytesIO(b"test"))
+    provider.create(temp_name, BytesIO(b"test" * 10000))
 
     pinfo2 = provider.get_quota()
 
@@ -1742,12 +1742,6 @@ def test_report_info(provider):
     assert pinfo2['limit'] > 0
     if provider.name not in ("box",):
         assert pinfo2['used'] > u1
-
-    login = pinfo2.get('login')
-
-    # most providers give this info, but for some it's not relevant, so just limit this to the ones that do
-    if provider.name in ("gdrive", "dropbox", "mock", "onedrive", "box"):
-        assert login
 
 
 def test_quota_limit(mock_provider):
