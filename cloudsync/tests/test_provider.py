@@ -121,7 +121,7 @@ class ProviderTextMixin(ProviderBase):
             self.prov.namespace = self.prov._test_namespace
 
         log.debug("mkdir %s", self.test_root)
-        wrap_retry(self.prov.mkdir)(self.test_root)
+        wrap_retry(self.prov.mkdir)(self.prov, self.test_root)
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
