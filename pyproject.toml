@@ -20,9 +20,9 @@ requires-python = ">=3.6"
 [tool.flit.metadata.requires-extra]
 box = [ "boxsdk", ]
 dropbox = [ "dropbox", ]
-gdrive = [ "google-oauth", "google-auth-httplib2", "google-api-python-client" ]
 boxcom = [ "boxsdk[jwt]", ]
 onedrive = [ "cloudsync-onedrive", ]
+gdrive = [ "cloudsync-gdrive", ]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
