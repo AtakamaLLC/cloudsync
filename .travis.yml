@@ -1,7 +1,6 @@
 language: python
 cache: 
   pip: True
-  yarn: True
 
 sudo: false
 
