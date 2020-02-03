@@ -2315,3 +2315,14 @@ def test_broken_upload(very_scoped_provider, content_len, operation):
         assert (
             expected_fsize == data_len
         ), "File existed in the cloud, but had incorrect size"
+
+
+def test_globalize(provider):
+    info = provider.info_path("/")
+    gid = provider.globalize_oid(info.oid)
+    oid = provider.localize_oid(gid)
+    assert info.oid == oid
+    suboid = provider.mkdir("/sub")
+    gid = provider.globalize_oid(suboid)
+    oid = provider.localize_oid(gid)
+    assert suboid == oid
