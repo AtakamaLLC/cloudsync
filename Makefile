@@ -15,8 +15,16 @@ requirements: env
 	. env/$(ENVBIN)/activate && pip install -r requirements-dev.txt
 	. env/$(ENVBIN)/activate && pip install -r requirements.txt
 
-lint:
-	pylint cloudsync --enable=duplicate-code --ignore tests && mypy cloudsync || { mypy cloudsync; exit 1; }
+lint: lint-pylint lint-mypy lint-md
+
+lint-pylint:
+	pylint cloudsync --enable=duplicate-code --ignore tests
+
+lint-mypy:
+	mypy cloudsync
+
+lint-md: ./node_modules/.bin/remark
+	./node_modules/.bin/remark -f docs/*.md	
 
 test: test-py test-doc
 
@@ -40,4 +48,7 @@ format:
 bumpver:
 	./bumpver.py
 
-.PHONY: test test-py test-doc lint format bumpver env requirements coverage
+./node_modules/.bin/remark:
+	yarn
+
+.PHONY: test test-py test-doc lint format bumpver env requirements coverage lint-md
