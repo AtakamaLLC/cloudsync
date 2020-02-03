@@ -1,6 +1,6 @@
 ### Misc dev notes
 
-* Disconnect after token error
+*   Disconnect after token error
 
 Currently it's critical to "disconnect" every time a CloudTokenError is raised.
 
@@ -8,7 +8,7 @@ There are some unit tests that check obvious cases and assert not connected.
 
 Otherwise the event loop won't try to reauthenticate .... since "connected" currently implies "connected and authenitcated".
 
-* Env Vars and Integration tests
+*   Env Vars and Integration tests
 
 When performing integration tests with cloud providers, credentials will be needed.
 

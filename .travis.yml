@@ -9,7 +9,6 @@ jobs:
     - name: lint
       stage: lint/unit
       script:
-        - npm install -g yarn
         - make -j3 lint
     - name: unit
       script:

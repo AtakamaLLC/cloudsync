@@ -49,6 +49,6 @@ bumpver:
 	./bumpver.py
 
 ./node_modules/.bin/remark:
-	yarn
+	npm install
 
 .PHONY: test test-py test-doc lint format bumpver env requirements coverage lint-md
