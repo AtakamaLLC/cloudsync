@@ -9,6 +9,7 @@ jobs:
     - name: lint
       stage: lint/unit
       script:
+        - npm install -g yarn
         - make -j3 lint
     - name: unit
       script:
@@ -46,7 +47,6 @@ branches:
     - /^v/
 
 install:
-- npm install -g yarn
 - pip install -r requirements-dev.txt
 - pip install -r requirements.txt
 - openssl aes-256-cbc -K $encrypted_ac820621abca_key -iv $encrypted_ac820621abca_iv -in box.token.enc -out box.token -d
