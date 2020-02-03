@@ -4,6 +4,7 @@ msgpack
 dataclasses
 requests_oauthlib
 requests
+xxhash
 
 # gdrive provider
 google-oauth

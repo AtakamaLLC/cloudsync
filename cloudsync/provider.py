@@ -306,11 +306,17 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError()
         self.download(info.oid, io)
 
-    def listdir_path(self, path):
+    def listdir_path(self, path) -> Generator[DirInfo, None, None]:
         info = self.info_path(path)
         if not info:
             raise CloudFileNotFoundError()
-        return self.listdir(info.oid)
+        return self.listdir_oid(info.oid, path)
+
+    def listdir_oid(self, oid, path=None) -> Generator[DirInfo, None, None]:
+        for result in self.listdir(oid):
+            if result.path is None and path is not None:
+                result.path = self.join(path, result.name)
+            yield result
 
     def rmtree(self, oid):
         """Recursively remove all folders including the folder/file specified.

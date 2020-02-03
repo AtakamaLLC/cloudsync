@@ -515,7 +515,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         return entries
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
-        # optionally takes a path, to make creating the OInfo cheaper, so that it doesn't need to figure out the path
         entries: List[BoxItem] = []
         with self._api() as client:
             parent_object = self._get_box_object(client, oid=oid, object_type=DIRECTORY)
