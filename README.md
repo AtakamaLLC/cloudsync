@@ -11,6 +11,9 @@ Python Cloud Synchronization Library
 
 ```bash
 pip install cloudsync
+
+# install provider support
+pip install cloudsync-gdrive
 ```
 
 ## Links

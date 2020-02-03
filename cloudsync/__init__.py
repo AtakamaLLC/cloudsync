@@ -12,15 +12,21 @@ Example:
 
 import cloudsync
 
-prov = cloudsync.Provider('GDrive', token="237846234236784283")
+# use directly
+prov = cloudsync.get_provider('gdrive')
+creds = prov.authenticate()
+prov.connect(creds)
+with open("file") as file:
+    info = prov.create("/dest", file)
 
-info = prov.upload(file, "/dest")
-print ("id of /dest is %s, hash of /dest is %s" % (info.id, info.hash))
+print("id of /dest is %s, hash of /dest is %s" % (info.oid, info.hash))
 
-Command-line example:
+# use as sync
+local = cloudsync.get_provider('file')
+cs = cloudsync.CloudSync((local, prov), "/home/stuff", "/stuff")
 
-cloudsync -p gdrive --token "236723782347823642786" -f ~/gdrive-folder --daemon
-
+# run forever
+cs.run()
 """
 
 __version__ = "%VERSION%"
