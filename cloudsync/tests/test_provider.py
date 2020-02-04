@@ -2318,11 +2318,30 @@ def test_broken_upload(very_scoped_provider, content_len, operation):
 
 
 def test_globalize(provider):
+    # top path
     info = provider.info_path("/")
     gid = provider.globalize_oid(info.oid)
     oid = provider.localize_oid(gid)
     assert info.oid == oid
+
+    # subpath
     suboid = provider.mkdir("/sub")
     gid = provider.globalize_oid(suboid)
     oid = provider.localize_oid(gid)
     assert suboid == oid
+
+    if gid == oid:
+        pytest.skip("Provider oid == gid, skipping globalize/localize tests")
+
+    # localize deleted
+    provider.delete(suboid)
+    not_oid = provider.localize_oid(gid)
+    assert not_oid is None
+
+    # globalize deleted
+    gid = provider.globalize_oid(suboid)
+    assert gid is None
+
+    # wrong value
+    with pytest.raises(ValueError):
+        oid = provider.localize_oid(oid)
