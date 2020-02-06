@@ -1007,6 +1007,7 @@ def test_re_mkdir_synced(sync):
 
     sync.run_until_found((LOCAL, local_file))
 
+
 def test_path_conflict_deleted_remotely(sync):
     local_parent = "/local"
     remote_parent = "/remote"
@@ -1028,7 +1029,9 @@ def test_path_conflict_deleted_remotely(sync):
     sync.providers[REMOTE].delete(new_remote_oid)
     sync.create_event(LOCAL, DIRECTORY, path=new_local_path1, oid=new_local_oid, prior_oid=local_oid)
     sync.create_event(REMOTE, DIRECTORY, path=new_remote_path1, oid=new_remote_oid, prior_oid=remote_oid, exists=False)
-    sync.run_until_clean()  # with the bug, this will loop forever
+    sync.run_until_clean()  # with the bug, this will loop forever/timeout
+    assert not sync.providers[LOCAL].info_oid(new_local_oid)
+    assert not sync.providers[REMOTE].info_oid(new_remote_oid)
 
 
 def test_folder_del_loop(sync):
