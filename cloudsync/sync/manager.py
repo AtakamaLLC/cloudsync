@@ -260,7 +260,7 @@ class SyncManager(Runnable):
         if not are_synced:
             return False
 
-        both_exist = ent[0].exists == EXISTS and ent[0].exists == EXISTS
+        both_exist = ent[0].exists == EXISTS and ent[1].exists == EXISTS
 
         if not both_exist:
             return False
@@ -1389,6 +1389,8 @@ class SyncManager(Runnable):
 
         other_info = self.providers[other.side].info_oid(other.oid)
         if other_info is None:
+            # do we need this too?
+            # sync[other.side].exists = MISSING
             return FINISHED
 
         log.debug("renaming to handle path conflict: %s -> %s",
