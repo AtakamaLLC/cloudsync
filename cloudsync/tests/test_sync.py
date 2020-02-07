@@ -1,6 +1,7 @@
 # pylint: disable=missing-docstring,protected-access
 
 import logging
+import time
 from io import BytesIO
 from typing import List
 from itertools import permutations
@@ -10,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY, Event
+from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.sync.state import TRASHED
@@ -59,6 +60,10 @@ def make_sync(request, mock_provider_generator, shuffle, case_sensitive=True):
 @pytest.fixture(name="sync")
 def fixture_sync(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, shuffle=True)
+
+@pytest.fixture(name="sync_ordered")
+def fixture_sync(request, mock_provider_generator):
+    yield from make_sync(request, mock_provider_generator, shuffle=False)
 
 
 @pytest.fixture(name="sync_sh", params=[0, 1], ids=["sh0", "sh1"])
@@ -1050,6 +1055,38 @@ def test_folder_del_loop(sync):
     assert not sync.providers[REMOTE].info_path(remote_sub2)
     assert not sync.providers[LOCAL].info_path(local_sub)
     assert not sync.providers[LOCAL].info_path(local_sub2)
+
+
+def test_sync_temporary_error(sync_ordered):
+    sync = sync_ordered
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/a"
+    local_path1 = "/local/a"
+    remote_path2 = "/remote/b"
+    local_path2 = "/local/b"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+    local_info1 = sync.providers[LOCAL].create(local_path1, BytesIO(b'hello'))
+    local_oid1 = local_info1.oid
+    sync.create_event(LOCAL, DIRECTORY, path=local_path1, oid=local_oid1)
+    sync.run_until_found((REMOTE, remote_path1))
+    remote_info1 = sync.providers[REMOTE].info_path(remote_path1)
+    remote_oid1 = remote_info1.oid
+
+    sync.providers[REMOTE].delete(remote_oid1)
+    sync.create_event(REMOTE, DIRECTORY, path=remote_path1, oid=remote_oid1, exists=False)
+
+    time.sleep(.001)
+
+    local_info2 = sync.providers[LOCAL].create(local_path2, BytesIO(b'world'))
+    local_oid2 = local_info2.oid
+    sync.create_event(LOCAL, DIRECTORY, path=local_path2, oid=local_oid2)
+
+    with patch.object(sync.providers[LOCAL], "delete", side_effect=CloudTemporaryError):
+        sync.run_until_found((REMOTE, remote_path2))  # with the bug, this will loop forever/timeout
+
 
 @pytest.mark.parametrize("order", [LOCAL, REMOTE], ids=("local", "remote"))
 def test_replace_rename(sync, order):
