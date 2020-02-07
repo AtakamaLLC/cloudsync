@@ -1014,6 +1014,32 @@ def test_re_mkdir_synced(sync):
     sync.run_until_found((LOCAL, local_file))
 
 
+def test_path_conflict_deleted_remotely(sync):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    remote_path1 = "/remote/a"
+    local_path1 = "/local/a"
+    new_remote_path1 = "/remote/b"
+    new_remote_path2 = "/remote/c"
+    new_local_path1 = "/local/c"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+    local_oid = sync.providers[LOCAL].mkdir(local_path1)
+    sync.create_event(LOCAL, DIRECTORY, path=local_path1, oid=local_oid)
+    sync.run_until_found((REMOTE, remote_path1))
+    remote_info = sync.providers[REMOTE].info_path(remote_path1)
+    remote_oid = remote_info.oid
+    new_local_oid = sync.providers[LOCAL].rename(local_oid, new_local_path1)
+    new_remote_oid = sync.providers[REMOTE].rename(remote_oid, new_remote_path1)
+    sync.providers[REMOTE].delete(new_remote_oid)
+    sync.create_event(LOCAL, DIRECTORY, path=new_local_path1, oid=new_local_oid, prior_oid=local_oid)
+    sync.create_event(REMOTE, DIRECTORY, path=new_remote_path1, oid=new_remote_oid, prior_oid=remote_oid, exists=False)
+    sync.run_until_clean()  # with the bug, this will loop forever/timeout
+    assert not sync.providers[LOCAL].info_oid(new_local_oid)
+    assert not sync.providers[REMOTE].info_oid(new_remote_oid)
+
+
 def test_folder_del_loop(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
