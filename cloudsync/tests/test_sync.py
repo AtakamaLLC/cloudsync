@@ -61,8 +61,9 @@ def make_sync(request, mock_provider_generator, shuffle, case_sensitive=True):
 def fixture_sync(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, shuffle=True)
 
+
 @pytest.fixture(name="sync_ordered")
-def fixture_sync(request, mock_provider_generator):
+def fixture_sync_ordered(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, shuffle=False)
 
 
