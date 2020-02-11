@@ -548,8 +548,9 @@ class SyncEntry:
                 self[side]._last_gotten = max_changed
 
     def is_latest(self) -> bool:
+        max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
-            if self[side]._changed and self[side]._changed > self[side]._last_gotten:
+            if max_changed > self[side]._last_gotten:
                 return False
         return True
 
@@ -681,7 +682,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 if ent[LOCAL].changed:
                     ent[LOCAL].changed += ent._parent._punt_secs[LOCAL]
                 if ent[REMOTE].changed:
-                    ent[REMOTE].changed = ent._parent._punt_secs[REMOTE]
+                    ent[REMOTE].changed += ent._parent._punt_secs[REMOTE]
 
         self._dirtyset.add(ent)
 
