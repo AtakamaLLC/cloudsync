@@ -34,8 +34,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# useful for converting oids and pointer nubmers into digestible nonces
-
 FINISHED = 1
 PUNT = 0
 REQUEUE = -1
@@ -355,8 +353,7 @@ class SyncManager(Runnable):
                 self.finished(i, sync)
             elif response == PUNT:
                 sync.punt()
-            elif response == REQUEUE:
-                pass  # just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+            # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
             break
 
     def _temp_file(self, temp_for=None, name=None):
@@ -1153,11 +1150,18 @@ class SyncManager(Runnable):
         return FINISHED
 
     def _resolve_rename(self, replace):
-        _old_oid, new_oid, new_name = self.conflict_rename(replace.side, replace.path)
-        if new_name is None:
+        _old_oid, new_oid, new_path = self.conflict_rename(replace.side, replace.path)
+        if new_path is None:
             return False
 
-        pass; # TODO: put that big comment here
+        # TODO:
+        #   we rename the file to resolve the conflict, but we don't update the path in the replace SideState
+        #   this is OK-ish, because we update replace.changed, and get_latest will update the name to the new one
+        #   the reason why we leave the old path is that we're going to use it in a second if we're doing a merge,
+        #   and we don't save it anywhere else. This is probably a terrible place to temporarily store
+        #   that name, so we should actually do the `replace.path = new_path` and find a way to return the old path
+        #   back to the merge code, and have it use that. This is the code we will need:
+        # replace.path = new_path # this will break test_sync_conflict_resolve, until the above is addressed
 
         replace.oid = new_oid
         replace.changed = time.time()
@@ -1249,10 +1253,16 @@ class SyncManager(Runnable):
                 # then we want the conflict priority to be *slightly* higher than that
                 # that way, if we find a grandparent that needs to happen before the parent,
                 # mom will either stay where she is or get pushed up even higher priority
-                # and grandma will get pushed up before mom
+                # and grandma will get pushed up before mom. It is also important to prevent priorities
+                # that are >=0 to stay >=0, because priorities that are <0 have special handling
                 min_priority = min(sync.priority, conflict.priority)
-                sync.priority = min_priority
-                conflict.priority = min_priority - 0.1
+                if min_priority < 0:
+                    sync.priority = min_priority
+                    conflict.priority = min_priority - 0.1
+                else:
+                    sync.priority = min_priority + 0.1
+                    conflict.priority = min_priority
+
                 log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
                 if sync.is_path_change(changed) and sync[synced].exists == TRASHED and sync.priority > 2:
                     # right hand side was trashed at the same time as a rename happened
