@@ -1406,13 +1406,23 @@ class SyncManager(Runnable):
         other = sync[other_side(pick)]
         other_path = self.translate(other.side, picked.path)
         if other_path is None:
-            return FINISHED
+            # TODO: bug here. this will probably loop forever, if we can ever get here
+            # probably need to set this item to irrelevant right here, if it is even possible to get into this
+            # branch. wouldn't the irrelevancy been noticed in get_latest() and never even gotten to
+            # this point? Perhaps remove this check entirely, and replace it with a comment that
+            # we already checked and eliminated the possibility that translate returns None
+            return REQUEUE
 
         other_info = self.providers[other.side].info_oid(other.oid)
         if other_info is None:
-            # do we need this too?
+            # TODO: bug here. this will probably loop forever
+            # it seems unlikely to ever get into this branch, since get_latest would have
+            # discovered and marked it missing, which would have prevented it from looking like
+            # a conflict. It has to disappear after get_latest to get in here, which requires
+            # a monkey patch on the test to get it to cover this case
+            # The bug is perhaps fixed by setting exists to MISSING, and possibly also returning PUNT instead of REQUEUE
             # sync[other.side].exists = MISSING
-            return FINISHED
+            return REQUEUE
 
         log.debug("renaming to handle path conflict: %s -> %s",
                   other.oid, other_path)
@@ -1435,10 +1445,15 @@ class SyncManager(Runnable):
                 raise CloudFileExistsError()
             new_oid = self.providers[other.side].rename(other.oid, other_path)
             _update_syncs(new_oid)
-            return FINISHED
+            return REQUEUE
         except CloudFileExistsError:
             # other side already agrees
+            # TODO: bug here.
+            #   this can happen because of the explicit raise above, or from a rename failure...
+            #   perhaps copy this code up to replace the raise, and do better handling of the rename
+            #   failure here, since this will probably not handle that well
             _update_syncs(other.oid)
+            return REQUEUE
         except CloudFileNotFoundError:
             # other side doesnt exist, or maybe parent doesn't exist
             log.info("punting path conflict %s", sync)
