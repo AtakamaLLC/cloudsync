@@ -21,7 +21,7 @@ import arrow
 from pystrict import strict
 
 import dropbox
-from dropbox import Dropbox, exceptions, files, DropboxOAuth2Flow
+from dropbox import Dropbox, exceptions, sharing, files, DropboxOAuth2Flow
 from dropbox.oauth import OAuth2FlowResult
 
 from cloudsync.long_poll import LongPollManager
@@ -279,6 +279,9 @@ class DropboxProvider(Provider):
                             raise CloudFileExistsError(
                                 'Expected folder is actually a file when executing %s(%s %s)' %
                                 debug_args(method, args, kwargs))
+
+                if isinstance(e.error, sharing.SharedFolderAccessError):
+                    raise CloudFileNotFoundError(str(e))
 
                 if isinstance(e.error, files.UploadError):
                     if e.error.is_path() and isinstance(e.error.get_path(), files.UploadWriteFailed):
@@ -669,6 +672,68 @@ class DropboxProvider(Provider):
 
     def exists_oid(self, oid) -> bool:
         return bool(self.info_oid(oid))
+
+    def globalize_oid(self, oid):
+        try:
+            res = self._api('files_get_metadata', oid)
+        except CloudFileNotFoundError:
+            log.info("cannot globalize %s, file not found", oid)
+            return None
+
+        sfid = None
+        path = res.path_lower
+        share = res.sharing_info
+        if not share:
+            if isinstance(res, files.FolderMetadata):
+                res = self._api('sharing_share_folder', path)
+                while not res.is_complete():
+                    time.sleep(0.25)
+                share = res.get_complete()
+
+        if share:
+            if share.shared_folder_id:
+                sfid = share.shared_folder_id
+                path = "/"
+
+            if share.parent_shared_folder_id:
+                sfid = share.parent_shared_folder_id
+                try:
+                    parent = self._api('sharing_get_folder_metadata', sfid)
+                except CloudFileNotFoundError:
+                    log.error("shared folder access issue")
+                    return None
+
+                path = self.is_subpath(parent.path_lower, res.path_lower)
+
+        if not sfid:
+            return None
+
+        # dropbox specific global object id is shared folder id + relative path
+        return "ns:" + sfid + path
+
+    def localize_oid(self, global_oid):
+        if global_oid[0:3] != "ns:":
+            raise ValueError("Not a global oid")
+
+        global_oid = global_oid[3:]
+
+        sfid, path = global_oid.split("/", 2)
+
+        try:
+            res = self._api('sharing_get_folder_metadata', sfid)
+        except CloudFileNotFoundError:
+            return None
+
+        if not res or not res.path_lower:
+            return None
+
+        path = self.join(res.path_lower, path)
+
+        info = self.info_path(path)
+        if not info:
+            return None
+
+        return info.oid
 
     def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         if path == "/":

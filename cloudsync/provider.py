@@ -488,6 +488,17 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             if parent_obj.otype != DIRECTORY:
                 raise CloudFileExistsError(parent_path)
 
+    def globalize_oid(self, oid: str) -> str:       # pylint: disable=no-self-use
+        """Converts an oid that may be account specific to one that can be used in other accounts."""
+        return oid
+
+    def localize_oid(self, global_oid: str):        # pylint: disable=no-self-use
+        """Converts a globalized oid to one that can be used locally.
+
+        All regular provider functions use 'local oids' only unless otherwise specified.
+        """
+        return global_oid
+
     def mkdirs(self, path):
         """Makes a directory and intervening directories, returns the oid of the leaf"""
         log.debug("mkdirs %s", path)

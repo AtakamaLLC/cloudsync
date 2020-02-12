@@ -15,3 +15,5 @@ exclude_lines =
     if __name__ == .__main__.:
     if typing.TYPE_CHECKING:
     if TYPE_CHECKING:
+    @pytest.mark.manual
+    @pytest.fixture
