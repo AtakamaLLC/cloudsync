@@ -1015,7 +1015,6 @@ class SyncManager(Runnable):
         return True
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
-        # TODO: look for the caller to see if he requeues
         if not sync[changed].path:
             self.update_sync_path(sync, changed)
             log.debug("NEW SYNC %s", sync)
@@ -1057,7 +1056,7 @@ class SyncManager(Runnable):
             # the same name already?
             if self.check_disjoint_create(sync, changed, synced, translated_path):
                 log.debug("disjoint, requeue")
-                return PUNT  # this breaks test_sync_conflict_resolve, 50% of the time
+                return PUNT
 
         if sync.is_creation(changed):
             # looks like a new file
