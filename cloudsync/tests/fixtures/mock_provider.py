@@ -27,7 +27,9 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         # self.display_path = path  # TODO: used for case insensitive file systems
         if contents is None and type == MockFSObject.FILE:
             contents = b""
-        self.path = path.rstrip("/")
+        self.path = path
+        if self.path != "/":
+            self.path = path.rstrip("/")
         self.contents = contents
         self.oid = path if oid_is_path else str(id(self))
         self.exists = True
@@ -128,6 +130,8 @@ class MockProvider(Provider):
         self._uses_cursor = True
         self._forbidden_chars: list = []
         self.__in_connect = False
+        new_fs_object = MockFSObject("/", MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
+        self._store_object(new_fs_object)
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
@@ -168,7 +172,8 @@ class MockProvider(Provider):
 
     def _store_object(self, fo: MockFSObject):
         # TODO: support case insensitive storage
-        assert fo.path == fo.path.rstrip("/")
+        if fo.path != "/":
+            assert fo.path == fo.path.rstrip("/")
 
         if fo.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (fo.path))
@@ -384,7 +389,7 @@ class MockProvider(Provider):
         self._store_object(source_object)
         self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
         log.debug("rename complete %s", source_object.path)
-        self._log_debug_state()
+        self._log_debug_state("_rename_single_object")
 
     def mkdir(self, path) -> str:
         self._verify_parent_folder_exists(path)
@@ -488,7 +493,8 @@ class MockProvider(Provider):
             files = list(self.walk("/"))
         except CloudFileNotFoundError:
             files = []
-        log.debug("%s: mock provider state %s:%s", msg, len(files), files)
+        names = [file.path + ("/" if file.otype == OType.DIRECTORY else "") for file in files if file.exists is True]
+        log.debug("%s: mock provider state %s:%s", msg, len(names), names)
 
 ###################
 

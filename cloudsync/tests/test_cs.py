@@ -1849,8 +1849,8 @@ def test_backoff(cs, recover):
     else:
         assert cs.smgr.in_backoff
 
-
-def test_cs_prioritize(cs):
+@pytest.mark.parametrize("prioritize_side", [LOCAL, REMOTE], ids=["LOCAL", "REMOTE"])
+def test_cs_prioritize(cs, prioritize_side):
     remote_parent = "/remote"
     local_parent = "/local"
     local_path1 = "/local/stuff1"
@@ -1867,8 +1867,9 @@ def test_cs_prioritize(cs):
     cs.aging = 4
 
     # this should also prioritize the remote, even though the local doesn't exist
-    def prio(side, path):
-        if path == local_path2 or path == remote_path2:
+    def prio(_ignored_side, path):
+        if prioritize_side == LOCAL and path in (local_path1, remote_path1) \
+                or prioritize_side == REMOTE and path in (local_path2, remote_path2):
             log.debug("PRIO RETURNING %s", path)
             return -1
         return 0
@@ -1883,8 +1884,9 @@ def test_cs_prioritize(cs):
     assert ent1[LOCAL].changed > 0
     assert ent2[REMOTE].changed > 0
 
-    # ensure ent2 is later... regardless of clock granularity
-    ent2[REMOTE].changed = ent1[LOCAL].changed + 0.01
+    # ensure ent for "side" is later... regardless of clock granularity
+    local_offset = 0.01 if prioritize_side == REMOTE else -0.01
+    ent2[REMOTE].changed = ent1[LOCAL].changed + local_offset
 
     prev_len = cs.state.changeset_len
 
@@ -1893,17 +1895,21 @@ def test_cs_prioritize(cs):
     # nothing is happening because aging is too long
     assert cs.state.changeset_len == prev_len
 
-
     log.info("BEFORE TABLE\n%s", cs.state.pretty_print())
 
-    cs.run_until_found(
-            (LOCAL, local_path2)
-            )
+    expectation = (REMOTE, remote_path1) if prioritize_side == LOCAL else (LOCAL, local_path2)
+    cs.run_until_found(expectation)
 
     log.info("AFTER TABLE\n%s", cs.state.pretty_print())
 
-    assert cs.providers[LOCAL].info_path(local_path2)
-    assert not cs.providers[REMOTE].info_path(remote_path1)
+    lp2_exists = cs.providers[LOCAL].info_path(local_path2) is not None
+    rp1_exists = cs.providers[REMOTE].info_path(remote_path1) is not None
+    if prioritize_side == REMOTE:
+        assert lp2_exists
+        assert not rp1_exists
+    else:
+        assert not lp2_exists
+        assert rp1_exists
 
 
 MERGE = 2

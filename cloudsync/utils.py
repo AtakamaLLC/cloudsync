@@ -59,6 +59,7 @@ def debug_args(*stuff: Any):
     return tuple(["N/A"] * len(stuff))
 
 
+# useful for converting oids and pointer numbers into digestible nonces
 def debug_sig(t: Any, size: int = 3) -> str:
     """
     Useful for converting oids and pointer numbers into short digestible nonces
