@@ -299,7 +299,7 @@ class SyncManager(Runnable):
                     sync[changed].changed = time.time()
                     sync[synced].clear()
 
-    def sync(self, sync: SyncEntry):
+    def sync(self, sync: SyncEntry):  # pylint: disable=too-many-branches
         """
         Called on each changed entry.
         """
