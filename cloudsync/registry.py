@@ -31,7 +31,7 @@ def discover_providers():
         register_provider(entry_point.load())
 
 
-def get_provider(name: str):
+def get_provider(name: str) -> Type[Provider]:
     """Get a provider class with the given name"""
     if name not in providers:
         discover_providers()

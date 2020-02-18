@@ -730,7 +730,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if new_priority != ent.priority:
                 ent.priority = new_priority
 
-    def _update_kids(self, ent, side, prior_path, path, provider):
+    def _update_kids(self, ent, side, prior_path, path, provider: 'Provider'):
         if ent[side].otype == DIRECTORY and prior_path != path and not prior_path is None:
             # changing directory also changes child paths
             for sub, relative in self.get_kids(prior_path, side):
@@ -746,6 +746,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                     if new_info:
                         sub[side].oid = new_info.oid
                 sub[side].path = new_path
+
+                # now do the same thing for the sync_path
+                if sub[side].sync_path:
+                    sync_rel = provider.is_subpath(prior_path, sub[side].sync_path)
+                    if sync_rel:
+                        new_sync_path = provider.join(path, sync_rel)
+                        sub[side].sync_path = new_sync_path
+
 
     def _change_oid(self, side, ent, oid):
         assert type(ent) is SyncEntry
