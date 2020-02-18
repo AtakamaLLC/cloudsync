@@ -249,9 +249,7 @@ class SyncManager(Runnable):
         if not have_paths:
             return False
 
-        # have_changed = ent[0].changed and ent[1].changed
-        # if not have_changed:
-        #     return False
+        # returning False here if one side hasn't changed breaks test_rename_conflict_and_irrelevant
 
         are_synced = ((ent[0].sync_hash and ent[1].sync_hash)
                       or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)) \
@@ -319,12 +317,6 @@ class SyncManager(Runnable):
             self.handle_hash_conflict(sync)
             return
 
-        # if self.path_conflict(sync) and not sync.is_temp_rename:
-        #     log.debug("handle path conflict")
-        #     if self.handle_path_conflict(sync) == PUNT:
-        #         sync.punt()
-        #     return
-
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
         for side in ordered:
@@ -350,32 +342,16 @@ class SyncManager(Runnable):
                     continue
 
             if self.path_conflict(sync):
-                log.debug("HERE-")
                 my_name = sync[side].path
                 their_name = sync[other_side(side)].path
                 my_name_there = self.translate(other_side(side), my_name) or ""
                 their_name_here = self.translate(side, their_name) or ""
 
                 if my_name_there and their_name_here:
-                    log.debug("HERE-")
                     if my_name_there > their_name and their_name_here < my_name:  # if the other side's path comes first alphabetically
-                        log.debug("HERE-")
                         continue
                 else:
-                    log.debug("HERE-")
-                    remote_ent: SyncEntry
-                    local_ent: SyncEntry
-                    remote_ent, remote_side, local_ent, local_side = self.state.split(sync)
-                    # if not self.translate(local_side, remote_ent[remote_side].path):
-                    #     log.debug("marking %s irrelevant", remote_ent)
-                    #     remote_ent.ignore(IgnoreReason.IRRELEVANT)
-                    # if not self.translate(remote_side, local_ent[local_side].path):
-                    #     log.debug("marking %s irrelevant", local_ent)
-                    #     local_ent.ignore(IgnoreReason.IRRELEVANT)
-                    log.debug("HERE-")
-                    # self.handle_split_conflict(defer_ent, defer_side, replace_ent, replace_side)
-            else:
-                log.debug("HERE: not a conflict: %s", sync)
+                    self.state.split(sync)
 
             response = self.embrace_change(sync, side, other_side(side))
             if response == FINISHED:
@@ -1254,7 +1230,6 @@ class SyncManager(Runnable):
             if not translated_path:
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
                     log.debug(">>>Removing remnants of file moved out of cloud root")
-                    # sync[changed].sync_path = sync[changed].path
                     sync[changed].exists = TRASHED  # This will discard the ent later
                 else:  # we don't have a new or old translated path... just irrelevant so discard
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
@@ -1421,72 +1396,6 @@ class SyncManager(Runnable):
         log.debug(">>> about to resolve_conflict")
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
         return True
-
-    # def handle_path_conflict(self, sync):
-    #     # consistent handling
-    #     log.debug("handle path conflict %s", sync)
-    #
-    #     assert sync[0].sync_path
-    #     assert sync[1].sync_path
-    #
-    #     if sync[0].changed < sync[1].changed:
-    #         pick = 0
-    #     else:
-    #         pick = 1
-    #     picked = sync[pick]
-    #     other = sync[other_side(pick)]
-    #     other_path = self.translate(other.side, picked.path)
-    #     if other_path is None:
-    #         # TODO: bug here. this will probably loop forever
-    #         #   This indicates that the other side is irrelevant
-    #         return PUNT
-    #
-    #
-    #     other_info = self.providers[other.side].info_oid(other.oid)
-    #     if other_info is None:
-    #         # TODO: bug here. this will probably loop forever
-    #         # it seems unlikely to ever get into this branch, since get_latest would have
-    #         # discovered and marked it missing, which would have prevented it from looking like
-    #         # a conflict. It has to disappear after get_latest to get in here, which requires
-    #         # a monkey patch on the test to get it to cover this case
-    #         # The bug is perhaps fixed by setting exists to MISSING, and possibly also returning PUNT instead of REQUEUE
-    #         # sync[other.side].exists = MISSING
-    #         return REQUEUE
-    #
-    #     log.debug("renaming to handle path conflict: %s -> %s",
-    #               other.oid, other_path)
-    #
-    #     def _update_syncs(newer_oid):
-    #         self.update_entry(sync, other.side, newer_oid, path=other_path)
-    #         sync[other.side].sync_path = sync[other.side].path
-    #         sync[picked.side].sync_path = sync[picked.side].path
-    #
-    #     try:
-    #         if other_info.path == other_path:
-    #             # don't sync this entry
-    #             log.info("supposed rename conflict, but the names are the same")
-    #             if not sync[other.side].sync_hash and sync[other.side].otype == FILE:
-    #                 log.warning("sync_hashes missing even though the sync_path is set...")
-    #                 sync[other.side].sync_path = None
-    #             if not sync[picked.side].sync_hash and sync[picked.side].otype == FILE:
-    #                 log.warning("sync_hashes missing even though the sync_path is set...")
-    #                 sync[picked.side].sync_path = None
-    #             raise CloudFileExistsError()
-    #         new_oid = self.providers[other.side].rename(other.oid, other_path)
-    #         _update_syncs(new_oid)
-    #         return REQUEUE
-    #     except CloudFileExistsError:
-    #         # other side already agrees
-    #         # TODO: bug here.
-    #         #   this can happen because of the explicit raise above, or from a rename failure...
-    #         #   perhaps copy this code up to replace the raise, and do better handling of the rename
-    #         #   failure here, since this will probably not handle that well
-    #         _update_syncs(other.oid)
-    #         return REQUEUE
-    #     except CloudFileNotFoundError:
-    #         # other side doesnt exist, or maybe parent doesn't exist
-    #         log.info("punting path conflict %s", sync)
-    #         return PUNT
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]
