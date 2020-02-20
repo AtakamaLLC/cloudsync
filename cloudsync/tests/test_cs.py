@@ -1556,7 +1556,7 @@ def test_cs_folder_conflicts_del(cs, shuffle):
     cs.providers[REMOTE].delete(rinfo3_u.oid)
     cs.providers[REMOTE].delete(rinfo3_oid)
 
-    cs.run(until=lambda: cs.state.changeset_len == 0, timeout=1)
+    cs.run(until=lambda: cs.state.changeset_len == 0, timeout=2)
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
     assert cs.state.changeset_len == 0
@@ -1922,8 +1922,9 @@ MERGE = 2
     (REMOTE, [REMOTE]),
     (MERGE,  []),
     (MERGE,  [LOCAL, REMOTE]),
-    ], ids = ["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
+    ], ids=["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
 def test_hash_mess(cs, side_locked):
+    import time
     (side, locks) = side_locked
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
@@ -1951,7 +1952,6 @@ def test_hash_mess(cs, side_locked):
     local.upload(local_oid, BytesIO(b"zzz1"))
     remote.upload(remote_oid, BytesIO(b"zzz2"))
 
-
     f3 = BytesIO(b'merged')
 
     if side == LOCAL:
@@ -1978,9 +1978,11 @@ def test_hash_mess(cs, side_locked):
             for locked in locks:
                 cs.providers[locked]._locked_for_test.discard(renamed_path[locked])
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
-
-    log.info("END TABLE\n%s", cs.state.pretty_print())
+    log.debug("Starting run %s", time.time())
+    try:
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=4)
+    finally:
+        log.info("END TABLE %s\n%s", time.time(), cs.state.pretty_print())
 
     l_r = local.info_path("/local/foo-r")
     l_l = local.info_path("/local/foo-l")

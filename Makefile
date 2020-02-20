@@ -29,7 +29,7 @@ lint-md: ./node_modules/.bin/remark
 test: test-py test-doc
 
 test-py:
-	pytest --cov=cloudsync --durations=1 -n=8 cloudsync/tests --full-trace --timeout=10
+	pytest -rfE --cov=cloudsync --durations=1 -n=8 cloudsync/tests --full-trace --timeout=10
 
 test-doc:
 	docs/test.sh

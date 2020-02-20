@@ -438,8 +438,7 @@ def test_sync_conflict_path(sync):
     linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
 
     # inserts info about some local path
-    sync.create_event(LOCAL, FILE, path=local_path1,
-                      oid=linfo.oid, hash=linfo.hash)
+    sync.create_event(LOCAL, FILE, path=local_path1, oid=linfo.oid, hash=linfo.hash)
 
     sync.run_until_found((REMOTE, remote_path1))
 
@@ -456,14 +455,12 @@ def test_sync_conflict_path(sync):
 
     sync.providers[REMOTE]._log_debug_state("AFTER")         # type: ignore
 
-    sync.create_event(LOCAL, FILE, path=local_path2,
-                      oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
+    sync.create_event(LOCAL, FILE, path=local_path2, oid=new_oid_l, hash=linfo.hash, prior_oid=linfo.oid)
 
     assert len(sync.state.get_all()) == 1
     assert ent[REMOTE].oid == new_oid_r
 
-    sync.create_event(REMOTE, FILE, path=remote_path2,
-                      oid=new_oid_r, hash=rinfo.hash, prior_oid=rinfo.oid)
+    sync.create_event(REMOTE, FILE, path=remote_path2, oid=new_oid_r, hash=rinfo.hash, prior_oid=rinfo.oid)
 
     assert len(sync.state.get_all()) == 1
 
@@ -860,10 +857,8 @@ def test_dir_rm(sync):
     rdir = sync.providers[REMOTE].mkdir(remote_dir)
     lfile = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
 
-    sync.create_event(LOCAL, DIRECTORY, path=local_dir,
-                      oid=ldir)
-    sync.create_event(LOCAL, FILE, path=local_file,
-                      oid=lfile.oid, hash=lfile.hash)
+    sync.create_event(LOCAL, DIRECTORY, path=local_dir, oid=ldir)
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfile.oid, hash=lfile.hash)
 
     sync.run_until_found((REMOTE, remote_file), (REMOTE, remote_dir))
 
@@ -872,7 +867,9 @@ def test_dir_rm(sync):
     sync.providers[REMOTE].delete(rdir)
 
     # Directory delete - should punt because of children
-    sync.aging = 0
+    # aging needs to be at most negative punt_secs or this test will be flaky, because the parent folder
+    # will de-age when it punts by that amount, and then the folder won't have aged enough to get deleted on time
+    sync.aging = 0 - max(sync.state._punt_secs)
     sync.create_event(REMOTE, DIRECTORY, path=remote_dir, oid=rdir, exists=False)
     sync.do()
     assert len(list(sync.providers[LOCAL].listdir(ldir))) == 1

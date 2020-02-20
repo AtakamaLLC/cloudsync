@@ -1273,7 +1273,7 @@ class SyncManager(Runnable):
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
-        if sync[changed].exists == TRASHED:
+        if sync[changed].exists == TRASHED and sync[synced].exists == EXISTS:
             log.debug("delete")
             return self.delete_synced(sync, changed, synced)
 
