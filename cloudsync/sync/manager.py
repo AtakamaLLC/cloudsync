@@ -1308,6 +1308,10 @@ class SyncManager(Runnable):
         if sync[changed].hash != sync[changed].sync_hash:
             return self.handle_hash_diff(sync, changed, synced)
 
+        # This fixes test_sync_rename_away
+        if sync[changed].exists in (TRASHED, MISSING) and not sync[synced].path and not sync[synced].oid:
+            sync.ignore(IgnoreReason.DISCARDED)
+
         log.debug("nothing changed %s", sync)
         return FINISHED
 
@@ -1317,6 +1321,9 @@ class SyncManager(Runnable):
 
         if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
             log.debug("dont upload to trashed, zero out trashed side")
+            # What does that mean "dont upload to trashed"?
+            # this seems to zero out the other side, not the trashed side?
+            # this punted, but why punt? why not mark finished?
             # not an upload
             # todo: change to clear()
             sync[synced].exists = UNKNOWN
@@ -1328,7 +1335,8 @@ class SyncManager(Runnable):
             sync[synced].sync_hash = None
             sync[changed].sync_path = None
             sync[changed].sync_hash = None
-            return PUNT
+            # This fixes test_event_order_del_create
+            return FINISHED
 
         log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
