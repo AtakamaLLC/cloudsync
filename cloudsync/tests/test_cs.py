@@ -104,6 +104,7 @@ def fixture_multi_remote_cs(mock_provider_generator):
 
 
 def test_sync_rename_away(multi_remote_cs):
+    timeout = 2
     cs1, cs2 = multi_remote_cs
 
     remote_parent = "/remote"
@@ -125,10 +126,10 @@ def test_sync_rename_away(multi_remote_cs):
     cs1.run_until_found(
         (LOCAL, local_path11),
         (REMOTE, remote_path),
-        timeout=2)
+        timeout=timeout)
 
-    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
-    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=timeout)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=timeout)
     log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
     log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
 
@@ -140,41 +141,41 @@ def test_sync_rename_away(multi_remote_cs):
     log.debug("here")
     linfo2 = cs1.providers[LOCAL].rename(linfo1.oid, local_path21)
     log.debug("here")
-    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=timeout)
     log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
     log.debug("here")
-    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=timeout)
     log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
     log.debug("here")
 
     try:
         cs1.run_until_found(
             WaitFor(LOCAL, local_path11, exists=False),
-            timeout=2)
+            timeout=timeout)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         cs2.run_until_found(
             (LOCAL, local_path21),
-            timeout=2)
+            timeout=timeout)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         cs2.run_until_found(
             (REMOTE, remote_path),
-            timeout=2)
+            timeout=timeout)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         # If renaming out of local1 didn't properly sync, the next line will time out
         cs1.run_until_found(
             WaitFor(REMOTE, remote_path, exists=False),
-            timeout=2)
+            timeout=timeout)
     except TimeoutError:
         log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
         log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
         raise
 
     # let cleanups/discards/dedups happen if needed
-    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
-    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=timeout)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=timeout)
 
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
