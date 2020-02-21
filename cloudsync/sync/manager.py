@@ -249,9 +249,7 @@ class SyncManager(Runnable):
         if not have_paths:
             return False
 
-        have_changed = ent[0].changed and ent[1].changed
-        if not have_changed:
-            return False
+        # returning False here if one side hasn't changed breaks test_rename_conflict_and_irrelevant
 
         are_synced = ((ent[0].sync_hash and ent[1].sync_hash)
                       or (ent[0].otype == DIRECTORY and ent[1].otype == DIRECTORY)) \
@@ -269,7 +267,8 @@ class SyncManager(Runnable):
             return False
 
         return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path)
+            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path) and \
+            not ent.is_temp_rename
 
     def check_revivify(self, sync: SyncEntry):
         """
@@ -300,7 +299,7 @@ class SyncManager(Runnable):
                     sync[changed].changed = time.time()
                     sync[synced].clear()
 
-    def sync(self, sync: SyncEntry):
+    def sync(self, sync: SyncEntry):  # pylint: disable=too-many-branches
         """
         Called on each changed entry.
         """
@@ -318,39 +317,45 @@ class SyncManager(Runnable):
             self.handle_hash_conflict(sync)
             return
 
-        if self.path_conflict(sync) and not sync.is_temp_rename:
-            log.debug("handle path conflict")
-            if self.handle_path_conflict(sync) == PUNT:
-                sync.punt()
-            return
-
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
-        for i in ordered:
-            if not sync[i].needs_sync():
-                sync[i].changed = 0
+        for side in ordered:
+            if not sync[side].needs_sync():
+                sync[side].changed = 0
                 continue
 
-            if sync[i].hash is None and sync[i].otype == FILE and sync[i].exists == EXISTS:
-                log.debug("ignore:%s, side:%s", sync, i)
+            if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
+                log.debug("ignore:%s, side:%s", sync, side)
                 # no hash for file, ignore it
-                self.finished(i, sync)
+                self.finished(side, sync)
                 break
 
-            if sync[i].oid is None and sync[i].exists != TRASHED:
-                log.debug("ignore:%s, side:%s", sync, i)
-                self.finished(i, sync)
+            if sync[side].oid is None and sync[side].exists != TRASHED:
+                log.debug("ignore:%s, side:%s", sync, side)
+                self.finished(side, sync)
                 continue
 
             # if the other side changed hash, handle it first
-            if sync[i].hash == sync[i].sync_hash:
-                other = other_side(i)  
+            if sync[side].hash == sync[side].sync_hash:
+                other = other_side(side)
                 if sync[other].changed and sync[other].hash != sync[other].sync_hash:
                     continue
 
-            response = self.embrace_change(sync, i, other_side(i))
+            if self.path_conflict(sync):
+                my_name = sync[side].path
+                their_name = sync[other_side(side)].path
+                my_name_there = self.translate(other_side(side), my_name) or ""
+                their_name_here = self.translate(side, their_name) or ""
+
+                if my_name_there and their_name_here:
+                    if my_name_there > their_name and their_name_here < my_name:  # if the other side's path comes first alphabetically
+                        continue
+                else:
+                    self.state.split(sync)
+
+            response = self.embrace_change(sync, side, other_side(side))
             if response == FINISHED:
-                self.finished(i, sync)
+                self.finished(side, sync)
             elif response == PUNT:
                 sync.punt()
             # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
@@ -914,6 +919,7 @@ class SyncManager(Runnable):
 
         if sync[synced].oid:
             try:
+                log.debug("deleting %s", debug_sig(sync[synced].oid))
                 self.providers[synced].delete(sync[synced].oid)
             except CloudFileNotFoundError:
                 pass
@@ -1039,7 +1045,7 @@ class SyncManager(Runnable):
         if sync[changed].sync_path and sync[synced].exists == TRASHED:
             # see test: test_sync_folder_conflicts_del
             if sync.priority <= 0:
-                log.debug("requeue sync + trash %s", sync)
+                log.debug("requeue sync + trash priority=%s %s", sync.priority, sync)
                 return PUNT
 
             if sync[synced].changed:        # rename + delete == delete goes first
@@ -1102,7 +1108,7 @@ class SyncManager(Runnable):
         try:
             new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
         except CloudFileNotFoundError as e:
-            log.debug("ERROR: can't rename for now %s: %s", sync, e)
+            log.debug("ERROR: can't rename for now %s: %s", sync, repr(e))
             if sync.priority > 5:
                 log.exception("punted too many times, giving up")
                 return FINISHED
@@ -1396,59 +1402,6 @@ class SyncManager(Runnable):
         log.debug(">>> about to resolve_conflict")
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
         return True
-
-    def handle_path_conflict(self, sync):
-        # consistent handling
-        log.debug("handle path conflict %s", sync)
-
-        assert sync[0].sync_path
-        assert sync[1].sync_path
-
-        if sync[0].changed < sync[1].changed:
-            pick = 0
-        else:
-            pick = 1
-        picked = sync[pick]
-        other = sync[other_side(pick)]
-        other_path = self.translate(other.side, picked.path)
-        if other_path is None:
-            return FINISHED
-
-        other_info = self.providers[other.side].info_oid(other.oid)
-        if other_info is None:
-            # do we need this too?
-            # sync[other.side].exists = MISSING
-            return FINISHED
-
-        log.debug("renaming to handle path conflict: %s -> %s",
-                  other.oid, other_path)
-
-        def _update_syncs(newer_oid):
-            self.update_entry(sync, other.side, newer_oid, path=other_path)
-            sync[other.side].sync_path = sync[other.side].path
-            sync[picked.side].sync_path = sync[picked.side].path
-
-        try:
-            if other_info.path == other_path:
-                # don't sync this entry
-                log.info("supposed rename conflict, but the names are the same")
-                if not sync[other.side].sync_hash and sync[other.side].otype == FILE:
-                    log.warning("sync_hashes missing even though the sync_path is set...")
-                    sync[other.side].sync_path = None
-                if not sync[picked.side].sync_hash and sync[picked.side].otype == FILE:
-                    log.warning("sync_hashes missing even though the sync_path is set...")
-                    sync[picked.side].sync_path = None
-                raise CloudFileExistsError()
-            new_oid = self.providers[other.side].rename(other.oid, other_path)
-            _update_syncs(new_oid)
-            return FINISHED
-        except CloudFileExistsError:
-            # other side already agrees
-            _update_syncs(other.oid)
-        except CloudFileNotFoundError:
-            # other side doesnt exist, or maybe parent doesn't exist
-            log.info("punting path conflict %s", sync)
-            return PUNT
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]
