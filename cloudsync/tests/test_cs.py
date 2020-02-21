@@ -872,6 +872,24 @@ def test_cs_rename_over(cs):
 @pytest.mark.repeat(10)
 @pytest.mark.parametrize("use_prio", [0, 1], ids=["norm", "prio"])
 def test_cs_folder_conflicts_file(cs, use_prio):
+    # setup_remote_local
+    # 	create folders /local and /remote
+    # 	create files /local/stuff1 and /remote/stuff1
+    # 	sync up
+    #
+    # delete files /local/stuff1 and /remote/stuff1
+    # create file /local/stuff1
+    # create folder /remote/stuff1
+    # create file /remote/stuff1/under
+    #
+    # get events
+    # assert the length of the state table
+    # run until /remote/stuff1/under is found
+    # run until no changes left
+    # assert /local/stuff1.conflicted exists
+    # assert /remote/stuff1.conflicted does not exist
+    # assert that /local/stuff1.conflicted is a file
+    # assert that /local/stuff1 is a folder
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
     local_path1 = "/local/stuff1"
@@ -916,11 +934,19 @@ def test_cs_folder_conflicts_file(cs, use_prio):
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
         assert(len(cs.state) == 5)
 
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+    try:
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    except TimeoutError:
+        log.info("TABLE 3.5\n%s", cs.state.pretty_print())
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    finally:
+        log.info("TABLE 3.75\n%s", cs.state.pretty_print())
 
-    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    log.info("TABLE 4\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 4 or len(cs.state) == 3)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")

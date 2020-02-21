@@ -498,7 +498,8 @@ class SyncManager(Runnable):
                 log.debug("resolve %s conflict with %s", translated_path, chent)
                 # pylint bugs here... no idea why
                 self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
-                return FINISHED
+                # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
+                return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
 
             # make the dir
             oid = self.providers[synced].mkdirs(translated_path)
@@ -996,12 +997,17 @@ class SyncManager(Runnable):
                     log.debug("same remote oid")
                     if e[synced].sync_hash != e[synced].hash:
                         found = e
+                    elif not e[synced].changed:
+                        log.debug("merge split entries")
+                        sync[synced] = e[synced]
+                    elif e[synced].otype == DIRECTORY and sync[synced].otype == FILE:
+                        # fixes test_cs_folder_conflicts_file
+                        found = e
+                    elif e[synced].otype == FILE and sync[synced].otype == DIRECTORY:
+                        # separate this block out from the previous to assist in code coverage checks
+                        found = e
                     else:
-                        if not e[synced].changed:
-                            log.debug("merge split entries")
-                            sync[synced] = e[synced]
-                        else:
-                            found = False
+                        found = False
 
         if not found:
             log.debug("disjoint conflict with something I don't understand")
