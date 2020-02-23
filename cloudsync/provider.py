@@ -338,7 +338,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             for ent in self.listdir(oid):
                 current_path = self.join(path, ent.name)
                 event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
-                log.debug("walk %s", event)
+                # log.debug("walk %s", event)
                 yield event
                 if ent.otype == DIRECTORY and recursive:
                     yield from self._walk(current_path, ent.oid, recursive)
@@ -411,6 +411,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         norm_path = self.join(*parts)
         if not self.case_sensitive:
             norm_path = norm_path.lower()
+        else:
+            norm_path = self.join(self.dirname(norm_path).lower(), self.basename(norm_path))
         return norm_path
 
     def is_subpath(self, folder, target, strict=False):

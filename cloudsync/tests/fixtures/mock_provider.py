@@ -488,13 +488,13 @@ class MockProvider(Provider):
     #     with open(path, "wb") as x:
     #         x.write(contents)
 
-    def _log_debug_state(self, msg=""):
+    def _log_debug_state(self, msg="", log_level=logging.DEBUG):
         try:
             files = list(self.walk("/"))
         except CloudFileNotFoundError:
             files = []
         names = [file.path + ("/" if file.otype == OType.DIRECTORY else "") for file in files if file.exists is True]
-        log.debug("%s: mock provider state %s:%s", msg, len(names), names)
+        log.log(log_level, "%s: mock provider state %s:%s", msg, len(names), names)
 
 ###################
 
