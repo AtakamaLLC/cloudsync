@@ -426,6 +426,78 @@ def test_sync_multi_remote(multi_remote_cs):
     assert len(cs2.state) == 3
 
 
+@pytest.mark.parametrize("irrelevant_side", [0, 1, 2], ids=["LOCAL", "REMOTE", "BOTH"])
+def test_rename_conflict_and_irrelevant(cs, irrelevant_side):
+    #  Test when a file is renamed both local and remote to different names, and also:
+    #   - local file was renamed out of the cloud root, so it cannot translate to a remote path
+    #   - remote file was renamed out of the synced root, so it cannot translate to a local path
+    #   - remote file existed when we did get_latest, but disappeared remotely when we attempted to resolve the conflict
+    #   - local file existed when we did get_latest, but disappeared locally when we attempted to resolve the conflict
+    #   - try to get into branch where "supposed rename conflict, but the names are the same"
+    #   - resolving the path conflict results in a rename to a file name that already exists as another file
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+    remote_path1 = "/remote/stuff1"
+    local_path2 = "/local/stuff2"
+    remote_path2 = "/remote/stuff2"
+    xlocal_parent = "/alocal"  # this folder is not synced, files in here are irrelevant
+    xremote_parent = "/aremote"  # this folder is not synced, files in here are irrelevant
+    xlocal_path1 = "/alocal/stuff1"
+    xremote_path1 = "/aremote/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[LOCAL].mkdir(xlocal_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[REMOTE].mkdir(xremote_parent)
+    linfo1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"), None)
+    cs.run_until_found((REMOTE, remote_path1), timeout=2)
+    rinfo1 = cs.providers[REMOTE].info_path(remote_path1)
+    assert rinfo1.oid
+
+    log.debug("TABLE 1\n%s", cs.state.pretty_print())
+
+    if irrelevant_side == LOCAL:
+        local_target = xlocal_path1
+        remote_target = remote_path2
+    elif irrelevant_side == REMOTE:
+        local_target = local_path2
+        remote_target = xremote_path1
+    else:  # BOTH
+        local_target = xlocal_path1
+        remote_target = xremote_path1
+
+    cs.providers[LOCAL].rename(linfo1.oid, local_target)
+    cs.providers[REMOTE].rename(rinfo1.oid, remote_target)
+    log.debug("TABLE 0\n%s", cs.state.pretty_print())
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+
+    log.debug("TABLE 1\n%s", cs.state.pretty_print())
+    cs.providers[LOCAL]._log_debug_state(log_level=logging.INFO)
+    cs.providers[REMOTE]._log_debug_state(log_level=logging.INFO)
+
+    l2 = cs.providers[LOCAL].info_path(local_path2)
+    r2 = cs.providers[REMOTE].info_path(remote_path2)
+    xl1 = cs.providers[LOCAL].info_path(xlocal_path1)
+    xr1 = cs.providers[REMOTE].info_path(xremote_path1)
+
+    if irrelevant_side == LOCAL:
+        assert l2 is not None, "l2 should exist"
+        assert r2 is not None, "r2 should exist"
+        assert xl1 is not None, "xl1 should exist"
+        assert xr1 is None, "xr1 shouldn't exist"
+    elif irrelevant_side == REMOTE:
+        assert l2 is not None, "l2 should exist"
+        assert r2 is not None, "r2 should exist"
+        assert xr1 is not None, "xr1 should exist"
+        assert xl1 is None, "xl1 shouldn't exist"
+    else:
+        assert l2 is None, "l2 shouldn't exist"
+        assert r2 is None, "r2 shouldn't exist"
+        assert xl1 is not None, "xl1 should exist"
+        assert xr1 is not None, "xr1 should exist"
+
+
 def test_cs_basic(cs):
     local_parent = "/local"
     remote_parent = "/remote"
