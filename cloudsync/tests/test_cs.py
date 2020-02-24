@@ -104,6 +104,7 @@ def fixture_multi_remote_cs(mock_provider_generator):
 
 
 def test_sync_rename_away(multi_remote_cs):
+    timeout = 2
     cs1, cs2 = multi_remote_cs
 
     remote_parent = "/remote"
@@ -125,10 +126,10 @@ def test_sync_rename_away(multi_remote_cs):
     cs1.run_until_found(
         (LOCAL, local_path11),
         (REMOTE, remote_path),
-        timeout=2)
+        timeout=timeout)
 
-    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
-    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=timeout)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=timeout)
     log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
     log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
 
@@ -140,41 +141,41 @@ def test_sync_rename_away(multi_remote_cs):
     log.debug("here")
     linfo2 = cs1.providers[LOCAL].rename(linfo1.oid, local_path21)
     log.debug("here")
-    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=timeout)
     log.info("TABLE 1\n%s", cs1.state.pretty_print(use_sigs=False))
     log.debug("here")
-    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=timeout)
     log.info("TABLE 2\n%s", cs2.state.pretty_print(use_sigs=False))
     log.debug("here")
 
     try:
         cs1.run_until_found(
             WaitFor(LOCAL, local_path11, exists=False),
-            timeout=2)
+            timeout=timeout)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         cs2.run_until_found(
             (LOCAL, local_path21),
-            timeout=2)
+            timeout=timeout)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         cs2.run_until_found(
             (REMOTE, remote_path),
-            timeout=2)
+            timeout=timeout)
         log.info("TABLE 1\n%s", cs1.state.pretty_print())
         log.info("TABLE 2\n%s", cs2.state.pretty_print())
         # If renaming out of local1 didn't properly sync, the next line will time out
         cs1.run_until_found(
             WaitFor(REMOTE, remote_path, exists=False),
-            timeout=2)
+            timeout=timeout)
     except TimeoutError:
         log.info("Timeout: TABLE 1\n%s", cs1.state.pretty_print())
         log.info("Timeout: TABLE 2\n%s", cs2.state.pretty_print())
         raise
 
     # let cleanups/discards/dedups happen if needed
-    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=1)
-    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=1)
+    cs1.run(until=lambda: not cs1.state.changeset_len, timeout=timeout)
+    cs2.run(until=lambda: not cs2.state.changeset_len, timeout=timeout)
 
     log.info("TABLE 1\n%s", cs1.state.pretty_print())
     log.info("TABLE 2\n%s", cs2.state.pretty_print())
@@ -944,6 +945,24 @@ def test_cs_rename_over(cs):
 @pytest.mark.repeat(10)
 @pytest.mark.parametrize("use_prio", [0, 1], ids=["norm", "prio"])
 def test_cs_folder_conflicts_file(cs, use_prio):
+    # setup_remote_local
+    # 	create folders /local and /remote
+    # 	create files /local/stuff1 and /remote/stuff1
+    # 	sync up
+    #
+    # delete files /local/stuff1 and /remote/stuff1
+    # create file /local/stuff1
+    # create folder /remote/stuff1
+    # create file /remote/stuff1/under
+    #
+    # get events
+    # assert the length of the state table
+    # run until /remote/stuff1/under is found
+    # run until no changes left
+    # assert /local/stuff1.conflicted exists
+    # assert /remote/stuff1.conflicted does not exist
+    # assert that /local/stuff1.conflicted is a file
+    # assert that /local/stuff1 is a folder
     remote_path1 = "/remote/stuff1"
     remote_path2 = "/remote/stuff1/under"
     local_path1 = "/local/stuff1"
@@ -988,11 +1007,15 @@ def test_cs_folder_conflicts_file(cs, use_prio):
         # deleted /local/stuff, remote/stuff, remote/stuff/under, lcoal/stuff, /local
         assert(len(cs.state) == 5)
 
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
     cs.run_until_found((REMOTE, remote_path1), timeout=2)
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+    try:
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    finally:
+        log.info("TABLE 4\n%s", cs.state.pretty_print())
 
-    log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 4 or len(cs.state) == 3)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
@@ -1994,8 +2017,9 @@ MERGE = 2
     (REMOTE, [REMOTE]),
     (MERGE,  []),
     (MERGE,  [LOCAL, REMOTE]),
-    ], ids = ["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
+    ], ids=["loc", "loc-lock", "remote", "remote-lock", "merge", "merge-lock"])
 def test_hash_mess(cs, side_locked):
+    import time
     (side, locks) = side_locked
     local = cs.providers[LOCAL]
     remote = cs.providers[REMOTE]
@@ -2023,7 +2047,6 @@ def test_hash_mess(cs, side_locked):
     local.upload(local_oid, BytesIO(b"zzz1"))
     remote.upload(remote_oid, BytesIO(b"zzz2"))
 
-
     f3 = BytesIO(b'merged')
 
     if side == LOCAL:
@@ -2050,9 +2073,11 @@ def test_hash_mess(cs, side_locked):
             for locked in locks:
                 cs.providers[locked]._locked_for_test.discard(renamed_path[locked])
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
-
-    log.info("END TABLE\n%s", cs.state.pretty_print())
+    log.debug("Starting run %s", time.time())
+    try:
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
+    finally:
+        log.info("END TABLE %s\n%s", time.time(), cs.state.pretty_print())
 
     l_r = local.info_path("/local/foo-r")
     l_l = local.info_path("/local/foo-l")
