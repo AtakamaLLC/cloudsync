@@ -14,7 +14,7 @@ classifiers=["Intended Audience :: Developers",
     "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires = ["arrow", "dataclasses", "pystrict", "msgpack", "requests_oauthlib", "python-daemon", "urllib3>=1.25.3"]
+requires = ["arrow", "dataclasses", "pystrict", "msgpack", "requests_oauthlib", "python-daemon", "xxhash", "urllib3>=1.25.3"]
 requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]
@@ -23,6 +23,7 @@ dropbox = [ "dropbox", ]
 boxcom = [ "boxsdk[jwt]", ]
 onedrive = [ "cloudsync-onedrive", ]
 gdrive = [ "cloudsync-gdrive", ]
+all = [ "cloudsync-gdrive", "cloudsync-onedrive", "boxsdk[jwt]", "dropbox", "boxsdk" ]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
