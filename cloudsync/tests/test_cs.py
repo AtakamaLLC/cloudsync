@@ -1013,13 +1013,9 @@ def test_cs_folder_conflicts_file(cs, use_prio):
     log.info("TABLE 3\n%s", cs.state.pretty_print())
     try:
         cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
-    except TimeoutError:
-        log.info("TABLE 3.5\n%s", cs.state.pretty_print())
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
     finally:
-        log.info("TABLE 3.75\n%s", cs.state.pretty_print())
+        log.info("TABLE 4\n%s", cs.state.pretty_print())
 
-    log.info("TABLE 4\n%s", cs.state.pretty_print())
     assert(len(cs.state) == 4 or len(cs.state) == 3)
 
     local_conf = cs.providers[LOCAL].info_path(local_path1 + ".conflicted")
@@ -1655,7 +1651,7 @@ def test_cs_folder_conflicts_del(cs, shuffle):
     cs.providers[REMOTE].delete(rinfo3_u.oid)
     cs.providers[REMOTE].delete(rinfo3_oid)
 
-    cs.run(until=lambda: cs.state.changeset_len == 0, timeout=2)
+    cs.run(until=lambda: cs.state.changeset_len == 0, timeout=1)
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
     assert cs.state.changeset_len == 0
@@ -2079,7 +2075,7 @@ def test_hash_mess(cs, side_locked):
 
     log.debug("Starting run %s", time.time())
     try:
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=4)
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
     finally:
         log.info("END TABLE %s\n%s", time.time(), cs.state.pretty_print())
 
