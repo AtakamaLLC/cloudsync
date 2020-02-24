@@ -1310,10 +1310,6 @@ class SyncManager(Runnable):
         if sync[changed].hash != sync[changed].sync_hash:
             return self.handle_hash_diff(sync, changed, synced)
 
-        # This fixes test_sync_rename_away
-        if sync[changed].exists in (TRASHED, MISSING) and not sync[synced].path and not sync[synced].oid:
-            sync.ignore(IgnoreReason.DISCARDED)
-
         log.debug("nothing changed %s", sync)
         return FINISHED
 
