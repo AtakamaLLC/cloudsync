@@ -349,7 +349,7 @@ class SyncEntry:
         return False
 
     def is_path_change(self, changed):
-        return self[changed].path != self[changed].sync_path
+        return self[changed].sync_path is not None and self[changed].path != self[changed].sync_path
 
     def is_creation(self, changed):
         return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
@@ -611,6 +611,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self.providers = providers
         self._punt_secs = (providers[0].default_sleep/10.0, providers[1].default_sleep/10.0)
         self._pretty_time = time.time()
+        self._last_changed_time = time.time()
         assert len(providers) == 2
 
         self.lock = RLock()
@@ -875,6 +876,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
     def _mark_changed(self, side, ent):
         ent[side].changed = time.time()
+        # ensure that change times can't repeat and must increase
+        # this is a problem on my windows vm, or any machine with a low resolution clock which can
+        # produce the same time twice
+        # also, this fixes time zone or daylight savings changes where the clock goes backward
+        # time.monotonic() would fix the second problem, but not the first
+        if ent[side].changed <= self._last_changed_time:
+            ent[side].changed = self._last_changed_time + 0.001
+        self._last_changed_time = ent[side].changed
+        log.debug("change time for side %s is %s", side, ent[side].changed)
         assert ent in self._changeset
 
     def storage_get_data(self, data_tag):
@@ -1011,12 +1021,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         changes = sorted(self._changeset, key=sort_key)
 
-        earlier_than = time.time() - age
+        now = time.time()
+        earlier_than = now - age
         for e in changes:
             if (e[LOCAL].changed and (e[LOCAL].changed <= earlier_than)) \
                     or (e[REMOTE].changed and (e[REMOTE].changed <= earlier_than)) \
                     or e.priority < 0:
                 return e
+            # else:
+            #     log.debug("HERE now=%s age=%s earlier_than=%s changed=%s:%s %s", now, age, earlier_than, e[LOCAL].changed, e[REMOTE].changed, e)
 
         return None
 
