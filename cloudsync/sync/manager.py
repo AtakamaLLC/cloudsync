@@ -598,6 +598,8 @@ class SyncManager(Runnable):
             if existing_hash != info.hash:
                 raise
             log.debug("use existing %s", info)
+        except CloudFileNotFoundError:
+            raise
         except Exception as e:
             log.exception("failed to create %s, %s", translated_path, e)
             raise
@@ -1285,7 +1287,7 @@ class SyncManager(Runnable):
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
-        if sync[changed].exists == TRASHED and sync[synced].exists == EXISTS:
+        if sync[changed].exists == TRASHED:
             log.debug("delete")
             return self.delete_synced(sync, changed, synced)
 
@@ -1320,10 +1322,8 @@ class SyncManager(Runnable):
             return FINISHED
 
         if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
-            log.debug("dont upload to trashed, zero out trashed side")
-            # What does that mean "dont upload to trashed"?
-            # this seems to zero out the other side, not the trashed side?
-            # this punted, but why punt? why not mark finished?
+            log.debug("dont upload new contents over an already deleted file, instead zero out trashed side " 
+                      "turning the 'upload' into a 'create'")
             # not an upload
             # todo: change to clear()
             sync[synced].exists = UNKNOWN
@@ -1335,8 +1335,7 @@ class SyncManager(Runnable):
             sync[synced].sync_hash = None
             sync[changed].sync_path = None
             sync[changed].sync_hash = None
-            # This fixes test_event_order_del_create
-            return FINISHED
+            return PUNT
 
         log.debug("needs upload: %s index: %s bc %s != %s", sync, synced, sync[changed].hash, sync[changed].sync_hash)
 
