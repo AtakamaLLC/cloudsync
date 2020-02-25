@@ -17,8 +17,7 @@ from pystrict import strict
 
 __all__ = ['SyncManager']
 
-from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTemporaryError, CloudDisconnectedError, \
-        CloudOutOfSpaceError, CloudException, CloudTokenError, CloudFileNameError, CloudNamespaceError
+import cloudsync.exceptions as ex
 from cloudsync.types import DIRECTORY, FILE, IgnoreReason
 from cloudsync.runnable import Runnable
 from cloudsync.log import TRACE
@@ -152,6 +151,7 @@ class SyncManager(Runnable):
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
+        self.no_create_paths: Tuple[str, str] = (None, None)
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -174,14 +174,15 @@ class SyncManager(Runnable):
 
     def do(self):
         need_to_sleep = True
+        something_got_done = True
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
             if sync:
                 need_to_sleep = False
                 try:
-                    self.sync(sync)
+                    something_got_done = self.sync(sync)
                     self.state.storage_commit()
-                except (CloudTemporaryError, CloudDisconnectedError, CloudOutOfSpaceError, CloudTokenError, CloudNamespaceError) as e:
+                except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError, ex.CloudNamespaceError) as e:
                     if self.__nmgr:
                         self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
                     log.warning(
@@ -199,6 +200,10 @@ class SyncManager(Runnable):
 
         if need_to_sleep:
             time.sleep(self.aging)
+
+        if not something_got_done:
+            # don't clear the backoff flag if all we did was punt
+            self.nothing_happened()
 
     def done(self):
         log.info("cleanup %s", self.tempdir)
@@ -299,7 +304,7 @@ class SyncManager(Runnable):
                     sync[changed].changed = time.time()
                     sync[synced].clear()
 
-    def sync(self, sync: SyncEntry):  # pylint: disable=too-many-branches
+    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         """
         Called on each changed entry.
         """
@@ -308,16 +313,18 @@ class SyncManager(Runnable):
         if sync.is_discarded:
             self.finished(LOCAL, sync)
             self.finished(REMOTE, sync)
-            return
+            return True
 
         sync.get_latest()
 
         if sync.hash_conflict():
             log.debug("handle hash conflict")
             self.handle_hash_conflict(sync)
-            return
+            return True
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
+
+        something_got_done = False
 
         for side in ordered:
             if not sync[side].needs_sync():
@@ -355,11 +362,15 @@ class SyncManager(Runnable):
 
             response = self.embrace_change(sync, side, other_side(side))
             if response == FINISHED:
+                if sync[side].changed:
+                    something_got_done = True
                 self.finished(side, sync)
             elif response == PUNT:
                 sync.punt()
             # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
             break
+
+        return something_got_done
 
     def _temp_file(self, temp_for=None, name=None):
         if not os.path.exists(self.tempdir):
@@ -431,9 +442,9 @@ class SyncManager(Runnable):
             sync[changed].clean_temp()
             return False
         except PermissionError as e:
-            raise CloudTemporaryError("download or rename exception %s" % e)
+            raise ex.CloudTemporaryError("download or rename exception %s" % e)
 
-        except CloudFileNotFoundError:
+        except ex.CloudFileNotFoundError:
             log.debug("download from %s failed fnf, switch to not exists",
                       self.providers[changed].name)
             sync[changed].exists = MISSING
@@ -454,7 +465,52 @@ class SyncManager(Runnable):
 
         return nc[0] if nc else None
 
- 
+    def unsafe_mkdir_synced(self, changed, synced, sync, translated_path):
+        log.debug("translated %s as path %s",
+                  sync[changed].path, translated_path)
+
+        # could have made a dir that already existed on my side or other side
+
+        chents = list(self.state.lookup_path(changed, sync[changed].path))
+        notme_chents = [ent for ent in chents if ent != sync]
+        for ent in notme_chents:
+            # dup dirs on remote side can be ignored
+            if ent[synced].otype == DIRECTORY:
+                log.debug("discard duplicate dir entry %s", ent)
+                ent.ignore(IgnoreReason.DISCARDED)
+
+        chent: SyncEntry = self.get_folder_file_conflict(sync, translated_path, synced)
+        if chent:
+            log.debug("resolve %s conflict with %s", translated_path, chent)
+            # pylint bugs here... no idea why
+            self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
+            # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
+            return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
+
+        if self.no_create_paths[synced] and \
+           self.providers[synced].is_subpath(self.no_create_paths[synced], translated_path) and \
+           not self.providers[synced].exists_path(self.no_create_paths[synced]):
+            raise ex.CloudRootMissingError("root missing: %s" % self.no_create_paths[synced])
+
+        # make the dir
+        oid = self.providers[synced].mkdirs(translated_path)
+        log.debug("mkdir %s as path %s oid %s",
+                  self.providers[synced].name, translated_path, debug_sig(oid))
+
+        # did i already have that oid? if so, chuck it
+        already_dir = self.state.lookup_oid(synced, oid)
+        if already_dir and already_dir != sync and already_dir[synced].otype == DIRECTORY:
+            log.debug("discard %s", already_dir)
+            already_dir.ignore(IgnoreReason.DISCARDED)
+
+        sync[synced].sync_path = translated_path
+        sync[changed].sync_path = sync[changed].path
+
+        self.update_entry(
+            sync, synced, exists=True, oid=oid, path=translated_path)
+
+        return FINISHED
+
     def mkdir_synced(self, changed, sync, translated_path):
         """
         Called when it seems a folder has been made.
@@ -485,53 +541,15 @@ class SyncManager(Runnable):
             self.rename_to_fix_conflict(sync, synced, translated_path)
 
         try:
-            log.debug("translated %s as path %s",
-                      sync[changed].path, translated_path)
-
-            # could have made a dir that already existed on my side or other side
-
-            chents = list(self.state.lookup_path(changed, sync[changed].path))
-            notme_chents = [ent for ent in chents if ent != sync]
-            for ent in notme_chents:
-                # dup dirs on remote side can be ignored
-                if ent[synced].otype == DIRECTORY:
-                    log.debug("discard duplicate dir entry %s", ent)
-                    ent.ignore(IgnoreReason.DISCARDED)
-
-            chent: SyncEntry = self.get_folder_file_conflict(sync, translated_path, synced)
-            if chent:
-                log.debug("resolve %s conflict with %s", translated_path, chent)
-                # pylint bugs here... no idea why
-                self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
-                # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
-                return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
-
-            # make the dir
-            oid = self.providers[synced].mkdirs(translated_path)
-            log.debug("mkdir %s as path %s oid %s",
-                      self.providers[synced].name, translated_path, debug_sig(oid))
-
-            # did i already have that oid? if so, chuck it
-            already_dir = self.state.lookup_oid(synced, oid)
-            if already_dir and already_dir != sync and already_dir[synced].otype == DIRECTORY:
-                log.debug("discard %s", already_dir)
-                already_dir.ignore(IgnoreReason.DISCARDED)
-
-            sync[synced].sync_path = translated_path
-            sync[changed].sync_path = sync[changed].path
-
-            self.update_entry(
-                sync, synced, exists=True, oid=oid, path=translated_path)
-
-            return FINISHED
-        except CloudFileNotFoundError:
+            return self.unsafe_mkdir_synced(changed, synced, sync, translated_path)
+        except ex.CloudFileNotFoundError:
             if sync.priority <= 0:
                 return PUNT
 
             log.debug("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
-        except CloudFileNameError:
+        except ex.CloudFileNameError:
             self.handle_file_name_error(sync, synced, translated_path)
             return FINISHED
 
@@ -558,7 +576,7 @@ class SyncManager(Runnable):
         except FileNotFoundError:
             log.info("FNF during upload %s:%s", sync[synced].sync_path, sync[changed].temp_file)
             return False
-        except CloudFileNotFoundError:
+        except ex.CloudFileNotFoundError:
             info = self.providers[synced].info_oid(sync[synced].oid)
 
             if not info:
@@ -570,7 +588,7 @@ class SyncManager(Runnable):
                 log.warning("Upload to %s failed fnf, info: %s",
                             self.providers[synced].name, info)
             return False
-        except CloudFileExistsError:
+        except ex.CloudFileExistsError:
             # this happens if the remote oid is a folder
             log.debug("split bc upload to folder")
 
@@ -588,7 +606,7 @@ class SyncManager(Runnable):
             with open(sync[changed].temp_file, "rb") as f:
                 info = self.providers[synced].create(translated_path, f)
             log.debug("created %s", info)
-        except CloudFileExistsError:
+        except ex.CloudFileExistsError:
             log.debug("exists error %s", translated_path)
             info = self.providers[synced].info_path(translated_path)
             if not info:
@@ -598,7 +616,7 @@ class SyncManager(Runnable):
             if existing_hash != info.hash:
                 raise
             log.debug("use existing %s", info)
-        except CloudFileNotFoundError:
+        except ex.CloudFileNotFoundError:
             raise
         except Exception as e:
             log.exception("failed to create %s, %s", translated_path, e)
@@ -634,7 +652,7 @@ class SyncManager(Runnable):
         try:
             self._create_synced(changed, sync, translated_path)
             return FINISHED
-        except CloudFileNotFoundError:
+        except ex.CloudFileNotFoundError:
             # parent presumably exists
             parent = self.providers[changed].dirname(sync[changed].path)
             log.debug("make %s first before %s", parent, sync[changed].path)
@@ -676,7 +694,7 @@ class SyncManager(Runnable):
                             parent_ent[synced].exists = MISSING
                             assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
                             log.debug("updated entry %s", parent)
-        except CloudFileExistsError:
+        except ex.CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
 
@@ -697,7 +715,7 @@ class SyncManager(Runnable):
             else:
                 # maybe it's a name conflict
                 pass
-        except CloudFileNameError:
+        except ex.CloudFileNameError:
             self.handle_file_name_error(sync, synced, translated_path)
             return FINISHED
         return PUNT
@@ -856,7 +874,7 @@ class SyncManager(Runnable):
                         log.debug("rename side %s to conflicted", loser.side)
                         try:
                             self._resolve_rename(loser)
-                        except CloudFileNotFoundError:
+                        except ex.CloudFileNotFoundError:
                             log.debug("there is no conflict, because the file doesn't exist? %s", loser)
 
                     if defer is None:  # the first time we see an rfh to replace, defer gets set to the winner side
@@ -923,9 +941,9 @@ class SyncManager(Runnable):
             try:
                 log.debug("deleting %s", debug_sig(sync[synced].oid))
                 self.providers[synced].delete(sync[synced].oid)
-            except CloudFileNotFoundError:
+            except ex.CloudFileNotFoundError:
                 pass
-            except CloudFileExistsError:
+            except ex.CloudFileExistsError:
                 return self._handle_dir_delete_not_empty(sync, changed)
         else:
             log.debug("was never synced, ignoring deletion")
@@ -1109,7 +1127,7 @@ class SyncManager(Runnable):
         log.debug("rename %s %s", sync[synced].sync_path, translated_path)
         try:
             new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
-        except CloudFileNotFoundError as e:
+        except ex.CloudFileNotFoundError as e:
             log.debug("ERROR: can't rename for now %s: %s", sync, repr(e))
             if sync.priority > 5:
                 log.exception("punted too many times, giving up")
@@ -1117,7 +1135,7 @@ class SyncManager(Runnable):
             else:
                 log.debug("fnf, punt")
             return PUNT
-        except CloudFileExistsError:
+        except ex.CloudFileExistsError:
             log.debug("can't rename, file exists")
             if sync.priority <= 0:
                 sync.get_latest(force=True)
@@ -1140,7 +1158,7 @@ class SyncManager(Runnable):
                                 # todo: handle this more gracefully
                                 conflict.ignored = IgnoreReason.DISCARDED
                             return PUNT
-                        except CloudFileExistsError:
+                        except ex.CloudFileExistsError:
                             pass
                     log.debug("rename to fix conflict %s because %s not synced, NS: %s", translated_path, conflict, conflict.needs_sync())
                 else:
@@ -1148,7 +1166,7 @@ class SyncManager(Runnable):
 
                 try:
                     self.rename_to_fix_conflict(sync, synced, translated_path, temp_rename=True)
-                except CloudFileNotFoundError as e:
+                except ex.CloudFileNotFoundError as e:
                     log.error("file disappeared out from under us %s", e)
                     log.info("%s", self.state.pretty_print())
                     sync.get_latest(force=True)
@@ -1224,7 +1242,7 @@ class SyncManager(Runnable):
             try:
                 conflict_path = self.providers[side].join(folder, conflict_name)
                 new_oid = self.providers[side].rename(oinfo.oid, conflict_path)
-            except CloudFileExistsError:
+            except ex.CloudFileExistsError:
                 log.debug("already exists %s", conflict_name)
                 i = i + 1
                 conflict_name = base + ".conflicted" + str(i) + ext

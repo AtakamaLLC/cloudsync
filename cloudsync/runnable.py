@@ -51,6 +51,7 @@ class Runnable(ABC):
     __interrupt: threading.Event = None
     __stopped = False
     __log: logging.Logger = None
+    __clear_on_success: bool = True
 
     @property
     def stopped(self):
@@ -86,6 +87,7 @@ class Runnable(ABC):
         # see `def started`
         self.__stopped = False
         self.__interrupt = threading.Event()
+        self.__clear_on_success = True
 
         for _ in time_helper(timeout):
             if self.__stopped:
@@ -93,7 +95,7 @@ class Runnable(ABC):
 
             try:
                 self.do()
-                if self.in_backoff > 0:
+                if self.__clear_on_success and self.in_backoff > 0:
                     self.in_backoff = 0
                     log.debug("%s: clear backoff", self.service_name)
             except BackoffError:
@@ -135,7 +137,14 @@ class Runnable(ABC):
         """
         Raises an exception, interrupting the durrent do() call, and sleeping for backoff seconds.
         """
-        raise BackoffError()
+        raise BackoffError
+
+    def nothing_happened(self):
+        """
+        Sets a "nothing happened" flag.   This will cause backoff to remain the same, even on success.
+        """
+        log.debug("%s: set nothing happend %s", self.service_name, self.in_backoff)
+        self.__clear_on_success = False
 
     def wake(self):
         """

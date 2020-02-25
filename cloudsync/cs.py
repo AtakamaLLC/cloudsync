@@ -26,6 +26,7 @@ class CloudSync(Runnable):
                  roots: Optional[Tuple[str, str]] = None,
                  storage: Optional[Storage] = None,
                  sleep: Optional[Tuple[float, float]] = None,
+                 create_root: bool = True,
                  ):
 
         """
@@ -76,15 +77,17 @@ class CloudSync(Runnable):
         self.smgr = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
-        _roots: Tuple[Optional[str], Optional[str]]
+        self.__roots: Tuple[Optional[str], Optional[str]]
         if not roots:
-            _roots = (None, None)
+            self.__roots = (None, None)
         else:
-            _roots = roots
+            self.__roots = roots
+
+        self.create_root = create_root
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, _roots[0], reauth=lambda: self.authenticate(0)),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, _roots[1], reauth=lambda: self.authenticate(1))
+            EventManager(smgr.providers[0], state, 0, self.nmgr, self.__roots[0], reauth=lambda: self.authenticate(0)),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, self.__roots[1], reauth=lambda: self.authenticate(1))
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -92,6 +95,15 @@ class CloudSync(Runnable):
         self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
+
+    @property
+    def create_root(self):
+        return self.__create_root
+
+    @create_root.setter
+    def create_root(self, val):
+        self.__create_root = val
+        self.smgr.no_create_paths = self.__roots if not val else (None, None)
 
     def forget(self):
         """

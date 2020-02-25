@@ -1,15 +1,15 @@
-# pylint: disable=protected-access,too-many-lines,missing-docstring
+# pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements
 
 from io import BytesIO
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from unittest.mock import patch, Mock
 
 import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
-from cloudsync.types import OInfo, IgnoreReason
+from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
@@ -61,7 +61,6 @@ def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storag
 def fixture_multi_local_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
-
 
     p1 = mock_provider_generator()  # local
     p2 = mock_provider_generator()  # local
@@ -290,7 +289,7 @@ def test_sync_multi_local(multi_local_cs):
     # rinfo1 = cs1.providers[REMOTE].create(remote_path2, BytesIO(b"hello3"), None)
     # rinfo2 = cs2.providers[REMOTE].create(remote_path2, BytesIO(b"hello4"), None)
 
-    assert linfo1 and linfo2 # and rinfo1 and rinfo2
+    assert linfo1 and linfo2  # and rinfo1 and rinfo2
 
     # Allow file1 to copy up to the cloud
     try:
@@ -2549,3 +2548,57 @@ def test_forget_walk(cs, method):
 def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
+
+
+@pytest.mark.parametrize("create", [True, False])
+def test_root_needed(cs, create):
+    (local, remote) = cs.providers
+    cs.create_root = create
+    cs.smgr.max_backoff = 1
+
+    # walk nothing
+    cs.do()
+
+    local.mkdir("/local")
+    local.mkdir("/local/a")
+    local.mkdir("/local/a/b")
+
+    cs.emgrs[LOCAL]._drain()            # mkdir stuff never gets events
+
+    cs.do()
+
+    assert remote.info_path("/remote") is None
+
+    log.info("=== CREATE SUBDIR WITH NO ROOT OR PARENTS ===")
+
+    local.create("/local/a/b/c", BytesIO(b'hi'))
+
+    if create:
+        # but we still sync
+        cs.run_until_found((REMOTE, "/remote/a/b/c"))
+    else:
+        called = False
+
+        def _handle(e: Notification):
+            nonlocal called
+            if e.ntype == NotificationType.ROOT_MISSING_ERROR:
+                called = True
+        cs.handle_notification = _handle
+
+        # to test failure modes, you need to use start(), not run_until, or do()
+        # we keep backing off because the root isn't there
+        until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 2
+        cs.start(until=until)
+        cs.wait()
+        assert until()
+
+        assert called
+
+        # then we create the root:
+        remote.mkdir("/remote")
+
+        # and everything syncs up
+        until = lambda: remote.info_path("/remote/a/b/c")
+        cs.start(until=until)
+        cs.wait()
+        assert until()

@@ -22,6 +22,7 @@ class NotificationType(enum.Enum):
     OUT_OF_SPACE_ERROR = 'out_of_space_error'       ; """Sync is halted because one provider is out of space"""
     DISCONNECTED_ERROR = 'disconnected_error'       ; """Provider was disconnected"""
     NAMESPACE_ERROR = 'namespace_error'             ; """Specified namespace is invalid/unavailable (could be auth issue)"""
+    ROOT_MISSING_ERROR = 'root_missing_error'       ; """Root of cloud sync is missing, and will not be created"""
 
 
 class SourceEnum(enum.Enum):
@@ -74,6 +75,8 @@ class NotificationManager(Runnable):
             self.notify(Notification(source, NotificationType.FILE_NAME_ERROR, path))
         elif isinstance(e, ex.CloudNamespaceError):
             self.notify(Notification(source, NotificationType.NAMESPACE_ERROR, path))
+        elif isinstance(e, ex.CloudRootMissingError):
+            self.notify(Notification(source, NotificationType.ROOT_MISSING_ERROR, path))
         else:
             log.debug("Encountered a cloud exception: %s (type %s)", e, type(e))
 
