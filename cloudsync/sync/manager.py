@@ -1393,7 +1393,7 @@ class SyncManager(Runnable):
                 = self.state.split(sync)
             return self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
-        except CloudException as e:
+        except ex.CloudException as e:
             log.info("exception during hash conflict split: %s", e)
             for side in (LOCAL, REMOTE):
                 for field in ("sync_hash", "sync_path", "oid", "hash", "path", "exists"):
