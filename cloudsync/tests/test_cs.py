@@ -2549,3 +2549,27 @@ def test_forget_walk(cs, method):
 def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
+
+
+def test_no_root_needed(cs):
+    (local, remote) = cs.providers
+
+    # walk nothing
+    cs.do()
+
+    local.mkdir("/local")
+    local.mkdir("/local/a")
+    local.mkdir("/local/a/b")
+
+    cs.emgrs[LOCAL]._drain()            # mkdir stuff never gets events
+
+    cs.do()
+
+    assert remote.info_path("/remote") is None
+
+    log.info("=== CREATE SUBDIR WITH NO ROOT OR PARENTS ===")
+
+    local.create("/local/a/b/c", BytesIO(b'hi'))
+
+    # but we still sync
+    cs.run_until_found((REMOTE, "/remote/a/b/c"))
