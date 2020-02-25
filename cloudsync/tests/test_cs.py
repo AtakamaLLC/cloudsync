@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements
+# pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
 
 from io import BytesIO
 import logging
@@ -1939,9 +1939,9 @@ def test_backoff(cs, recover):
 
     if recover:
         assert not cs.in_backoff
-        assert cs.state.changeset_len
     else:
         assert cs.smgr.in_backoff
+        assert cs.state.changeset_len
 
 @pytest.mark.parametrize("prioritize_side", [LOCAL, REMOTE], ids=["LOCAL", "REMOTE"])
 def test_cs_prioritize(cs, prioritize_side):
