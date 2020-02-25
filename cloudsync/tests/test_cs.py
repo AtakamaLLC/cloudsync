@@ -2553,13 +2553,18 @@ def test_walk_bad_vals(cs):
 @pytest.mark.parametrize("create", [True, False])
 def test_root_needed(cs, create):
     (local, remote) = cs.providers
-    cs.create_root = create
+
+    if not create:
+        # set root oid to random stuff that will break any checks
+        cs.set_root_oid(REMOTE, 'xxxx')
+
     cs.smgr.max_backoff = 1
 
     # walk nothing
     cs.do()
 
-    local.mkdir("/local")
+    oid = local.mkdir("/local")
+    cs.set_root_oid(LOCAL, oid)
     local.mkdir("/local/a")
     local.mkdir("/local/a/b")
 
@@ -2589,16 +2594,17 @@ def test_root_needed(cs, create):
         # we keep backing off because the root isn't there
         until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 2
         cs.start(until=until)
-        cs.wait()
+        cs.wait(timeout=2)
         assert until()
 
         assert called
 
         # then we create the root:
-        remote.mkdir("/remote")
+        oid = remote.mkdir("/remote")
+        cs.set_root_oid(REMOTE, oid)
 
         # and everything syncs up
         until = lambda: remote.info_path("/remote/a/b/c")
         cs.start(until=until)
-        cs.wait()
+        cs.wait(timeout=2)
         assert until()

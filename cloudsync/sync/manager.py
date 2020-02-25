@@ -151,7 +151,8 @@ class SyncManager(Runnable):
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
-        self.no_create_paths: Tuple[str, str] = (None, None)
+        self.__root_oids: List[str] = [None, None]
+        self.__no_create_paths: List[str] = [None, None]
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -168,6 +169,9 @@ class SyncManager(Runnable):
         self.mult_backoff = 2
 
         assert len(self.providers) == 2
+
+    def set_root_oid(self, side, oid):
+        self.__root_oids[side] = oid
 
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
@@ -487,10 +491,18 @@ class SyncManager(Runnable):
             # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
             return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
 
-        if self.no_create_paths[synced] and \
-           self.providers[synced].is_subpath(self.no_create_paths[synced], translated_path) and \
-           not self.providers[synced].exists_path(self.no_create_paths[synced]):
-            raise ex.CloudRootMissingError("root missing: %s" % self.no_create_paths[synced])
+        if self.__root_oids[synced]:
+            if not self.__no_create_paths[synced]:
+                info = self.providers[synced].info_oid(self.__root_oids[synced])
+                if info:
+                    self.__no_create_paths[synced] = info.path
+                else:
+                    raise ex.CloudRootMissingError("root missing: %s" % self.__root_oids[synced])
+
+        if self.__no_create_paths[synced] and \
+           self.providers[synced].is_subpath(self.__no_create_paths[synced], translated_path) and \
+           not self.providers[synced].exists_path(self.__no_create_paths[synced]):
+            raise ex.CloudRootMissingError("root missing: %s" % self.__no_create_paths[synced])
 
         # make the dir
         oid = self.providers[synced].mkdirs(translated_path)
