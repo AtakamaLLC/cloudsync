@@ -11,6 +11,7 @@ from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
+from cloudsync.runnable import BackoffError
 
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
@@ -53,6 +54,17 @@ def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
 
 def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storage=None):
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
+
+
+@pytest.fixture(name="cs_root_oid")
+def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
+    p1 = mock_provider_generator()
+    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True)
+    o1 = p1.mkdir(roots[0])
+    o2 = p2.mkdir(roots[1])
+    cs = CloudSyncMixin((p1, p2), root_oids=(o1, o2), storage=None, sleep=None)
+    yield cs
+    cs.done()
 
 
 # multi local test has two local providers, each syncing up to the same folder on one remote provider.
@@ -2550,18 +2562,40 @@ def test_walk_bad_vals(cs):
         cs.walk(root="foo")
 
 
-@pytest.mark.parametrize("create", [True, False])
-def test_root_needed(cs, create):
+@pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
+def test_root_needed(cs, cs_root_oid, mode):
+    create = "nocreate" not in mode
+    preroot = "oid" in mode
+
+    if preroot:
+        cs = cs_root_oid
+        assert cs.providers[0].info_path("/local")
+        assert cs.providers[1].info_path("/remote")
+
     (local, remote) = cs.providers
+
+    if preroot:
+        remote.delete(remote.info_path("/remote").oid)
+        assert remote.info_path("/remote") is None
 
     if not create:
         # set root oid to random stuff that will break any checks
         cs.set_root_oid(REMOTE, 'xxxx')
 
+    def translate(side, path):
+        relative = cs.providers[1-side].is_subpath(roots[1-side], path)
+        if not relative:
+            return None
+        return cs.providers[side].join(roots[side], relative)
+
+    cs.translate = translate
     cs.smgr.max_backoff = 1
 
     # walk nothing
-    cs.do()
+    try:
+        cs.do()
+    except BackoffError:
+        pass
 
     oid = local.mkdir("/local")
     cs.set_root_oid(LOCAL, oid)

@@ -70,7 +70,7 @@ class CloudSync(Runnable):
         state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
                           prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
-        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, self.nmgr, sleep=sleep)
+        smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw), self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
