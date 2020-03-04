@@ -86,7 +86,7 @@ class EventManager(Runnable):
 
     @property
     def busy(self):
-        return not self.events.empty or self.need_walk or self.need_walk is None
+        return not self.events.empty or self.need_walk
 
     def do(self):
         self.events.shutdown = False
@@ -125,8 +125,9 @@ class EventManager(Runnable):
 
     def _do_walk_if_needed(self):
         if self.need_walk:
-            log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_root)
+            # walk_oid or walk_root was set at class startup, so we walk
+            log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
+                      self.provider.name, self.walk_root, self.walk_oid)
             self._queue = []
             try:
                 if self.walk_root:
