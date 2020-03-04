@@ -28,7 +28,7 @@ def discover_providers():
                 register_provider(mod.__cloudsync__)                # type: ignore
 
     for entry_point in pkg_resources.iter_entry_points('cloudsync.providers'):
-        register_provider(entry_point.load())
+        register_provider(entry_point.resolve())
 
 
 def get_provider(name: str):
