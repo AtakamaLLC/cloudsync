@@ -2592,8 +2592,10 @@ def test_root_needed(cs, cs_root_oid, mode):
     cs.smgr.max_backoff = 1
 
     # walk nothing
+    cs.emgrs[0].do()
+    cs.emgrs[1].do()
     try:
-        cs.do()
+        cs.smgr.do()
     except BackoffError:
         pass
 
