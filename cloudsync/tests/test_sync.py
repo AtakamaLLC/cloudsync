@@ -1040,12 +1040,14 @@ def test_path_conflict_deleted_remotely(sync):
 def test_folder_del_loop(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
-    local_sub2 = "/local/sub2"
     local_file = "/local/sub/file"
+    
+    local_sub2 = "/local/sub2"
     local_file2 = "/local/sub2/file"
+    
     remote_sub = "/remote/sub"
-    remote_sub2 = "/remote/sub2"
     remote_file = "/remote/sub/file"
+    remote_sub2 = "/remote/sub2"
 
     sync.providers[LOCAL].mkdir(local_parent)
     lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
@@ -1076,9 +1078,23 @@ def test_folder_del_loop(sync):
     sync.run(until=lambda: not sync.busy, timeout=1)
 
     assert not sync.providers[REMOTE].info_path(remote_sub)
-    assert not sync.providers[REMOTE].info_path(remote_sub2)
+    # Because of the order of operations above, we can't assert that the folder doesn't exist
+    # Since we delete the remote folder and file, but only present the event for the file, and then sync,
+    # when we do finally rename the local folder (and the file implicitly by the folder rename)
+    # the sync of the local folder rename may happen before the remote folder delete event gets processed into the
+    # state table. If so, then get_latest will update the remote.exists to Trashed, but not marked it changed
+    # on the remote side because the event hasn't come in yet. To summarize, we have a changed, renamed folder locally
+    # and an unchanged, Trashed file remotely, which looks exactly like a CREATE, so we do that. The event for the delete
+    # then comes in, but we don't follow the advice of the event, instead we check if both sides match and they do,
+    # so we ignore the event. This leaves the folder existing on both sides
+    # instead, we'll simply assert that it exists locally and remotely, or is trashed locally and remotely
+    remote_exists = sync.providers[REMOTE].info_path(remote_sub2) is not None
     assert not sync.providers[LOCAL].info_path(local_sub)
-    assert not sync.providers[LOCAL].info_path(local_sub2)
+    local_exists = sync.providers[LOCAL].info_path(local_sub2) is not None
+    if remote_exists:
+        assert local_exists
+    else:
+        assert not local_exists
 
 
 def test_sync_temporary_error(sync_ordered):

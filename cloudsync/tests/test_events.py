@@ -1,11 +1,13 @@
 import time
 from io import BytesIO
-import threading
 
 import pytest
 
 from cloudsync import EventManager, SyncState, LOCAL, CloudTokenError
 from unittest.mock import patch, MagicMock
+import logging
+log = logging.getLogger(__name__)
+
 
 @pytest.fixture(name="manager")
 def fixture_manager(mock_provider_generator):
@@ -13,7 +15,9 @@ def fixture_manager(mock_provider_generator):
     provider = mock_provider_generator()
     state = SyncState((provider, provider), shuffle=True)
 
-    yield EventManager(provider, state, LOCAL, reauth=MagicMock())
+    ret = EventManager(provider, state, LOCAL, reauth=MagicMock())
+    yield ret
+    ret.stop()
 
 
 def test_event_basic(manager):
@@ -45,9 +49,9 @@ def test_event_basic(manager):
 
 
 def test_events_shutdown_event_shouldnt_process(manager):
-    handle = threading.Thread(target=manager.run, kwargs={'sleep': .3}, daemon=True)
-    handle.start()
+    manager.start(sleep=.3)
     try:
+        time.sleep(0.1)  # give it a chance to finish the first do() and get into the sleep before we create event
         provider = manager.provider
         provider.create("/dest", BytesIO(b'hello'))
         manager.stop()
@@ -66,13 +70,14 @@ def test_events_shutdown_event_shouldnt_process(manager):
 
 
 def test_events_shutdown_force_process_event(manager):
-    handle = threading.Thread(target=manager.run, kwargs={'sleep': .3}, daemon=True)
-    handle.start()
+    manager.start(sleep=.3)
     try:
+        time.sleep(0.1)  # give it a chance to finish the first do() and get into the sleep before we create event
         provider = manager.provider
         provider.create("/dest", BytesIO(b'hello'))
         manager.stop()
         time.sleep(.4)
+        assert provider.latest_cursor > provider.current_cursor
         manager.do()
         try:
             manager.events.__next__()
@@ -84,8 +89,6 @@ def test_events_shutdown_force_process_event(manager):
 
 
 def test_backoff(manager):
-    handle = threading.Thread(target=manager.run, kwargs={'sleep': .3}, daemon=True)
-    handle.start()
     try:
         provider = manager.provider
         provider.create("/dest", BytesIO(b'hello'))
