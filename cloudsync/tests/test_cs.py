@@ -228,11 +228,11 @@ def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent
     for cs in css:
         cs.run_until_found(*expectations)
         log.debug("CS%s LOCAL State:", counter)
-        cs.providers[LOCAL]._log_debug_state()
+        cs.providers[LOCAL]._log_debug_state()  # type: ignore
         counter += 1
 
     log.debug("CS REMOTE State:")
-    css[0].providers[REMOTE]._log_debug_state()
+    css[0].providers[REMOTE]._log_debug_state()  # type: ignore
     return local_infos
 
 
@@ -249,7 +249,7 @@ def test_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs):
     remote_path = remote_folder + "/stuff"
     
     numfiles = 20
-    local_objects = [(DIRECTORY, local_folder), ]
+    local_objects = [(DIRECTORY, local_folder, b""), ]
     for i in range(1, 1 + numfiles):
         local_objects.append((FILE, local_path + str(i), b"Hello, world!"))
     
@@ -316,7 +316,7 @@ def test_rename_file_and_folder_conflicts_with_delete(cs):
     remote_folder = remote_parent + "/folder"
     remote_path = remote_folder + "/stuff"
 
-    local_objects = [(DIRECTORY, local_folder), ]
+    local_objects = [(DIRECTORY, local_folder, b""), ]
     local_objects.append((FILE, local_path, b"Hello, world!"))
     local_infos = multi_local_cs_setup((cs, ), local_objects)
 

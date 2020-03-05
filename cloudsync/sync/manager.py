@@ -1284,11 +1284,6 @@ class SyncManager(Runnable):
                 conflict[changed].set_aged()
                 # prioritize anything else over a delete for a folder
                 # folder deletes can't happen before child updates, so folder deletes want to happen after anything else
-                if "a" == "b":
-                    if not conflict[changed].exists == EXISTS:
-                        conflict[synced].set_aged()
-                    else:
-                        conflict[changed].set_aged()
 
                 # gentle punt, based on whichever is higher priority
                 # we want the sync priority to have the priority of the higher priority item
@@ -1314,14 +1309,6 @@ class SyncManager(Runnable):
                     # also breaks test_folder_del_loop
 
                     sync[synced].changed = 1
-
-                    if "a" == "b":
-                        log.debug("folder_conflicts_del_fix, sync was: %s", sync)
-                        if sync[synced].otype == FILE:  # maybe this change isn't necessary?
-                            sync[synced].set_aged()
-                        else:
-                            sync[changed].set_aged()
-                        log.debug("folder_conflicts_del_fix, sync became: %s", sync)
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 

@@ -251,21 +251,21 @@ class MockProvider(Provider):
         if not self.connected and not self.__in_connect:
             raise CloudDisconnectedError()
 
-    @property
+    @property  # type: ignore
     @lock
     def latest_cursor(self):
         if not self._uses_cursor:
             return None
         return self._latest_cursor
 
-    @property
+    @property  # type: ignore
     @lock
     def current_cursor(self):
         if not self._uses_cursor:
             return None
         return self._cursor
 
-    @current_cursor.setter
+    @current_cursor.setter  # type: ignore
     @lock
     def current_cursor(self, val):
         if val is None:
