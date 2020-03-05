@@ -105,7 +105,7 @@ class EventManager(Runnable):
                     self.provider.reconnect()
             self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
-            log.exception("temporary error %s[%s] in event watcher", type(e), e)
+            log.warning("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
             self.backoff()
@@ -117,7 +117,6 @@ class EventManager(Runnable):
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
-            log.debug("Got a cloud token error, backing off")
             self.need_auth = True
             self.backoff()
 
