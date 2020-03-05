@@ -4,6 +4,7 @@ import copy
 import logging
 from hashlib import md5
 from typing import Dict, List, Any, Optional, Generator, Set
+from threading import RLock
 
 import pytest
 
@@ -91,6 +92,16 @@ class MockEvent:  # pylint: disable=too-few-public-methods
         return ret_val
 
 
+def lock(func):
+    def wrap(self, *args, **kw):
+        if True:
+            with self._lock:
+                return func(self, *args, **kw)
+        else:
+            return func(self, *args, **kw)
+    return wrap
+
+
 class MockProvider(Provider):
     default_sleep = 0.01
     name = "Mock"
@@ -106,6 +117,7 @@ class MockProvider(Provider):
         log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
+        self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
         self._fs_by_path: Dict[str, MockFSObject] = {}
@@ -133,6 +145,7 @@ class MockProvider(Provider):
         new_fs_object = MockFSObject("/", MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
 
+    @lock
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
 
@@ -158,6 +171,7 @@ class MockProvider(Provider):
         self._api("_get_by_oid", oid)
         return self._fs_by_oid.get(oid, None)
 
+    @lock
     def normalize_path(self, path):
         if self.case_sensitive:
             return path
@@ -192,6 +206,7 @@ class MockProvider(Provider):
     def _set_quota(self, quota: int):
         self._quota = quota
 
+    @lock
     def get_quota(self):
         if not self.connected:
             raise CloudDisconnectedError()
@@ -235,19 +250,22 @@ class MockProvider(Provider):
         if not self.connected and not self.__in_connect:
             raise CloudDisconnectedError()
 
-    @property
+    @property  # type: ignore
+    @lock
     def latest_cursor(self):
         if not self._uses_cursor:
             return None
         return self._latest_cursor
 
-    @property
+    @property  # type: ignore
+    @lock
     def current_cursor(self):
         if not self._uses_cursor:
             return None
         return self._cursor
 
-    @current_cursor.setter
+    @current_cursor.setter  # type: ignore
+    @lock
     def current_cursor(self, val):
         if val is None:
             val = self.latest_cursor
@@ -255,6 +273,7 @@ class MockProvider(Provider):
             raise CloudCursorError(val)
         self._cursor = val
 
+    @lock
     def events(self) -> Generator[Event, None, None]:
         self._api("events")
         while self._cursor < self._latest_cursor:
@@ -262,6 +281,7 @@ class MockProvider(Provider):
             pe = self._events[self._cursor]
             yield self._translate_event(pe, self._cursor)
 
+    @lock
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         self._api("upload", oid)
         file = self._fs_by_oid.get(oid, None)
@@ -276,6 +296,7 @@ class MockProvider(Provider):
         self._register_event(MockEvent.ACTION_UPDATE, file)
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
+    @lock
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         folder_obj = self._get_by_oid(oid)
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockFSObject.DIR):
@@ -289,6 +310,7 @@ class MockProvider(Provider):
                     if "/" not in relative:
                         yield DirInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative)
 
+    @lock
     def create(self, path, file_like, metadata=None) -> OInfo:
         # TODO: store the metadata
         for c in self._forbidden_chars:
@@ -309,6 +331,7 @@ class MockProvider(Provider):
         except OSError as e:
             raise CloudTemporaryError("error %s" % repr(e))
 
+    @lock
     def download(self, oid, file_like):
         self._api("download", oid)
         file = self._fs_by_oid.get(oid, None)
@@ -318,6 +341,7 @@ class MockProvider(Provider):
             raise CloudFileExistsError("is a directory")
         file_like.write(file.contents)
 
+    @lock
     def rename(self, oid, path) -> str:
         log.debug("renaming %s -> %s", debug_sig(oid), path)
         self._api("rename", oid, path)
@@ -391,6 +415,7 @@ class MockProvider(Provider):
         log.debug("rename complete %s", source_object.path)
         self._log_debug_state("_rename_single_object")
 
+    @lock
     def mkdir(self, path) -> str:
         self._verify_parent_folder_exists(path)
         for c in self._forbidden_chars:
@@ -408,6 +433,7 @@ class MockProvider(Provider):
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
         return new_fs_object.oid
 
+    @lock
     def delete(self, oid):
         return self._delete(oid)
 
@@ -446,15 +472,18 @@ class MockProvider(Provider):
         if not without_event:
             self._register_event(MockEvent.ACTION_DELETE, file)
 
+    @lock
     def exists_oid(self, oid):
         self._api("exists_oid", oid)
         file = self._fs_by_oid.get(oid, None)
         return file is not None and file.exists
 
+    @lock
     def exists_path(self, path) -> bool:
         file = self._get_by_path(path)
         return file is not None and file.exists
 
+    @lock
     def hash_oid(self, oid) -> Any:
         file = self._fs_by_oid.get(oid, None)
         if file and file.exists:
@@ -462,15 +491,18 @@ class MockProvider(Provider):
         else:
             return None
 
+    # @lock  # don't lock this one, it doesn't hit the api or use any instance properties
     def hash_data(self, file_like) -> Any:
         return self._hash_func(file_like.read())
 
+    @lock
     def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
+    @lock
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         self._api("info_oid", oid)
         file: MockFSObject = self._fs_by_oid.get(oid, None)
