@@ -644,9 +644,6 @@ class SyncManager(Runnable):
                 if info:
                     self.state.update(changed, DIRECTORY, info.oid, path=parent)
                 else:
-                    # bug is here-ish, /remote/floder/stuff1 sync entry says it exists, but it doesn't
-                    log.debug("fs_by_oid = %s", self.providers[changed]._fs_by_oid)
-                    log.debug("fs_by_path = %s", self.providers[changed]._fs_by_path)
                     log.info("no info and no dir, ignoring?")
 
             else:
@@ -1287,7 +1284,7 @@ class SyncManager(Runnable):
                 conflict[changed].set_aged()
                 # prioritize anything else over a delete for a folder
                 # folder deletes can't happen before child updates, so folder deletes want to happen after anything else
-                if True:
+                if "a" == "b":
                     if not conflict[changed].exists == EXISTS:
                         conflict[synced].set_aged()
                     else:
@@ -1318,7 +1315,7 @@ class SyncManager(Runnable):
 
                     sync[synced].changed = 1
 
-                    if True:
+                    if "a" == "b":
                         log.debug("folder_conflicts_del_fix, sync was: %s", sync)
                         if sync[synced].otype == FILE:  # maybe this change isn't necessary?
                             sync[synced].set_aged()

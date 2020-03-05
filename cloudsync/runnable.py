@@ -65,7 +65,7 @@ class Runnable(ABC):
     def __increment_backoff(self):
         self.in_backoff = min(self.max_backoff, max(self.in_backoff * self.mult_backoff, self.min_backoff))
 
-    def run(self, *, timeout=None, until=None, sleep=0.001):
+    def run(self, *, timeout=None, until=None, sleep=0.001):  # pylint: disable=too-many-branches
         """
         Calls do in a loop.
 
