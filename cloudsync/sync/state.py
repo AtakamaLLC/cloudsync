@@ -119,6 +119,7 @@ class SideState():
 
     def set_aged(self):
         # setting to an old mtime marks this as fully aged
+        log.debug("set_aged!!!")
         self.changed = 1
 
     def clear(self):
@@ -371,6 +372,14 @@ class SyncEntry:
            self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
             return True
         return False
+    
+    def is_pending_delete(self):
+        pending_delete = False
+        for a in (LOCAL, REMOTE):
+            b = other_side(a)
+            if self[a].exists == EXISTS and self[b].exists in (TRASHED, MISSING) and self[b].changed:
+                pending_delete = True
+        return pending_delete
 
     @property
     def is_discarded(self):
@@ -541,10 +550,16 @@ class SyncEntry:
         self.priority += 1
 
     def get_latest(self, force=False):
+        if self[REMOTE].path == '/remote/folder/stuff1':
+            log.debug("in get_latest for %s", self)
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
+            if self[REMOTE].path == '/remote/folder/stuff1':
+                log.debug("before getting latest for side %s: %s", side, self)
             if force or max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
+                if self[REMOTE].path == '/remote/folder/stuff1':
+                    log.debug("after getting latest for side %s: %s", side, self)
                 self[side]._last_gotten = max_changed
 
     def is_latest(self) -> bool:

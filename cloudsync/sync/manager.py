@@ -644,6 +644,9 @@ class SyncManager(Runnable):
                 if info:
                     self.state.update(changed, DIRECTORY, info.oid, path=parent)
                 else:
+                    # bug is here-ish, /remote/floder/stuff1 sync entry says it exists, but it doesn't
+                    log.debug("fs_by_oid = %s", self.providers[changed]._fs_by_oid)
+                    log.debug("fs_by_path = %s", self.providers[changed]._fs_by_path)
                     log.info("no info and no dir, ignoring?")
 
             else:
@@ -1050,14 +1053,33 @@ class SyncManager(Runnable):
                 log.debug("requeue sync + trash priority=%s %s", sync.priority, sync)
                 return PUNT
 
-            if sync[synced].changed:        # rename + delete == delete goes first
+            folder_child_conflict = False
+            if sync[changed].otype == DIRECTORY:  # self._get_child_conflict(sync, changed):
+                kids = [kid[0] for kid in self.state.get_kids(sync[changed].path, changed) if not kid[0].is_pending_delete()]
+                if kids:
+                    folder_child_conflict = True
+                    log.debug("folder child conflict found: %s", kids)
+
+            if sync[synced].changed and not folder_child_conflict:        # rename + delete == delete goes first
                 # this is only needed when shuffling
-                # see: test_cs_folder_conflicts_del
+                #   see: test_cs_folder_conflicts_del
+                # limiting this branch to only a file fixes test_sharing_conflict_update_file_and_rename_parent_folder
+                #   When file is updated locally, deleted remotely, and is in a folder that was renamed locally and deleted remotely
+                #   file sync wants to wait on it's parent folder to sync
+                #   parent folder punts below because it prioritizes the delete, but can't delete until the
+                #   children are synced, so the children waited on the parent and the parent waited on the children
+                #   it's ok-ish if a folder that was renamed and deleted converts to a create of the new name
+                #   TODO: fine tune this to only convert folder rename and delete to a mkdir
+                #    when there are unsynced child changes, otherwise we can allow it to delete the folder
+
                 if sync[changed].sync_hash == sync[changed].hash:
+                    log.debug("folder_conflicts_del_fix, sync was: %s", sync)
                     sync[changed].changed = sync[synced].changed + .01
+                    log.debug("folder_conflicts_del_fix, sync became: %s", sync)
                     log.debug("reprioritize sync + trash %s  (%s, %s)", sync, sync[changed].changed, sync[synced].changed)
                     return PUNT
 
+            log.debug("before clearing %s", sync)
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
@@ -1256,11 +1278,21 @@ class SyncManager(Runnable):
             else:
                 sync.unignore(IgnoreReason.CONFLICT)
 
-        if sync[changed].path and sync[changed].exists == EXISTS:
+        pending_deletion = sync.is_pending_delete()
+        if sync[changed].path and not pending_deletion:  # (True or sync[changed].exists == EXISTS):
             # parent_conflict code
             conflict = self._get_parent_conflict(sync, changed)
             if conflict:
+                log.debug("aging!!!!")
                 conflict[changed].set_aged()
+                # prioritize anything else over a delete for a folder
+                # folder deletes can't happen before child updates, so folder deletes want to happen after anything else
+                if True:
+                    if not conflict[changed].exists == EXISTS:
+                        conflict[synced].set_aged()
+                    else:
+                        conflict[changed].set_aged()
+
                 # gentle punt, based on whichever is higher priority
                 # we want the sync priority to have the priority of the higher priority item
                 # then we want the conflict priority to be *slightly* higher than that
@@ -1283,7 +1315,16 @@ class SyncManager(Runnable):
                     # force the trash to sync instead
                     # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
                     # also breaks test_folder_del_loop
+
                     sync[synced].changed = 1
+
+                    if True:
+                        log.debug("folder_conflicts_del_fix, sync was: %s", sync)
+                        if sync[synced].otype == FILE:  # maybe this change isn't necessary?
+                            sync[synced].set_aged()
+                        else:
+                            sync[changed].set_aged()
+                        log.debug("folder_conflicts_del_fix, sync became: %s", sync)
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
@@ -1405,6 +1446,14 @@ class SyncManager(Runnable):
         log.debug(">>> about to resolve_conflict")
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
         return True
+
+    def _get_child_conflict(self, sync: SyncEntry, changed):
+        conflicts = []
+        for kid, _ in self.state.get_kids(sync[changed].path, changed):
+            if kid.needs_sync():
+                conflicts.append(kid)
+                break
+        return conflicts
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]

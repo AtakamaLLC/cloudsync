@@ -28,7 +28,7 @@ def time_helper(timeout, sleep=None, multiply=1):
     raise TimeoutError()
 
 
-class BackoffError(Exception):
+class _BackoffError(Exception):
     pass
 
 
@@ -59,7 +59,7 @@ class Runnable(ABC):
 
     def interruptable_sleep(self, secs):
         """Call this instead of sleep, so the service can be interrupted"""
-        if self.__interrupt.wait(secs):
+        if self.__interrupt and self.__interrupt.wait(secs):
             self.__interrupt.clear()
 
     def __increment_backoff(self):
@@ -87,41 +87,44 @@ class Runnable(ABC):
         self.__stopped = False
         self.__interrupt = threading.Event()
 
-        for _ in time_helper(timeout):
-            if self.__stopped:
-                break
+        try:
+            for _ in time_helper(timeout):
+                if self.__stopped:
+                    break
 
-            try:
-                self.do()
+                try:
+                    log.debug("about to do")
+                    self.do()
+                    if self.in_backoff > 0:
+                        self.in_backoff = 0
+                        log.debug("%s: clear backoff", self.service_name)
+                except _BackoffError:
+                    self.__increment_backoff()
+                    log.debug("%s: backing off %s", self.service_name, self.in_backoff)
+                except Exception:
+                    self.__increment_backoff()
+                    log.exception("unhandled exception in %s", self.service_name)
+                except BaseException:
+                    self.__increment_backoff()
+                    log.exception("very serious exception in %s", self.service_name)
+
+                if self.__stopped or (until is not None and until()):
+                    break
+
                 if self.in_backoff > 0:
-                    self.in_backoff = 0
-                    log.debug("%s: clear backoff", self.service_name)
-            except BackoffError:
-                self.__increment_backoff()
-                log.debug("%s: backing off %s", self.service_name, self.in_backoff)
-            except Exception:
-                self.__increment_backoff()
-                log.exception("unhandled exception in %s", self.service_name)
-            except BaseException:
-                self.__increment_backoff()
-                log.exception("very serious exception in %s", self.service_name)
+                    log.debug("%s: backoff sleep %s", self.service_name, self.in_backoff)
+                    self.interruptable_sleep(self.in_backoff)
+                else:
+                    self.interruptable_sleep(sleep)
+        finally:
+            # clear started flag
+            self.__interrupt = None
 
-            if self.__stopped or (until is not None and until()):
-                break
+            if self.__shutdown:
+                self.done()
 
-            if self.in_backoff > 0:
-                log.debug("%s: backoff sleep %s", self.service_name, self.in_backoff)
-                self.interruptable_sleep(self.in_backoff)
-            else:
-                self.interruptable_sleep(sleep)
-
-        # clear started flag
-        self.__interrupt = None
-
-        if self.__shutdown:
-            self.done()
-
-        self.__thread = None
+            self.__thread = None
+            log.debug("stopping %s", self.service_name)
 
     @property
     def started(self):
@@ -135,7 +138,7 @@ class Runnable(ABC):
         """
         Raises an exception, interrupting the durrent do() call, and sleeping for backoff seconds.
         """
-        raise BackoffError()
+        raise _BackoffError()
 
     def wake(self):
         """
@@ -191,3 +194,8 @@ class Runnable(ABC):
             self.__thread.join(timeout=timeout)
             if self.__thread and self.__thread.is_alive():
                 raise TimeoutError()
+            assert not self.__thread or not self.__thread.is_alive()
+            self.__thread = None
+            return True
+        else:
+            return False

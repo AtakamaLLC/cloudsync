@@ -2,7 +2,7 @@ import time
 import threading
 import logging
 from typing import Callable, Generator
-from cloudsync.runnable import Runnable, BackoffError
+from cloudsync.runnable import Runnable 
 from cloudsync.event import Event
 log = logging.getLogger(__name__)
 
@@ -78,4 +78,4 @@ class LongPollManager(Runnable):
                     self.__provider_events_pending.set()
                     self.last_set = time.monotonic()
                 log.exception('Unhandled exception during long poll %s', e)
-                raise BackoffError()
+                Runnable.backoff()
