@@ -9,3 +9,4 @@ mypy
 flaky>=3.6
 coverage
 codecov
+requests-toolbelt  # required for one of the tests cloudsync/tests/test_resolve_file.py

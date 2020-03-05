@@ -1269,12 +1269,13 @@ class SyncManager(Runnable):
                 # and grandma will get pushed up before mom. It is also important to prevent priorities
                 # that are >=0 to stay >=0, because priorities that are <0 have special handling
                 min_priority = min(sync.priority, conflict.priority)
-                if min_priority < 0:
+                max_priority = max(sync.priority, conflict.priority)
+                if min_priority < 0 and max_priority < 0:
                     sync.priority = min_priority
                     conflict.priority = min_priority - 0.1
                 else:
-                    sync.priority = min_priority + 0.1
-                    conflict.priority = min_priority
+                    sync.priority = max_priority + 0.1
+                    conflict.priority = max_priority
 
                 log.debug("parent modify %s should happen first %s", sync[changed].path, conflict)
                 if sync.is_path_change(changed) and sync[synced].exists == TRASHED and sync.priority > 2:

@@ -1993,9 +1993,17 @@ def test_cs_prioritize(cs, prioritize_side):
     log.info("BEFORE TABLE\n%s", cs.state.pretty_print())
 
     expectation = (REMOTE, remote_path1) if prioritize_side == LOCAL else (LOCAL, local_path2)
-    cs.run_until_found(expectation)
+    try:
+        log.debug("waiting for expectation %s", expectation)
+        cs.run_until_found(expectation)
+    finally:
+        log.debug("waited for expectation %s", expectation)
+        log.info("AFTER TABLE\n%s", cs.state.pretty_print())
 
-    log.info("AFTER TABLE\n%s", cs.state.pretty_print())
+    log.info("LOCAL")
+    cs.providers[LOCAL]._log_debug_state(log_level=logging.INFO)
+    log.info("REMOTE")
+    cs.providers[REMOTE]._log_debug_state(log_level=logging.INFO)
 
     lp2_exists = cs.providers[LOCAL].info_path(local_path2) is not None
     rp1_exists = cs.providers[REMOTE].info_path(remote_path1) is not None
