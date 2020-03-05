@@ -96,19 +96,16 @@ class EventManager(Runnable):
                     except CloudTokenError:
                         log.warning("Need auth, calling reauthenticate")
                         try:
-                            log.debug("HERE")
                             self.reauthenticate()
-                            log.debug("HERE")
                         except NotImplementedError:
                             raise CloudTokenError("No auth method defined")
                     self.need_auth = False
                 else:
                     log.info("reconnect to %s", self.provider.name)
                     self.provider.reconnect()
-            log.debug("provider is connected")
             self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
-            log.exception("temporary error %s[%s] in event watcher", type(e), e, stack_info=True)
+            log.exception("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
             self.backoff()
@@ -120,7 +117,7 @@ class EventManager(Runnable):
         except CloudTokenError:
             # this is separated from the main block because
             # it can be raised during reconnect in the exception handler and in do_unsafe
-            log.debug("got a cloud token error")
+            log.debug("Got a cloud token error, backing off")
             self.need_auth = True
             self.backoff()
 

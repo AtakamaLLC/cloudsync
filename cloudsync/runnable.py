@@ -112,7 +112,6 @@ class Runnable(ABC):
                     break
 
                 if self.in_backoff > 0:
-                    log.debug("%s: backoff sleep %s", self.service_name, self.in_backoff)
                     self.interruptable_sleep(self.in_backoff)
                 else:
                     self.interruptable_sleep(sleep)
@@ -194,7 +193,6 @@ class Runnable(ABC):
             self.__thread.join(timeout=timeout)
             if self.__thread and self.__thread.is_alive():
                 raise TimeoutError()
-            assert not self.__thread or not self.__thread.is_alive()
             self.__thread = None
             return True
         else:

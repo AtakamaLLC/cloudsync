@@ -237,7 +237,7 @@ def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent
 
 
 # @pytest.mark.parametrize("timing", [.0001, .001, .01, .1], ids=["4", "3", "2", "1"])
-def test_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs):
+def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs):
     test_start = time.monotonic()
     cs1, cs2, cs3, cs4 = four_local_cs
     local_parent = "/local"
@@ -307,7 +307,7 @@ def test_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs):
         four_local_cs[0].providers[REMOTE]._log_debug_state()
 
 
-def test_rename_file_and_folder_conflicts_with_delete(cs):
+def test_cs_rename_file_and_folder_conflicts_with_delete(cs):
     local_parent = "/local"
     local_folder = local_parent + "/folder"
     local_path = local_folder + "/stuff"

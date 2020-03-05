@@ -247,7 +247,6 @@ class MockProvider(Provider):
         return retval
 
     def _api(self, *args, **kwargs):
-        log.debug("connected=%s", self.connected)
         if not self.connected and not self.__in_connect:
             raise CloudDisconnectedError()
 
@@ -509,11 +508,7 @@ class MockProvider(Provider):
         file: MockFSObject = self._fs_by_oid.get(oid, None)
         if not (file and file.exists):
             return None
-        retval = OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
-        if file.path == '/remote/folder/stuff1':
-            log.debug("info_oid: %s", retval)
-            log.debug("fs by oid = %s", self._fs_by_oid)
-        return retval
+        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
 
     # @staticmethod
     # def _slurp(path):
