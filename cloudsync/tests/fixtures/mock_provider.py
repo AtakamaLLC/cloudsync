@@ -491,7 +491,7 @@ class MockProvider(Provider):
         else:
             return None
 
-    @lock
+    # @lock  # don't lock this one, it doesn't hit the api or use any instance properties
     def hash_data(self, file_like) -> Any:
         return self._hash_func(file_like.read())
 
