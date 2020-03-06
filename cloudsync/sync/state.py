@@ -371,6 +371,14 @@ class SyncEntry:
            self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
             return True
         return False
+    
+    def is_pending_delete(self):
+        pending_delete = False
+        for a in (LOCAL, REMOTE):
+            b = other_side(a)
+            if self[a].exists == EXISTS and self[b].exists in (TRASHED, MISSING) and self[b].changed:
+                pending_delete = True
+        return pending_delete
 
     @property
     def is_discarded(self):

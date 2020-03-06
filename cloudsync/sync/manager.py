@@ -1050,14 +1050,29 @@ class SyncManager(Runnable):
                 log.debug("requeue sync + trash priority=%s %s", sync.priority, sync)
                 return PUNT
 
-            if sync[synced].changed:        # rename + delete == delete goes first
+            folder_child_conflict = False
+            if sync[changed].otype == DIRECTORY:
+                kids = self._get_child_conflict(sync, changed)
+                if kids:
+                    folder_child_conflict = True
+                    log.debug("folder child conflict found: %s", kids)
+
+            if sync[synced].changed and not folder_child_conflict:        # rename + delete == delete goes first
                 # this is only needed when shuffling
-                # see: test_cs_folder_conflicts_del
+                #   see: test_cs_folder_conflicts_del
+                # limiting this branch to only a file fixes test_sharing_conflict_update_file_and_rename_parent_folder
+                #   When file is updated locally, deleted remotely, and is in a folder that was renamed locally and deleted remotely
+                #   file sync wants to wait on it's parent folder to sync
+                #   parent folder punts below because it prioritizes the delete, but can't delete until the
+                #   children are synced, so the children waited on the parent and the parent waited on the children
+                #   it's ok-ish if a folder that was renamed and deleted converts to a create of the new name
+
                 if sync[changed].sync_hash == sync[changed].hash:
                     sync[changed].changed = sync[synced].changed + .01
                     log.debug("reprioritize sync + trash %s  (%s, %s)", sync, sync[changed].changed, sync[synced].changed)
                     return PUNT
 
+            # folder event getting here implies that there is a child conflict, so create is appropriate
             sync[synced].clear()
             log.debug("cleared trashed info, converting to create %s", sync)
 
@@ -1256,7 +1271,7 @@ class SyncManager(Runnable):
             else:
                 sync.unignore(IgnoreReason.CONFLICT)
 
-        if sync[changed].path and sync[changed].exists == EXISTS:
+        if sync[changed].path and sync[changed].exists == EXISTS and not sync.is_pending_delete():
             # parent_conflict code
             conflict = self._get_parent_conflict(sync, changed)
             if conflict:
@@ -1405,6 +1420,9 @@ class SyncManager(Runnable):
         log.debug(">>> about to resolve_conflict")
         self.resolve_conflict((defer_ent[defer_side], replace_ent[replace_side]))
         return True
+
+    def _get_child_conflict(self, sync: SyncEntry, changed):
+        return [kid[0] for kid in self.state.get_kids(sync[changed].path, changed) if not kid[0].is_pending_delete()]
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]

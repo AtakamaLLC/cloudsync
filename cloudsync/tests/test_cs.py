@@ -2,7 +2,7 @@
 
 from io import BytesIO
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Union
 from unittest.mock import patch, Mock
 
 import pytest
@@ -11,6 +11,7 @@ from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
 from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.notification import Notification, NotificationType
+import time
 
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
@@ -55,29 +56,35 @@ def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storag
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
+# given a provider_generator, creates as many cs's as you want, all of which share a single remote bed
+def multi_local_cs_generator(how_many_cs: int, provider_generator):
+    storage_dict: Dict[Any, Any] = dict()
+    local_ps = []
+    css = []
+    storage = MockStorage(storage_dict)
+    remote_p = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # remote (cloud) storage
+    for i in range(0, how_many_cs):
+        local_ps.append(provider_generator())
+        css.append(CloudSyncMixin((local_ps[i], remote_p), roots, storage, sleep=None))
+    
+    yield css
+
+    for i in range(0, how_many_cs):
+        css[i].done()
+
+
+# multi local test has two local providers, each syncing up to the same folder on one remote provider.
+#   this simulates two separate machines syncing up to a shared folder
+@pytest.fixture(name="four_local_cs")
+def fixture_four_local_cs(mock_provider_generator):
+    yield from multi_local_cs_generator(4, mock_provider_generator)
+
+
 # multi local test has two local providers, each syncing up to the same folder on one remote provider.
 #   this simulates two separate machines syncing up to a shared folder
 @pytest.fixture(name="multi_local_cs")
 def fixture_multi_local_cs(mock_provider_generator):
-    storage_dict: Dict[Any, Any] = dict()
-    storage = MockStorage(storage_dict)
-
-
-    p1 = mock_provider_generator()  # local
-    p2 = mock_provider_generator()  # local
-    p3 = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # remote (cloud) storage
-
-    log.debug(f"p1 oip={p1.oid_is_path} cs={p1.case_sensitive}")
-    log.debug(f"p2 oip={p2.oid_is_path} cs={p2.case_sensitive}")
-    log.debug(f"p3 oip={p3.oid_is_path} cs={p3.case_sensitive}")
-
-    cs1 = CloudSyncMixin((p1, p3), roots, storage, sleep=None)
-    cs2 = CloudSyncMixin((p2, p3), roots, storage, sleep=None)
-
-    yield cs1, cs2
-
-    cs1.done()
-    cs2.done()
+    yield from multi_local_cs_generator(2, mock_provider_generator)
 
 
 # multi remote test has one local provider with two folders, and each of those folders
@@ -182,6 +189,149 @@ def test_sync_rename_away(multi_remote_cs):
 
     assert len(cs1.state) == 1   # 1 dir
     assert len(cs2.state) == 2   # 1 file and 1 dir
+
+
+# noinspection PyProtectedMember
+def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent="/local", remote_parent="/remote"):
+    parent_oids = []
+    local_infos = {}
+    expectations: List[Union[Tuple[int, str], WaitFor]] = []
+
+    # create the parent folders, this is a sync prerequisite, not a sync operation
+    for cs in css:
+        cs.providers[REMOTE].mkdir(remote_parent)
+        parent_oid = cs.providers[LOCAL].mkdir(local_parent)
+        parent_oids.append(parent_oid)
+
+    for local_object in local_objects:
+        (l_type, l_path) = local_object[0:2]
+        r_path = css[0].translate(REMOTE, l_path)
+        l_info = None
+        if l_type == DIRECTORY:
+            l_oid = css[0].providers[LOCAL].mkdir(l_path)
+            l_info = css[0].providers[LOCAL].info_oid(l_oid)
+        elif l_type == FILE:
+            (l_type, l_path, l_content) = local_object
+            l_info = css[0].providers[LOCAL].create(l_path, BytesIO(l_content))
+        local_infos[l_path] = l_info
+        expectations.append((LOCAL, l_path))
+        expectations.append((REMOTE, r_path))
+
+    counter = 1
+    for cs in css:
+        log.info("SETUP TABLE 1 cs%s\n%s", counter, cs.state.pretty_print())
+        cs.run_until_clean(timeout=1)
+        log.info("SETUP TABLE 2 cs%s\n%s", counter, cs.state.pretty_print())
+        counter += 1
+
+    counter = 1
+    for cs in css:
+        cs.run_until_found(*expectations)
+        log.debug("CS%s LOCAL State:", counter)
+        cs.providers[LOCAL]._log_debug_state()  # type: ignore
+        counter += 1
+
+    log.debug("CS REMOTE State:")
+    css[0].providers[REMOTE]._log_debug_state()  # type: ignore
+    return local_infos
+
+
+# @pytest.mark.parametrize("timing", [.0001, .001, .01, .1], ids=["4", "3", "2", "1"])
+def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs):
+    test_start = time.monotonic()
+    cs1, cs2, cs3, cs4 = four_local_cs
+    local_parent = "/local"
+    local_folder = local_parent + "/folder"
+    local_path = local_folder + "/stuff"
+    
+    remote_parent = "/remote"
+    remote_folder = remote_parent + "/folder"
+    remote_path = remote_folder + "/stuff"
+    
+    numfiles = 20
+    local_objects = [(DIRECTORY, local_folder, b""), ]
+    for i in range(1, 1 + numfiles):
+        local_objects.append((FILE, local_path + str(i), b"Hello, world!"))
+    
+    for i in range(0, 4):
+        log.debug("aging %s is %s", i, four_local_cs[i].aging)
+    cs1_local_infos = multi_local_cs_setup(four_local_cs, local_objects)
+
+    log.debug("finished creating %s", time.monotonic() - test_start)
+
+    for i in range(1, 1 + numfiles):
+        info = cs1_local_infos.get(local_path + str(i))
+        assert info
+        cs1.providers[LOCAL].delete(info.oid)
+    info = cs1_local_infos.get(local_folder)
+    assert info
+    cs1.providers[LOCAL].delete(info.oid)
+    folder_info = cs2.providers[LOCAL].info_path(local_folder)
+    assert folder_info
+    cs2.providers[LOCAL].rename(folder_info.oid, local_folder + "2")
+
+    conflict_info = cs3.providers[LOCAL].info_path(local_path + str(numfiles))
+    assert conflict_info
+    cs3.providers[LOCAL].upload(conflict_info.oid, BytesIO(b"contents2"))
+
+    latest_print = time.monotonic()
+    start = time.monotonic()
+    
+    def finished_condition(i, timeout):
+        nonlocal start, four_local_cs, latest_print
+        now = time.monotonic()
+        cs = four_local_cs[i]
+        if (now - latest_print) > 2:
+            log.debug("cs %s:", i)
+            cs.providers[LOCAL]._log_debug_state()
+            cs.providers[REMOTE]._log_debug_state()
+            log.info("TABLE %s\n%s", i, cs1.state.pretty_print())
+            latest_print = time.monotonic()
+        if now - start > timeout:
+            raise TimeoutError()
+        return cs.state.changeset_len == 0
+
+    try:
+        for i in range(0, 4):
+            four_local_cs[i].start(sleep=0.01)  # Start the sync
+            # four_local_cs[i].stop(forever=False)  # Pause the sync
+
+        for i in range(0, 4):
+            start = time.monotonic()
+            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=1)
+    finally:
+        for i in range(0, 4):
+            four_local_cs[i].stop()  # Stop the sync
+            log.debug("Provider %s", i)
+            four_local_cs[i].providers[LOCAL]._log_debug_state()
+        four_local_cs[0].providers[REMOTE]._log_debug_state()
+
+
+def test_cs_rename_file_and_folder_conflicts_with_delete(cs):
+    local_parent = "/local"
+    local_folder = local_parent + "/folder"
+    local_path = local_folder + "/stuff"
+
+    remote_parent = "/remote"
+    remote_folder = remote_parent + "/folder"
+    remote_path = remote_folder + "/stuff"
+
+    local_objects = [(DIRECTORY, local_folder, b""), ]
+    local_objects.append((FILE, local_path, b"Hello, world!"))
+    local_infos = multi_local_cs_setup((cs, ), local_objects)
+
+    remote_folder_oid = cs.providers[REMOTE].info_path(remote_folder).oid
+    remote_path_oid = cs.providers[REMOTE].info_path(remote_path).oid
+
+    cs.providers[LOCAL].upload(local_infos[local_path].oid, BytesIO(b"contents2"))
+    cs.providers[LOCAL].rename(local_infos[local_folder].oid, local_folder + "2")
+    cs.providers[REMOTE].delete(remote_path_oid)
+    cs.providers[REMOTE].delete(remote_folder_oid)
+    cs.emgrs[LOCAL].do()
+    cs.emgrs[REMOTE].do()
+    cs.run_until_clean(timeout=3)
+
+
 
 
 def test_sync_multi_local_rename_conflict(multi_local_cs):
@@ -1659,6 +1809,8 @@ def test_cs_folder_conflicts_del(cs, shuffle):
     # either a deletion happened or a rename... whatever
     # but at least it doesn't time out or crash
 
+    cs.providers[LOCAL]._log_debug_state()
+    cs.providers[REMOTE]._log_debug_state()
     if cs.providers[REMOTE].info_path(remote_path2_u):
         assert cs.providers[LOCAL].info_path(local_path2_u)
         assert cs.providers[REMOTE].info_path(remote_path2)
