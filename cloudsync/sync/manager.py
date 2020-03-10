@@ -152,7 +152,7 @@ class SyncManager(Runnable):
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
         self.__root_oids: List[str] = [None, None]
-        self.__no_create_paths: List[str] = [None, None]
+        self.__root_paths: List[str] = [None, None]
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -492,17 +492,17 @@ class SyncManager(Runnable):
             return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
 
         if self.__root_oids[synced]:
-            if not self.__no_create_paths[synced]:
+            if not self.__root_paths[synced]:
                 info = self.providers[synced].info_oid(self.__root_oids[synced])
                 if info:
-                    self.__no_create_paths[synced] = info.path
+                    self.__root_paths[synced] = info.path
                 else:
                     raise ex.CloudRootMissingError("root missing: %s" % self.__root_oids[synced])
 
-        if self.__no_create_paths[synced] and \
-           self.providers[synced].is_subpath(self.__no_create_paths[synced], translated_path) and \
-           not self.providers[synced].exists_path(self.__no_create_paths[synced]):
-            raise ex.CloudRootMissingError("root missing: %s" % self.__no_create_paths[synced])
+        if self.__root_paths[synced] and \
+           self.providers[synced].is_subpath(self.__root_paths[synced], translated_path) and \
+           not self.providers[synced].exists_path(self.__root_paths[synced]):
+            raise ex.CloudRootMissingError("root missing: %s" % self.__root_paths[synced])
 
         # make the dir
         oid = self.providers[synced].mkdirs(translated_path)
