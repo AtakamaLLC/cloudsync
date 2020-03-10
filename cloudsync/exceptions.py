@@ -33,7 +33,7 @@ class CloudFileExistsError(CloudException):           # EEXIST
     pass
 
 
-class CloudTokenError(CloudException):                # 'creds don't work, refresh or reault'
+class CloudTokenError(CloudException):                # 'creds don't work, refresh or reauth'
     pass
 
 

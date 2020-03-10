@@ -87,7 +87,6 @@ class Runnable(ABC):
         # see `def started`
         self.__stopped = False
         self.__interrupt = threading.Event()
-        self.__clear_on_success = True
 
         try:
             for _ in time_helper(timeout):
@@ -96,6 +95,7 @@ class Runnable(ABC):
 
                 try:
                     log.debug("about to do")
+                    self.__clear_on_success = True
                     self.do()
                     if self.__clear_on_success and self.in_backoff > 0:
                         self.in_backoff = 0
