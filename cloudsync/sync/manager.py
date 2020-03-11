@@ -499,10 +499,12 @@ class SyncManager(Runnable):
                 else:
                     raise ex.CloudRootMissingError("root missing: %s" % self.__root_oids[synced])
 
-        if self.__root_paths[synced] and \
-           self.providers[synced].is_subpath(self.__root_paths[synced], translated_path) and \
-           not self.providers[synced].exists_path(self.__root_paths[synced]):
-            raise ex.CloudRootMissingError("root missing: %s" % self.__root_paths[synced])
+        if self.__root_paths[synced] and self.providers[synced].is_subpath(self.__root_paths[synced], translated_path):
+            info = self.providers[synced].info_path(self.__root_paths[synced])
+            if not info:
+                raise ex.CloudRootMissingError("root missing: %s" % self.__root_paths[synced])
+            if info and self.__root_oids[synced] and info.oid != self.__root_oids[synced]:
+                raise ex.CloudRootMissingError("root oid moved: %s" % self.__root_paths[synced])
 
         # make the dir
         oid = self.providers[synced].mkdirs(translated_path)
