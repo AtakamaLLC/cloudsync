@@ -407,7 +407,7 @@ class DropboxProvider(Provider):
         lpres = self._lpapi('files_list_folder_longpoll', self.current_cursor, timeout=int(timeout))
         return bool(lpres.changes)
 
-    def _events(self, cursor, path=None, recursive=True):  # pylint: disable=too-many-branches, too-many-statements
+    def _events(self, cursor, path=None, recursive=True, save_cursor=True):  # pylint: disable=too-many-branches, too-many-statements, too-many-locals
         if path and path != "/":
             info = self.info_path(path)
             if not info:
@@ -476,7 +476,7 @@ class DropboxProvider(Provider):
             path = res.path_display
             event = Event(otype, oid, path, ohash, exists, time.time())
             yield event
-            if getattr(res, "cursor", False):
+            if save_cursor and getattr(res, "cursor", False):
                 self.__cursor = res.cursor
 
     def _short_poll(self) -> Generator[Event, None, None]:
@@ -486,7 +486,7 @@ class DropboxProvider(Provider):
         yield from self._long_poll_manager()
 
     def walk(self, path, recursive=True):
-        yield from self._events(None, path=path, recursive=recursive)
+        yield from self._events(None, path=path, recursive=recursive, save_cursor=False)
 
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
         yield from self._listdir(oid, recursive=False)
