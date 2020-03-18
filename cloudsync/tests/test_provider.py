@@ -758,7 +758,7 @@ def test_walk(scoped_provider):
 
     assert got_event
 
-    ## check non-rec
+    # check non-rec
     found = {}
     for e in provider.walk("/", recursive=False):
         if e.otype == cloudsync.DIRECTORY:
@@ -777,6 +777,10 @@ def test_walk(scoped_provider):
     for x in [dest1, dest2]:
         log.debug("found %s", x)
         assert found.get(x, False) is False
+
+    # check bad oid
+    with pytest.raises(CloudFileNotFoundError):
+        list(provider.walk_oid("bad-oid"))
 
 
 def check_event_path(event: Event, provider, target_path):

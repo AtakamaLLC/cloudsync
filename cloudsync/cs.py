@@ -26,6 +26,7 @@ class CloudSync(Runnable):
                  roots: Optional[Tuple[str, str]] = None,
                  storage: Optional[Storage] = None,
                  sleep: Optional[Tuple[float, float]] = None,
+                 root_oids: Optional[Tuple[str, str]] = None,
                  ):
 
         """
@@ -69,22 +70,22 @@ class CloudSync(Runnable):
         state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
                           prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
-        smgr = SyncManager(state, providers, self.translate, self.resolve_conflict, self.nmgr, sleep=sleep)
+        smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
+                           self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
         self.smgr = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
-        _roots: Tuple[Optional[str], Optional[str]]
-        if not roots:
-            _roots = (None, None)
-        else:
-            _roots = roots
+        self.__roots: Tuple[Optional[str], Optional[str]] = roots if roots else (None, None)
+        self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, _roots[0], reauth=lambda: self.authenticate(0)),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, _roots[1], reauth=lambda: self.authenticate(1))
+            EventManager(smgr.providers[0], state, 0, self.nmgr, walk_root=self.__roots[0],
+                         reauth=lambda: self.authenticate(0), walk_oid=self.__root_oids[0]),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, walk_root=self.__roots[1],
+                         reauth=lambda: self.authenticate(1), walk_oid=self.__root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -92,6 +93,10 @@ class CloudSync(Runnable):
         self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
+
+    def set_root_oid(self, side, val):
+        self.smgr.set_root_oid(side, val)
+        self.emgrs[side].walk_oid = val
 
     def forget(self):
         """
@@ -147,6 +152,7 @@ class CloudSync(Runnable):
             if path is None:
                 path = roots[index]
 
+            # todo: this should not be called here, and instead, we should queue the walk itself
             for event in provider.walk(path, recursive=recursive):
                 self.emgrs[index].queue(event, from_walk=True)
 

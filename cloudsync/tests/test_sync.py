@@ -1,4 +1,4 @@
-# pylint: disable=missing-docstring,protected-access
+# pylint: disable=missing-docstring,protected-access,too-many-locals
 
 import logging
 import time
@@ -75,7 +75,6 @@ def fixture_sync_sh(request, mock_provider_generator):
 @pytest.fixture(name="sync_ci")
 def fixture_sync_ci(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, shuffle=True, case_sensitive=False)
-
 
 
 def setup_remote_local(sync, *names, content=b'hello'):
@@ -635,7 +634,7 @@ def test_event_order_del_create(sync):
 
 @pytest.mark.manual
 @pytest.mark.parametrize("order", list(permutations(range(6), 6)))
-def test_event_order_permute(order, sync): # pragma: no cover
+def test_event_order_permute(order, sync):  # pragma: no cover
     local_parent, remote_parent = ("/local", "/remote")
     local, remote = sync.providers
     local.mkdir(local_parent)

@@ -9,37 +9,41 @@ class CloudException(Exception):                     # largely treated as a temp
         self.original_exception = original_exception
 
 
-class CloudFileNotFoundError(CloudException):        # ENOENT
+class CloudFileNotFoundError(CloudException):         # ENOENT
     pass
 
 
-class CloudTemporaryError(CloudException):           # 'keep trying to sync this file'
+class CloudTemporaryError(CloudException):            # 'keep trying to sync this file'
     pass
 
 
-class CloudFileNameError(CloudException):            # 'stop syncing unless renamed'
+class CloudFileNameError(CloudException):             # 'stop syncing unless renamed'
     pass
 
 
-class CloudOutOfSpaceError(CloudTemporaryError):     # ENOSPC
+class CloudOutOfSpaceError(CloudTemporaryError):      # ENOSPC
     pass
 
 
-class CloudFileExistsError(CloudException):          # EEXIST
+class CloudRootMissingError(CloudTemporaryError):     # ENOENT, but treated differently!
     pass
 
 
-class CloudTokenError(CloudException):               # 'creds don't work, refresh or reault'
+class CloudFileExistsError(CloudException):           # EEXIST
     pass
 
 
-class CloudDisconnectedError(CloudException):        # 'reconnect plz'
+class CloudTokenError(CloudException):                # 'creds don't work, refresh or reauth'
     pass
 
 
-class CloudCursorError(CloudException):              # 'cursor is invalid'
+class CloudDisconnectedError(CloudException):         # 'reconnect plz'
     pass
 
 
-class CloudNamespaceError(CloudException):           # 'namespaces are not supported or the namespace is invalid'
+class CloudCursorError(CloudException):               # 'cursor is invalid'
+    pass
+
+
+class CloudNamespaceError(CloudException):            # 'namespaces are not supported or the namespace is invalid'
     pass
