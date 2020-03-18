@@ -7,7 +7,7 @@ import logging
 import shutil
 import collections
 import threading
-from hashlib import blake2
+from hashlib import blake2s
 import typing
 from dataclasses import dataclass
 
@@ -32,9 +32,9 @@ log = logging.getLogger(__name__)
 def get_hash(dat):
     """Returns a hash of it's argument which can be a bytes or filelike object"""
     if not hasattr(dat, "read"):
-        return blake2(dat).digest()
+        return blake2s(dat).digest()
     blocksize = 4096
-    d = blake2()
+    d = blake2s()
     block = dat.read(blocksize)
     while block:
         d.update(block)
@@ -106,12 +106,12 @@ class CacheEnt:
     fhash = b''
 
 
-class FileProvider(Provider):
+class FileSystemProvider(Provider):
     """
-    FileProvider is a provider that uses the filesystem, and full paths as the storage location.
+    FileSystemProvider is a provider that uses the filesystem, and full paths as the storage location.
     """
     default_sleep = 0.01
-    name = "file"
+    name = "filesystem"
     oid_is_path = True
     case_sensitive = detect_case_sensitive()
     _max_queue = 10000
@@ -119,10 +119,14 @@ class FileProvider(Provider):
     _test_event_sleep = 0.001
     _test_creds = {}
 
+    @property
+    def test_root(self):
+        return "/tmp"
+
     def __init__(self):
-        """Constructor for FileProvider."""
-        self.namespace = "/"
-        self.namespace_id = "/"
+        """Constructor for FileSystemProvider."""
+        self._namespace = "/"
+        self._namespace_id = "/"
         self._cursor = 0
         self._latest_cursor = 0
         self._events = collections.deque([])
@@ -131,9 +135,27 @@ class FileProvider(Provider):
         self.cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
         super().__init__()
+        self._test_creds = {"key": "val"}
+
+    def connect_impl(self, creds):
+        log.debug("connect mock prov creds : %s", creds)
+
+        if not creds:
+            raise ex.CloudTokenError()
+
+        self.__in_connect = True
+        self._api("connect_impl", creds)
+        self.__in_connect = False
+
+        if self.connection_id is None or self.connection_id == "invalid":
+            return os.urandom(16).hex()
+
+        return self.connection_id
 
     def get_quota(self):
-        _total, used, free = shutil.disk_usage(self.namespace)
+        if not self.connected:
+            raise ex.CloudDisconnectedError()
+        _total, used, free = shutil.disk_usage(self._namespace)
         return {
             "used": used,
             "limit": free,
@@ -179,11 +201,11 @@ class FileProvider(Provider):
                 yield pe
 
     def _oid_to_path(self, oid):
-        return self.join(self.namespace_id, oid)
+        return self.join(self._namespace_id, oid)
 
     def _path_to_oid(self, path):
         path = self.normalize_path(path)
-        subs = self.is_subpath(self.namespace_id, path)
+        subs = self.is_subpath(self._namespace_id, path)
         if subs[0] != '/':
             subs = '/' + subs
         return subs
@@ -285,13 +307,12 @@ class FileProvider(Provider):
     def info_path(self, path: str, use_cache=True) -> typing.Optional[OInfo]:
         if not os.path.exists(path):
             return None
+        isdir = os.path.isdir(path)
 
-        st = os.stat(path)
-        fhash = self._fast_hash(path)
-        otype = OType.DIRECTORY if st.is_dir else OType.FILE
+        fhash = None if isdir else self._fast_hash(path)
+        otype = OType.DIRECTORY if isdir else OType.FILE
         oid = self._path_to_oid(path)
         path = canonicalize_fpath(self.case_sensitive, path)
-
         return OInfo(otype=otype, oid=oid, hash=fhash, path=path)
 
     def info_oid(self, oid: str, use_cache=True) -> typing.Optional[OInfo]:
@@ -299,4 +320,5 @@ class FileProvider(Provider):
         return self.info_path(path)
 
 
-register_provider(FileProvider)
+register_provider(FileSystemProvider)
+__cloudsync__ = FileSystemProvider
