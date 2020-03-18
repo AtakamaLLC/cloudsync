@@ -353,6 +353,13 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError(path)
         yield from self._walk(path, info.oid, recursive)
 
+    def walk_oid(self, oid, recursive=True):
+        """List all files recursively, yielded as events"""
+        info = self.info_oid(oid)
+        if not info:
+            raise CloudFileNotFoundError(oid)
+        yield from self._walk(info.path, info.oid, recursive)
+
 
 # HELPER
     @classmethod
