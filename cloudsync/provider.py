@@ -43,6 +43,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True               ; """Provider is case sensitive"""
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
+    test_root: str = '/'                      ; """Root folder to use during provider tests"""
     _namespace: str = None                    ; """current namespace, if needed """
     _namespace_id: str = None                 ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""

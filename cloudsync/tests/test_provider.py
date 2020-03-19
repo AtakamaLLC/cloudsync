@@ -1499,7 +1499,7 @@ def test_file_exists(provider):
     with pytest.raises(CloudFileExistsError):
         provider.rename(folder_oid, file_name)  # reuse the same file and folder from the last test
 
-    #   rename: renaming a folder over a file, raises FEx
+    #   rename: renaming a file over a file, raises FEx
     with pytest.raises(CloudFileExistsError):
         provider.rename(file_oid, other_file_name)  # reuse the same file and folder from the last test
 
@@ -2127,7 +2127,7 @@ def test_provider_interface(unconnected_provider):
         for x in prov_dir:
             msg += "\n     %s" % x
         log.error(msg)
-    assert len(prov_dir) == 0
+    assert prov_dir == set()
 
 
 def test_cache(two_scoped_providers):
@@ -2197,7 +2197,11 @@ def test_bug_create(very_scoped_provider):
         file_like.read = raises_ex          # type: ignore
 
         with pytest.raises(Exception):
-            provider.create("/bug_create", file_like)
+            try:
+                provider.create("/bug_create", file_like)
+            except Exception as e:
+                log.info(e.msg)
+                raise
 
         assert not provider.exists_path("/bug_create")
 
@@ -2218,8 +2222,8 @@ def test_root_rename(unwrapped_provider):
     provider = unwrapped_provider
     if hasattr(provider, "_test_creds"):
         provider.connect(provider._test_creds)
-    tfn1 = "/" + os.urandom(24).hex()
-    tfn2 = "/" + os.urandom(24).hex()
+    tfn1 = provider.join(provider.test_root, os.urandom(24).hex())
+    tfn2 = provider.join(provider.test_root, os.urandom(24).hex())
     oinfo = provider.create(tfn1, BytesIO(b'hello'))
     oid = provider.rename(oinfo.oid, tfn2)
     provider.delete(oid)

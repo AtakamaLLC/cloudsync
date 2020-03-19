@@ -119,9 +119,11 @@ class FileSystemProvider(Provider):
     _test_event_sleep = 0.001
     _test_creds = {}
 
-    @property
-    def test_root(self):
-        return "/tmp"
+    def _test_root(self):
+        root = "/tmp/cloudsync"
+        if not os.path.exists(root):
+            os.mkdir(root)
+        return root
 
     def __init__(self):
         """Constructor for FileSystemProvider."""
@@ -132,10 +134,11 @@ class FileSystemProvider(Provider):
         self._events = collections.deque([])
         self._evlock = threading.Lock()
         self._evoffset = 0
-        self.cache_enabled = True
+        self._cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
         super().__init__()
         self._test_creds = {"key": "val"}
+        self.test_root = self._test_root()
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
@@ -213,57 +216,91 @@ class FileSystemProvider(Provider):
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         with self._api():
             path = self._oid_to_path(oid)
+            if os.path.isdir(path):
+                raise ex.CloudFileExistsError()
             if not os.path.exists(path):
                 raise ex.CloudFileNotFoundError(oid)
-            with open(path, "wb") as f:
+            tmpdir = tempfile.gettempdir()
+            tmp_file = os.path.join(tmpdir, "tmp." + os.urandom(16).hex())
+            with open(tmp_file, "wb") as f:
                 shutil.copyfileobj(file_like, f)
+            try:
+                with open(tmp_file, "rb") as src, open(path, "wb") as dest:
+                    shutil.copyfileobj(src, dest)
+            finally:
+                try:
+                    os.unlink(tmp_file)
+                except Exception:
+                    pass
             return self.info_oid(oid)
 
-    def _fast_hash(self, path):
-        if not self.cache_enabled:
-            with open(path, "r") as f:
+    def _fast_hash_path(self, path):
+        if not self._cache_enabled:
+            with open(path, "rb") as f:
                 return get_hash(f)
 
-        path = self.normalize_path(path)
+        if os.path.isdir(path):
+            return None
 
-        if path not in self._hash_cache:
-            self._hash_cache[path] = CacheEnt()
+        norm_path = self.normalize_path(path)
+        if norm_path not in self._hash_cache:
+            self._hash_cache[norm_path] = CacheEnt()
+        ci = self._hash_cache[norm_path]
 
         st = os.stat(path)
-        ci = self._hash_cache[path]
-        with open(path, "r") as f:
-            first = f.read(1024)
-            f.seek(os.SEEK_END, -1024)
-            last = f.read(1024)
-            qhash = get_hash(first + last)
+        with open(path, "rb") as f:
+            fhash = self._fast_hash_data(f)
+            f.seek(0,0)
+            qhash = get_hash(f)
 
-            # only update hash if modification time changes or if prefix bytes change
-            # this can be disabled
-            if ci.mtime == 0 or st.st_mtime != ci.mtime or qhash != ci.qhash:
-                f.seek(0, 0)
-                ci.fhash = get_hash(f)
-                ci.qhash = qhash
-                ci.mtime = st.st_mtime
+        # only update hash if modification time changes or if prefix bytes change
+        # this can be disabled
+        if ci.mtime == 0 or st.st_mtime != ci.mtime or qhash != ci.qhash:
+            ci.fhash = fhash
+            ci.qhash = qhash
+            ci.mtime = st.st_mtime
+        return fhash
 
-        return ci.fhash
+    def _fast_hash_data(self, file_like):
+        file_like.seek(0, os.SEEK_END)
+        length = file_like.tell()
+        file_like.seek(0, os.SEEK_SET)
+        first = file_like.read(1024)
+        if length > 1024:
+            last_size = min(1024, length - 1024)
+            file_like.seek( 0 - last_size, os.SEEK_END)
+            last = file_like.read(last_size)
+        else:
+            last = b''
+        # log.debug("first+last = %s", first+last)
+        return get_hash(first + last)
 
     def listdir(self, oid) -> typing.Generator[DirInfo, None, None]:
         with self._api():
             path = self._oid_to_path(oid)
-            if not os.path.exists(path):
+            if not os.path.isdir(path):
                 raise ex.CloudFileNotFoundError(oid)
             with os.scandir(path) as it:
                 for entry in it:
-                    path = entry.path
-                    ohash = self._fast_hash(path)
+                    entry_path = entry.path
+                    ohash = self._fast_hash_path(entry_path)
                     otype = OType.DIRECTORY if entry.is_dir() else OType.FILE
-                    yield DirInfo(otype=otype, oid=oid, hash=ohash, path=path)
+                    name = self.is_subpath(path, entry_path).lstrip("/")
+                    yield DirInfo(otype=otype, oid=self._path_to_oid(entry_path), hash=ohash, path=entry_path, name=name)
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         with self._api():
+            parent = self.dirname(path)
+            if os.path.exists(path) or (os.path.exists(parent) and not os.path.isdir(parent)):
+                raise ex.CloudFileExistsError()
             with open(path, "wb") as dest:
-                shutil.copyfileobj(file_like, dest)
-                return self.info_path(path)
+                try:
+                    shutil.copyfileobj(file_like, dest)
+                except Exception:
+                    if os.path.exists(path):
+                        os.unlink(path)
+                    raise
+            return self.info_path(path)
 
     def download(self, oid, file_like):
         with self._api():
@@ -274,18 +311,52 @@ class FileSystemProvider(Provider):
     def rename(self, oid, path) -> str:
         with self._api():
             path_from = self._oid_to_path(oid)
-            os.rename(path_from, path)
+            if not os.path.exists(path_from):
+                raise ex.CloudFileNotFoundError
+            parent = self.dirname(path)
+            if not os.path.exists(parent):
+                raise ex.CloudFileNotFoundError(parent)
+            if not os.path.isdir(parent):
+                raise ex.CloudFileExistsError(path)
+            if path_from != path:
+                from_dir = os.path.isdir(path_from)
+                to_dir = os.path.isdir(path)
+                if os.path.exists(path) and (not to_dir or to_dir != from_dir or (to_dir and self._folder_path_has_contents(path))):
+                    raise ex.CloudFileExistsError(path)
+                os.rename(path_from, path)
             return self._path_to_oid(path)
 
     def mkdir(self, path) -> str:
         with self._api():
-            os.mkdir(path)
+            parent = self.dirname(path)
+            if os.path.isfile(parent) or os.path.isfile(path):
+                raise ex.CloudFileExistsError()
+            if not os.path.exists(path):
+                os.mkdir(path)
             return self._path_to_oid(path)
+
+    def _folder_path_has_contents(self, path):
+        oid = self._path_to_oid(path)
+        if oid:
+            return self._folder_oid_has_contents(oid)
+        return False
+
+    def _folder_oid_has_contents(self, oid):
+        try:
+            next(self.listdir(oid))
+            return True
+        except StopIteration:
+            return False
 
     def delete(self, oid):
         with self._api():
             path = self._oid_to_path(oid)
-            os.unlink(path)
+            if os.path.isdir(path):
+                if self._folder_oid_has_contents(oid):
+                    raise ex.CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, path))
+                os.rmdir(path)
+            elif os.path.exists(path):
+                os.unlink(path)
 
     def exists_oid(self, oid):
         with self._api():
@@ -299,18 +370,17 @@ class FileSystemProvider(Provider):
     def hash_oid(self, oid) -> bytes:
         with self._api():
             path = self._oid_to_path(oid)
-            return self._fast_hash(path)
+            return self._fast_hash_path(path)
 
     def hash_data(self, file_like) -> bytes:
-        return self._fast_hash(file_like)
+        return self._fast_hash_data(file_like)
 
     def info_path(self, path: str, use_cache=True) -> typing.Optional[OInfo]:
         if not os.path.exists(path):
             return None
-        isdir = os.path.isdir(path)
 
-        fhash = None if isdir else self._fast_hash(path)
-        otype = OType.DIRECTORY if isdir else OType.FILE
+        fhash = self._fast_hash_path(path)
+        otype = OType.DIRECTORY if os.path.isdir(path) else OType.FILE
         oid = self._path_to_oid(path)
         path = canonicalize_fpath(self.case_sensitive, path)
         return OInfo(otype=otype, oid=oid, hash=fhash, path=path)
