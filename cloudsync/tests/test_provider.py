@@ -150,8 +150,8 @@ class ProviderTextMixin(ProviderBase):
     def __getattr__(self, k):
         return getattr(self.prov, k)
 
-    def events(self) -> Generator[Event, None, None]:
-        for e in self.prov.events():
+    def events(self, oid) -> Generator[Event, None, None]:
+        for e in self.prov.events(oid):
             if self.__filter_root(e) or not e.exists:
                 yield e
 
@@ -281,17 +281,20 @@ class ProviderTextMixin(ProviderBase):
         fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "(." + name)
         return fname
 
-    def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
+    def events_poll(self, timeout=None, oid=None, until=None) -> Generator[Event, None, None]:
+        if oid is None:
+            oid = self.info_path("/").oid
+
         if timeout is None:
             timeout = self._test_event_timeout
 
         if timeout == 0:
-            yield from self.events()
+            yield from self.events(oid)
             return
 
         for _ in time_helper(timeout, sleep=self._test_event_sleep):
             got = False
-            for e in self.events():
+            for e in self.events(oid):
                 yield e
                 got = True
             if not until and got:
@@ -1586,7 +1589,8 @@ def test_cursor(provider):
         pytest.xfail("gdrive is flaky")
     # get the ball rolling
     provider.create("/file1", BytesIO(b"hello"))
-    for i in provider.events():
+    oid = provider.info_path("/").oid
+    for i in provider.events(oid):
         log.debug("event = %s", i)
     current_csr1 = provider.current_cursor
     log.debug(f"type of cursor is {type(current_csr1)}")
