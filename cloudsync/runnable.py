@@ -94,7 +94,6 @@ class Runnable(ABC):
                     break
 
                 try:
-                    log.debug("about to do")
                     self.__clear_on_success = True
                     self.do()
                     if self.__clear_on_success and self.in_backoff > 0:
