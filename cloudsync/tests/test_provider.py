@@ -150,8 +150,8 @@ class ProviderTextMixin(ProviderBase):
     def __getattr__(self, k):
         return getattr(self.prov, k)
 
-    def events(self, oid) -> Generator[Event, None, None]:
-        for e in self.prov.events(oid):
+    def events(self) -> Generator[Event, None, None]:
+        for e in self.prov.events():
             if self.__filter_root(e) or not e.exists:
                 yield e
 
@@ -281,20 +281,17 @@ class ProviderTextMixin(ProviderBase):
         fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "(." + name)
         return fname
 
-    def events_poll(self, timeout=None, oid=None, until=None) -> Generator[Event, None, None]:
-        if oid is None:
-            oid = self.info_path("/").oid
-
+    def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
             timeout = self._test_event_timeout
 
         if timeout == 0:
-            yield from self.events(oid)
+            yield from self.events()
             return
 
         for _ in time_helper(timeout, sleep=self._test_event_sleep):
             got = False
-            for e in self.events(oid):
+            for e in self.events():
                 yield e
                 got = True
             if not until and got:
@@ -761,7 +758,7 @@ def test_walk(scoped_provider):
 
     assert got_event
 
-    ## check non-rec
+    # check non-rec
     found = {}
     for e in provider.walk("/", recursive=False):
         if e.otype == cloudsync.DIRECTORY:
@@ -780,6 +777,10 @@ def test_walk(scoped_provider):
     for x in [dest1, dest2]:
         log.debug("found %s", x)
         assert found.get(x, False) is False
+
+    # check bad oid
+    with pytest.raises(CloudFileNotFoundError):
+        list(provider.walk_oid("bad-oid"))
 
 
 def check_event_path(event: Event, provider, target_path):
@@ -1502,7 +1503,7 @@ def test_file_exists(provider):
     with pytest.raises(CloudFileExistsError):
         provider.rename(folder_oid, file_name)  # reuse the same file and folder from the last test
 
-    #   rename: renaming a file over a file, raises FEx
+    #   rename: renaming a folder over a file, raises FEx
     with pytest.raises(CloudFileExistsError):
         provider.rename(file_oid, other_file_name)  # reuse the same file and folder from the last test
 
@@ -1589,8 +1590,7 @@ def test_cursor(provider):
         pytest.xfail("gdrive is flaky")
     # get the ball rolling
     provider.create("/file1", BytesIO(b"hello"))
-    oid = provider.info_path("/").oid
-    for i in provider.events(oid):
+    for i in provider.events():
         log.debug("event = %s", i)
     current_csr1 = provider.current_cursor
     log.debug(f"type of cursor is {type(current_csr1)}")
@@ -2131,7 +2131,7 @@ def test_provider_interface(unconnected_provider):
         for x in prov_dir:
             msg += "\n     %s" % x
         log.error(msg)
-    assert prov_dir == set()
+    assert len(prov_dir) == 0
 
 
 def test_cache(two_scoped_providers):
@@ -2201,11 +2201,7 @@ def test_bug_create(very_scoped_provider):
         file_like.read = raises_ex          # type: ignore
 
         with pytest.raises(Exception):
-            try:
-                provider.create("/bug_create", file_like)
-            except Exception as e:
-                log.info(e.msg)
-                raise
+            provider.create("/bug_create", file_like)
 
         assert not provider.exists_path("/bug_create")
 
@@ -2226,8 +2222,8 @@ def test_root_rename(unwrapped_provider):
     provider = unwrapped_provider
     if hasattr(provider, "_test_creds"):
         provider.connect(provider._test_creds)
-    tfn1 = provider.join(provider.test_root, os.urandom(24).hex())
-    tfn2 = provider.join(provider.test_root, os.urandom(24).hex())
+    tfn1 = "/" + os.urandom(24).hex()
+    tfn2 = "/" + os.urandom(24).hex()
     oinfo = provider.create(tfn1, BytesIO(b'hello'))
     oid = provider.rename(oinfo.oid, tfn2)
     provider.delete(oid)
