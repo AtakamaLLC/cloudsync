@@ -12,6 +12,7 @@ from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, F
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
+from cloudsync.smartsync import SmartCloudSync
 import time
 
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
@@ -20,6 +21,13 @@ from .fixtures import WaitFor, RunUntilHelper
 log = logging.getLogger(__name__)
 
 roots = ("/local", "/remote")
+
+
+class SmartCloudSyncMixin(SmartCloudSync, RunUntilHelper):
+    def __init__(self, *ar, **kw):
+        super().__init__(*ar, **kw)
+        # default for tests is no aging, feel free to change
+        self.aging = 0
 
 
 class CloudSyncMixin(CloudSync, RunUntilHelper):
@@ -35,6 +43,22 @@ def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
     storage = MockStorage(storage_dict)
     for cs in _fixture_cs(mock_provider_generator, mock_provider_creator, storage):
         yield cs, storage
+
+
+@pytest.fixture(name="scs")
+def fixture_scs(mock_provider_generator, mock_provider_creator):
+    yield from _fixture_scs(mock_provider_generator, mock_provider_creator)
+
+
+def _fixture_scs(mock_provider_generator, mock_provider_creator, storage=None):
+    cs = SmartCloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
+
+    cs.providers[LOCAL].name += '-l'
+    cs.providers[REMOTE].name += '-r'
+
+    yield cs
+
+    cs.done()
 
 
 @pytest.fixture(name="cs")
@@ -2797,3 +2821,62 @@ def test_root_needed(cs, cs_root_oid, mode):
         cs.start(until=until)
         cs.wait(timeout=2)
         assert until()
+
+
+def test_smartsync(scs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_test_folder = "/local/testfolder"
+    remote_test_folder = "/remote/testfolder"
+    remote_path1 = "/remote/stuff1"
+    local_path1 = "/local/stuff1"
+    remote_path2 = "/remote/stuff2"
+    local_path2 = "/local/stuff2"
+    contents1 = b"hello1"
+    contents1a = b"hello1a"
+    contents1b = b"hello1b"
+    local_oid1 = None
+    (local, remote) = scs.providers
+
+    scs.providers[REMOTE].mkdir(remote_parent)
+
+    # confirm that folders always sync down
+    scs.providers[REMOTE].mkdir(remote_test_folder)
+    scs.run_until_clean(1)
+    assert local.exists_path(local_test_folder)
+
+    rinfo1 = scs.providers[REMOTE].create(remote_path1, BytesIO(contents1), None)
+    scs.run_until_clean(1)
+    assert not local.exists_path(local_path1)
+
+    # sync the file down
+    # scs.smart_sync_path(remote_parent, REMOTE)
+    scs.smart_sync_path(remote_path1, REMOTE)
+    # confirm it exists
+    assert local.exists_path(local_path1)
+    # update the file remotely, and confirm it synced
+    remote.upload(rinfo1.oid, BytesIO(contents1a))
+    scs.run_until_clean(5)
+    curr_contents = BytesIO()
+    local_info1 = local.info_path(local_path1)
+    local_oid1 = local_info1.oid
+    local.download(local_oid1, curr_contents)
+    assert curr_contents.getvalue() == contents1a
+
+    # desync the file
+    scs.smart_unsync(local_path1, LOCAL)
+    # confirm it no longer exists
+    assert not local.exists_path(local_path1)
+    # update the file remotely, and confirm it didn't sync
+    remote.upload(rinfo1.oid, BytesIO(contents1b))
+    scs.run_until_clean(5)
+    assert not local.exists_path(local_path1)
+
+    files = scs.providers[LOCAL].listdir(local_parent)
+    assert local_path1 in [x.path for x in files]
+    for file in files:
+        if file.path == local_path1:
+            assert file.size == len(contents1)
+            assert file.mtime >= time.time() - 5
+            local_oid1 = file.oid
+    assert local_oid1

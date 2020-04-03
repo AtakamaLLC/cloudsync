@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple, List, IO, Any
+from typing import Optional, Tuple, List, IO, Any, Type
 
 from pystrict import strict
 
@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 @strict  # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
     """
-    The main syncrhonization class used.
+    The main synchronization class used.
     """
     def __init__(self,
                  providers: Tuple[Provider, Provider],
@@ -27,6 +27,8 @@ class CloudSync(Runnable):
                  storage: Optional[Storage] = None,
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None,
+                 state_class: Type = SyncState,
+                 smgr_class: Type = SyncManager
                  ):
 
         """
@@ -67,11 +69,11 @@ class CloudSync(Runnable):
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
 
         # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through
-        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
-                          prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
+        state = state_class(providers, storage, tag=self.storage_label(), shuffle=False,
+                            prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
-        smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                           self.resolve_conflict, self.nmgr, sleep=sleep)
+        smgr = smgr_class(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
+                          self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state

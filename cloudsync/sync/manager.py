@@ -176,35 +176,44 @@ class SyncManager(Runnable):
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
 
+    def sync_one_entry(self, sync: SyncEntry):
+        something_got_done = False
+        try:
+            something_got_done = self.pre_sync(sync)
+            if not something_got_done:
+                something_got_done = self.sync(sync)
+            self.state.storage_commit()
+        except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError,
+                ex.CloudNamespaceError) as e:
+            if self.__nmgr:
+                self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
+            log.warning(
+                "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
+            sync.punt()
+            # do we want to self.state.storage_commit() here?
+            self.backoff()
+        except Exception as e:
+            # TODO: notify_from_exception
+            log.exception(
+                "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
+            sync.punt()
+            self.state.storage_commit()
+            self.backoff()
+        return something_got_done
+
     def do(self):
         need_to_sleep = True
-        something_got_done = True
+        something_got_done = False  # shouldn't this be default False? Don't assume there will be no exceptions...
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
             if sync:
                 need_to_sleep = False
-                try:
-                    something_got_done = self.sync(sync)
-                    self.state.storage_commit()
-                except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError, ex.CloudNamespaceError) as e:
-                    if self.__nmgr:
-                        self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
-                    log.warning(
-                        "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-                    sync.punt()
-                    # do we want to self.state.storage_commit() here?
-                    self.backoff()
-                except Exception as e:
-                    # TODO: notify_from_exception
-                    log.exception(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-                    sync.punt()
-                    self.state.storage_commit()
-                    self.backoff()
+                something_got_done = self.sync_one_entry(sync)
 
         if need_to_sleep:
             time.sleep(self.aging)
 
+        # q: if something got done due to pre_sync, is that sufficient condition to clear the backoff flag?
         if not something_got_done:
             # don't clear the backoff flag if all we did was punt
             self.nothing_happened()
@@ -224,7 +233,15 @@ class SyncManager(Runnable):
 
     @property
     def busy(self):
+        return self.changeset_len
+
+    @property
+    def changeset_len(self):
         return self.state.changeset_len
+
+    @property
+    def changes(self):
+        return self.state.changes
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         count = 0
@@ -237,9 +254,9 @@ class SyncManager(Runnable):
 
         if unverified:
             for i in sides:
-                count += self.state.changeset_len
+                count += self.changeset_len
         else:
-            for e in self.state.changes:
+            for e in self.changes:
                 for i in sides:
                     if e[i].path and e[i].changed:
                         translated_path = self.translate(other_side(i), e[i].path)
@@ -308,10 +325,7 @@ class SyncManager(Runnable):
                     sync[changed].changed = time.time()
                     sync[synced].clear()
 
-    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
-        """
-        Called on each changed entry.
-        """
+    def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         self.check_revivify(sync)
 
         if sync.is_discarded:
@@ -320,7 +334,12 @@ class SyncManager(Runnable):
             return True
 
         sync.get_latest()
+        return False
 
+    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
+        """
+        Called on each changed entry.
+        """
         if sync.hash_conflict():
             log.debug("handle hash conflict")
             self.handle_hash_conflict(sync)

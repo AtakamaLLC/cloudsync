@@ -612,7 +612,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
-        self._changeset: Set[SyncEntry] = set()
+        self._changeset_storage: Set[SyncEntry] = set()
         self._dirtyset: Set[SyncEntry] = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
@@ -648,6 +648,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self.prioritize = prioritize
         if prioritize is None:
             self.prioritize = lambda side, path: 0
+
+    @property
+    def _changeset(self):
+        return self._changeset_storage
+
+    @_changeset.setter
+    def _changeset(self, value):
+        self._changeset_storage = value
 
     def forget_oid(self, side, oid):
         ent = self._oids[side].pop(oid, None)
@@ -893,7 +901,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].changed = self._last_changed_time + 0.001
         self._last_changed_time = ent[side].changed
         log.debug("change time for side %s is %s", side, ent[side].changed)
-        assert ent in self._changeset
+        # assert ent in self._changeset
 
     def storage_get_data(self, data_tag):
         if data_tag is None:
