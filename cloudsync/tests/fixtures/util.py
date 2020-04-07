@@ -68,10 +68,12 @@ class RunUntilHelper:
     def run_until_clean(self: Any, timeout=TIMEOUT):
         # self.run(until=lambda: not self.busy, timeout=1)  # older, SLIGHTLY slower version
         start = time.monotonic()
-        while self.busy:
-            self.do()
+        busy = True  # make sure we run the loop once -- necessary for smartsync tests
+        while busy:
             if time.monotonic() - start > timeout:
                 raise TimeoutError()
+            self.do()
+            busy = self.busy
 
     def run_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT):
         log.debug("running until found")

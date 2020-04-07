@@ -640,7 +640,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                         self._paths[side][path][oid] = ent
                         self._oids[side][oid] = ent
                         if ent[side].changed:
-                            self._changeset.add(ent)
+                            self._changeset_storage.add(ent)
                 except Exception as e:
                     log.error("exception during deserialization %s", e)
                     self._storage.delete(tag, eid)
@@ -687,12 +687,12 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if val == IgnoreReason.DISCARDED:
                 ent[LOCAL]._changed = False
                 ent[REMOTE]._changed = False
-                self._changeset.discard(ent)
+                self._changeset_storage.discard(ent)
         elif key == "changed":
             if (val and ent[side].oid) or (ent[other_side(side)].changed and ent[other_side(side)].oid):
-                self._changeset.add(ent)
+                self._changeset_storage.add(ent)
             else:
-                self._changeset.discard(ent)
+                self._changeset_storage.discard(ent)
         elif key == "priority":
             if val > ent.priority and val > 0:
                 # move to later on priority drop below zero
@@ -805,11 +805,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
             if ent[side].changed or ent[other_side(side)].changed:
-                self._changeset.add(ent)
+                self._changeset_storage.add(ent)
         else:
             # ent without oid doesn't go in changeset
             if ent[side].changed and not ent[other_side(side)].changed:
-                self._changeset.discard(ent)
+                self._changeset_storage.discard(ent)
 
     def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]
@@ -1055,7 +1055,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return
 
         log.debug("finished: %s", ent)
-        self._changeset.discard(ent)
+        self._changeset_storage.discard(ent)
 
         for e in self._changeset:
             if e.priority > 0 and ent.is_related_to(e):

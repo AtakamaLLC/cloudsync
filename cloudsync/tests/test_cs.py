@@ -2824,10 +2824,15 @@ def test_root_needed(cs, cs_root_oid, mode):
 
 
 def test_smartsync(scs):
+    # TODO: get listdir to produce mtime's and sizes.
+    # TODO: test local files always sync even when smartsync is enabled
+    # TODO: test sync, then unsync, then sync again, to confirm remote file doesn't get deleted or something stupid
+    timeout = 1
     local_parent = "/local"
     remote_parent = "/remote"
     local_test_folder = "/local/testfolder"
     remote_test_folder = "/remote/testfolder"
+    remote_test_folder_contents = "/remote/testfolder/testfile"
     remote_path1 = "/remote/stuff1"
     local_path1 = "/local/stuff1"
     remote_path2 = "/remote/stuff2"
@@ -2838,33 +2843,34 @@ def test_smartsync(scs):
     local_oid1 = None
     (local, remote) = scs.providers
 
+    scs.run_until_clean(timeout)
     scs.providers[REMOTE].mkdir(remote_parent)
 
     # confirm that folders always sync down
     scs.providers[REMOTE].mkdir(remote_test_folder)
-    scs.run_until_clean(1)
+    scs.run_until_clean(timeout)
     assert local.exists_path(local_test_folder)
 
-    rinfo1 = scs.providers[REMOTE].create(remote_path1, BytesIO(contents1), None)
-    scs.run_until_clean(1)
+    rinfo1 = scs.providers[REMOTE].create(remote_path1, BytesIO(contents1))
+    scs.run_until_clean(timeout)
     assert not local.exists_path(local_path1)
 
     # sync the file down
-    # scs.smart_sync_path(remote_parent, REMOTE)
     scs.smart_sync_path(remote_path1, REMOTE)
     # confirm it exists
     assert local.exists_path(local_path1)
-    # update the file remotely, and confirm it synced
+    # update the file remotely, and confirm the update syncs down
     remote.upload(rinfo1.oid, BytesIO(contents1a))
-    scs.run_until_clean(5)
+    scs.run_until_clean(timeout)
     curr_contents = BytesIO()
     local_info1 = local.info_path(local_path1)
     local_oid1 = local_info1.oid
     local.download(local_oid1, curr_contents)
     assert curr_contents.getvalue() == contents1a
 
+    assert local.exists_path(local_path1)
     # desync the file
-    scs.smart_unsync(local_path1, LOCAL)
+    scs.smart_unsync_path(local_path1, LOCAL)
     # confirm it no longer exists
     assert not local.exists_path(local_path1)
     # update the file remotely, and confirm it didn't sync
@@ -2872,7 +2878,8 @@ def test_smartsync(scs):
     scs.run_until_clean(5)
     assert not local.exists_path(local_path1)
 
-    files = scs.providers[LOCAL].listdir(local_parent)
+    local_parent_info = scs.providers[LOCAL].info_path(local_parent)
+    files = list(scs.smart_listdir_path(local_parent))
     assert local_path1 in [x.path for x in files]
     for file in files:
         if file.path == local_path1:

@@ -76,8 +76,8 @@ class CloudSync(Runnable):
                           self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
-        self.state = state
-        self.smgr = smgr
+        self.state: SyncState = state
+        self.smgr: SyncManager = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         self.__roots: Tuple[Optional[str], Optional[str]] = roots if roots else (None, None)
