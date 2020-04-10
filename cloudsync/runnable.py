@@ -145,7 +145,7 @@ class Runnable(ABC):
         """
         Sets a "nothing happened" flag.   This will cause backoff to remain the same, even on success.
         """
-        log.debug("%s: set nothing happend %s", self.service_name, self.in_backoff)
+        # log.debug("%s: set nothing happend %s", self.service_name, self.in_backoff)
         self.__clear_on_success = False
 
     def wake(self):
