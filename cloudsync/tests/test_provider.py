@@ -2351,8 +2351,12 @@ def test_globalize(provider):
     assert info.oid == oid
 
     # subpath
-    suboid = provider.mkdir("/sub")
+    suboid = provider.mkdir("/Sub")
     gid = provider.globalize_oid(suboid)
+    subinfo = provider.info_oid(suboid)
+    # this test is NOT effective in reproducing the known bad behavior, test needs to be enhanced to reproduce the problem
+    assert subinfo.path == "/Sub"  # double check the name and case haven't changed when globalizing
+
     oid = provider.localize_oid(gid)
     assert suboid == oid
 
