@@ -75,11 +75,10 @@ class SmartSyncState(SyncState):
 
     def smart_listdir(self, local_path, remote_path):
         prov = self.providers[REMOTE]
-        for ent, rel_path in self.get_kids(remote_path, REMOTE):
+        for ent, _ignored_rel_path in self.get_kids(remote_path, REMOTE):
             remote_ent_path = ent[REMOTE].path
-            remote_ent_parent, remote_ent_name = self.providers[REMOTE].split(ent[REMOTE].path)
+            _ignored_remote_ent_parent, remote_ent_name = self.providers[REMOTE].split(ent[REMOTE].path)
             if prov.paths_match(prov.dirname(remote_ent_path), remote_path):
-                #retval = DirInfo(otype=, oid=, hash=, path=, size=, name=, mtime=, shared=, readonly=)
                 ent_info = prov.info_oid(ent[REMOTE].oid)
                 retval = DirInfo(otype=ent[REMOTE].otype,
                                  oid='',
@@ -92,10 +91,11 @@ class SmartSyncState(SyncState):
                                  readonly=False,  # TODO: ent[REMOTE].readonly
                                  )
                 yield retval  # TODO: this needs to yield DirInfo, also translate back to local
-                
+
+    @property
     def changes(self):
         # Filter the changes to just those that are in the requestset, or those whose get_latest is stale viz. change_time
-        changes = super().changes()
+        changes = super().changes
         for ent in self.requestset:
             if ent[LOCAL].path in changes:
                 yield ent
@@ -103,7 +103,7 @@ class SmartSyncState(SyncState):
     @property
     def _changeset(self):
         folders = [ent for ent in self._changeset_storage if ent[REMOTE].otype == DIRECTORY or 
-                   ent[REMOTE].changed > ent[REMOTE]._last_gotten ]
+                   ent[REMOTE].changed > ent[REMOTE]._last_gotten]
         retval = self.requestset.intersection(self._changeset_storage).union(folders).difference(self.excludeset)
         return retval
 
@@ -113,8 +113,9 @@ class SmartSyncState(SyncState):
     #     if requested_changes:
 
     def unconditionally_get_latest(self, ent, i):
-        # gets enhanced data (mtime, size, etc)
-        return super().unconditionally_get_latest(ent, i)
+        # TODO: get enhanced data (mtime, size, etc)
+        retval = super().unconditionally_get_latest(ent, i)
+        return retval
 
 
 class SmartCloudSync(CloudSync):
