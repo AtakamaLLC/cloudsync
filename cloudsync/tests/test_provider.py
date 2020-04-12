@@ -2343,7 +2343,15 @@ def test_broken_upload(very_scoped_provider, content_len, operation):
         ), "File existed in the cloud, but had incorrect size"
 
 
-def test_globalize(provider):
+def test_globalize_root(provider):
+    # top path (do the subpath first, in order to test the sharing related code paths for case preservation)
+    top_info = provider.info_path("/")
+    top_gid = provider.globalize_oid(top_info.oid)
+    top_oid = provider.localize_oid(top_gid)
+    assert top_info.oid == top_oid
+
+
+def test_globalize_subfolder(provider):
     # subpath
     sub_oid = provider.mkdir("/Sub")
     sub_gid = provider.globalize_oid(sub_oid)
@@ -2353,11 +2361,6 @@ def test_globalize(provider):
     sub_local_oid = provider.localize_oid(sub_gid)
     assert sub_oid == sub_local_oid
 
-    # top path (do the subpath first, in order to test the sharing related code paths for case preservation)
-    top_info = provider.info_path("/")
-    top_gid = provider.globalize_oid(top_info.oid)
-    top_oid = provider.localize_oid(top_gid)
-    assert top_info.oid == top_oid
 
 
     if sub_gid == sub_local_oid:
