@@ -1655,15 +1655,16 @@ def test_listdir(provider):
     assert provider.exists_oid(inner_oid)
     new_list = provider.listdir(outer_oid)
     assert old_list != new_list  # confirm that the folder contents are not cached
-    provider.create(outer + "/file1", BytesIO(b"hello"))
-    provider.create(outer + "/file2", BytesIO(b"there"))
-    provider.create(inner + "/file3", BytesIO(b"world"))
+    provider.create(outer + "/file1", BytesIO(b"h" * 5))
+    provider.create(outer + "/file2", BytesIO(b"t" * 10))
+    provider.create(inner + "/file3", BytesIO(b"w" * 15))
     contents = list(provider.listdir(outer_oid))
-    names = [x.name for x in contents]
-    assert len(names) == 3
-    expected = ["file1", "file2", temp_name[1:]]
-    log.info("names %s", names)
-    assert sorted(names) == sorted(expected)
+    names_sizes = [[x.name, x.size] for x in contents]
+    assert len(names_sizes) == 3
+    expected = [["file1", 5], ["file2", 10], [temp_name[1:], 0]]
+    log.info("names_sizes %s", names_sizes)
+    # Sort on name
+    assert sorted(names_sizes, key=lambda x: x[0]) == sorted(expected, key=lambda x: x[0])
 
     paths1 = [x.path for x in contents]
     contents2 = list(provider.listdir_oid(outer_oid, path=outer))

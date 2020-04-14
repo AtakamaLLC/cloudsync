@@ -53,6 +53,13 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
         else:
             return OType.DIRECTORY
 
+    @property
+    def size(self):
+        if self.contents:
+            return len(self.contents)
+        else:
+            return 0
+
     def hash(self) -> Optional[str]:
         if self.type == self.DIR:
             return None
@@ -193,7 +200,7 @@ class MockProvider(Provider):
             raise CloudTemporaryError("path %s is locked for test" % (fo.path))
 
         if fo.oid in self._fs_by_oid and self._fs_by_oid[fo.oid].contents:
-            self._total_size -= len(self._fs_by_oid[fo.oid].contents)
+            self._total_size -= self._fs_by_oid[fo.oid].size
 
         if fo.contents and self._quota is not None and self._total_size + len(fo.contents) > self._quota:
             raise CloudOutOfSpaceError("out of space in mock")
@@ -201,7 +208,7 @@ class MockProvider(Provider):
         self._fs_by_path[self.normalize_path(fo.path)] = fo
         self._fs_by_oid[fo.oid] = fo
         if fo.contents:
-            self._total_size += len(fo.contents)
+            self._total_size += fo.size
 
     def _set_quota(self, quota: int):
         self._quota = quota
@@ -221,7 +228,7 @@ class MockProvider(Provider):
             del self._fs_by_path[self.normalize_path(fo.path)]
             del self._fs_by_oid[fo.oid]
             if fo.contents:
-                self._total_size -= len(fo.contents)
+                self._total_size -= fo.size
         except KeyError:
             raise CloudFileNotFoundError("file doesn't exist %s" % fo.path)
 
@@ -308,7 +315,7 @@ class MockProvider(Provider):
                 if relative:
                     relative = relative.lstrip("/")
                     if "/" not in relative:
-                        yield DirInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative)
+                        yield DirInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative, size=obj.size)
 
     @lock
     def create(self, path, file_like, metadata=None) -> OInfo:
