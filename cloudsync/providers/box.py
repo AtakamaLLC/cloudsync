@@ -266,7 +266,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 headers = {'Authorization': 'Bearer %s' % (self.__access_token,)}
                 log.debug("headers: %s", headers)
                 srv_resp: requests.Response = self.__long_poll_session.options(self._base_box_url + self._events_endpoint,
-                                                                               headers=headers)
+                                                                               headers=headers, timeout=timeout)
                 log.debug("response content is %s, %s", srv_resp.status_code, srv_resp.content)
                 if not 200 <= srv_resp.status_code < 300:
                     raise CloudTokenError(srv_resp)
