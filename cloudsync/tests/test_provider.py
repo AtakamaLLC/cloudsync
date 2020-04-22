@@ -108,15 +108,15 @@ class ProviderTextMixin(ProviderBase):
         self.__patches = []
 
         # ensure requests lib is used correctly
-        old_request = requests.Session.request
+        old_send = requests.Session.send
 
-        def new_request(*request_args, **request_kwargs):
-            if not request_kwargs.get("timeout", None):
-                log.error("request called without timout")
+        def new_send(*args, **kwargs):
+            if not kwargs.get("timeout", None):
+                log.error("called without timout")
                 assert False
-            return old_request(*request_args, **request_kwargs)
+            return old_send(*args, **kwargs)
 
-        p = patch.object(requests.Session, "request", new_request)
+        p = patch.object(requests.Session, "send", new_send)
         p.start()
         self.__patches.append(p)
 
