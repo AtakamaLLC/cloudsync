@@ -1339,6 +1339,10 @@ class SyncManager(Runnable):
             return self.delete_synced(sync, changed, synced)
 
         if sync[changed].exists == MISSING:
+            if sync[synced].exists == EXISTS and not sync[synced].changed:
+                sync[synced].changed = time.time()
+                log.warning("%s missing, other side exists. Marking other side changed.")
+                # do we want to punt here, or fall through to marking finished?
             log.debug("%s missing", sync[changed].path)
             return FINISHED
 
