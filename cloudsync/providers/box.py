@@ -136,24 +136,23 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         raise CloudTokenError("require app_id/secret and either access_token or refresh token")
 
                 with self._mutex:
+                    box_session = Session(api_config=boxsdk.config.API, default_network_request_kwargs={"timeout": 60})
                     if jwt_token:
                         jwt_dict = json.loads(jwt_token)
                         user_id = creds.get('user_id')
                         auth = JWTAuth.from_settings_dictionary(jwt_dict, user=user_id,
                                                                 store_tokens=self._store_refresh_token)
-                        self.__client = Client(auth)
+                        self.__client = Client(auth, box_session)
                     else:
                         if not refresh_token:
                             raise CloudTokenError("Missing refresh token")
-                        box_session = Session(api_config=boxsdk.config.API)
-                        box_kwargs = box_session.get_constructor_kwargs()
-                        box_kwargs["api_config"] = boxsdk.config.API
                         auth = OAuth2(client_id=self._oauth_config.app_id,
                                       client_secret=self._oauth_config.app_secret,
                                       access_token=access_token,
                                       refresh_token=refresh_token,
                                       store_tokens=self._store_refresh_token)
 
+                        box_kwargs = box_session.get_constructor_kwargs()
                         box_session = AuthorizedSession(auth, **box_kwargs)
                         self.__client = Client(auth, box_session)
                 with self._api():

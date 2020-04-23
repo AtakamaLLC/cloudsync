@@ -112,7 +112,7 @@ class ProviderTextMixin(ProviderBase):
 
         def new_send(*args, **kwargs):
             if not kwargs.get("timeout", None):
-                log.error("called without timout")
+                log.error("requests called without timout", stack_info=True)
                 assert False
             return old_send(*args, **kwargs)
 
