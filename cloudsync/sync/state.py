@@ -557,7 +557,7 @@ class SyncEntry:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
-    def probably_changed(self, side):
+    def mark_dirty(self, side):
         self[side]._last_gotten = 0
 
     def is_latest(self) -> bool:
