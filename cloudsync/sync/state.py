@@ -1193,6 +1193,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return defer_ent, defer, replace_ent, replace
 
+    def unconditionally_get_no_info(self, ent, i):
+        if ent[i].exists == LIKELY_TRASHED:
+            if self.providers[i].oid_is_path:
+                # oote: oid_is_path providers are not supposed to do this
+                # it's possible we are wrong, and there's a trashed event arriving soon
+                log.info("possible out of order events received for trashed/exists: %s", ent)
+            ent[i].exists = TRASHED
+
+        if ent[i].exists != TRASHED:
+            # we haven't gotten a trashed event yet
+            ent[i].exists = MISSING
+
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
             if ent[i].exists not in (TRASHED, MISSING):
@@ -1202,16 +1214,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
-            if ent[i].exists == LIKELY_TRASHED:
-                if self.providers[i].oid_is_path:
-                    # oote: oid_is_path providers are not supposed to do this
-                    # it's possible we are wrong, and there's a trashed event arriving soon
-                    log.info("possible out of order events received for trashed/exists: %s", ent)
-                ent[i].exists = TRASHED
-
-            if ent[i].exists != TRASHED:
-                # we haven't gotten a trashed event yet
-                ent[i].exists = MISSING
+            self.unconditionally_get_no_info(ent, i)
             return
 
         ent[i].exists = EXISTS
