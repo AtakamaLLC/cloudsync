@@ -557,6 +557,9 @@ class SyncManager(Runnable):
 
         try:
             return self.unsafe_mkdir_synced(changed, synced, sync, translated_path)
+        except ex.CloudFileExistsError:
+            sync.probably_changed(synced)
+
         except ex.CloudFileNotFoundError:
             if sync.priority <= 0:
                 return PUNT
