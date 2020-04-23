@@ -486,8 +486,7 @@ def pytest_generate_tests(metafunc):
             provs += [kw]
 
         if not provs:
-            provs += ["mock_oid_cs"]
-            provs += ["mock_path_cs"]
+            provs = ["mock_oid_cs", "mock_oid_ci", "mock_path_cs", "mock_path_ci"]
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
 
@@ -2371,3 +2370,49 @@ def test_globalize(provider):
     # wrong value
     with pytest.raises(ValueError):
         oid = provider.localize_oid(oid)
+
+def test_normalize_path(provider):
+    upper = provider.join(["A", "B", "C", "DEF"])
+    lower = provider.join(["a", "b", "c", "def"])
+    mixed = provider.join(["A", "b", "C", "dEf"])
+
+    if provider.case_sensitive:
+        assert provider.normalize_path(upper) == upper
+        assert provider.normalize_path(lower) == lower
+        assert provider.normalize_path(mixed) == mixed
+        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"])) == provider.join(["A", "c", "dEf"])
+    else: # case-insensitive
+        assert provider.normalize_path(upper) == lower
+        assert provider.normalize_path(lower) == lower
+        assert provider.normalize_path(mixed) == lower
+        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"])) == provider.join(["a", "c", "def"])
+        assert provider.normalize_path(upper, True) == provider.join(["a", "b", "c", "DEF"])
+        assert provider.normalize_path(lower, True) == lower
+        assert provider.normalize_path(mixed, True) == provider.join(["a", "b", "c", "dEf"])
+        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"]), True) == provider.join(["a", "c", "dEf"])
+
+def test_paths_match(provider):
+    s1 = provider.sep
+    s2 = provider.alt_sep or s1
+
+    abcd = ["a", "b", "c", "d"]
+    abcd_ = ["a", "b", "c", "d", ""]
+    abcD = ["a", "b", "c", "D"]
+    abcD_ = ["a", "b", "c", "D", ""]
+    ABCD = ["A", "B", "C", "D"]
+    ABCD_ = ["A", "B", "C", "D", ""]
+    aBcD = ["a", "B", "c", "D"]
+    aBcD_ = ["a", "B", "c", "D", ""]
+
+    if provider.case_sensitive:
+        assert provider.paths_match(s1, s2)
+        assert provider.paths_match(s1.join(abcd), s2.join(abcd_))
+        assert not provider.paths_match(s1.join(abcd_), s2.join(abcD))
+    else: #case-insensitive
+        assert provider.paths_match(s1, s2)
+        assert provider.paths_match(s1.join(ABCD), s2.join(aBcD_))
+        assert provider.paths_match(s1.join(abcd_), s2.join(aBcD))
+        assert provider.paths_match(s1, s2, True)
+        assert provider.paths_match(s1.join(ABCD), s2.join(abcD_), True)
+        assert provider.paths_match(s1.join(abcd), s2.join(abcd_), True)
+        assert not provider.paths_match(s1.join(ABCD_), s2.join(abcd), True)

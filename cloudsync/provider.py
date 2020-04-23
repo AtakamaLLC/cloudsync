@@ -408,19 +408,24 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
 
-    def normalize_path(self, path: str):
-        """Used internally for comparing paths in a case and sep insensitive manner, as appropriate."""
-        norm_path = path.rstrip(self.sep)
-        if self.sep in ["\\", "/"]:
-            parts = re.split(r'[\\/]+', norm_path)
-        else:
-            parts = re.split(r'[%s]+' % self.sep, norm_path)
+    def normalize_path(self, path: str, pretty_leaf: bool = False):
+        """Used internally for comparing paths in a case and sep insensitive manner, as appropriate.
+
+        Args:
+            path: the path to normalize
+            pretty_leaf: when true, preserve case of path's leaf node
+        """
+        if self.alt_sep:
+            path = path.replace(self.alt_sep, self.sep)
+        sep_regexp = r"[\\]+" if self.sep == "\\" else f"[{self.sep}]+"
+        parts = re.split(sep_regexp, path.rstrip(self.sep))
         norm_path = self.join(*parts)
-        if not self.case_sensitive:
-            norm_path = norm_path.lower()
-        else:
-            norm_path = self.join(self.dirname(norm_path).lower(), self.basename(norm_path))
-        return norm_path
+
+        if self.case_sensitive:
+            return norm_path
+        elif pretty_leaf:
+            return self.join(self.dirname(norm_path).lower(), self.basename(norm_path))
+        return norm_path.lower()
 
     def is_subpath(self, folder, target, strict=False):
         """True if the target is within the folder.
@@ -467,14 +472,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return retval if relative != "" else self.sep
         raise ValueError("replace_path used without subpath")
 
-    def paths_match(self, patha, pathb):
+    def paths_match(self, patha, pathb, pretty_leaf = False):
         """True if two paths are equal, uses normalize_path()."""
         if patha is None and pathb is None:
             return True
         elif patha is None or pathb is None:
             return False
 
-        return self.normalize_path(patha) == self.normalize_path(pathb)
+        return self.normalize_path(patha, pretty_leaf) == self.normalize_path(pathb, pretty_leaf)
 
     def dirname(self, path: str):
         """Just like `os.dirname`, but for provider paths."""
