@@ -463,7 +463,8 @@ class SyncManager(Runnable):
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent[synced].exists = MISSING
+                if ent[synced].exists != TRASHED:
+                    ent[synced].exists = MISSING
             else:
                 nc.append(ent)
 
@@ -707,7 +708,7 @@ class SyncManager(Runnable):
                             parent_ent[changed].changed = True
                             parent_ent[synced].exists = MISSING
                             assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                            log.debug("updated entry %s", parent)
+                            log.debug("updated entry as missing %s", parent)
         except ex.CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -1395,6 +1396,7 @@ class SyncManager(Runnable):
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
+            log.debug("marking missing %s", debug_sig(sync[changed].oid))
             sync[changed].exists = MISSING
             return
 

@@ -43,6 +43,7 @@ class Exists(Enum):
     EXISTS = "exists"
     TRASHED = "trashed"
     MISSING = "missing"
+    LIKELY_TRASHED = "likely-trashed"           # this oid was trashed, but then another event came in saying it wasn't
 
     def __bool__(self):
         """
@@ -54,6 +55,7 @@ class Exists(Enum):
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
+LIKELY_TRASHED = Exists.LIKELY_TRASHED
 MISSING = Exists.MISSING
 
 
@@ -873,6 +875,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].hash = hash
 
         if exists is not None and exists is not ent[side].exists:
+            if ent[side].exists is TRASHED and exists:
+                # oid was deleted, and then re-created, this can only happen for oid-is-path providers
+                # we mark it as LIKELY_TRASHED, to protect against out-of-order events
+                # see: https://vidaid.atlassian.net/browse/VFM-7246
+                exists = LIKELY_TRASHED
             ent[side].exists = exists
 
         if changed:
@@ -1192,8 +1199,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
+            if ent[i].exists == LIKELY_TRASHED:
+                if self.providers[i].oid_is_path:
+                    # oote: oid_is_path providers are not supposed to do this
+                    # it's possible we are wrong, and there's a trashed event arriving soon
+                    log.info("possible out of order events received for trashed/exists: %s", ent)
+                ent[i].exists = TRASHED
+
             if ent[i].exists != TRASHED:
-                # we never got a trash event
+                # we haven't gotten a trashed event yet
                 ent[i].exists = MISSING
             return
 
