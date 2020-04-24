@@ -27,6 +27,7 @@ import time
 from typing import Optional, Generator, TYPE_CHECKING, List, cast
 from unittest.mock import patch
 
+import requests
 import msgpack
 import pytest
 from _pytest.fixtures import FixtureLookupError
@@ -103,6 +104,21 @@ class ProviderTextMixin(ProviderBase):
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
         prov.test_short_poll_only(short_poll_only=short_poll_only)
+
+        self.__patches = []
+
+        # ensure requests lib is used correctly
+        old_send = requests.Session.send
+
+        def new_send(*args, **kwargs):
+            if not kwargs.get("timeout", None):
+                log.error("requests called without timout", stack_info=True)
+                assert False
+            return old_send(*args, **kwargs)
+
+        p = patch.object(requests.Session, "send", new_send)
+        p.start()
+        self.__patches.append(p)
 
         if connect:
             try:
@@ -308,7 +324,13 @@ class ProviderTextMixin(ProviderBase):
         except Exception as e:
             log.error("error during cleanup %s", repr(e))
 
-    def test_cleanup(self):
+    def test_cleanup(self, *, connected):
+        for p in self.__patches:
+            p.stop()
+
+        if not connected:
+            return
+
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
         info = self.prov.info_path(self.test_root)
@@ -376,9 +398,8 @@ def mixin_provider(prov, connect=True, short_poll_only=True):
     else:
         yield providers
 
-    if connect:
-        for curr_prov in providers:
-            curr_prov.test_cleanup()
+    for curr_prov in providers:
+        curr_prov.test_cleanup(connected=connect)
 
 
 @pytest.fixture
@@ -1659,6 +1680,8 @@ def test_listdir(provider):
     provider.create(outer + "/file2", BytesIO(b"there"))
     provider.create(inner + "/file3", BytesIO(b"world"))
     contents = list(provider.listdir(outer_oid))
+    assert all([x.oid for x in contents])
+    assert all([x.otype for x in contents])
     names = [x.name for x in contents]
     assert len(names) == 3
     expected = ["file1", "file2", temp_name[1:]]
@@ -2110,7 +2133,7 @@ def test_specific_test_root():
     # and i created it
     assert base.info_path(provider.test_root).otype == cloudsync.DIRECTORY 
 
-    provider.test_cleanup()
+    provider.test_cleanup(connected=True)
 
     # and i dont delete the test root
     assert list(base.listdir_path("/banana")) == []
