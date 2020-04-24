@@ -40,6 +40,17 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.INFO)
 #   api:
 #      https://developer.box.com/en/reference/
 
+old_request = Session.request
+
+
+def patched_request(*a, **kw):
+    if "timeout" not in kw:
+        kw["timeout"] = 60
+    return old_request(*a, **kw)
+
+
+Session.request = patched_request
+
 
 class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     """
@@ -68,7 +79,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         super().__init__()
 
         self.__cursor: Optional[Cursor] = None
-        self.__client = None
+        self.__client: Client = None
         self.__creds: Optional[Dict[str, str]] = None
         self.__long_poll_config: Dict[str, Any] = {}
         self.__long_poll_session = requests.Session()
@@ -136,26 +147,27 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                         raise CloudTokenError("require app_id/secret and either access_token or refresh token")
 
                 with self._mutex:
+                    box_session = Session()
+                    box_kwargs = box_session.get_constructor_kwargs()
+                    box_kwargs["api_config"] = boxsdk.config.API
+                    box_kwargs["default_network_request_kwargs"] = {"timeout": 60}
+
                     if jwt_token:
                         jwt_dict = json.loads(jwt_token)
                         user_id = creds.get('user_id')
                         auth = JWTAuth.from_settings_dictionary(jwt_dict, user=user_id,
                                                                 store_tokens=self._store_refresh_token)
-                        self.__client = Client(auth)
                     else:
                         if not refresh_token:
                             raise CloudTokenError("Missing refresh token")
-                        box_session = Session(api_config=boxsdk.config.API)
-                        box_kwargs = box_session.get_constructor_kwargs()
-                        box_kwargs["api_config"] = boxsdk.config.API
                         auth = OAuth2(client_id=self._oauth_config.app_id,
                                       client_secret=self._oauth_config.app_secret,
                                       access_token=access_token,
                                       refresh_token=refresh_token,
                                       store_tokens=self._store_refresh_token)
 
-                        box_session = AuthorizedSession(auth, **box_kwargs)
-                        self.__client = Client(auth, box_session)
+                    box_session = AuthorizedSession(auth, **box_kwargs)
+                    self.__client = Client(auth, box_session)
                 with self._api():
                     self.__access_token = auth.access_token
                     self._long_poll_manager.start()
@@ -266,7 +278,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 headers = {'Authorization': 'Bearer %s' % (self.__access_token,)}
                 log.debug("headers: %s", headers)
                 srv_resp: requests.Response = self.__long_poll_session.options(self._base_box_url + self._events_endpoint,
-                                                                               headers=headers)
+                                                                               headers=headers, timeout=timeout)
                 log.debug("response content is %s, %s", srv_resp.status_code, srv_resp.content)
                 if not 200 <= srv_resp.status_code < 300:
                     raise CloudTokenError(srv_resp)
