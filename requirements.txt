@@ -13,6 +13,7 @@ google-api-python-client
 
 # dropbox provider
 dropbox
+six>=1.14.0
 
 # box provider
 boxsdk[jwt]
