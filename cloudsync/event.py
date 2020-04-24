@@ -6,7 +6,6 @@ from pystrict import strict
 
 from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
 from .runnable import Runnable
-from .muxer import Muxer
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
 
@@ -31,21 +30,33 @@ class Event:
     new_cursor: Optional[str] = None
 
 
+class ProviderGuard(set):
+    def add(self, provider):
+        if provider in self:
+            raise ValueError("Provider instances should not be re-used in multiple syncs.  Create a new provider instance.")
+        super().add(provider)
+
+
+_provider_guard = ProviderGuard()
+
+
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
     """Runnable that is owned by CloudSync, reading events and updating the SyncState."""
     def __init__(self, provider: "Provider", state: "SyncState", side: int,              # pylint: disable=too-many-arguments
                  notification_manager: 'Optional[NotificationManager]' = None,
-                 walk_root: Optional[str] = None, reauth: Callable[[], None] = None,
-                 walk_oid: Optional[str] = None):
-        log.debug("provider %s, root %s", provider.name, walk_root)
+                 root: Optional[str] = None, reauth: Callable[[], None] = None,
+                 oid: Optional[str] = None):
+
+        _provider_guard.add(provider)
+
+        log.debug("provider %s, root %s", provider.name, root)
         self.provider = provider
 
         if not self.provider.connection_id:
             raise ValueError("provider must be connected when starting the event manager")
 
         self.label: str = f"{self.provider.name}:{self.provider.connection_id}"
-        self.events = Muxer(provider.events, restart=True)
         self.state: 'SyncState' = state
         self.side: int = side
         self._cursor_tag: str = self.label + "_cursor"
@@ -55,12 +66,12 @@ class EventManager(Runnable):
 
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
-        self.walk_root = walk_root
-        self.walk_oid = walk_oid
+        self.root = root
+        self.oid = oid
         self.need_walk: bool = False
         self._walk_tag: Optional[str] = None
-        if self.walk_root or self.walk_oid:
-            self._walk_tag = self.label + "_walked_" + (self.walk_root or self.walk_oid)
+        if self.root or self.oid:
+            self._walk_tag = self.label + "_walked_" + (self.root or self.oid)
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
                 self.need_walk = True
 
@@ -86,10 +97,10 @@ class EventManager(Runnable):
 
     @property
     def busy(self):
-        return not self.events.empty or self.need_walk
+        self.do()
+        return not self.need_walk
 
     def do(self):
-        self.events.shutdown = False
         try:
             if not self.provider.connected:
                 if self.need_auth:
@@ -125,16 +136,16 @@ class EventManager(Runnable):
 
     def _do_walk_if_needed(self):
         if self.need_walk:
-            # walk_oid or walk_root was set at class startup, so we walk
+            # oid or root was set at class startup, so we walk
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_root, self.walk_oid)
+                      self.provider.name, self.root, self.oid)
             self._queue = []
             try:
-                if self.walk_root:
-                    for event in self.provider.walk(self.walk_root):
+                if self.root:
+                    for event in self.provider.walk(self.root):
                         self._process_event(event, from_walk=True)
                 else:
-                    for event in self.provider.walk_oid(self.walk_oid):
+                    for event in self.provider.walk_oid(self.oid):
                         self._process_event(event, from_walk=True)
             except CloudFileNotFoundError as e:
                 log.debug('File to walk not found %s', e)
@@ -157,6 +168,14 @@ class EventManager(Runnable):
                     if self.state.storage_get_data(self._walk_tag) is None:
                         self.need_walk = True
                     raise
+
+            if self.oid is None:
+                info = self.provider.info_path(self.root)
+                if info:
+                    self.oid = info.oid
+                else:
+                    raise CloudFileNotFoundError("Root path %s not found" % self.root)
+
             self._first_do = False
 
     def _do_unsafe(self):
@@ -171,7 +190,7 @@ class EventManager(Runnable):
             self._queue = []
 
         # regular events
-        for event in self.events:
+        for event in self.provider.events(oid=self.oid):
             if not event:
                 log.error("%s got BAD event %s", self.label, event)
                 continue
@@ -189,7 +208,7 @@ class EventManager(Runnable):
     def _drain(self):
         # for tests, delete events
         self._queue = []
-        for _ in self.events:
+        for _ in self.provider.events(oid=self.oid):
             pass
 
     def queue(self, event: Event, from_walk: bool = False):
@@ -268,6 +287,4 @@ class EventManager(Runnable):
                 event.hash = info.hash
 
     def stop(self, forever=True):
-        if forever:
-            self.events.shutdown = True
         super().stop(forever=forever)

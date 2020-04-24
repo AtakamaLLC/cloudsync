@@ -82,10 +82,10 @@ class CloudSync(Runnable):
         self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, walk_root=self.__roots[0],
-                         reauth=lambda: self.authenticate(0), walk_oid=self.__root_oids[0]),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, walk_root=self.__roots[1],
-                         reauth=lambda: self.authenticate(1), walk_oid=self.__root_oids[1])
+            EventManager(smgr.providers[0], state, 0, self.nmgr, root=self.__roots[0],
+                         reauth=lambda: self.authenticate(0), oid=self.__root_oids[0]),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, root=self.__roots[1],
+                         reauth=lambda: self.authenticate(1), oid=self.__root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
