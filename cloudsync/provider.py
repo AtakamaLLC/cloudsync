@@ -408,22 +408,21 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
 
-    def normalize_path(self, path: str, pretty_leaf: bool = False):
+    def normalize_path(self, path: str, for_display: bool = False):
         """Used internally for comparing paths in a case and sep insensitive manner, as appropriate.
 
         Args:
             path: the path to normalize
-            pretty_leaf: when true, preserve case of path's leaf node
+            for_display: when true, preserve case of path's leaf node
         """
         if self.alt_sep:
             path = path.replace(self.alt_sep, self.sep)
-        sep_regexp = r"[\\]+" if self.sep == "\\" else f"[{self.sep}]+"
-        parts = re.split(sep_regexp, path.rstrip(self.sep))
+        parts = re.split(f"[{re.escape(self.sep)}]+", path.rstrip(self.sep))
         norm_path = self.join(*parts)
 
         if self.case_sensitive:
             return norm_path
-        elif pretty_leaf:
+        elif for_display:
             return self.join(self.dirname(norm_path).lower(), self.basename(norm_path))
         return norm_path.lower()
 
@@ -472,14 +471,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return retval if relative != "" else self.sep
         raise ValueError("replace_path used without subpath")
 
-    def paths_match(self, patha, pathb, pretty_leaf = False):
+    def paths_match(self, patha, pathb, for_display=False):
         """True if two paths are equal, uses normalize_path()."""
         if patha is None and pathb is None:
             return True
         elif patha is None or pathb is None:
             return False
 
-        return self.normalize_path(patha, pretty_leaf) == self.normalize_path(pathb, pretty_leaf)
+        return self.normalize_path(patha, for_display) == self.normalize_path(pathb, for_display)
 
     def dirname(self, path: str):
         """Just like `os.dirname`, but for provider paths."""
