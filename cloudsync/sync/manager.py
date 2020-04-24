@@ -976,8 +976,10 @@ class SyncManager(Runnable):
         # punt once to allow children to be processed, if already done just forget about it
         if sync.priority > 0:
             all_synced = True
+            latest = sync[changed].changed
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
                 if kid.needs_sync():
+                    latest = max(latest, kid[changed].changed)
                     all_synced = False
                     break
             if all_synced:
@@ -991,6 +993,9 @@ class SyncManager(Runnable):
         log.debug("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
+
+        # Mark us changed, so we will sync after kids, not before
+        sync[changed].changed = time.time()
 
         return PUNT
 
