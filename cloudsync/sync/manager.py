@@ -463,7 +463,8 @@ class SyncManager(Runnable):
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent[synced].exists = MISSING
+                if ent[synced].exists != TRASHED:
+                    ent[synced].exists = MISSING
             else:
                 nc.append(ent)
 
@@ -556,6 +557,9 @@ class SyncManager(Runnable):
 
         try:
             return self.unsafe_mkdir_synced(changed, synced, sync, translated_path)
+        except ex.CloudFileExistsError:
+            sync.mark_dirty(synced)
+
         except ex.CloudFileNotFoundError:
             if sync.priority <= 0:
                 return PUNT
@@ -707,7 +711,7 @@ class SyncManager(Runnable):
                             parent_ent[changed].changed = True
                             parent_ent[synced].exists = MISSING
                             assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                            log.debug("updated entry %s", parent)
+                            log.debug("updated entry as missing %s", parent)
         except ex.CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -987,6 +991,9 @@ class SyncManager(Runnable):
         log.debug("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
+
+        # Mark us changed, so we will sync after kids, not before
+        sync[changed].changed = time.time()
 
         return PUNT
 
@@ -1395,6 +1402,7 @@ class SyncManager(Runnable):
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
+            log.debug("marking missing %s", debug_sig(sync[changed].oid))
             sync[changed].exists = MISSING
             return
 

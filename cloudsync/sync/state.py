@@ -43,6 +43,7 @@ class Exists(Enum):
     EXISTS = "exists"
     TRASHED = "trashed"
     MISSING = "missing"
+    LIKELY_TRASHED = "likely-trashed"           # this oid was trashed, but then another event came in saying it wasn't
 
     def __bool__(self):
         """
@@ -54,6 +55,7 @@ class Exists(Enum):
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
+LIKELY_TRASHED = Exists.LIKELY_TRASHED
 MISSING = Exists.MISSING
 
 
@@ -139,7 +141,7 @@ class SideState():
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.path != self.sync_path or
-               self.exists == TRASHED)
+               self.exists in (TRASHED, LIKELY_TRASHED))
 
     def clean_temp(self):
         if self.temp_file:
@@ -555,6 +557,9 @@ class SyncEntry:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
+    def mark_dirty(self, side):
+        self[side]._last_gotten = 0
+
     def is_latest(self) -> bool:
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
@@ -873,6 +878,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].hash = hash
 
         if exists is not None and exists is not ent[side].exists:
+            if ent[side].exists is TRASHED and exists:
+                # oid was deleted, and then re-created, this can only happen for oid-is-path providers
+                # we mark it as LIKELY_TRASHED, to protect against out-of-order events
+                # see: https://vidaid.atlassian.net/browse/VFM-7246
+                exists = LIKELY_TRASHED
             ent[side].exists = exists
 
         if changed:
@@ -1183,6 +1193,18 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return defer_ent, defer, replace_ent, replace
 
+    def unconditionally_get_no_info(self, ent, i):
+        if ent[i].exists == LIKELY_TRASHED:
+            if self.providers[i].oid_is_path:
+                # note: oid_is_path providers are not supposed to do this
+                # it's possible we are wrong, and there's a trashed event arriving soon
+                log.info("possible out of order events received for trashed/exists: %s", ent)
+            ent[i].exists = TRASHED
+
+        if ent[i].exists != TRASHED:
+            # we haven't gotten a trashed event yet
+            ent[i].exists = MISSING
+
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
             if ent[i].exists not in (TRASHED, MISSING):
@@ -1192,9 +1214,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
-            if ent[i].exists != TRASHED:
-                # we never got a trash event
-                ent[i].exists = MISSING
+            self.unconditionally_get_no_info(ent, i)
             return
 
         ent[i].exists = EXISTS
