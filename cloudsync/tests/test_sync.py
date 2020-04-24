@@ -1221,7 +1221,7 @@ def test_delete_out_of_order_events(sync):
 
     log.info("TABLE 0\n%s", sync.state.pretty_print())
 
-    sync.run_until_clean()
+    sync.run(until=lambda:not remote.info_path("/remote/f"), timeout=2)
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
