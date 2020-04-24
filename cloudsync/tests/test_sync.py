@@ -1201,4 +1201,32 @@ def test_rename_same_name(sync_ci):
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
 
+def test_delete_out_of_order_events(sync):
+    (local, remote) = sync.providers
+
+    (
+        (lf, rf),
+        (la, ra),
+        (lb, rb),
+    ) = setup_remote_local(sync, "f/", "f/a", "f/b")
+
+    local.delete(la.oid)
+    local.delete(lb.oid)
+    local.delete(lf.oid)
+
+    sync.create_event(LOCAL, FILE, path="/local/f/a", oid=la.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=True)  # liar!
+    sync.create_event(LOCAL, FILE, path="/local/f", oid=lf.oid, exists=False)
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda:not remote.info_path("/remote/f"), timeout=2)
+
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    assert not remote.info_path("/remote/f")
+
+
+
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
