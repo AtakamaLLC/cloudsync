@@ -507,7 +507,7 @@ def pytest_generate_tests(metafunc):
             provs += [kw]
 
         if not provs:
-            provs = ["mock_oid_cs", "mock_oid_ci", "mock_path_cs", "mock_path_ci"]
+            provs = ["mock_oid_ci", "mock_path_cs"]
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
 
