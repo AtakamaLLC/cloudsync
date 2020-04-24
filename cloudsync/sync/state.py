@@ -1196,7 +1196,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def unconditionally_get_no_info(self, ent, i):
         if ent[i].exists == LIKELY_TRASHED:
             if self.providers[i].oid_is_path:
-                # oote: oid_is_path providers are not supposed to do this
+                # note: oid_is_path providers are not supposed to do this
                 # it's possible we are wrong, and there's a trashed event arriving soon
                 log.info("possible out of order events received for trashed/exists: %s", ent)
             ent[i].exists = TRASHED
