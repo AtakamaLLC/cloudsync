@@ -275,8 +275,8 @@ class SyncManager(Runnable):
         if ent[1].path == translated_path:
             return False
 
-        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path) and \
+        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path, for_display=True) and \
+            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path, for_display=True) and \
             not ent.is_temp_rename
 
     def check_revivify(self, sync: SyncEntry):
@@ -1153,10 +1153,7 @@ class SyncManager(Runnable):
 
         assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
 
-        sdir, sbase = self.providers[synced].split(translated_path)
-        cdir, cbase = self.providers[synced].split(sync[synced].sync_path)
-
-        if self.providers[synced].paths_match(sdir, cdir) and sbase == cbase:
+        if self.providers[synced].paths_match(translated_path, sync[synced].sync_path, for_display=True):
             log.debug("no rename %s %s", translated_path, sync[synced].sync_path)
             return FINISHED
 
