@@ -992,6 +992,9 @@ class SyncManager(Runnable):
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
 
+        # Mark us changed, so we will sync after kids, not before
+        sync[changed].changed = time.time()
+
         return PUNT
 
     def _get_untrashed_peers(self, sync, changed, synced, translated_path):
