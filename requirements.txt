@@ -24,3 +24,6 @@ cloudsync-gdrive
 
 # command line 
 python-daemon
+
+# fsprovider
+watchdog
