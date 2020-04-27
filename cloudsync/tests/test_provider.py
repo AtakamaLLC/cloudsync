@@ -2260,6 +2260,8 @@ def test_root_rename(unwrapped_provider):
     provider = unwrapped_provider
     if hasattr(provider, "_test_creds"):
         provider.connect(provider._test_creds)
+    if hasattr(provider, "_test_namespace"):
+        provider.namespace = provider._test_namespace
     tfn1 = provider.join(provider.test_root, os.urandom(24).hex())
     tfn2 = provider.join(provider.test_root, os.urandom(24).hex())
     oinfo = provider.create(tfn1, BytesIO(b'hello'))

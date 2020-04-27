@@ -383,7 +383,7 @@ class FileSystemProvider(Provider):
                     shutil.copyfileobj(file_like, dest)
                 except Exception:
                     if os.path.exists(fpath):
-                        os.unlink(path)
+                        os.unlink(fpath)
                     raise
             return self.__info_path(path, fpath)
 
