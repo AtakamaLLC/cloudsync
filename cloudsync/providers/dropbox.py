@@ -681,7 +681,7 @@ class DropboxProvider(Provider):
             return None
 
         sfid = None
-        path = res.path_lower
+        path = res.path_display
         share = res.sharing_info
         if not share:
             if isinstance(res, files.FolderMetadata):

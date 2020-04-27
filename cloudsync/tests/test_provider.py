@@ -27,6 +27,7 @@ import time
 from typing import Optional, Generator, TYPE_CHECKING, List, cast
 from unittest.mock import patch
 
+import requests
 import msgpack
 import pytest
 from _pytest.fixtures import FixtureLookupError
@@ -104,6 +105,21 @@ class ProviderTextMixin(ProviderBase):
 
         prov.test_short_poll_only(short_poll_only=short_poll_only)
 
+        self.__patches = []
+
+        # ensure requests lib is used correctly
+        old_send = requests.Session.send
+
+        def new_send(*args, **kwargs):
+            if not kwargs.get("timeout", None):
+                log.error("requests called without timout", stack_info=True)
+                assert False
+            return old_send(*args, **kwargs)
+
+        p = patch.object(requests.Session, "send", new_send)
+        p.start()
+        self.__patches.append(p)
+
         if connect:
             try:
                 self.prov.connect(self._test_creds)
@@ -115,13 +131,17 @@ class ProviderTextMixin(ProviderBase):
         else:
             self.prov.disconnect()
 
+    @wrap_retry
+    def _raw_mkdir(self, path):
+        return self.prov.mkdir(path)
+
     def make_root(self):
         ns = self.prov.list_ns()
         if ns:
             self.prov.namespace = self.prov._test_namespace
 
-        log.debug("mkdir %s", self.test_root)
-        wrap_retry(self.prov.mkdir)(self.test_root)
+        log.debug("mkdir test_root %s", self.test_root)
+        self._raw_mkdir(self.test_root)
 
     def _api(self, *ar, **kw):
         return self.prov_api_func(*ar, **kw)
@@ -308,7 +328,13 @@ class ProviderTextMixin(ProviderBase):
         except Exception as e:
             log.error("error during cleanup %s", repr(e))
 
-    def test_cleanup(self):
+    def test_cleanup(self, *, connected):
+        for p in self.__patches:
+            p.stop()
+
+        if not connected:
+            return
+
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
         info = self.prov.info_path(self.test_root)
@@ -376,9 +402,8 @@ def mixin_provider(prov, connect=True, short_poll_only=True):
     else:
         yield providers
 
-    if connect:
-        for curr_prov in providers:
-            curr_prov.test_cleanup()
+    for curr_prov in providers:
+        curr_prov.test_cleanup(connected=connect)
 
 
 @pytest.fixture
@@ -486,8 +511,7 @@ def pytest_generate_tests(metafunc):
             provs += [kw]
 
         if not provs:
-            provs += ["mock_oid_cs"]
-            provs += ["mock_path_cs"]
+            provs = ["mock_oid_ci", "mock_path_cs"]
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
 
@@ -1659,6 +1683,8 @@ def test_listdir(provider):
     provider.create(outer + "/file2", BytesIO(b"there"))
     provider.create(inner + "/file3", BytesIO(b"world"))
     contents = list(provider.listdir(outer_oid))
+    assert all([x.oid for x in contents])
+    assert all([x.otype for x in contents])
     names = [x.name for x in contents]
     assert len(names) == 3
     expected = ["file1", "file2", temp_name[1:]]
@@ -2110,7 +2136,7 @@ def test_specific_test_root():
     # and i created it
     assert base.info_path(provider.test_root).otype == cloudsync.DIRECTORY 
 
-    provider.test_cleanup()
+    provider.test_cleanup(connected=True)
 
     # and i dont delete the test root
     assert list(base.listdir_path("/banana")) == []
@@ -2343,31 +2369,84 @@ def test_broken_upload(very_scoped_provider, content_len, operation):
         ), "File existed in the cloud, but had incorrect size"
 
 
-def test_globalize(provider):
-    # top path
-    info = provider.info_path("/")
-    gid = provider.globalize_oid(info.oid)
-    oid = provider.localize_oid(gid)
-    assert info.oid == oid
+def test_globalize_root(provider):
+    # top path (do the subpath first, in order to test the sharing related code paths for case preservation)
+    top_info = provider.info_path("/")
+    top_gid = provider.globalize_oid(top_info.oid)
+    top_oid = provider.localize_oid(top_gid)
+    assert top_info.oid == top_oid
 
+
+def test_globalize_subfolder(provider):
     # subpath
-    suboid = provider.mkdir("/sub")
-    gid = provider.globalize_oid(suboid)
-    oid = provider.localize_oid(gid)
-    assert suboid == oid
+    sub_oid = provider.mkdir("/Sub")
+    sub_gid = provider.globalize_oid(sub_oid)
+    sub_info = provider.info_oid(sub_oid)
+    assert sub_info.path == "/Sub"  # double check the name and case haven't changed when globalizing
 
-    if gid == oid:
+    sub_local_oid = provider.localize_oid(sub_gid)
+    assert sub_oid == sub_local_oid
+
+
+
+    if sub_gid == sub_local_oid:
         pytest.skip("Provider oid == gid, skipping globalize/localize tests")
 
     # localize deleted
-    provider.delete(suboid)
-    not_oid = provider.localize_oid(gid)
+    provider.delete(sub_oid)
+    not_oid = provider.localize_oid(sub_gid)
     assert not_oid is None
 
     # globalize deleted
-    gid = provider.globalize_oid(suboid)
+    gid = provider.globalize_oid(sub_oid)
     assert gid is None
 
     # wrong value
     with pytest.raises(ValueError):
-        oid = provider.localize_oid(oid)
+        provider.localize_oid(sub_oid)
+
+def test_normalize_path(provider):
+    upper = provider.join(["A", "B", "C", "DEF"])
+    lower = provider.join(["a", "b", "c", "def"])
+    mixed = provider.join(["A", "b", "C", "dEf"])
+
+    if provider.case_sensitive:
+        assert provider.normalize_path(upper) == upper
+        assert provider.normalize_path(lower) == lower
+        assert provider.normalize_path(mixed) == mixed
+        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"])) == provider.join(["A", "c", "dEf"])
+    else: # case-insensitive
+        assert provider.normalize_path(upper) == lower
+        assert provider.normalize_path(lower) == lower
+        assert provider.normalize_path(mixed) == lower
+        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"])) == provider.join(["a", "c", "def"])
+        assert provider.normalize_path(upper, True) == provider.join(["a", "b", "c", "DEF"])
+        assert provider.normalize_path(lower, True) == lower
+        assert provider.normalize_path(mixed, True) == provider.join(["a", "b", "c", "dEf"])
+        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"]), True) == provider.join(["a", "c", "dEf"])
+
+def test_paths_match(provider):
+    s1 = provider.sep
+    s2 = provider.alt_sep or s1
+
+    abcd = ["a", "b", "c", "d"]
+    abcd_ = ["a", "b", "c", "d", ""]
+    abcD = ["a", "b", "c", "D"]
+    abcD_ = ["a", "b", "c", "D", ""]
+    ABCD = ["A", "B", "C", "D"]
+    ABCD_ = ["A", "B", "C", "D", ""]
+    aBcD = ["a", "B", "c", "D"]
+    aBcD_ = ["a", "B", "c", "D", ""]
+
+    if provider.case_sensitive:
+        assert provider.paths_match(s1, s2)
+        assert provider.paths_match(s1.join(abcd), s2.join(abcd_))
+        assert not provider.paths_match(s1.join(abcd_), s2.join(abcD))
+    else: #case-insensitive
+        assert provider.paths_match(s1, s2)
+        assert provider.paths_match(s1.join(ABCD), s2.join(aBcD_))
+        assert provider.paths_match(s1.join(abcd_), s2.join(aBcD))
+        assert provider.paths_match(s1, s2, True)
+        assert provider.paths_match(s1.join(ABCD), s2.join(abcD_), True)
+        assert provider.paths_match(s1.join(abcd), s2.join(abcd_), True)
+        assert not provider.paths_match(s1.join(ABCD_), s2.join(abcd), True)
