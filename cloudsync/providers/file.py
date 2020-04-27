@@ -49,7 +49,7 @@ def get_hash(dat):
 
 
 def detect_case_sensitive(tmpdir=None):
-    """Returns true if temp direcory specified is case sensitive, or gettempdir() if unspecified."""
+    """Returns true if temp directory specified is case sensitive, or gettempdir() if unspecified."""
     if not tmpdir:
         tmpdir = tempfile.gettempdir()
     f1 = os.path.join(tmpdir, "tmp." + os.urandom(16).hex())
