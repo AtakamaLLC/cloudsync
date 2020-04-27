@@ -34,9 +34,10 @@ class Event:
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
     """Runnable that is owned by CloudSync, reading events and updating the SyncState."""
-    def __init__(self, provider: "Provider", state: "SyncState", side: int,
+    def __init__(self, provider: "Provider", state: "SyncState", side: int,              # pylint: disable=too-many-arguments
                  notification_manager: 'Optional[NotificationManager]' = None,
-                 walk_root: Optional[str] = None, reauth: Callable[[], None] = None):
+                 walk_root: Optional[str] = None, reauth: Callable[[], None] = None,
+                 walk_oid: Optional[str] = None):
         log.debug("provider %s, root %s", provider.name, walk_root)
         self.provider = provider
 
@@ -55,13 +56,15 @@ class EventManager(Runnable):
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         self.walk_root = walk_root
-        self.need_walk = False
-        self._first_do = True
+        self.walk_oid = walk_oid
+        self.need_walk: bool = False
         self._walk_tag: Optional[str] = None
-        if self.walk_root:
-            self._walk_tag = self.label + "_walked_" + self.walk_root
+        if self.walk_root or self.walk_oid:
+            self._walk_tag = self.label + "_walked_" + (self.walk_root or self.walk_oid)
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
                 self.need_walk = True
+
+        self._first_do = True
 
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 10
@@ -122,12 +125,17 @@ class EventManager(Runnable):
 
     def _do_walk_if_needed(self):
         if self.need_walk:
-            log.debug("walking all %s/%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_root)
+            # walk_oid or walk_root was set at class startup, so we walk
+            log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
+                      self.provider.name, self.walk_root, self.walk_oid)
             self._queue = []
             try:
-                for event in self.provider.walk(self.walk_root):
-                    self._process_event(event, from_walk=True)
+                if self.walk_root:
+                    for event in self.provider.walk(self.walk_root):
+                        self._process_event(event, from_walk=True)
+                else:
+                    for event in self.provider.walk_oid(self.walk_oid):
+                        self._process_event(event, from_walk=True)
             except CloudFileNotFoundError as e:
                 log.debug('File to walk not found %s', e)
 

@@ -1,4 +1,4 @@
-# pylint: disable=protected-access,too-many-lines,missing-docstring
+# pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
 
 from io import BytesIO
 import logging
@@ -9,8 +9,9 @@ import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
-from cloudsync.types import OInfo, IgnoreReason
+from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
+from cloudsync.runnable import _BackoffError
 import time
 
 from .fixtures import MockProvider, MockStorage, mock_provider_instance
@@ -56,6 +57,17 @@ def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storag
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
+@pytest.fixture(name="cs_root_oid")
+def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
+    p1 = mock_provider_generator()
+    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True)
+    o1 = p1.mkdir(roots[0])
+    o2 = p2.mkdir(roots[1])
+    cs = CloudSyncMixin((p1, p2), root_oids=(o1, o2), storage=None, sleep=None)
+    yield cs
+    cs.done()
+
+
 # given a provider_generator, creates as many cs's as you want, all of which share a single remote bed
 def multi_local_cs_generator(how_many_cs: int, provider_generator):
     storage_dict: Dict[Any, Any] = dict()
@@ -66,7 +78,7 @@ def multi_local_cs_generator(how_many_cs: int, provider_generator):
     for i in range(0, how_many_cs):
         local_ps.append(provider_generator())
         css.append(CloudSyncMixin((local_ps[i], remote_p), roots, storage, sleep=None))
-    
+
     yield css
 
     for i in range(0, how_many_cs):
@@ -440,7 +452,7 @@ def test_sync_multi_local(multi_local_cs):
     # rinfo1 = cs1.providers[REMOTE].create(remote_path2, BytesIO(b"hello3"), None)
     # rinfo2 = cs2.providers[REMOTE].create(remote_path2, BytesIO(b"hello4"), None)
 
-    assert linfo1 and linfo2 # and rinfo1 and rinfo2
+    assert linfo1 and linfo2  # and rinfo1 and rinfo2
 
     # Allow file1 to copy up to the cloud
     try:
@@ -2092,9 +2104,9 @@ def test_backoff(cs, recover):
 
     if recover:
         assert not cs.in_backoff
-        assert cs.state.changeset_len
     else:
         assert cs.smgr.in_backoff
+        assert cs.state.changeset_len
 
 @pytest.mark.parametrize("prioritize_side", [LOCAL, REMOTE], ids=["LOCAL", "REMOTE"])
 def test_cs_prioritize(cs, prioritize_side):
@@ -2703,13 +2715,45 @@ def test_walk_bad_vals(cs):
         cs.walk(root="foo")
 
 
-def test_no_root_needed(cs):
+@pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
+def test_root_needed(cs, cs_root_oid, mode):
+    create = "nocreate" not in mode
+    preroot = "oid" in mode
+
+    if preroot:
+        cs = cs_root_oid
+        assert cs.providers[0].info_path("/local")
+        assert cs.providers[1].info_path("/remote")
+
     (local, remote) = cs.providers
 
-    # walk nothing
-    cs.do()
+    if preroot:
+        remote.delete(remote.info_path("/remote").oid)
+        assert remote.info_path("/remote") is None
 
-    local.mkdir("/local")
+    if not create:
+        # set root oid to random stuff that will break any checks
+        cs.set_root_oid(REMOTE, 'xxxx')
+
+    def translate(side, path):
+        relative = cs.providers[1-side].is_subpath(roots[1-side], path)
+        if not relative:
+            return None
+        return cs.providers[side].join(roots[side], relative)
+
+    cs.translate = translate
+    cs.smgr.max_backoff = 1
+
+    # walk nothing
+    cs.emgrs[0].do()
+    cs.emgrs[1].do()
+    try:
+        cs.smgr.do()
+    except _BackoffError:
+        pass
+
+    oid = local.mkdir("/local")
+    cs.set_root_oid(LOCAL, oid)
     local.mkdir("/local/a")
     local.mkdir("/local/a/b")
 
@@ -2723,5 +2767,33 @@ def test_no_root_needed(cs):
 
     local.create("/local/a/b/c", BytesIO(b'hi'))
 
-    # but we still sync
-    cs.run_until_found((REMOTE, "/remote/a/b/c"))
+    if create:
+        # but we still sync
+        cs.run_until_found((REMOTE, "/remote/a/b/c"))
+    else:
+        called = False
+
+        def _handle(e: Notification):
+            nonlocal called
+            if e.ntype == NotificationType.ROOT_MISSING_ERROR:
+                called = True
+        cs.handle_notification = _handle
+
+        # to test failure modes, you need to use start(), not run_until, or do()
+        # we keep backing off because the root isn't there
+        until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 2
+        cs.start(until=until)
+        cs.wait(timeout=2)
+        assert until()
+
+        assert called
+
+        # then we create the root:
+        oid = remote.mkdir("/remote")
+        cs.set_root_oid(REMOTE, oid)
+
+        # and everything syncs up
+        until = lambda: remote.info_path("/remote/a/b/c")
+        cs.start(until=until)
+        cs.wait(timeout=2)
+        assert until()

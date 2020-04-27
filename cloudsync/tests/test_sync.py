@@ -1,4 +1,4 @@
-# pylint: disable=missing-docstring,protected-access
+# pylint: disable=missing-docstring,protected-access,too-many-locals
 
 import logging
 import time
@@ -75,7 +75,6 @@ def fixture_sync_sh(request, mock_provider_generator):
 @pytest.fixture(name="sync_ci")
 def fixture_sync_ci(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, shuffle=True, case_sensitive=False)
-
 
 
 def setup_remote_local(sync, *names, content=b'hello'):
@@ -635,7 +634,7 @@ def test_event_order_del_create(sync):
 
 @pytest.mark.manual
 @pytest.mark.parametrize("order", list(permutations(range(6), 6)))
-def test_event_order_permute(order, sync): # pragma: no cover
+def test_event_order_permute(order, sync):  # pragma: no cover
     local_parent, remote_parent = ("/local", "/remote")
     local, remote = sync.providers
     local.mkdir(local_parent)
@@ -1200,6 +1199,34 @@ def test_rename_same_name(sync_ci):
         assert not m.called
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+
+def test_delete_out_of_order_events(sync):
+    (local, remote) = sync.providers
+
+    (
+        (lf, rf),
+        (la, ra),
+        (lb, rb),
+    ) = setup_remote_local(sync, "f/", "f/a", "f/b")
+
+    local.delete(la.oid)
+    local.delete(lb.oid)
+    local.delete(lf.oid)
+
+    sync.create_event(LOCAL, FILE, path="/local/f/a", oid=la.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=True)  # liar!
+    sync.create_event(LOCAL, FILE, path="/local/f", oid=lf.oid, exists=False)
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda:not remote.info_path("/remote/f"), timeout=2)
+
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    assert not remote.info_path("/remote/f")
+
 
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
