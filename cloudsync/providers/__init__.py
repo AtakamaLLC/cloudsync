@@ -13,7 +13,7 @@ except Exception as e:
         raise _ex
 
     if isinstance(e, ImportError) and "'DropboxProvider'" not in str(e):
-        DropboxProvider.test_instance = lambda: DropboxProvider()   # pylint: disable=unnecessary-lambda
+        DropboxProvider.test_instance = lambda: DropboxProvider()   # type: ignore  # pylint: disable=unnecessary-lambda
         DropboxProvider.name = "dropbox"
         register_provider(DropboxProvider)
 
@@ -26,7 +26,7 @@ except Exception as e:
         raise _ex
 
     if isinstance(e, ImportError) and "'BoxProvider'" not in str(e):
-        BoxProvider.test_instance = lambda: BoxProvider()   # pylint: disable=unnecessary-lambda
+        BoxProvider.test_instance = lambda: BoxProvider()   # type: ignore  # pylint: disable=unnecessary-lambda
         BoxProvider.name = "box"
         register_provider(BoxProvider)
 
@@ -40,6 +40,6 @@ except Exception as e:
         raise _ex
 
     if isinstance(e, ImportError) and "'FileSystemProvider'" not in str(e):
-        FileSystemProvider.test_instance = lambda: FileSystemProvider()   # pylint: disable=unnecessary-lambda
+        FileSystemProvider.test_instance = lambda: FileSystemProvider()   # type: ignore  # pylint: disable=unnecessary-lambda
         FileSystemProvider.name = "filesystem"
         register_provider(FileSystemProvider)

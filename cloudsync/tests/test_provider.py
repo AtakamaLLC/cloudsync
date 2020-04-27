@@ -2238,7 +2238,7 @@ def test_bug_create(very_scoped_provider):
             try:
                 provider.create("/bug_create", file_like)
             except Exception as e:
-                log.info(e.msg)
+                log.info("msg %s", repr(e))
                 raise
 
         assert not provider.exists_path("/bug_create")

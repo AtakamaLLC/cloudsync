@@ -117,10 +117,10 @@ class Watcher(watchdog_events.FileSystemEventHandler):
         self.parent = parent
 
     def on_any_event(self, event):
-        self.parent._on_any_event(event)
+        self.parent._on_any_event(event)                # pylint: disable=protected-access
 
 
-class FileSystemProvider(Provider):
+class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
     """
     FileSystemProvider is a provider that uses the filesystem, and full paths as the storage location.
     """
@@ -290,7 +290,8 @@ class FileSystemProvider(Provider):
                 self._evoffset += 1
         assert len(self._events) + self._evoffset == self._latest_cursor
 
-    def _oid_to_fpath(self, oid):
+    @staticmethod
+    def _oid_to_fpath(oid):
         return oid
 
     def _fpath_to_oid(self, path):
@@ -333,7 +334,7 @@ class FileSystemProvider(Provider):
         st = os.stat(path)
         with open(path, "rb") as f:
             fhash = self._fast_hash_data(f)
-            f.seek(0,0)
+            f.seek(0, 0)
             qhash = get_hash(f)
 
         # only update hash if modification time changes or if prefix bytes change
@@ -344,14 +345,15 @@ class FileSystemProvider(Provider):
             ci.mtime = st.st_mtime
         return fhash
 
-    def _fast_hash_data(self, file_like):
+    @staticmethod
+    def _fast_hash_data(file_like):
         file_like.seek(0, os.SEEK_END)
         length = file_like.tell()
         file_like.seek(0, os.SEEK_SET)
         first = file_like.read(1024)
         if length > 1024:
             last_size = min(1024, length - 1024)
-            file_like.seek( 0 - last_size, os.SEEK_END)
+            file_like.seek(0 - last_size, os.SEEK_END)
             last = file_like.read(last_size)
         else:
             last = b''
@@ -488,6 +490,7 @@ class FileSystemProvider(Provider):
         subs = self.is_subpath(self.namespace, path)
         if subs:
             return subs
+        return None
 
     def info_oid(self, oid: str, use_cache=True) -> typing.Optional[OInfo]:
         fpath = self._oid_to_fpath(oid)
