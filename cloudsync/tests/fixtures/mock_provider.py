@@ -171,13 +171,6 @@ class MockProvider(Provider):
         self._api("_get_by_oid", oid)
         return self._fs_by_oid.get(oid, None)
 
-    @lock
-    def normalize_path(self, path):
-        if self.case_sensitive:
-            return path
-        else:
-            return path.lower()
-
     def _get_by_path(self, path):
         path = self.normalize_path(path)
         # TODO: normalize the path, support case insensitive lookups, etc
@@ -573,9 +566,16 @@ class MockOidCs(MockProvider):
     name = "mock_oid_cs"
 
     def __init__(self):
-        super().__init__(oid_is_path=True, case_sensitive=True)
+        super().__init__(oid_is_path=False, case_sensitive=True)
+
+class MockOidCi(MockProvider):
+    name = "mock_oid_ci"
+
+    def __init__(self):
+        super().__init__(oid_is_path=False, case_sensitive=False)
 
 
 register_provider(MockPathCs)
 register_provider(MockPathCi)
 register_provider(MockOidCs)
+register_provider(MockOidCi)
