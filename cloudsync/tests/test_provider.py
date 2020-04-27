@@ -511,6 +511,12 @@ def pytest_generate_tests(metafunc):
             provs += [kw]
 
         if not provs:
+            for mark in metafunc.definition.own_markers:
+                if mark.name == "providers":
+                    provs = mark.args[0]
+                    break
+
+        if not provs:
             provs = ["mock_oid_ci", "mock_path_cs"]
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
@@ -2398,6 +2404,7 @@ def test_globalize(provider):
     with pytest.raises(ValueError):
         oid = provider.localize_oid(oid)
 
+@pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
 def test_normalize_path(provider):
     upper = provider.join(["A", "B", "C", "DEF"])
     lower = provider.join(["a", "b", "c", "def"])
@@ -2418,6 +2425,7 @@ def test_normalize_path(provider):
         assert provider.normalize_path(mixed, True) == provider.join(["a", "b", "c", "dEf"])
         assert provider.normalize_path(provider.join(["A", "", "c", "dEf"]), True) == provider.join(["a", "c", "dEf"])
 
+@pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
 def test_paths_match(provider):
     s1 = provider.sep
     s2 = provider.alt_sep or s1
@@ -2430,6 +2438,9 @@ def test_paths_match(provider):
     ABCD_ = ["A", "B", "C", "D", ""]
     aBcD = ["a", "B", "c", "D"]
     aBcD_ = ["a", "B", "c", "D", ""]
+
+    assert provider.paths_match(None, None)
+    assert not provider.paths_match(None, s1)
 
     if provider.case_sensitive:
         assert provider.paths_match(s1, s2)
