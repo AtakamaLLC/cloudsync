@@ -93,7 +93,7 @@ def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
         if cp:
             fp = os.path.join(cp, fname)
         else:
-            log.error("unexpected call to canonicalized with missing parent folder", stack_info=True)
+            log.error("unexpected call to canonicalize_fpath with missing parent folder", stack_info=True)
             fp = None
     else:
         fp = casedpath(full_path)  # canonicalizes path to an existing file
