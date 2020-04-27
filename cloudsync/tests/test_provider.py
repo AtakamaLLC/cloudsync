@@ -2370,31 +2370,38 @@ def test_broken_upload(very_scoped_provider, content_len, operation):
         ), "File existed in the cloud, but had incorrect size"
 
 
-def test_globalize(provider):
-    # top path
-    info = provider.info_path("/")
-    gid = provider.globalize_oid(info.oid)
-    oid = provider.localize_oid(gid)
-    assert info.oid == oid
+def test_globalize_root(provider):
+    # top path (do the subpath first, in order to test the sharing related code paths for case preservation)
+    top_info = provider.info_path("/")
+    top_gid = provider.globalize_oid(top_info.oid)
+    top_oid = provider.localize_oid(top_gid)
+    assert top_info.oid == top_oid
 
+
+def test_globalize_subfolder(provider):
     # subpath
-    suboid = provider.mkdir("/sub")
-    gid = provider.globalize_oid(suboid)
-    oid = provider.localize_oid(gid)
-    assert suboid == oid
+    sub_oid = provider.mkdir("/Sub")
+    sub_gid = provider.globalize_oid(sub_oid)
+    sub_info = provider.info_oid(sub_oid)
+    assert sub_info.path == "/Sub"  # double check the name and case haven't changed when globalizing
 
-    if gid == oid:
+    sub_local_oid = provider.localize_oid(sub_gid)
+    assert sub_oid == sub_local_oid
+
+
+
+    if sub_gid == sub_local_oid:
         pytest.skip("Provider oid == gid, skipping globalize/localize tests")
 
     # localize deleted
-    provider.delete(suboid)
-    not_oid = provider.localize_oid(gid)
+    provider.delete(sub_oid)
+    not_oid = provider.localize_oid(sub_gid)
     assert not_oid is None
 
     # globalize deleted
-    gid = provider.globalize_oid(suboid)
+    gid = provider.globalize_oid(sub_oid)
     assert gid is None
 
     # wrong value
     with pytest.raises(ValueError):
-        oid = provider.localize_oid(oid)
+        oid = provider.localize_oid(sub_oid)
