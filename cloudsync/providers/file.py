@@ -5,6 +5,7 @@ import time
 import re
 import tempfile
 import logging
+import pathlib
 import shutil
 import collections
 import threading
@@ -25,6 +26,13 @@ import cloudsync.exceptions as ex
 def is_osx():
     return sys.platform == "darwin"
 
+
+def is_windows():
+    return sys.platform == "win32"
+
+
+if is_windows():
+    import win32file  # pylint: disable=import-error
 
 if is_osx():
     from Foundation import NSURL  # pylint: disable=import-error,no-name-in-module
@@ -64,16 +72,61 @@ def detect_case_sensitive(tmpdir=None):
     return True
 
 
+def casedpath_win32(path: str) -> str:
+    """Efficient canonicalize path for windows."""
+    drive_unc, *path_parts = pathlib.Path(path).parts
+
+    # We're going to iterate over each path component.
+    parts_q = collections.deque(path_parts)
+
+    # Normalizing a UNC path may involve a network call, which is kinda
+    # overkill. So we just ignore it.
+    out = pathlib.Path(drive_unc)
+
+    while len(parts_q) > 0:
+        # Peek at the front of the queue--don't pop in case we want to append
+        # component as-is to the final output.
+        part = parts_q[0]
+
+        try:
+            # Equivalent to FindFirstFileW, the moral equivalent of stat().
+            # The file name in the returned struct will have "true" case.
+            itr = win32file.FindFilesIterator(str(out / part))
+            info = next(itr)
+        except StopIteration:
+            # Couldn't find the path component.
+            break
+        except Exception:
+            # Something else went wrong, somehow.
+            log.exception("Unexpected exception in FindFirstFile")
+            break
+
+        # http://timgolden.me.uk/pywin32-docs/WIN32_FIND_DATA.html
+        canon_name: str = info[8]
+        out /= canon_name
+
+        # Now that we're done with this component, remove it from the queue.
+        parts_q.popleft()
+
+    # Any unprocessed components should be appended as-is.
+    out = out.joinpath(*parts_q)
+
+    return str(out)
+
+
 def casedpath(path):
     """Fixes the case of a file to the name on disk.
 
-    Works only for a path that exists
+    Works only if the path exists
     """
     if is_osx():
         url = NSURL.fileURLWithPath_(path)  # will be None if path doesn't exist
         if not url:
-            return path
+            return None
         return url.fileReferenceURL().path()
+
+    if is_windows():
+        return casedpath_win32(path)
 
     r = glob.glob(re.sub(r'([^:/\\])(?=[/\\]|$)', r'[\1]', path))
     return r[0] if r else path
@@ -93,13 +146,12 @@ def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
         if cp:
             fp = os.path.join(cp, fname)
         else:
-            log.error("unexpected call to canonicalized with missing parent folder", stack_info=True)
             fp = None
     else:
         fp = casedpath(full_path)  # canonicalizes path to an existing file
 
     if not fp:
-        log.debug("canonicalize doesn't yet support missing parent folders %s", full_path)
+        log.warning("canonicalize doesn't yet support missing parent folders %s", full_path)
         return full_path
 
     return fp
