@@ -1,5 +1,5 @@
-from ..tests.fixtures.mock_provider import MockProvider
 from cloudsync.registry import register_provider
+from ..tests.fixtures.mock_provider import MockProvider
 
 # optionally load support for supported providers
 # todo: eventually there will be some factory class
@@ -12,8 +12,8 @@ except Exception as e:
     def DropboxProvider(*a, **k):           # type: ignore
         raise _ex
 
-    if isinstance(e, ImportError) and "'DropboxProvider'" not in e.msg:
-        DropboxProvider.test_instance = lambda: DropboxProvider()
+    if isinstance(e, ImportError) and "'DropboxProvider'" not in str(e):
+        DropboxProvider.test_instance = lambda: DropboxProvider()   # pylint: disable=unnecessary-lambda
         DropboxProvider.name = "dropbox"
         register_provider(DropboxProvider)
 
@@ -25,8 +25,8 @@ except Exception as e:
     def BoxProvider(*a, **k):           # type: ignore
         raise _ex
 
-    if isinstance(e, ImportError) and "'BoxProvider'" not in e.msg:
-        BoxProvider.test_instance = lambda: BoxProvider()
+    if isinstance(e, ImportError) and "'BoxProvider'" not in str(e):
+        BoxProvider.test_instance = lambda: BoxProvider()   # pylint: disable=unnecessary-lambda
         BoxProvider.name = "box"
         register_provider(BoxProvider)
 
@@ -39,7 +39,7 @@ except Exception as e:
     def FileSystemProvider(*a, **k):           # type: ignore
         raise _ex
 
-    if isinstance(e, ImportError) and "'FileSystemProvider'" not in e.msg:
-        FileSystemProvider.test_instance = lambda: FileSystemProvider()
+    if isinstance(e, ImportError) and "'FileSystemProvider'" not in str(e):
+        FileSystemProvider.test_instance = lambda: FileSystemProvider()   # pylint: disable=unnecessary-lambda
         FileSystemProvider.name = "filesystem"
         register_provider(FileSystemProvider)
