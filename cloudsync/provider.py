@@ -191,8 +191,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         ...
 
     @abstractmethod
-    def events(self, oid) -> Generator["Event", None, None]:
-        """Yields events relative to oid, possibly forever.
+    def events(self) -> Generator["Event", None, None]:
+        """Yields events, possibly forever.
 
         If stopped, the event poller will sleep for self.default_sleep, and call this again.
         """

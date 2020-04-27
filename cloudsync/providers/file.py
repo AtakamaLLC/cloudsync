@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import time
 import re
 import tempfile
 import logging
@@ -29,6 +30,7 @@ if is_osx():
     from Foundation import NSURL  # pylint: disable=import-error,no-name-in-module
 
 
+logging.getLogger("watchdog").setLevel(logging.INFO)
 log = logging.getLogger(__name__)
 
 
@@ -110,7 +112,15 @@ class CacheEnt:
     fhash = b''
 
 
-class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
+class Watcher(watchdog_events.FileSystemEventHandler):
+    def __init__(self, parent):
+        self.parent = parent
+
+    def on_any_event(self, event):
+        self.parent._on_any_event(event)
+
+
+class FileSystemProvider(Provider):
     """
     FileSystemProvider is a provider that uses the filesystem, and full paths as the storage location.
     """
@@ -127,16 +137,17 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
     def __init__(self, namespace="/"):
         """Constructor for FileSystemProvider."""
         self._namespace = namespace
-        self._namespace_id = namespace
         self._cursor = 0
         self._latest_cursor = 0
         self._events: typing.Deque[Event] = collections.deque([])
         self._evlock = threading.Lock()
         self._evoffset = 0
+        self._event_window = 1000
         self._cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
         super().__init__()
         self._test_creds = {"key": "val"}
+        self._observer = None
 
     @property
     def namespace(self):
@@ -144,22 +155,29 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
 
     @namespace.setter
     def namespace(self, path):
+        if self._namespace == path:
+            return
+        log.info("set namespace %s", path)
         self._namespace = path
+
         with self._api():
             if not os.path.exists(self._namespace):
                 os.mkdir(self._namespace)
 
+            if self._observer:
+                self._observer.stop()
+
             self._observer = watchdog_observer()
-            self._observer.schedule(self, path, recursive=True)
+            self._observer.schedule(Watcher(self), path, recursive=True)
             self._observer.start()
 
     @property
     def namespace_id(self):
-        return self._path_to_oid(self._namespace)
+        return self._fpath_to_oid(self._namespace)
 
     @namespace_id.setter
     def namespace_id(self, oid):
-        self.namespace = self._oid_to_path(oid)
+        self.namespace = self._oid_to_fpath(oid)
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
@@ -210,58 +228,87 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
             val = self.latest_cursor
         if not isinstance(val, int) and val is not None:
             raise ex.CloudCursorError(val)
+        if val > (self.latest_cursor + 1):
+            raise ex.CloudCursorError("%s is not a valid cursor" % val)
+
         self._cursor = val
 
-    def convert_watchdog_event(self, event):
+    def _convert_watchdog_event(self, event):
         otype = OType.DIRECTORY if event.is_directory else OType.FILE
-        path = event.src_path
-        oid = self._path_to_oid(path)
+        fpath = event.src_path
+        oid = self._fpath_to_oid(fpath)
         exists = True
         prior_oid = None
 
         if hasattr(event, "dest_path"):
             prior_oid = oid
-            oid = self._path_to_oid(event.dest_path)
+            fpath = event.dest_path
+            oid = self._fpath_to_oid(fpath)
 
         if type(event) in (watchdog_events.DirDeletedEvent, watchdog_events.FileDeletedEvent):
             exists = False
 
-        return Event(otype=otype, hash=None, path=self._trim_ns(path), oid=oid, exists=exists, prior_oid=prior_oid)
+        if type(event) in (watchdog_events.DirModifiedEvent, watchdog_events.FileModifiedEvent) and exists:
+            return None
 
-    def on_any_event(self, event):
-        ev = self.convert_watchdog_event(event)
-        ev.new_cursor = self._cursor + 1
-        self._events.append(ev)
+        try:
+            stat = os.stat(fpath)
+            mtime = stat.st_mtime
+        except FileNotFoundError:
+            exists = False
+            mtime = time.time()
 
-    def events(self, oid) -> typing.Generator[Event, None, None]:
+        ret = Event(otype=otype, hash=None, path=self._trim_ns(fpath), oid=oid, exists=exists, prior_oid=prior_oid, mtime=mtime)
+        return ret
+
+    def _on_any_event(self, event):
+        ev = self._convert_watchdog_event(event)
+        if not ev:
+            return
+        with self._evlock:
+            self._latest_cursor += 1
+            ev.new_cursor = self._latest_cursor
+            self._events.append(ev)
+            assert self._events[ev.new_cursor - 1] is ev
+            assert len(self._events) + self._evoffset == self._latest_cursor
+
+    def events(self) -> typing.Generator[Event, None, None]:
+        if self._cursor < self._evoffset:
+            self._cursor = self._evoffset
+
         while self._cursor < self._latest_cursor:
             pe = None
             with self._evlock:
                 if self._cursor < self._latest_cursor:
-                    self._cursor += 1
                     pe = self._events[self._cursor - self._evoffset]
+                    self._cursor += 1
             if pe is not None:
                 yield pe
+        while len(self._events) > self._event_window:
+            with self._evlock:
+                self._events.popleft()
+                self._evoffset += 1
+        assert len(self._events) + self._evoffset == self._latest_cursor
 
-    def _oid_to_path(self, oid):
-        return self.join(self._namespace_id, oid)
+    def _oid_to_fpath(self, oid):
+        return oid
 
-    def _path_to_oid(self, path):
+    def _fpath_to_oid(self, path):
         return self.normalize_path(path)
 
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         with self._api():
-            path = self._oid_to_path(oid)
-            if os.path.isdir(path):
+            fpath = self._oid_to_fpath(oid)
+            if os.path.isdir(fpath):
                 raise ex.CloudFileExistsError()
-            if not os.path.exists(path):
+            if not os.path.exists(fpath):
                 raise ex.CloudFileNotFoundError(oid)
             tmpdir = tempfile.gettempdir()
             tmp_file = os.path.join(tmpdir, "tmp." + os.urandom(16).hex())
             with open(tmp_file, "wb") as f:
                 shutil.copyfileobj(file_like, f)
             try:
-                with open(tmp_file, "rb") as src, open(path, "wb") as dest:
+                with open(tmp_file, "rb") as src, open(fpath, "wb") as dest:
                     shutil.copyfileobj(src, dest)
             finally:
                 try:
@@ -271,12 +318,12 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
             return self.info_oid(oid)
 
     def _fast_hash_path(self, path):
+        if os.path.isdir(path):
+            return None
+
         if not self._cache_enabled:
             with open(path, "rb") as f:
                 return get_hash(f)
-
-        if os.path.isdir(path):
-            return None
 
         norm_path = self.normalize_path(path)
         if norm_path not in self._hash_cache:
@@ -313,69 +360,71 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
 
     def listdir(self, oid) -> typing.Generator[DirInfo, None, None]:
         with self._api():
-            path = self._oid_to_path(oid)
-            if not os.path.isdir(path):
+            fpath = self._oid_to_fpath(oid)
+            if not os.path.isdir(fpath):
                 raise ex.CloudFileNotFoundError(oid)
-            with os.scandir(path) as it:
+            with os.scandir(fpath) as it:
                 for entry in it:
                     entry_path = entry.path
                     ohash = self._fast_hash_path(entry_path)
                     otype = OType.DIRECTORY if entry.is_dir() else OType.FILE
-                    name = self.is_subpath(path, entry_path).lstrip("/")
-                    yield DirInfo(otype=otype, oid=self._path_to_oid(entry_path), hash=ohash, path=entry_path, name=name)
+                    name = self.is_subpath(fpath, entry_path).lstrip("/")
+                    path = self._trim_ns(entry_path)
+                    yield DirInfo(otype=otype, oid=self._fpath_to_oid(entry_path), hash=ohash, path=path, name=name)
 
     def create(self, path, file_like, metadata=None) -> OInfo:
-        path = self.join(self.namespace, path)
+        fpath = self.join(self.namespace, path)
         with self._api():
-            parent = self.dirname(path)
-            if os.path.exists(path) or (os.path.exists(parent) and not os.path.isdir(parent)):
+            parent = self.dirname(fpath)
+            if os.path.exists(fpath) or (os.path.exists(parent) and not os.path.isdir(parent)):
                 raise ex.CloudFileExistsError()
-            with open(path, "wb") as dest:
+            with open(fpath, "wb") as dest:
                 try:
                     shutil.copyfileobj(file_like, dest)
                 except Exception:
-                    if os.path.exists(path):
+                    if os.path.exists(fpath):
                         os.unlink(path)
                     raise
-            return self.info_path(path)
+            return self.__info_path(path, fpath)
 
     def download(self, oid, file_like):
         with self._api():
-            path = self._oid_to_path(oid)
-            with open(path, "rb") as src:
+            fpath = self._oid_to_fpath(oid)
+            with open(fpath, "rb") as src:
                 shutil.copyfileobj(src, file_like)
 
     def rename(self, oid, path) -> str:
-        path = self.join(self.namespace, path)
+        fpath = self.join(self.namespace, path)
         with self._api():
-            path_from = self._oid_to_path(oid)
+            path_from = self._oid_to_fpath(oid)
             if not os.path.exists(path_from):
                 raise ex.CloudFileNotFoundError
-            parent = self.dirname(path)
+            parent = self.dirname(fpath)
             if not os.path.exists(parent):
                 raise ex.CloudFileNotFoundError(parent)
             if not os.path.isdir(parent):
-                raise ex.CloudFileExistsError(path)
-            if path_from != path:
+                raise ex.CloudFileExistsError(fpath)
+            if path_from != fpath:
                 from_dir = os.path.isdir(path_from)
-                to_dir = os.path.isdir(path)
-                if os.path.exists(path) and (not to_dir or to_dir != from_dir or (to_dir and self._folder_path_has_contents(path))):
-                    raise ex.CloudFileExistsError(path)
-                os.rename(path_from, path)
-            return self._path_to_oid(path)
+                to_dir = os.path.isdir(fpath)
+                if os.path.exists(fpath) and (not to_dir or to_dir != from_dir or (to_dir and self._folder_path_has_contents(fpath))):
+                    raise ex.CloudFileExistsError(fpath)
+                os.rename(path_from, fpath)
+            return self._fpath_to_oid(fpath)
 
     def mkdir(self, path) -> str:
-        path = self.join(self.namespace, path)
+        fpath = self.join(self.namespace, path)
         with self._api():
-            parent = self.dirname(path)
-            if os.path.isfile(parent) or os.path.isfile(path):
+            parent = self.dirname(fpath)
+            if os.path.isfile(parent) or os.path.isfile(fpath):
                 raise ex.CloudFileExistsError()
-            if not os.path.exists(path):
-                os.mkdir(path)
-            return self._path_to_oid(path)
+            if not os.path.exists(fpath):
+                os.mkdir(fpath)
+
+            return self._fpath_to_oid(fpath)
 
     def _folder_path_has_contents(self, path):
-        oid = self._path_to_oid(path)
+        oid = self._fpath_to_oid(path)
         if oid:
             return self._folder_oid_has_contents(oid)
         return False
@@ -389,7 +438,7 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
 
     def delete(self, oid):
         with self._api():
-            path = self._oid_to_path(oid)
+            path = self._oid_to_fpath(oid)
             if os.path.isdir(path):
                 if self._folder_oid_has_contents(oid):
                     raise ex.CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, path))
@@ -399,7 +448,7 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
 
     def exists_oid(self, oid):
         with self._api():
-            path = self._oid_to_path(oid)
+            path = self._oid_to_fpath(oid)
             return os.path.exists(path)
 
     def exists_path(self, path) -> bool:
@@ -409,34 +458,43 @@ class FileSystemProvider(Provider, watchdog_events.FileSystemEventHandler):
 
     def hash_oid(self, oid) -> bytes:
         with self._api():
-            path = self._oid_to_path(oid)
+            path = self._oid_to_fpath(oid)
             return self._fast_hash_path(path)
 
     def hash_data(self, file_like) -> bytes:
         return self._fast_hash_data(file_like)
 
     def info_path(self, path: str, use_cache=True) -> typing.Optional[OInfo]:
-        path = self.join(self.namespace, path)
-        if not os.path.exists(path):
+        return self.__info_path(path, None)
+
+    def __info_path(self, path: str, fpath: str) -> typing.Optional[OInfo]:
+        if fpath is None:
+            fpath = self.join(self.namespace, path)
+
+        if not os.path.exists(fpath):
             return None
 
-        fhash = self._fast_hash_path(path)
-        otype = OType.DIRECTORY if os.path.isdir(path) else OType.FILE
-        oid = self._path_to_oid(path)
-        path = canonicalize_fpath(self.case_sensitive, path)
-        return OInfo(otype=otype, oid=oid, hash=fhash, path=self._trim_ns(path))
+        if path is None:
+            cpath = canonicalize_fpath(self.case_sensitive, fpath)
+            path = self._trim_ns(cpath)
+
+        fhash = self._fast_hash_path(fpath)
+        otype = OType.DIRECTORY if os.path.isdir(fpath) else OType.FILE
+        oid = self._fpath_to_oid(fpath)
+        ret = OInfo(otype=otype, oid=oid, hash=fhash, path=path)
+        return ret
 
     def _trim_ns(self, path):
-        subs = self.is_subpath(path, self.namespace)
+        subs = self.is_subpath(self.namespace, path)
         if subs:
             return subs
 
     def info_oid(self, oid: str, use_cache=True) -> typing.Optional[OInfo]:
-        path = self._oid_to_path(oid)
-        return self.info_path(path)
+        fpath = self._oid_to_fpath(oid)
+        return self.__info_path(None, fpath)
 
     def list_ns(self):
-        return ["/"]
+        return [self._test_namespace]
 
 
 register_provider(FileSystemProvider)

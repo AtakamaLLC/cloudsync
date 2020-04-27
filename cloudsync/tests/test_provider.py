@@ -23,6 +23,7 @@ from io import BytesIO
 from os import SEEK_SET, SEEK_CUR, SEEK_END
 import threading
 import time
+import copy
 
 from typing import Optional, Generator, TYPE_CHECKING, List, cast
 from unittest.mock import patch
@@ -170,17 +171,17 @@ class ProviderTextMixin(ProviderBase):
     def __getattr__(self, k):
         return getattr(self.prov, k)
 
-    def events(self, oid) -> Generator[Event, None, None]:
-        for e in self.prov.events(oid):
+    def events(self) -> Generator[Event, None, None]:
+        for e in self.prov.events():
             if self.__filter_root(e) or not e.exists:
-                yield e
+                yield self.__strip_root(e)
 
     def walk(self, path, recursive=True):
         path = self.__add_root(path)
         log.debug("TEST WALK %s", path)
         for e in self.prov.walk(path, recursive=recursive):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     @wrap_retry
     def download(self, *args, **kwargs):
@@ -287,8 +288,11 @@ class ProviderTextMixin(ProviderBase):
         if hasattr(obj, "path"):
             path = obj.path
             if path:
+                obj = copy.copy(obj)
                 relative = self.prov.is_subpath(self.test_root, path)
-                assert relative
+                if not relative:
+                    # event from prior test
+                    return obj
                 path = relative
                 # TODO: This does not obey provider control over paths. Frex, consider windows paths and "C:"
                 if not path.startswith(self.prov.sep):
@@ -301,20 +305,17 @@ class ProviderTextMixin(ProviderBase):
         fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "(." + name)
         return fname
 
-    def events_poll(self, timeout=None, oid=None, until=None) -> Generator[Event, None, None]:
-        if oid is None:
-            oid = self.info_path("/").oid
-
+    def events_poll(self, timeout=None, until=None) -> Generator[Event, None, None]:
         if timeout is None:
             timeout = self._test_event_timeout
 
         if timeout == 0:
-            yield from self.events(oid)
+            yield from self.events()
             return
 
         for _ in time_helper(timeout, sleep=self._test_event_sleep):
             got = False
-            for e in self.events(oid):
+            for e in self.events():
                 yield e
                 got = True
             if not until and got:
@@ -847,6 +848,7 @@ def test_event_basic(provider):
     event_count2 = 0
     done = False
 
+    log.debug("waiting for %s and %s", dest, dest2)
     for e in provider.events_poll(until=lambda: done):
         log.debug("got event %s", e)
         # you might get events for the root folder here or other setup stuff
@@ -891,6 +893,8 @@ def test_event_basic(provider):
     deleted_oid = received_event.oid
     deleted_oid2 = received_event2.oid
     path2 = provider.info_oid(received_event2.oid).path
+
+    assert path2
 
     log.debug("delete event")
 
@@ -1013,8 +1017,8 @@ def test_event_rename(provider):
 
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
-    dest2 = provider.temp_name("dest")
-    dest3 = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest2")
+    dest3 = provider.temp_name("dest3")
 
     provider.prime_events()
 
@@ -1611,14 +1615,14 @@ def test_file_exists_error_file_in_path(provider):
     with pytest.raises(CloudFileExistsError):
         provider.rename(oid1, name2 + provider.temp_name())
 
+
 def test_cursor(provider):
     if provider.prov.name == 'gdrive':
         # TODO: fix this, why is gdrive unreliable at event delivery?
         pytest.xfail("gdrive is flaky")
     # get the ball rolling
     provider.create("/file1", BytesIO(b"hello"))
-    oid = provider.info_path("/").oid
-    for i in provider.events(oid):
+    for i in provider.events():
         log.debug("event = %s", i)
     current_csr1 = provider.current_cursor
     log.debug(f"type of cursor is {type(current_csr1)}")
@@ -1647,7 +1651,7 @@ def test_cursor(provider):
     # check that we can go backwards
     provider.prov._clear_cache()
     provider.current_cursor = current_csr1
-    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
     found = False
     for i in provider.events_poll(timeout=10, until=lambda: found):
         log.debug("event = %s", i)
