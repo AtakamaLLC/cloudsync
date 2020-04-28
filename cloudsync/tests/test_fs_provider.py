@@ -1,3 +1,5 @@
+# pylint: disable=protected-access
+
 import os
 import shutil
 import time
@@ -23,6 +25,7 @@ def test_fast_hash(fsp: FileSystemProvider, tmpdir):
 
     f.write(b"hi"*2000)
     h1 = fsp._fast_hash_path(str(f))
+    mtime = f.stat().mtime
 
     #### mtime/data is the same
     with patch("cloudsync.providers.filesystem.get_hash", side_effect=get_hash) as m:
@@ -35,11 +38,15 @@ def test_fast_hash(fsp: FileSystemProvider, tmpdir):
 
     #### mtime changed, so we re-hash
     os.utime(f, (time.time(), time.time()))
+    
     with patch("cloudsync.providers.filesystem.get_hash", side_effect=get_hash) as m:
         h2 = fsp._fast_hash_path(str(f))
         print("calls %s", m.mock_calls)
         # get-hash called twice ... re-get the fast hash, and then get the full hash
-        assert len(m.mock_calls) == 2
+        if f.stat().mtime != mtime:
+            assert len(m.mock_calls) == 2
+        else:
+            print("utime not supported in some vms")
 
     f.write(b"hi"*2000 + b"ho")
     h3 = fsp._fast_hash_path(str(f))
