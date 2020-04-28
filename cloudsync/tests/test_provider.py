@@ -511,6 +511,12 @@ def pytest_generate_tests(metafunc):
             provs += [kw]
 
         if not provs:
+            for mark in metafunc.definition.own_markers:
+                if mark.name == "providers":
+                    provs = mark.args[0]
+                    break
+
+        if not provs:
             provs = ["mock_oid_ci", "mock_path_cs"]
 
         marks = [pytest.param(p, marks=[getattr(pytest.mark, p)]) for p in provs]
@@ -2405,26 +2411,37 @@ def test_globalize_subfolder(provider):
     with pytest.raises(ValueError):
         provider.localize_oid(sub_oid)
 
+@pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
 def test_normalize_path(provider):
+    alt_sep = provider.alt_sep or provider.sep
+
     upper = provider.join(["A", "B", "C", "DEF"])
     lower = provider.join(["a", "b", "c", "def"])
     mixed = provider.join(["A", "b", "C", "dEf"])
+    mixed_2 = provider.join(["A", "b", "", "C", "dEf"])
+    mixed_alt = alt_sep.join(["A", "b", "C", "dEf"])
+    upper_for_display = provider.join(["a", "b", "c", "DEF"])
+    mixed_for_display = provider.join(["a", "b", "c", "dEf"])
 
     if provider.case_sensitive:
         assert provider.normalize_path(upper) == upper
         assert provider.normalize_path(lower) == lower
         assert provider.normalize_path(mixed) == mixed
-        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"])) == provider.join(["A", "c", "dEf"])
+        assert provider.normalize_path(mixed_alt) == mixed
+        assert provider.normalize_path(mixed_2) == mixed
     else: # case-insensitive
         assert provider.normalize_path(upper) == lower
         assert provider.normalize_path(lower) == lower
         assert provider.normalize_path(mixed) == lower
-        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"])) == provider.join(["a", "c", "def"])
-        assert provider.normalize_path(upper, True) == provider.join(["a", "b", "c", "DEF"])
-        assert provider.normalize_path(lower, True) == lower
-        assert provider.normalize_path(mixed, True) == provider.join(["a", "b", "c", "dEf"])
-        assert provider.normalize_path(provider.join(["A", "", "c", "dEf"]), True) == provider.join(["a", "c", "dEf"])
+        assert provider.normalize_path(mixed_alt) == lower
+        assert provider.normalize_path(mixed_2) == lower
+        # for_display=True must preserve case of leaf path node
+        assert provider.normalize_path(upper, for_display=True) == upper_for_display
+        assert provider.normalize_path(lower, for_display=True) == lower
+        assert provider.normalize_path(mixed, for_display=True) == mixed_for_display
+        assert provider.normalize_path(mixed_2, for_display=True) == mixed_for_display
 
+@pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
 def test_paths_match(provider):
     s1 = provider.sep
     s2 = provider.alt_sep or s1
@@ -2438,15 +2455,19 @@ def test_paths_match(provider):
     aBcD = ["a", "B", "c", "D"]
     aBcD_ = ["a", "B", "c", "D", ""]
 
+    assert provider.paths_match(None, None)
+    assert not provider.paths_match(None, s1)
+
     if provider.case_sensitive:
         assert provider.paths_match(s1, s2)
         assert provider.paths_match(s1.join(abcd), s2.join(abcd_))
         assert not provider.paths_match(s1.join(abcd_), s2.join(abcD))
     else: #case-insensitive
         assert provider.paths_match(s1, s2)
-        assert provider.paths_match(s1.join(ABCD), s2.join(aBcD_))
+        assert provider.paths_match(s1.join(ABCD_), s2.join(aBcD_))
         assert provider.paths_match(s1.join(abcd_), s2.join(aBcD))
         assert provider.paths_match(s1, s2, True)
-        assert provider.paths_match(s1.join(ABCD), s2.join(abcD_), True)
-        assert provider.paths_match(s1.join(abcd), s2.join(abcd_), True)
-        assert not provider.paths_match(s1.join(ABCD_), s2.join(abcd), True)
+        # for_display=True must match case for the leaf path node
+        assert provider.paths_match(s1.join(ABCD), s2.join(abcD_), for_display=True)
+        assert provider.paths_match(s1.join(abcd), s2.join(abcd_), for_display=True)
+        assert not provider.paths_match(s1.join(aBcD_), s2.join(abcd), for_display=True)
