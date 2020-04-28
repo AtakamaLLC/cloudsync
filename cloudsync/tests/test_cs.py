@@ -2749,6 +2749,7 @@ def test_root_needed(cs, cs_root_oid, mode):
     cs.emgrs[1].do()
     try:
         cs.smgr.do()
+        cs.smgr.do()
     except _BackoffError:
         pass
 
@@ -2758,8 +2759,6 @@ def test_root_needed(cs, cs_root_oid, mode):
     local.mkdir("/local/a/b")
 
     cs.emgrs[LOCAL]._drain()            # mkdir stuff never gets events
-
-    cs.do()
 
     assert remote.info_path("/remote") is None
 
