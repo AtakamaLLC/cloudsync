@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from watchdog import events as watchdog_events
 from watchdog.observers import Observer as watchdog_observer
+# from watchdog.observers.polling import PollingObserver as watchdog_observer
 
 from cloudsync.event import Event
 from cloudsync.provider import Provider
@@ -60,7 +61,7 @@ def detect_case_sensitive(tmpdir=None):
     """Returns true if temp directory specified is case sensitive, or gettempdir() if unspecified."""
     if not tmpdir:
         tmpdir = tempfile.gettempdir()
-    f1 = os.path.join(tmpdir, "tmp." + os.urandom(16).hex())
+    f1 = os.path.join(tmpdir, "tmp." + os.urandom(16).hex().lower())
     with open(f1, "w") as f:
         f.write("x")
     try:
@@ -134,7 +135,7 @@ def casedpath(path):
 
 def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
     """Fixes the case of a path - parent folder must exist."""
-    if not case_sensitive:
+    if case_sensitive:
         # not needed for case sensitive installations
         return full_path
 
@@ -165,26 +166,43 @@ class CacheEnt:
 
 
 class Observer(watchdog_events.FileSystemEventHandler):
+    """One observer of a single path, can have lots of callbacks."""
+
     def __init__(self, path):
+        self.path = path
         self.callbacks = set()
         log.debug("start observer %s", path)
         self.thread = watchdog_observer()
         self.thread.schedule(self, path, recursive=True)
         self.thread.start()
 
+        self.prev_event_type: type = None
+        self.prev_event_src: str = None
+        self.prev_event_dest: str = None
+
     def add(self, callback):
         self.callbacks.add(callback)
 
-    def remove(self, callback):
+    def discard(self, callback):
         self.callbacks.discard(callback)
 
     def stop(self):
+        log.debug("stop observer %s", self.path)
         self.thread.stop()
 
     def empty(self):
         return not self.callbacks
 
     def on_any_event(self, event):
+        if type(event) == self.prev_event_type and event.src_path == self.prev_event_src and \
+                getattr(event, "dest_path", None) == self.prev_event_dest:
+            return
+
+        self.prev_event_type = type(event)
+        self.prev_event_src = event.src_path
+        self.prev_event_dest = getattr(event, "dest_path", None)
+
+#        log.debug("raw event %s %s", id(self), event)
         for cb in self.callbacks:
             try:
                 cb(event)
@@ -193,6 +211,11 @@ class Observer(watchdog_events.FileSystemEventHandler):
 
 
 class ObserverPool:
+    """Watchdog seems to have issues with start/stop on Windows.
+
+    Creating a pool of watchers resolves this,
+    """
+
     def __init__(self, case_sensitive):
         self.pool = {}
         self.case_sensitive = case_sensitive
@@ -207,16 +230,27 @@ class ObserverPool:
         npath = self.generic_normalize_path(path)
         if path not in self.pool:
             self.pool[npath] = Observer(path)
+        log.debug("add observer %s", callback)
         self.pool[npath].add(callback)
 
-    def remove(self, path, callback):
+    def discard(self, path, callback):
+        """Remove a callback.   
+
+        If path is None, removes all callbacks matching
+        """
+        if path is None:
+            for sub in list(self.pool):
+                self.discard(sub, callback)
+            return
         npath = self.generic_normalize_path(path)
         if npath not in self.pool:
             return
-        self.pool[npath].remove(callback)
-        if self.pool[npath].empty():
-            self.pool[npath].stop()
-            del self.pool[npath]
+        log.debug("remove observer %s", callback)
+        self.pool[npath].discard(callback)
+        # todo: defer this for 1 second... it slows down tests 4x
+        #if self.pool[npath].empty():
+        #    self.pool[npath].stop()
+        #    del self.pool[npath]
 
 
 class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -227,7 +261,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     name = "filesystem"
     oid_is_path = True
     case_sensitive = detect_case_sensitive()
-    win_paths = True
+    win_paths = is_windows()
     default_sleep = 1
     _max_queue = 10000
     _test_event_timeout = 1
@@ -235,6 +269,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     _test_creds: typing.Dict[str, str] = {}
     _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
+    _additional_invalid_characters = ":"
 
     def __init__(self, namespace="/"):
         """Constructor for FileSystemProvider."""
@@ -245,6 +280,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         self._evlock = threading.Lock()
         self._evoffset = 0
         self._event_window = 1000
+        self._rmdirs = []
         self._cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
         super().__init__()
@@ -267,6 +303,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             if not os.path.exists(self._namespace):
                 os.mkdir(self._namespace)
 
+            self._observers.discard(path=None, callback=self._on_any_event)
             self._observers.add(self._namespace, self._on_any_event)
 
     @property
@@ -278,7 +315,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         self.namespace = self._oid_to_fpath(oid)
 
     def disconnect(self):
-        self._observers.remove(self._namespace, self._on_any_event)
+        self._observers.discard(self._namespace, self._on_any_event)
         super().disconnect()
 
     def connect_impl(self, creds):
@@ -299,10 +336,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def get_quota(self):
         if not self.connected:
             raise ex.CloudDisconnectedError()
-        _total, used, free = shutil.disk_usage(self._namespace)
+        ret = shutil.disk_usage(self._namespace)
         return {
-            "used": used,
-            "limit": free,
+            "used": ret.used,
+            "limit": ret.total,
             "login": "n/a"
         }
 
@@ -348,19 +385,20 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             prior_oid = oid
             fpath = event.dest_path
             oid = self._fpath_to_oid(fpath)
-
+        
         if type(event) in (watchdog_events.DirDeletedEvent, watchdog_events.FileDeletedEvent):
             exists = False
 
-        if type(event) in (watchdog_events.DirModifiedEvent, watchdog_events.FileModifiedEvent) and exists:
+        if type(event) in (watchdog_events.DirModifiedEvent, ) and exists:
             return None
 
-        try:
-            stat = os.stat(fpath)
-            mtime = stat.st_mtime
-        except FileNotFoundError:
-            exists = False
-            mtime = time.time()
+        mtime = time.time()
+        if exists:
+            try:
+                stat = os.stat(fpath)
+                mtime = stat.st_mtime
+            except FileNotFoundError:
+                exists = False
 
         ret = Event(otype=otype, hash=None, path=self._trim_ns(fpath), oid=oid, exists=exists, prior_oid=prior_oid, mtime=mtime)
         return ret
@@ -438,12 +476,12 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         st = os.stat(path)
         with open(path, "rb") as f:
             fhash = self._fast_hash_data(f)
-            f.seek(0, 0)
-            qhash = get_hash(f)
 
         # only update hash if modification time changes or if prefix bytes change
         # this can be disabled
-        if ci.mtime == 0 or st.st_mtime != ci.mtime or qhash != ci.qhash:
+        if ci.mtime == 0 or st.st_mtime != ci.mtime or fhash != ci.fhash:
+            with open(path, "rb") as f:
+                qhash = get_hash(f)
             ci.fhash = fhash
             ci.qhash = qhash
             ci.mtime = st.st_mtime
@@ -467,16 +505,18 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def listdir(self, oid) -> typing.Generator[DirInfo, None, None]:
         with self._api():
             fpath = self._oid_to_fpath(oid)
-            if not os.path.isdir(fpath):
-                raise ex.CloudFileNotFoundError(oid)
-            with os.scandir(fpath) as it:
-                for entry in it:
-                    entry_path = entry.path
-                    ohash = self._fast_hash_path(entry_path)
-                    otype = OType.DIRECTORY if entry.is_dir() else OType.FILE
-                    name = self.is_subpath(fpath, entry_path).lstrip("/")
-                    path = self._trim_ns(entry_path)
-                    yield DirInfo(otype=otype, oid=self._fpath_to_oid(entry_path), hash=ohash, path=path, name=name)
+            try:
+                with os.scandir(fpath) as it:
+                    for entry in it:
+                        entry_path = entry.path
+                        ohash = self._fast_hash_path(entry_path)
+                        otype = OType.DIRECTORY if entry.is_dir() else OType.FILE
+                        name = self.is_subpath(fpath, entry_path).lstrip("/")
+                        path = self._trim_ns(entry_path)
+                        yield DirInfo(otype=otype, oid=self._fpath_to_oid(entry_path), hash=ohash, path=path, name=name)
+            except NotADirectoryError:
+                raise ex.CloudFileNotFoundError("not a directory")
+
 
     def create(self, path, file_like, metadata=None) -> OInfo:
         fpath = self.join(self.namespace, path)
@@ -489,8 +529,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                     shutil.copyfileobj(file_like, dest)
                 except Exception:
                     if os.path.exists(fpath):
+                        dest.close()
                         os.unlink(fpath)
                     raise
+            log.debug("create ok %s", fpath)
             return self.__info_path(path, fpath)
 
     def download(self, oid, file_like):
@@ -510,18 +552,31 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                 raise ex.CloudFileNotFoundError(parent)
             if not os.path.isdir(parent):
                 raise ex.CloudFileExistsError(fpath)
-            if not self.paths_match(path_from, fpath):
+            if not self.paths_match(path_from, fpath, for_display=True):
                 from_dir = os.path.isdir(path_from)
                 to_dir = os.path.isdir(fpath)
-                has_contents = self._folder_path_has_contents(fpath)
-                if os.path.exists(fpath) and (not to_dir or to_dir != from_dir or (to_dir and has_contents)):
-                    raise ex.CloudFileExistsError(fpath)
+                has_contents = False
+                if os.path.exists(fpath):
+                    if to_dir:
+                        has_contents = self._folder_path_has_contents(fpath)
+                    if (not to_dir or to_dir != from_dir or (to_dir and has_contents)):
+                        if not self.paths_match(path_from, fpath):
+                            raise ex.CloudFileExistsError(fpath)
                 try:
+                    assert os.path.exists(path_from)
+                    assert os.path.exists(parent)
+                    log.info("rename %s -> %s", path_from, fpath)
                     os.rename(path_from, fpath)
                 except FileExistsError:
-                    if not has_contents and is_windows():
+                    if not has_contents and is_windows() and to_dir:
                         # win32 doesn't allow this, so force it
-                        os.replace(path_from, fpath)
+                        tmpname = fpath + os.urandom(16).hex()
+                        os.rename(fpath, tmpname)
+                        os.rename(path_from, fpath)
+                        self._rmdirs.append(tmpname)
+                    else:
+                        raise
+
             return self._fpath_to_oid(fpath)
 
     def mkdir(self, path) -> str:
@@ -577,16 +632,16 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self._fast_hash_data(file_like)
 
     def info_path(self, path: str, use_cache=True) -> typing.Optional[OInfo]:
-        return self.__info_path(path, None)
+        return self.__info_path(path, None, canonical=True)
 
-    def __info_path(self, path: str, fpath: str) -> typing.Optional[OInfo]:
+    def __info_path(self, path: str, fpath: str, canonical=False) -> typing.Optional[OInfo]:
         if fpath is None:
             fpath = self.join(self.namespace, path)
 
         if not os.path.exists(fpath):
             return None
 
-        if path is None:
+        if path is None or canonical:
             cpath = canonicalize_fpath(self.case_sensitive, fpath)
             path = self._trim_ns(cpath)
 

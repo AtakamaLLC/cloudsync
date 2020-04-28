@@ -333,6 +333,9 @@ class ProviderTextMixin(ProviderBase):
             log.error("error during cleanup %s", repr(e))
 
     def test_cleanup(self, *, connected):
+        for _ in self.prov.events():
+            pass
+
         for p in self.__patches:
             p.stop()
 
@@ -347,6 +350,8 @@ class ProviderTextMixin(ProviderBase):
 
     @wrap_retry
     def prime_events(self):
+        for _ in self.events():
+            pass
         self.current_cursor = self.latest_cursor
 
     @property
@@ -439,7 +444,7 @@ def two_config_providers(request, provider_name, instances=2):
     yield from config_provider_impl(request, provider_name, instances)
 
 
-@pytest.fixture(name="provider", scope="module")
+@pytest.fixture(name="provider")
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
@@ -947,12 +952,14 @@ def test_event_del_create(provider):
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest2")
 
     provider.prime_events()
 
     info1 = provider.create(dest, temp)
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
+    infox = provider.create(dest2, temp2)
 
     done = False
 
@@ -971,7 +978,7 @@ def test_event_del_create(provider):
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or event.oid in (info1.oid, info2.oid)):
+        if not (path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid)):
             continue
 
         events.append(event)
@@ -985,9 +992,9 @@ def test_event_del_create(provider):
             if event.oid == info1.oid:
                 delete1 = event_num
 
-        if create2 and (create1 is None or delete1 is not None):
-            done = True
         event_num = event_num + 1
+        if event.oid == infox.oid and delete1 is not None:
+            done = True
 
     assert len(events), "Event loop timed out before getting any events"
     if create1 is not None:
@@ -1033,6 +1040,7 @@ def test_event_rename(provider):
     seen = set()
     last_event = None
     second_to_last = None
+    deleted_oid2 = True
     done = False
     for e in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
         if provider.oid_is_path:
@@ -1051,6 +1059,8 @@ def test_event_rename(provider):
         if provider.oid_is_path:
             # 2 and 3 are in order
             if path == dest2:
+                if e.exists == False:
+                    deleted_oid2 = True
                 second_to_last = True
             if path == dest3 and (second_to_last or not provider.oid_is_path):
                 done = True
@@ -1061,7 +1071,7 @@ def test_event_rename(provider):
         # providers with path based oids need to send intermediate renames accurately and in order
         assert len(seen) > 2
         assert last_event.path == dest3
-        assert last_event.prior_oid == oid2
+        assert last_event.prior_oid == oid2 or deleted_oid2
     else:
         # oid based providers just need to let us know something happend to that oid
         assert info1.oid in seen
@@ -1631,7 +1641,7 @@ def test_cursor(provider):
     # do something to create an event
     log.debug(f"csr1={current_csr1} current={provider.current_cursor} latest={provider.latest_cursor}")
     info = provider.create("/file2", BytesIO(b"there"))
-    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
     found = False
     for e in provider.events_poll(timeout=600, until=lambda: found):
         log.debug("event = %s", e)
@@ -1640,7 +1650,7 @@ def test_cursor(provider):
     assert found
 
     current_csr2 = provider.current_cursor
-    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
 
     if (current_csr1 is None and current_csr2 is None):
         # some providers don't support cursors... they will walk on start, always
@@ -1815,7 +1825,9 @@ def test_report_info(provider):
     u1 = provider.get_quota()["used"]
     log.info("used %s", u1)
 
-    provider.create(temp_name, BytesIO(b"test" * 10000))
+    provider.create(temp_name, BytesIO(b"test" * 100000))
+
+    time.sleep(1)
 
     pinfo2 = provider.get_quota()
 
@@ -1830,7 +1842,9 @@ def test_report_info(provider):
 
     assert pinfo2['used'] > 0
     assert pinfo2['limit'] > 0
-    if provider.name not in ("box",):
+    if provider.name not in ("box", "filesystem"):
+        # box cache defeats this
+        # fs providers have too many temp files blinking in and out
         assert pinfo2['used'] > u1
 
 

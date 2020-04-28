@@ -22,7 +22,7 @@ box = [ "boxsdk", ]
 dropbox = [ "dropbox", "six>=1.14.0"]
 boxcom = [ "boxsdk[jwt]", ]
 onedrive = [ "cloudsync-onedrive", ]
-filesystem = [ "watchdog", ]
+filesystem = [ "watchdog", "pywin32; sys.platform == 'win32'" ]
 gdrive = [ "cloudsync-gdrive", ]
 all = [ "cloudsync-gdrive", "cloudsync-onedrive", "boxsdk[jwt]", "dropbox", "boxsdk" ]
 
