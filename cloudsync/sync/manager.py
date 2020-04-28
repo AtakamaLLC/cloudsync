@@ -171,7 +171,9 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def set_root_oid(self, side, oid):
+        log.debug("set root oid for %s to %s", side, oid)
         self.__root_oids[side] = oid
+        self.__root_paths[side] = None
 
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
