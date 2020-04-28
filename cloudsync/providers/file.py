@@ -26,6 +26,10 @@ def is_osx():
     return sys.platform == "darwin"
 
 
+def is_windows():
+    return sys.platform == "win32"
+
+
 if is_osx():
     from Foundation import NSURL  # pylint: disable=import-error,no-name-in-module
 
@@ -72,7 +76,7 @@ def casedpath(path):
     if is_osx():
         url = NSURL.fileURLWithPath_(path)  # will be None if path doesn't exist
         if not url:
-            return path
+            return None
         return url.fileReferenceURL().path()
 
     r = glob.glob(re.sub(r'([^:/\\])(?=[/\\]|$)', r'[\1]', path))
@@ -93,13 +97,12 @@ def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
         if cp:
             fp = os.path.join(cp, fname)
         else:
-            log.error("unexpected call to canonicalize_fpath with missing parent folder", stack_info=True)
             fp = None
     else:
         fp = casedpath(full_path)  # canonicalizes path to an existing file
 
     if not fp:
-        log.debug("canonicalize doesn't yet support missing parent folders %s", full_path)
+        log.warning("canonicalize doesn't yet support missing parent folders %s", full_path)
         return full_path
 
     return fp
@@ -461,9 +464,15 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             if not self.paths_match(path_from, fpath):
                 from_dir = os.path.isdir(path_from)
                 to_dir = os.path.isdir(fpath)
-                if os.path.exists(fpath) and (not to_dir or to_dir != from_dir or (to_dir and self._folder_path_has_contents(fpath))):
+                has_contents = self._folder_path_has_contents(fpath)
+                if os.path.exists(fpath) and (not to_dir or to_dir != from_dir or (to_dir and has_contents)):
                     raise ex.CloudFileExistsError(fpath)
-                os.rename(path_from, fpath)
+                try:
+                    os.rename(path_from, fpath)
+                except FileExistsError:
+                    if not has_contents and is_windows():
+                        # win32 doesn't allow this, so force it
+                        os.replace(path_from, fpath)
             return self._fpath_to_oid(fpath)
 
     def mkdir(self, path) -> str:
