@@ -28,7 +28,7 @@ __all__ = ['ApiServer', 'ApiError', 'api_route']
 
 
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
-    def log_message(self, unused_format, *args):
+    def log_message(self, unused_format, *args):        # pylint: disable=arguments-differ
         pass
 
 
