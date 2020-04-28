@@ -446,7 +446,12 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                     os.unlink(tmp_file)
                 except Exception:
                     pass
+            self._clear_hash_cache(fpath)
             return self.info_oid(oid)
+
+    def _clear_hash_cache(self, path):
+        norm_path = self.normalize_path(path)
+        self._hash_cache.pop(norm_path, None)
 
     def _fast_hash_path(self, path):
         if os.path.isdir(path):
@@ -463,17 +468,19 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
         st = os.stat(path)
         with open(path, "rb") as f:
-            fhash = self._fast_hash_data(f)
+            fhash, final = self._fast_hash_data(f)
 
         # only update hash if modification time changes or if prefix bytes change
         # this can be disabled
-        if ci.mtime == 0 or st.st_mtime != ci.mtime or fhash != ci.fhash:
-            with open(path, "rb") as f:
-                qhash = get_hash(f)
+        if not ci.qhash or st.st_mtime != ci.mtime or fhash != ci.fhash:
+            if final:
+                ci.qhash = fhash
+            else:
+                with open(path, "rb") as f:
+                    ci.qhash = get_hash(f)
             ci.fhash = fhash
-            ci.qhash = qhash
             ci.mtime = st.st_mtime
-        return fhash
+        return ci.qhash
 
     @staticmethod
     def _fast_hash_data(file_like):
@@ -488,7 +495,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         else:
             last = b''
         # log.debug("first+last = %s", first+last)
-        return get_hash(first + last)
+        return get_hash(first + last), not last
 
     def listdir(self, oid) -> typing.Generator[DirInfo, None, None]:
         with self._api():
@@ -505,7 +512,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             except NotADirectoryError:
                 raise ex.CloudFileNotFoundError("not a directory")
 
-
     def create(self, path, file_like, metadata=None) -> OInfo:
         fpath = self.join(self.namespace, path)
         with self._api():
@@ -521,6 +527,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                         os.unlink(fpath)
                     raise
             log.debug("create ok %s", fpath)
+            self._clear_hash_cache(fpath)
             return self.__info_path(path, fpath)
 
     def download(self, oid, file_like):
