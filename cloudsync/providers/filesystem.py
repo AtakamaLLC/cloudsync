@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from watchdog import events as watchdog_events
 from watchdog.observers import Observer as watchdog_observer
+# use this to debug platform-specific issues
 # from watchdog.observers.polling import PollingObserver as watchdog_observer
 
 from cloudsync.event import Event
@@ -234,8 +235,16 @@ class ObserverPool:
         log.debug("add observer %s", callback)
         self.pool[npath].add(callback)
 
+    def replace(self, path, callback):
+        """Replace all occurences of callback with one rooted at path."""
+        self.add(path, callback)
+
+        for sub in list(self.pool):
+            if sub != path:
+                self.discard(sub, callback)
+
     def discard(self, path, callback):
-        """Remove a callback.   
+        """Remove a callback.
 
         If path is None, removes all callbacks matching
         """
@@ -248,10 +257,10 @@ class ObserverPool:
             return
         log.debug("remove observer %s", callback)
         self.pool[npath].discard(callback)
-        # todo: defer this for 1 second... it slows down tests 4x
-        #if self.pool[npath].empty():
-        #    self.pool[npath].stop()
-        #    del self.pool[npath]
+        # TODO: defer this for 1 second... it slows down tests 4x
+        # if self.pool[npath].empty():
+        #     self.pool[npath].stop()
+        #     del self.pool[npath]
 
 
 class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -267,7 +276,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     _max_queue = 10000
     _test_event_timeout = 1
     _test_event_sleep = 0.001
-    _test_creds: typing.Dict[str, str] = {}
     _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
     _additional_invalid_characters = ":"
@@ -285,7 +293,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         self._cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
         super().__init__()
-        self._test_creds = {"key": "val"}
 
     @property
     def namespace(self):
@@ -297,15 +304,12 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return
         log.info("set namespace %s", path)
         self._namespace = path
-        self._connect_observer()
+        if not os.path.exists(self._namespace):
+            os.mkdir(self._namespace)
 
     def _connect_observer(self):
         with self._api():
-            if not os.path.exists(self._namespace):
-                os.mkdir(self._namespace)
-
-            self._observers.discard(path=None, callback=self._on_any_event)
-            self._observers.add(self._namespace, self._on_any_event)
+            self._observers.replace(self._namespace, self._on_any_event)
 
     @property
     def namespace_id(self):
@@ -320,7 +324,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         super().disconnect()
 
     def connect_impl(self, creds):
-        self._connect_observer()
         return super().connect_impl(creds)
 
     def get_quota(self):
@@ -403,6 +406,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             assert len(self._events) + self._evoffset == self._latest_cursor
 
     def events(self) -> typing.Generator[Event, None, None]:
+        self._connect_observer()
         if self._cursor < self._evoffset:
             self._cursor = self._evoffset
 
@@ -624,7 +628,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return self._fast_hash_path(path)
 
     def hash_data(self, file_like) -> bytes:
-        return self._fast_hash_data(file_like)
+        return self._fast_hash_data(file_like)[0]
 
     def info_path(self, path: str, use_cache=True) -> typing.Optional[OInfo]:
         return self.__info_path(path, None, canonical=True)
