@@ -33,6 +33,14 @@ def test_fast_hash(fsp: FileSystemProvider, tmpdir):
 
     assert h1 == h2
 
+    #### mtime changed, so we re-hash
+    os.utime(f, (time.time(), time.time()))
+    with patch("cloudsync.providers.filesystem.get_hash", side_effect=get_hash) as m:
+        h2 = fsp._fast_hash_path(str(f))
+        print("calls %s", m.mock_calls)
+        # get-hash called twice ... re-get the fast hash, and then get the full hash
+        assert len(m.mock_calls) == 2
+
     f.write(b"hi"*2000 + b"ho")
     h3 = fsp._fast_hash_path(str(f))
     assert h3 != h2
