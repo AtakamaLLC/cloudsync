@@ -27,3 +27,4 @@ python-daemon
 
 # fsprovider
 watchdog
+pywin32; sys.platform == 'win32'
