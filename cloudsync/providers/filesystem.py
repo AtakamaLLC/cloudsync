@@ -659,6 +659,5 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def list_ns(self):
         return [self._test_namespace]
 
-
 register_provider(FileSystemProvider)
 __cloudsync__ = FileSystemProvider
