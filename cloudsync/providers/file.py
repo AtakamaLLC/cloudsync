@@ -112,12 +112,59 @@ class CacheEnt:
     fhash = b''
 
 
-class Watcher(watchdog_events.FileSystemEventHandler):
-    def __init__(self, parent):
-        self.parent = parent
+class Observer(watchdog_events.FileSystemEventHandler):
+    def __init__(self, path):
+        self.callbacks = set()
+        log.debug("start observer %s", path)
+        self.thread = watchdog_observer()
+        self.thread.schedule(self, path, recursive=True)
+        self.thread.start()
+
+    def add(self, callback):
+        self.callbacks.add(callback)
+
+    def remove(self, callback):
+        self.callbacks.discard(callback)
+
+    def stop(self):
+        self.thread.stop()
+
+    def empty(self):
+        return not self.callbacks
 
     def on_any_event(self, event):
-        self.parent._on_any_event(event)                # pylint: disable=protected-access
+        for cb in self.callbacks:
+            try:
+                cb(event)
+            except Exception:
+                log.exception("error processing event")
+
+
+class ObserverPool:
+    def __init__(self, case_sensitive):
+        self.pool = {}
+        self.case_sensitive = case_sensitive
+
+    def generic_normalize_path(self, path):
+        path = path.replace("\\", "/")
+        if self.case_sensitive:
+            path = path.lower()
+        return path
+
+    def add(self, path, callback):
+        npath = self.generic_normalize_path(path)
+        if path not in self.pool:
+            self.pool[npath] = Observer(path)
+        self.pool[npath].add(callback)
+
+    def remove(self, path, callback):
+        npath = self.generic_normalize_path(path)
+        if npath not in self.pool:
+            return
+        self.pool[npath].remove(callback)
+        if self.pool[npath].empty():
+            self.pool[npath].stop()
+            del self.pool[npath]
 
 
 class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -128,11 +175,14 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     name = "filesystem"
     oid_is_path = True
     case_sensitive = detect_case_sensitive()
+    win_paths = True
+    default_sleep = 1
     _max_queue = 10000
     _test_event_timeout = 1
     _test_event_sleep = 0.001
     _test_creds: typing.Dict[str, str] = {}
     _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
+    _observers = ObserverPool(case_sensitive)
 
     def __init__(self, namespace="/"):
         """Constructor for FileSystemProvider."""
@@ -147,7 +197,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
         super().__init__()
         self._test_creds = {"key": "val"}
-        self._observer = None
 
     @property
     def namespace(self):
@@ -155,21 +204,18 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @namespace.setter
     def namespace(self, path):
-        if self._namespace == path:
+        if self.paths_match(self._namespace, path):
             return
         log.info("set namespace %s", path)
         self._namespace = path
+        self._connect_observer()
 
+    def _connect_observer(self):
         with self._api():
             if not os.path.exists(self._namespace):
                 os.mkdir(self._namespace)
 
-            if self._observer:
-                self._observer.stop()
-
-            self._observer = watchdog_observer()
-            self._observer.schedule(Watcher(self), path, recursive=True)
-            self._observer.start()
+            self._observers.add(self._namespace, self._on_any_event)
 
     @property
     def namespace_id(self):
@@ -178,6 +224,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     @namespace_id.setter
     def namespace_id(self, oid):
         self.namespace = self._oid_to_fpath(oid)
+
+    def disconnect(self):
+        self._observers.remove(self._namespace, self._on_any_event)
+        super().disconnect()
 
     def connect_impl(self, creds):
         log.debug("connect mock prov creds : %s", creds)
@@ -189,6 +239,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
         if self.connection_id is None or self.connection_id == "invalid":
             return os.urandom(16).hex()
+
+        self._connect_observer()
 
         return self.connection_id
 
@@ -406,7 +458,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                 raise ex.CloudFileNotFoundError(parent)
             if not os.path.isdir(parent):
                 raise ex.CloudFileExistsError(fpath)
-            if path_from != fpath:
+            if not self.paths_match(path_from, fpath):
                 from_dir = os.path.isdir(path_from)
                 to_dir = os.path.isdir(fpath)
                 if os.path.exists(fpath) and (not to_dir or to_dir != from_dir or (to_dir and self._folder_path_has_contents(fpath))):

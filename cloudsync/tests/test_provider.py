@@ -614,7 +614,7 @@ def test_namespace(provider):
         nid = provider.namespace_id
         provider.namespace_id = nid
 
-        assert provider.namespace == ns[0]
+        assert provider.namespace_id == nid
 
         if len(ns) > 1:
             provider.namespace = ns[1]
