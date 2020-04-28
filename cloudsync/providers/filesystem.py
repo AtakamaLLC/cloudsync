@@ -73,7 +73,7 @@ def detect_case_sensitive(tmpdir=None):
     return True
 
 
-def casedpath_win32(path: str) -> str:
+def canonicalize_win32(path: str) -> str:
     """Efficient canonicalize path for windows."""
     drive_unc, *path_parts = pathlib.Path(path).parts
 
@@ -115,7 +115,7 @@ def casedpath_win32(path: str) -> str:
     return str(out)
 
 
-def casedpath(path):
+def canonicalize(path):
     """Fixes the case of a file to the name on disk.
 
     Works only if the path exists
@@ -127,8 +127,9 @@ def casedpath(path):
         return url.fileReferenceURL().path()
 
     if is_windows():
-        return casedpath_win32(path)
+        return canonicalize_win32(path)
 
+    # todo, this logic is the same as windows (above), and python calls are probably fine for both
     r = glob.glob(re.sub(r'([^:/\\])(?=[/\\]|$)', r'[\1]', path))
     return r[0] if r else path
 
@@ -140,16 +141,16 @@ def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
         return full_path
 
     if not os.path.exists(full_path):
-        # casedpath function doesn't work if the path doesn't exist
+        # canonicalize function doesn't work if the path doesn't exist
         fdir, fname = os.path.split(full_path)
-        cp = casedpath(fdir)
+        cp = canonicalize(fdir)
         fp: typing.Optional[str]
         if cp:
             fp = os.path.join(cp, fname)
         else:
             fp = None
     else:
-        fp = casedpath(full_path)  # canonicalizes path to an existing file
+        fp = canonicalize(full_path)  # canonicalizes path to an existing file
 
     if not fp:
         log.warning("canonicalize doesn't yet support missing parent folders %s", full_path)
@@ -319,23 +320,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         super().disconnect()
 
     def connect_impl(self, creds):
-        log.debug("connect mock prov creds : %s", creds)
-
-        if not creds:
-            raise ex.CloudTokenError()
-
-        self._api("connect_impl", creds)
-
-        if self.connection_id is None or self.connection_id == "invalid":
-            return os.urandom(16).hex()
-
         self._connect_observer()
-
-        return self.connection_id
+        return super().connect_impl(creds)
 
     def get_quota(self):
-        if not self.connected:
-            raise ex.CloudDisconnectedError()
         ret = shutil.disk_usage(self._namespace)
         return {
             "used": ret.used,

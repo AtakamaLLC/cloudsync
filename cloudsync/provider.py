@@ -23,6 +23,9 @@ Hash = Union[Dict[str, 'Hash'], Tuple['Hash', ...], str, int, bytes, float, None
 Cursor = Union[Dict[str, 'Cursor'], Tuple['Cursor', ...], str, int, bytes, float, None]    # type: ignore
 Creds = Dict[str, Union[str, int]]
 
+CONNECTION_NOT_NEEDED = "connection-not-needed"
+
+__all__ = ["Provider", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     """
@@ -93,7 +96,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             A combination of a provider name and a login/userid could be sufiicient, but
             it is suggested to use a provider specific identity, if available.
         """
-        return self.connection_id or self.name
+        return self.connection_id or CONNECTION_NOT_NEEDED
 
 #    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):

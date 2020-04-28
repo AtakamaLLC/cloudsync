@@ -544,22 +544,23 @@ def test_connect(scoped_provider):
     provider.reconnect()
     assert provider.connected
     assert provider.connection_id
-    provider.disconnect()
-    provider.connection_id = "invalid"
-    log.info("reset %s == %s", provider, provider.connection_id)
-    with pytest.raises(CloudTokenError):
+    if provider.connection_id != cloudsync.CONNECTION_NOT_NEEDED:
+        provider.disconnect()
+        provider.connection_id = "invalid"
+        log.info("reset %s == %s", provider, provider.connection_id)
+        with pytest.raises(CloudTokenError):
+            provider.reconnect()
+        assert not provider.connected
+        provider.connection_id = None
         provider.reconnect()
-    assert not provider.connected
-    provider.connection_id = None
-    provider.reconnect()
 
-    provider.disconnect()
-    try:
-        provider.get_quota()
-        assert False
-    except CloudDisconnectedError:
-        pass
-    provider.reconnect()
+        provider.disconnect()
+        try:
+            provider.get_quota()
+            assert False
+        except CloudDisconnectedError:
+            pass
+        provider.reconnect()
 
 
 def test_info_root(provider):

@@ -32,7 +32,7 @@ except Exception as e:
 
 try:
     import sys
-    from .file import FileSystemProvider
+    from .filesystem import FileSystemProvider
 except Exception as e:
     _ex = e
 
