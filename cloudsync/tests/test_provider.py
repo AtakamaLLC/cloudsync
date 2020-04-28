@@ -333,9 +333,6 @@ class ProviderTextMixin(ProviderBase):
             log.error("error during cleanup %s", repr(e))
 
     def test_cleanup(self, *, connected):
-        for _ in self.prov.events():
-            pass
-
         for p in self.__patches:
             p.stop()
 
@@ -344,6 +341,8 @@ class ProviderTextMixin(ProviderBase):
 
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
+        for _ in self.prov.events():
+            pass
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
