@@ -295,7 +295,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return
         log.info("set namespace %s", path)
         self._namespace = path
-        self._connect_observer()
+        try:
+            self._connect_observer()
+        except OSError:
+            log.info("cannot get events on %s", path)
 
     def _connect_observer(self):
         with self._api():
@@ -318,7 +321,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         super().disconnect()
 
     def connect_impl(self, creds):
-        self._connect_observer()
+        try:
+            self._connect_observer()
+        except OSError:
+            log.info("cannot get events for %s", self._namespace)
         return super().connect_impl(creds)
 
     def get_quota(self):
