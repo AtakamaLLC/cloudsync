@@ -341,12 +341,7 @@ class ProviderTextMixin(ProviderBase):
 
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
-        try:
-            self.prov.test_short_poll_only(True)
-            for _ in self.prov.events():
-                pass
-        finally:
-            self.prov.test_short_poll_only(False)
+        self.prime_events()
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
@@ -1007,7 +1002,7 @@ def test_event_del_create(provider):
                 delete1 = event_num
 
         event_num = event_num + 1
-        if event.oid == infox.oid and delete1 is not None:
+        if event.oid == infox.oid and (create1 is not None and delete1 is not None) or (create1 is None):
             done = True
 
     assert len(events), "Event loop timed out before getting any events"

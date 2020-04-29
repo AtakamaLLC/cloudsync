@@ -32,9 +32,10 @@ class LongPollManager(Runnable):
 
     def __call__(self) -> Generator[Event, None, None]:
         log.debug("waiting for events")
-        self.__provider_events_pending.wait()
-        log.debug("done waiting for events")
-        self.__provider_events_pending.clear()
+        if not self.short_poll_only:
+            self.__provider_events_pending.wait()
+            log.debug("done waiting for events")
+            self.__provider_events_pending.clear()
         has_items = True
         while has_items:
             has_items = False
@@ -55,6 +56,9 @@ class LongPollManager(Runnable):
         self.got_events.set()
         self.last_set = time.monotonic()
 
+    def done(self):
+        self.clear()
+
     def do(self):  # this is really "do_once"
         if self.short_poll_only:
             self.__provider_events_pending.set()
@@ -66,6 +70,8 @@ class LongPollManager(Runnable):
                 if self.uses_cursor:
                     log.debug("wait for got_events")
                     self.got_events.wait(timeout=self.long_poll_timeout)
+                    if self.stopped:
+                        return
                 self.got_events.clear()
                 assert not self.got_events.is_set()
 
