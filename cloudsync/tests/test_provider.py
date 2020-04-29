@@ -78,7 +78,7 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     return wrapped
 
 
-class ProviderTextMixin(ProviderBase):
+class ProviderTestMixin(ProviderBase):
     """Mixin class that supports testing providers.
 
     Features:
@@ -104,6 +104,7 @@ class ProviderTextMixin(ProviderBase):
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
+        self.__short_poll_only = short_poll_only
         prov.test_short_poll_only(short_poll_only=short_poll_only)
 
         self.__patches = []
@@ -353,7 +354,7 @@ class ProviderTextMixin(ProviderBase):
             for _ in self.events():
                 pass
         finally:
-            self.prov.test_short_poll_only(False)
+            self.prov.test_short_poll_only(self.__short_poll_only)
         self.current_cursor = self.latest_cursor
 
     @property
@@ -407,7 +408,7 @@ def mixin_provider(prov, connect=True, short_poll_only=True):
 
     providers = []
     for i in range(instances):
-        providers.append(ProviderTextMixin(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
+        providers.append(ProviderTestMixin(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
     if len(providers) == 1:
         yield providers[0]
     else:
@@ -2001,7 +2002,7 @@ def test_cursor_error_during_listdir(provider):
 
 
 def test_set_creds(config_provider):
-    provider = ProviderTextMixin(config_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(config_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing creds")
     provider.set_creds(provider._test_creds)
@@ -2010,7 +2011,7 @@ def test_set_creds(config_provider):
 
 
 def test_set_ns_offline(unwrapped_provider):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     try:
         provider.list_ns()
         pytest.skip("provider doesn't use online namespace listings")
@@ -2026,7 +2027,7 @@ def test_set_ns_offline(unwrapped_provider):
 
 @pytest.mark.manual
 def test_authenticate(unwrapped_provider):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -2051,7 +2052,7 @@ def test_authenticate(unwrapped_provider):
 
 @pytest.mark.manual
 def test_interrupt_auth(unwrapped_provider):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -2126,7 +2127,7 @@ def suspend_capture(pytestconfig):
 # noinspection PyUnreachableCode
 @pytest.mark.manual
 def test_revoke_auth(unwrapped_provider, suspend_capture):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
@@ -2158,7 +2159,7 @@ def test_specific_test_root():
     base.connect("whatever")
     base.mkdir("/banana")
 
-    provider = ProviderTextMixin(base)                             # type: ignore
+    provider = ProviderTestMixin(base)                             # type: ignore
     # i use whatever root the test instance specified
     assert provider.test_root.startswith("/banana/")
     # i but i put my tests in their own folder

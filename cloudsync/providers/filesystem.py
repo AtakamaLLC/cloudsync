@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import errno
 import time
 import re
 import tempfile
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 
 from watchdog import events as watchdog_events
 from watchdog.observers import Observer as watchdog_observer
+# uncomment if you want to determine if issues are caused by platform polling code
 # from watchdog.observers.polling import PollingObserver as watchdog_observer
 
 from cloudsync.event import Event
@@ -112,9 +114,10 @@ def canonicalize_tail_win32(path: str) -> str:
     except StopIteration:
         # Couldn't find the path component.
         pass
-    except Exception:
-        # Something else went wrong, somehow.
-        log.exception("Unexpected exception in FindFirstFile")
+    except Exception as e:
+        # something else went wrong, somehow, log exception and swallow
+        # likely this is a permission denied
+        log.error("Unexpected exception in FindFirstFile: %s", e)
 
     ret = str(p)
 
@@ -157,8 +160,7 @@ def canonicalize_tail(case_sensitive: bool, full_path: str) -> str:
         # canonicalize function doesn't work if the path doesn't exist
         fdir, fname = os.path.split(full_path)
         cp = canonicalize_tail_existing(fdir)
-        fp: typing.Optional[str]
-        fp = os.path.join(cp, fname)
+        fp: str = os.path.join(cp, fname)
     else:
         fp = canonicalize_tail_existing(full_path)  # canonicalizes path to an existing file
 
@@ -190,6 +192,7 @@ class Observer(watchdog_events.FileSystemEventHandler):
         self.prev_event_type: type = None
         self.prev_event_src: str = None
         self.prev_event_dest: str = None
+        self.prev_event_time: float = None
 
     def add(self, callback):
         self.callbacks.add(callback)
@@ -206,14 +209,20 @@ class Observer(watchdog_events.FileSystemEventHandler):
 
     def on_any_event(self, event):
         """Called by watchdog on fs events."""
-        if type(event) == self.prev_event_type and event.src_path == self.prev_event_src and \
-                getattr(event, "dest_path", None) == self.prev_event_dest:
+
+        # filter out lots of the same events in the same millisecond
+        if (type(event) == self.prev_event_type and
+                event.src_path == self.prev_event_src and
+                getattr(event, "dest_path", None) == self.prev_event_dest and
+                time.monotonic() < self.prev_event_time + 0.01):
             return
 
         self.prev_event_type = type(event)
         self.prev_event_src = event.src_path
         self.prev_event_dest = getattr(event, "dest_path", None)
+        self.prev_event_time = time.monotonic()
 
+# uncomment for too-heavy debugging
 #        log.debug("raw event %s %s", id(self), event)
         for cb in self.callbacks:
             try:
@@ -259,10 +268,14 @@ class ObserverPool:
             return
         log.debug("remove observer %s", callback)
         self.pool[npath].discard(callback)
-        # todo: defer this for 1 second... it slows down tests 4x
-        #if self.pool[npath].empty():
-        #    self.pool[npath].stop()
-        #    del self.pool[npath]
+        # we should run this code below, but not right away
+        # maybe set an event on a thread that wakes up, sleeps for a few seconds
+        # then sees if anything is empty, and stops them
+        # the reason is that windows starts to fail if we thrash
+        #
+        # if self.pool[npath].empty():
+        #     self.pool[npath].stop()
+        #     del self.pool[npath]
 
 
 class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -280,7 +293,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     _test_event_sleep = 0.001
     _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
-    _additional_invalid_characters = ":"
+    _additional_invalid_characters = ":" if is_windows() else ""
 
     def __init__(self, namespace="/"):
         """Constructor for FileSystemProvider."""
@@ -349,6 +362,9 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def _api(self, *args, **kwargs):
         return self
 
+    # todo: break these out into their own class and make it a required argument for stuff
+    # like fast_hash_path and other bad things
+
     def __enter__(self):
         pass
 
@@ -357,6 +373,20 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             raise ex.CloudFileNotFoundError
         if isinstance(exception, FileExistsError):
             raise ex.CloudFileExistsError
+        if isinstance(exception, IsADirectoryError):
+            raise ex.CloudFileExistsError("Is a dir: %s" % exception)
+        if isinstance(exception, NotADirectoryError):
+            raise ex.CloudFileExistsError("Not a dir: %s" % exception)
+        if isinstance(exception, OSError):
+            if exception.errno == errno.ENOTEMPTY:
+                raise ex.CloudFileExistsError("Dir not empty: %s" % exception)
+            if exception.errno == errno.ENOTDIR:
+                raise ex.CloudFileExistsError("Not a dir: %s" % exception)
+            if exception.errno == errno.ENOSPC:
+                raise ex.CloudOutOfSpaceError("no space: %s" % exception)
+            if exception.errno == errno.ENAMETOOLONG:
+                raise ex.CloudFileNameError("Invalid name: %s" % exception)
+            raise
 
     @property  # type: ignore
     def latest_cursor(self):
@@ -639,29 +669,31 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return self._fast_hash_path(path)
 
     def hash_data(self, file_like) -> bytes:
-        return self._fast_hash_data(file_like)[0]
+        with self._api():
+            return self._fast_hash_data(file_like)[0]
 
     def info_path(self, path: str, use_cache=True) -> typing.Optional[OInfo]:
-        return self.__info_path(path, None, canonical=True)
+        return self.__info_path(path, None, canonicalize=True)
 
-    def __info_path(self, path: str, fpath: str, canonical=False) -> typing.Optional[OInfo]:
+    def __info_path(self, path: str, fpath: str, canonicalize=False) -> typing.Optional[OInfo]:
         if fpath is None:
             fpath = self.join(self.namespace, path)
 
         if not os.path.exists(fpath):
             return None
 
-        if path is None or canonical:
+        if path is None or canonicalize:
             cpath = canonicalize_tail(self.case_sensitive, fpath)
             if not self.paths_match(cpath, fpath):
                 log.debug("canonicalize failure %s != %s", cpath, fpath)
             path = self._trim_ns(cpath)
 
-        fhash = self._fast_hash_path(fpath)
-        otype = OType.DIRECTORY if os.path.isdir(fpath) else OType.FILE
-        oid = self._fpath_to_oid(fpath)
-        ret = OInfo(otype=otype, oid=oid, hash=fhash, path=path)
-        return ret
+        with self._api():
+            fhash = self._fast_hash_path(fpath)
+            otype = OType.DIRECTORY if os.path.isdir(fpath) else OType.FILE
+            oid = self._fpath_to_oid(fpath)
+            ret = OInfo(otype=otype, oid=oid, hash=fhash, path=path)
+            return ret
 
     def _trim_ns(self, path):
         subs = self.is_subpath(self.namespace, path)
@@ -676,6 +708,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     def list_ns(self):
         return [self._test_namespace]
+
 
 register_provider(FileSystemProvider)
 __cloudsync__ = FileSystemProvider
