@@ -62,14 +62,15 @@ def detect_case_sensitive(tmpdir=None):
     if not tmpdir:
         tmpdir = tempfile.gettempdir()
     f1 = os.path.join(tmpdir, "tmp." + os.urandom(16).hex().lower())
-    with open(f1, "w") as f:
-        f.write("x")
     try:
+        with open(f1, "w") as f:
+            f.write("x")
         f2 = f1.upper()
         if os.path.exists(f2):
             return False
     finally:
-        os.unlink(f1)
+        if os.path.exists(f1):
+            os.unlink(f1)
     return True
 
 
