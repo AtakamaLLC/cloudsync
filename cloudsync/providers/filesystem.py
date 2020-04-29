@@ -139,7 +139,7 @@ def canonicalize_tail_existing(path):
     if is_windows():
         return canonicalize_tail_win32(path)
 
-    # todo, this logic is the same as windows (above), and python calls are probably fine for both
+    # todo: make an explicit version of this line noise
     r = glob.glob(re.sub(r'([^:/\\])(?=[/\\]|$)', r'[\1]', path))
     return r[0] if r else path
 
@@ -248,7 +248,7 @@ class ObserverPool:
         self.pool[npath].add(callback)
 
     def discard(self, path, callback):
-        """Remove a callback.   
+        """Remove a callback.
 
         If path is None, removes all callbacks matching
         """
@@ -306,6 +306,9 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def namespace(self, path):
         if self.paths_match(self._namespace, path):
             return
+        if not os.path.exists(path):
+            os.mkdir(path)
+        path = get_long_path_name(path)
         log.info("set namespace %s", path)
         self._namespace = path
         try:
@@ -315,9 +318,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     def _connect_observer(self):
         with self._api():
-            if not os.path.exists(self._namespace):
-                os.mkdir(self._namespace)
-
             self._observers.discard(path=None, callback=self._on_any_event)
             self._observers.add(self._namespace, self._on_any_event)
 
@@ -390,7 +390,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             prior_oid = oid
             fpath = event.dest_path
             oid = self._fpath_to_oid(fpath)
-        
+
         if type(event) in (watchdog_events.DirDeletedEvent, watchdog_events.FileDeletedEvent):
             exists = False
 
