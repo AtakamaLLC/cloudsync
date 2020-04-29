@@ -341,16 +341,24 @@ class ProviderTextMixin(ProviderBase):
 
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
-        for _ in self.prov.events():
-            pass
+        try:
+            self.prov.test_short_poll_only(True)
+            for _ in self.prov.events():
+                pass
+        finally:
+            self.prov.test_short_poll_only(False)
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
 
     @wrap_retry
     def prime_events(self):
-        for _ in self.events():
-            pass
+        try:
+            self.prov.test_short_poll_only(True)
+            for _ in self.events():
+                pass
+        finally:
+            self.prov.test_short_poll_only(False)
         self.current_cursor = self.latest_cursor
 
     @property
