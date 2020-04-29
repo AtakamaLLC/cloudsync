@@ -41,7 +41,7 @@ if is_osx():
 if is_windows():
     import ctypes
     from ctypes import wintypes
-    _GetLongPathNameW = ctypes.windll.kernel32.GetLongPathNameW                         # noqa
+    _GetLongPathNameW = ctypes.windll.kernel32.GetLongPathNameW                         # type: ignore
     _GetLongPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
     _GetLongPathNameW.restype = wintypes.DWORD
 
@@ -208,6 +208,7 @@ class Observer(watchdog_events.FileSystemEventHandler):
         return not self.callbacks
 
     def on_any_event(self, event):
+        """Called by watchdog on fs events."""
         if type(event) == self.prev_event_type and event.src_path == self.prev_event_src and \
                 getattr(event, "dest_path", None) == self.prev_event_dest:
             return
