@@ -133,7 +133,7 @@ def canonicalize_tail_existing(path):
     if is_osx():
         url = NSURL.fileURLWithPath_(path)  # will be None if path doesn't exist
         if not url:
-            return None
+            return path
         return url.fileReferenceURL().path()
 
     if is_windows():
@@ -158,10 +158,7 @@ def canonicalize_tail(case_sensitive: bool, full_path: str) -> str:
         fdir, fname = os.path.split(full_path)
         cp = canonicalize_tail_existing(fdir)
         fp: typing.Optional[str]
-        if cp:
-            fp = os.path.join(cp, fname)
-        else:
-            fp = None
+        fp = os.path.join(cp, fname)
     else:
         fp = canonicalize_tail_existing(full_path)  # canonicalizes path to an existing file
 
