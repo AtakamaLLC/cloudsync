@@ -41,7 +41,7 @@ if is_osx():
 if is_windows():
     import ctypes
     from ctypes import wintypes
-    _GetLongPathNameW = ctypes.windll.kernel32.GetLongPathNameW
+    _GetLongPathNameW = ctypes.windll.kernel32.GetLongPathNameW                         # noqa
     _GetLongPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
     _GetLongPathNameW.restype = wintypes.DWORD
 
@@ -278,7 +278,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     win_paths = is_windows()
     default_sleep = 1
     _max_queue = 10000
-    _test_event_timeout = 1
+    _test_event_timeout = 2
     _test_event_sleep = 0.001
     _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
