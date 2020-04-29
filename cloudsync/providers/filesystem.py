@@ -642,6 +642,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
         if path is None or canonical:
             cpath = canonicalize_fpath(self.case_sensitive, fpath)
+            if not self.paths_match(cpath, fpath):
+                log.debug("canonicalize failure %s != %s", cpath, fpath)
             path = self._trim_ns(cpath)
 
         fhash = self._fast_hash_path(fpath)
@@ -654,6 +656,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         subs = self.is_subpath(self.namespace, path)
         if subs:
             return subs
+        log.debug("%s is not within %s", path, self.namespace)
         return None
 
     def info_oid(self, oid: str, use_cache=True) -> typing.Optional[OInfo]:
