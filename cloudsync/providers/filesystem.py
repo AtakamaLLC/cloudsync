@@ -462,7 +462,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                 try:
                     os.unlink(tmp_file)
                 except Exception:
-                    pass
+                    log.debug("cannot remove temp %s", tmp_file)
             self._clear_hash_cache(fpath)
             return self.info_oid(oid)
 
