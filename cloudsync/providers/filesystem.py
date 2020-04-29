@@ -38,6 +38,28 @@ if is_windows():
 if is_osx():
     from Foundation import NSURL  # pylint: disable=import-error,no-name-in-module
 
+if is_windows():
+    import ctypes
+    from ctypes import wintypes
+    _GetLongPathNameW = ctypes.windll.kernel32.GetLongPathNameW                         # type: ignore
+    _GetLongPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    _GetLongPathNameW.restype = wintypes.DWORD
+
+    def get_long_path_name(short_name):
+        """
+        http://stackoverflow.com/a/23598461/200291
+        """
+        output_buf_size = 0
+        while True:
+            output_buf = ctypes.create_unicode_buffer(output_buf_size)
+            needed = _GetLongPathNameW(short_name, output_buf, output_buf_size)
+            if output_buf_size >= needed:
+                return output_buf.value
+            else:
+                output_buf_size = needed
+else:
+    def get_long_path_name(short_name):
+        return short_name
 
 logging.getLogger("watchdog").setLevel(logging.INFO)
 log = logging.getLogger(__name__)
@@ -62,63 +84,51 @@ def detect_case_sensitive(tmpdir=None):
     if not tmpdir:
         tmpdir = tempfile.gettempdir()
     f1 = os.path.join(tmpdir, "tmp." + os.urandom(16).hex().lower())
-    with open(f1, "w") as f:
-        f.write("x")
     try:
+        with open(f1, "w") as f:
+            f.write("x")
         f2 = f1.upper()
         if os.path.exists(f2):
             return False
     finally:
-        os.unlink(f1)
+        if os.path.exists(f1):
+            os.unlink(f1)
     return True
 
 
-def canonicalize_win32(path: str) -> str:
-    """Efficient canonicalize path for windows."""
-    drive_unc, *path_parts = pathlib.Path(path).parts
+def canonicalize_tail_win32(path: str) -> str:
+    """Efficient canonicalize tail for windows."""
 
-    # We're going to iterate over each path component.
-    parts_q = collections.deque(path_parts)
+    p = pathlib.Path(path)
+    par = p.parent
 
-    # Normalizing a UNC path may involve a network call, which is kinda
-    # overkill. So we just ignore it.
-    out = pathlib.Path(drive_unc)
-
-    while len(parts_q) > 0:
-        # Peek at the front of the queue--don't pop in case we want to append
-        # component as-is to the final output.
-        part = parts_q[0]
-
-        try:
-            # Equivalent to FindFirstFileW, the moral equivalent of stat().
-            # The file name in the returned struct will have "true" case.
-            itr = win32file.FindFilesIterator(str(out / part))
-            info = next(itr)
-        except StopIteration:
-            # Couldn't find the path component.
-            break
-        except Exception:
-            # Something else went wrong, somehow.
-            log.exception("Unexpected exception in FindFirstFile")
-            break
-
-        # http://timgolden.me.uk/pywin32-docs/WIN32_FIND_DATA.html
+    try:
+        # Equivalent to FindFirstFileW, the moral equivalent of stat().
+        # The file name in the returned struct will have "true" case.
+        itr = win32file.FindFilesIterator(path)
+        info = next(itr)
         canon_name: str = info[8]
-        out /= canon_name
+        p = par / canon_name
+    except StopIteration:
+        # Couldn't find the path component.
+        pass
+    except Exception:
+        # Something else went wrong, somehow.
+        log.exception("Unexpected exception in FindFirstFile")
 
-        # Now that we're done with this component, remove it from the queue.
-        parts_q.popleft()
+    ret = str(p)
 
-    # Any unprocessed components should be appended as-is.
-    out = out.joinpath(*parts_q)
+    lname = get_long_path_name(ret)
 
-    return str(out)
+    ret = lname or ret
+
+    return ret
 
 
-def canonicalize(path):
-    """Fixes the case of a file to the name on disk.
+def canonicalize_tail_existing(path):
+    """Fixes the case of the last component of a file to the name on disk.
 
-    Works only if the path exists
+    Works only if the path exists.
     """
     if is_osx():
         url = NSURL.fileURLWithPath_(path)  # will be None if path doesn't exist
@@ -127,15 +137,18 @@ def canonicalize(path):
         return url.fileReferenceURL().path()
 
     if is_windows():
-        return canonicalize_win32(path)
+        return canonicalize_tail_win32(path)
 
-    # todo, this logic is the same as windows (above), and python calls are probably fine for both
+    # todo: make an explicit version of this line noise
     r = glob.glob(re.sub(r'([^:/\\])(?=[/\\]|$)', r'[\1]', path))
     return r[0] if r else path
 
 
-def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
-    """Fixes the case of a path - parent folder must exist."""
+def canonicalize_tail(case_sensitive: bool, full_path: str) -> str:
+    """Fixes the case of the last component of a path.
+
+    If the parent folder doesn't exist, this does nothing.
+    """
     if case_sensitive:
         # not needed for case sensitive installations
         return full_path
@@ -143,14 +156,14 @@ def canonicalize_fpath(case_sensitive: bool, full_path: str) -> str:
     if not os.path.exists(full_path):
         # canonicalize function doesn't work if the path doesn't exist
         fdir, fname = os.path.split(full_path)
-        cp = canonicalize(fdir)
+        cp = canonicalize_tail_existing(fdir)
         fp: typing.Optional[str]
         if cp:
             fp = os.path.join(cp, fname)
         else:
             fp = None
     else:
-        fp = canonicalize(full_path)  # canonicalizes path to an existing file
+        fp = canonicalize_tail_existing(full_path)  # canonicalizes path to an existing file
 
     if not fp:
         log.warning("canonicalize doesn't yet support missing parent folders %s", full_path)
@@ -195,6 +208,7 @@ class Observer(watchdog_events.FileSystemEventHandler):
         return not self.callbacks
 
     def on_any_event(self, event):
+        """Called by watchdog on fs events."""
         if type(event) == self.prev_event_type and event.src_path == self.prev_event_src and \
                 getattr(event, "dest_path", None) == self.prev_event_dest:
             return
@@ -235,7 +249,7 @@ class ObserverPool:
         self.pool[npath].add(callback)
 
     def discard(self, path, callback):
-        """Remove a callback.   
+        """Remove a callback.
 
         If path is None, removes all callbacks matching
         """
@@ -265,7 +279,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     win_paths = is_windows()
     default_sleep = 1
     _max_queue = 10000
-    _test_event_timeout = 1
+    _test_event_timeout = 2
     _test_event_sleep = 0.001
     _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
@@ -293,6 +307,9 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def namespace(self, path):
         if self.paths_match(self._namespace, path):
             return
+        if not os.path.exists(path):
+            os.mkdir(path)
+        path = get_long_path_name(path)
         log.info("set namespace %s", path)
         self._namespace = path
         try:
@@ -302,9 +319,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     def _connect_observer(self):
         with self._api():
-            if not os.path.exists(self._namespace):
-                os.mkdir(self._namespace)
-
             self._observers.discard(path=None, callback=self._on_any_event)
             self._observers.add(self._namespace, self._on_any_event)
 
@@ -377,7 +391,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             prior_oid = oid
             fpath = event.dest_path
             oid = self._fpath_to_oid(fpath)
-        
+
         if type(event) in (watchdog_events.DirDeletedEvent, watchdog_events.FileDeletedEvent):
             exists = False
 
@@ -449,7 +463,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                 try:
                     os.unlink(tmp_file)
                 except Exception:
-                    pass
+                    log.debug("cannot remove temp %s", tmp_file)
             self._clear_hash_cache(fpath)
             return self.info_oid(oid)
 
@@ -641,7 +655,9 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return None
 
         if path is None or canonical:
-            cpath = canonicalize_fpath(self.case_sensitive, fpath)
+            cpath = canonicalize_tail(self.case_sensitive, fpath)
+            if not self.paths_match(cpath, fpath):
+                log.debug("canonicalize failure %s != %s", cpath, fpath)
             path = self._trim_ns(cpath)
 
         fhash = self._fast_hash_path(fpath)
@@ -654,6 +670,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         subs = self.is_subpath(self.namespace, path)
         if subs:
             return subs
+        log.debug("%s is not within %s", path, self.namespace)
         return None
 
     def info_oid(self, oid: str, use_cache=True) -> typing.Optional[OInfo]:
