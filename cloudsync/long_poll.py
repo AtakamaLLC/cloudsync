@@ -49,7 +49,7 @@ class LongPollManager(Runnable):
         log.debug("EVSET: set got_events")
         self.got_events.set()
 
-    def clear(self):
+    def unblock(self):
         # clear all events... let stuff loop around once
         # usually done in response to rewinding the cursor, for tests
         self.__provider_events_pending.set()
@@ -57,7 +57,7 @@ class LongPollManager(Runnable):
         self.last_set = time.monotonic()
 
     def done(self):
-        self.clear()
+        self.unblock()
 
     def do(self):  # this is really "do_once"
         if self.short_poll_only:

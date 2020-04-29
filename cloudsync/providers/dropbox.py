@@ -397,7 +397,7 @@ class DropboxProvider(Provider):
             val = self.latest_cursor
         if not isinstance(val, str) and val is not None:
             raise CloudCursorError(val)
-        self._long_poll_manager.clear()
+        self._long_poll_manager.unblock()
         self.__cursor = val
 
     def _long_poll(self, timeout: float) -> bool:
@@ -489,7 +489,7 @@ class DropboxProvider(Provider):
     # this is a crazy interface: todo: clean this nonsense up!
     def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
         self._long_poll_manager.short_poll_only = short_poll_only
-        self._long_poll_manager.clear()
+        self._long_poll_manager.unblock()
 
     def walk(self, path, recursive=True):
         yield from self._events(None, path=path, recursive=recursive, save_cursor=False)

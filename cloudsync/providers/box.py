@@ -264,7 +264,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             val = self.latest_cursor
         if not isinstance(val, int) and val is not None:
             raise CloudCursorError(val)
-        self._long_poll_manager.clear()
+        self._long_poll_manager.unblock()
         self.__cursor = val
 
     def _long_poll(self, timeout: float) -> bool:
@@ -924,7 +924,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
         self._long_poll_manager.short_poll_only = short_poll_only
-        self._long_poll_manager.clear()
+        self._long_poll_manager.unblock()
 
 
 __cloudsync__ = BoxProvider
