@@ -27,7 +27,7 @@ pip install cloudsync-gdrive
 import cloudsync
 
 # local file provide + gdrive provider
-local = cloudsync.get_provider("file")
+local = cloudsync.get_provider("filesystem")
 remote = cloudsync.get_provider("gdrive")
 
 # oauth

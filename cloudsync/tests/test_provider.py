@@ -23,6 +23,7 @@ from io import BytesIO
 from os import SEEK_SET, SEEK_CUR, SEEK_END
 import threading
 import time
+import copy
 
 from typing import Optional, Generator, TYPE_CHECKING, List, cast
 from unittest.mock import patch
@@ -77,7 +78,7 @@ def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     return wrapped
 
 
-class ProviderTextMixin(ProviderBase):
+class ProviderTestMixin(ProviderBase):
     """Mixin class that supports testing providers.
 
     Features:
@@ -103,6 +104,7 @@ class ProviderTextMixin(ProviderBase):
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
+        self.__short_poll_only = short_poll_only
         prov.test_short_poll_only(short_poll_only=short_poll_only)
 
         self.__patches = []
@@ -173,14 +175,14 @@ class ProviderTextMixin(ProviderBase):
     def events(self) -> Generator[Event, None, None]:
         for e in self.prov.events():
             if self.__filter_root(e) or not e.exists:
-                yield e
+                yield self.__strip_root(e)
 
     def walk(self, path, recursive=True):
         path = self.__add_root(path)
         log.debug("TEST WALK %s", path)
         for e in self.prov.walk(path, recursive=recursive):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     @wrap_retry
     def download(self, *args, **kwargs):
@@ -287,8 +289,11 @@ class ProviderTextMixin(ProviderBase):
         if hasattr(obj, "path"):
             path = obj.path
             if path:
+                obj = copy.copy(obj)
                 relative = self.prov.is_subpath(self.test_root, path)
-                assert relative
+                if not relative:
+                    # event from prior test
+                    return obj
                 path = relative
                 # TODO: This does not obey provider control over paths. Frex, consider windows paths and "C:"
                 if not path.startswith(self.prov.sep):
@@ -337,12 +342,19 @@ class ProviderTextMixin(ProviderBase):
 
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
+        self.prime_events()
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
 
     @wrap_retry
     def prime_events(self):
+        try:
+            self.prov.test_short_poll_only(True)
+            for _ in self.events():
+                pass
+        finally:
+            self.prov.test_short_poll_only(self.__short_poll_only)
         self.current_cursor = self.latest_cursor
 
     @property
@@ -396,7 +408,7 @@ def mixin_provider(prov, connect=True, short_poll_only=True):
 
     providers = []
     for i in range(instances):
-        providers.append(ProviderTextMixin(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
+        providers.append(ProviderTestMixin(prov[i], connect=connect, short_poll_only=short_poll_only, isolation_string=isolation_string))  # type: ignore
     if len(providers) == 1:
         yield providers[0]
     else:
@@ -435,7 +447,7 @@ def two_config_providers(request, provider_name, instances=2):
     yield from config_provider_impl(request, provider_name, instances)
 
 
-@pytest.fixture(name="provider", scope="module")
+@pytest.fixture(name="provider")
 def provider_fixture(config_provider):
     yield from mixin_provider(config_provider)
 
@@ -541,22 +553,23 @@ def test_connect(scoped_provider):
     provider.reconnect()
     assert provider.connected
     assert provider.connection_id
-    provider.disconnect()
-    provider.connection_id = "invalid"
-    log.info("reset %s == %s", provider, provider.connection_id)
-    with pytest.raises(CloudTokenError):
+    if provider.connection_id != cloudsync.CONNECTION_NOT_NEEDED:
+        provider.disconnect()
+        provider.connection_id = "invalid"
+        log.info("reset %s == %s", provider, provider.connection_id)
+        with pytest.raises(CloudTokenError):
+            provider.reconnect()
+        assert not provider.connected
+        provider.connection_id = None
         provider.reconnect()
-    assert not provider.connected
-    provider.connection_id = None
-    provider.reconnect()
 
-    provider.disconnect()
-    try:
-        provider.get_quota()
-        assert False
-    except CloudDisconnectedError:
-        pass
-    provider.reconnect()
+        provider.disconnect()
+        try:
+            provider.get_quota()
+            assert False
+        except CloudDisconnectedError:
+            pass
+        provider.reconnect()
 
 
 def test_info_root(provider):
@@ -616,7 +629,7 @@ def test_namespace(provider):
         nid = provider.namespace_id
         provider.namespace_id = nid
 
-        assert provider.namespace == ns[0]
+        assert provider.namespace_id == nid
 
         if len(ns) > 1:
             provider.namespace = ns[1]
@@ -850,6 +863,7 @@ def test_event_basic(provider):
     event_count2 = 0
     done = False
 
+    log.debug("waiting for %s and %s", dest, dest2)
     for e in provider.events_poll(until=lambda: done):
         log.debug("got event %s", e)
         # you might get events for the root folder here or other setup stuff
@@ -894,6 +908,8 @@ def test_event_basic(provider):
     deleted_oid = received_event.oid
     deleted_oid2 = received_event2.oid
     path2 = provider.info_oid(received_event2.oid).path
+
+    assert path2
 
     log.debug("delete event")
 
@@ -946,12 +962,14 @@ def test_event_del_create(provider):
     temp = BytesIO(os.urandom(32))
     temp2 = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest2")
 
     provider.prime_events()
 
     info1 = provider.create(dest, temp)
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
+    infox = provider.create(dest2, temp2)
 
     done = False
 
@@ -970,7 +988,7 @@ def test_event_del_create(provider):
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or event.oid in (info1.oid, info2.oid)):
+        if not (path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid)):
             continue
 
         events.append(event)
@@ -984,9 +1002,9 @@ def test_event_del_create(provider):
             if event.oid == info1.oid:
                 delete1 = event_num
 
-        if create2 and (create1 is None or delete1 is not None):
-            done = True
         event_num = event_num + 1
+        if event.oid == infox.oid and (create1 is not None and delete1 is not None) or (create1 is None):
+            done = True
 
     assert len(events), "Event loop timed out before getting any events"
     if create1 is not None:
@@ -1016,8 +1034,8 @@ def test_event_rename(provider):
 
     temp = BytesIO(os.urandom(32))
     dest = provider.temp_name("dest")
-    dest2 = provider.temp_name("dest")
-    dest3 = provider.temp_name("dest")
+    dest2 = provider.temp_name("dest2")
+    dest3 = provider.temp_name("dest3")
 
     provider.prime_events()
 
@@ -1032,6 +1050,7 @@ def test_event_rename(provider):
     seen = set()
     last_event = None
     second_to_last = None
+    deleted_oid2 = True
     done = False
     for e in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
         if provider.oid_is_path:
@@ -1050,6 +1069,8 @@ def test_event_rename(provider):
         if provider.oid_is_path:
             # 2 and 3 are in order
             if path == dest2:
+                if e.exists == False:
+                    deleted_oid2 = True
                 second_to_last = True
             if path == dest3 and (second_to_last or not provider.oid_is_path):
                 done = True
@@ -1060,7 +1081,7 @@ def test_event_rename(provider):
         # providers with path based oids need to send intermediate renames accurately and in order
         assert len(seen) > 2
         assert last_event.path == dest3
-        assert last_event.prior_oid == oid2
+        assert last_event.prior_oid == oid2 or deleted_oid2
     else:
         # oid based providers just need to let us know something happend to that oid
         assert info1.oid in seen
@@ -1533,7 +1554,7 @@ def test_file_exists(provider):
     with pytest.raises(CloudFileExistsError):
         provider.rename(folder_oid, file_name)  # reuse the same file and folder from the last test
 
-    #   rename: renaming a folder over a file, raises FEx
+    #   rename: renaming a file over a file, raises FEx
     with pytest.raises(CloudFileExistsError):
         provider.rename(file_oid, other_file_name)  # reuse the same file and folder from the last test
 
@@ -1614,6 +1635,7 @@ def test_file_exists_error_file_in_path(provider):
     with pytest.raises(CloudFileExistsError):
         provider.rename(oid1, name2 + provider.temp_name())
 
+
 def test_cursor(provider):
     if provider.prov.name == 'gdrive':
         # TODO: fix this, why is gdrive unreliable at event delivery?
@@ -1629,7 +1651,7 @@ def test_cursor(provider):
     # do something to create an event
     log.debug(f"csr1={current_csr1} current={provider.current_cursor} latest={provider.latest_cursor}")
     info = provider.create("/file2", BytesIO(b"there"))
-    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
     found = False
     for e in provider.events_poll(timeout=600, until=lambda: found):
         log.debug("event = %s", e)
@@ -1638,7 +1660,7 @@ def test_cursor(provider):
     assert found
 
     current_csr2 = provider.current_cursor
-    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
 
     if (current_csr1 is None and current_csr2 is None):
         # some providers don't support cursors... they will walk on start, always
@@ -1649,7 +1671,7 @@ def test_cursor(provider):
     # check that we can go backwards
     provider.prov._clear_cache()
     provider.current_cursor = current_csr1
-    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor}")
+    log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
     found = False
     for i in provider.events_poll(timeout=10, until=lambda: found):
         log.debug("event = %s", i)
@@ -1813,7 +1835,9 @@ def test_report_info(provider):
     u1 = provider.get_quota()["used"]
     log.info("used %s", u1)
 
-    provider.create(temp_name, BytesIO(b"test" * 10000))
+    provider.create(temp_name, BytesIO(b"test" * 100000))
+
+    time.sleep(1)
 
     pinfo2 = provider.get_quota()
 
@@ -1828,7 +1852,9 @@ def test_report_info(provider):
 
     assert pinfo2['used'] > 0
     assert pinfo2['limit'] > 0
-    if provider.name not in ("box",):
+    if provider.name not in ("box", "filesystem"):
+        # box cache defeats this
+        # fs providers have too many temp files blinking in and out
         assert pinfo2['used'] > u1
 
 
@@ -1976,7 +2002,7 @@ def test_cursor_error_during_listdir(provider):
 
 
 def test_set_creds(config_provider):
-    provider = ProviderTextMixin(config_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(config_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing creds")
     provider.set_creds(provider._test_creds)
@@ -1985,7 +2011,7 @@ def test_set_creds(config_provider):
 
 
 def test_set_ns_offline(unwrapped_provider):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     try:
         provider.list_ns()
         pytest.skip("provider doesn't use online namespace listings")
@@ -2001,7 +2027,7 @@ def test_set_ns_offline(unwrapped_provider):
 
 @pytest.mark.manual
 def test_authenticate(unwrapped_provider):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -2026,7 +2052,7 @@ def test_authenticate(unwrapped_provider):
 
 @pytest.mark.manual
 def test_interrupt_auth(unwrapped_provider):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
 
@@ -2101,7 +2127,7 @@ def suspend_capture(pytestconfig):
 # noinspection PyUnreachableCode
 @pytest.mark.manual
 def test_revoke_auth(unwrapped_provider, suspend_capture):
-    provider = ProviderTextMixin(unwrapped_provider, connect=False)      # type: ignore
+    provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
     if not provider._test_creds:
         pytest.skip("provider doesn't support testing auth")
     creds = provider.authenticate()
@@ -2133,7 +2159,7 @@ def test_specific_test_root():
     base.connect("whatever")
     base.mkdir("/banana")
 
-    provider = ProviderTextMixin(base)                             # type: ignore
+    provider = ProviderTestMixin(base)                             # type: ignore
     # i use whatever root the test instance specified
     assert provider.test_root.startswith("/banana/")
     # i but i put my tests in their own folder
@@ -2163,7 +2189,7 @@ def test_provider_interface(unconnected_provider):
         for x in prov_dir:
             msg += "\n     %s" % x
         log.error(msg)
-    assert len(prov_dir) == 0
+    assert prov_dir == set()
 
 
 def test_cache(two_scoped_providers):
@@ -2233,7 +2259,11 @@ def test_bug_create(very_scoped_provider):
         file_like.read = raises_ex          # type: ignore
 
         with pytest.raises(Exception):
-            provider.create("/bug_create", file_like)
+            try:
+                provider.create("/bug_create", file_like)
+            except Exception as e:
+                log.info("Found expected exception: %s", repr(e))
+                raise
 
         assert not provider.exists_path("/bug_create")
 
@@ -2254,8 +2284,10 @@ def test_root_rename(unwrapped_provider):
     provider = unwrapped_provider
     if hasattr(provider, "_test_creds"):
         provider.connect(provider._test_creds)
-    tfn1 = "/" + os.urandom(24).hex()
-    tfn2 = "/" + os.urandom(24).hex()
+    if hasattr(provider, "_test_namespace"):
+        provider.namespace = provider._test_namespace
+    tfn1 = provider.join(provider.test_root, os.urandom(24).hex())
+    tfn2 = provider.join(provider.test_root, os.urandom(24).hex())
     oinfo = provider.create(tfn1, BytesIO(b'hello'))
     oid = provider.rename(oinfo.oid, tfn2)
     provider.delete(oid)
@@ -2411,6 +2443,7 @@ def test_globalize_subfolder(provider):
     with pytest.raises(ValueError):
         provider.localize_oid(sub_oid)
 
+
 @pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
 def test_normalize_path(provider):
     alt_sep = provider.alt_sep or provider.sep
@@ -2429,7 +2462,7 @@ def test_normalize_path(provider):
         assert provider.normalize_path(mixed) == mixed
         assert provider.normalize_path(mixed_alt) == mixed
         assert provider.normalize_path(mixed_2) == mixed
-    else: # case-insensitive
+    else:  # case-insensitive
         assert provider.normalize_path(upper) == lower
         assert provider.normalize_path(lower) == lower
         assert provider.normalize_path(mixed) == lower
@@ -2440,6 +2473,7 @@ def test_normalize_path(provider):
         assert provider.normalize_path(lower, for_display=True) == lower
         assert provider.normalize_path(mixed, for_display=True) == mixed_for_display
         assert provider.normalize_path(mixed_2, for_display=True) == mixed_for_display
+
 
 @pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
 def test_paths_match(provider):
@@ -2462,7 +2496,7 @@ def test_paths_match(provider):
         assert provider.paths_match(s1, s2)
         assert provider.paths_match(s1.join(abcd), s2.join(abcd_))
         assert not provider.paths_match(s1.join(abcd_), s2.join(abcD))
-    else: #case-insensitive
+    else:  # case-insensitive
         assert provider.paths_match(s1, s2)
         assert provider.paths_match(s1.join(ABCD_), s2.join(aBcD_))
         assert provider.paths_match(s1.join(abcd_), s2.join(aBcD))
