@@ -68,10 +68,10 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
 
         log.info("start sync")
 
-        err: type = CloudTokenError
+        err: tuple = (CloudTokenError, )
 
         if creds != "with_creds" and not args.quiet:
-            err = FileExistsError
+            err = (FileExistsError, NotADirectoryError)
 
         with pytest.raises(err):
             called = 0
@@ -97,7 +97,7 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
 
     logs = caplog.record_tuples
 
-    if err != FileExistsError:
+    if err == CloudTokenError:
         assert any("connect gdrive" in t[2].lower() for t in logs)
 
 
