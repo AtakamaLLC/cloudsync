@@ -43,6 +43,11 @@ class SyncCmd(SubCmd):
 
         cs = CloudSync(provs, roots, storage=storage)
 
+        # todo: providers should let cs know that cursors shouldn't be stored/used later
+        for side, uri in enumerate(uris):
+            if uri.method == "filesystem":
+                cs.walk(side, uri.path)
+
         done = None
         if args.onetime:
             done = lambda: not cs.busy
@@ -52,6 +57,7 @@ class SyncCmd(SubCmd):
                 raise NotImplementedError("daemon mode is not available")
             with daemon.DaemonContext():
                 cs.start(until=done)
+                cs.wait()
         else:
             cs.start(until=done)
             cs.wait()
