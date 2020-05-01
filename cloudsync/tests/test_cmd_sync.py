@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from cloudsync import get_provider
 from cloudsync.exceptions import CloudTokenError
 import cloudsync.command.sync as csync
 
@@ -22,7 +23,7 @@ def test_sync_basic(caplog):
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
 
-    csync.do_sync(args)
+    csync.SyncCmd.run(args)
 
     logs = caplog.record_tuples
 
@@ -30,12 +31,13 @@ def test_sync_basic(caplog):
 
 
 @pytest.mark.parametrize("conf", ["with_conf", "no_conf"])
-def test_sync_oauth(caplog, conf):
+@pytest.mark.parametrize("quiet", [True, False])
+def test_sync_oauth(caplog, conf, quiet):
     args = MagicMock()
 
     args.src = "mock_oid_cs:/a"
     args.dest = "gdrive:/b"
-    args.quiet = True           # log less, don't prompt for auth, get tokens from files or other commands
+    args.quiet = quiet           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
 
@@ -45,6 +47,13 @@ def test_sync_oauth(caplog, conf):
         tf.flush()
         tf.close()
 
+        tf2 = NamedTemporaryFile(delete=False)
+        tf2.write(b'{"mock_oid_cs":{"fake":"creds"}}')
+        tf2.flush()
+        tf2.close()
+
+        args.creds = tf2.name
+
         if conf == "with_conf":
             args.config = tf.name
         else:
@@ -52,13 +61,22 @@ def test_sync_oauth(caplog, conf):
 
         log.info("start sync")
         with pytest.raises(CloudTokenError):
-            csync.do_sync(args)
+            with patch.object(get_provider("gdrive"), "authenticate") as mock_auth:
+                try:
+                    csync.SyncCmd.run(args)
+                except CloudTokenError:
+                    if args.quiet:
+                        mock_auth.assert_not_called()
+                    else:
+                        mock_auth.assert_called_once()
+                    raise
     finally:
         os.unlink(tf.name)
+        os.unlink(tf2.name)
 
     logs = caplog.record_tuples
 
-    assert any("connecting to google" in t[2].lower() for t in logs)
+    assert any("connect gdrive" in t[2].lower() for t in logs)
 
 
 @pytest.mark.parametrize("daemon", ["with_daemon", "no_daemon"])
@@ -74,7 +92,7 @@ def test_sync_daemon(daemon):
         dm = MagicMock()
         with patch.dict("sys.modules", {'daemon': dm}):
             importlib.reload(csync)
-            csync.do_sync(args)
+            csync.SyncCmd.run(args)
             dm.DaemonContext.assert_called_once()
     else:
         # daemon module is not available
@@ -82,4 +100,4 @@ def test_sync_daemon(daemon):
             importlib.reload(csync)
             # import will fail here, which is ok
             with pytest.raises(NotImplementedError):
-                csync.do_sync(args)
+                csync.SyncCmd.run(args)
