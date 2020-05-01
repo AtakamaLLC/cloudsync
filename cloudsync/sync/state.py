@@ -181,7 +181,7 @@ class Storage(ABC):
 
     @overload
     @abstractmethod
-    def read_all(self) -> Dict[str, Dict[Any, bytes]]: 
+    def read_all(self) -> Dict[str, Dict[Any, bytes]]:
         """yield all the serialized strings in a generator"""
         ...
 
@@ -373,7 +373,7 @@ class SyncEntry:
            self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
             return True
         return False
-    
+
     def is_pending_delete(self):
         pending_delete = False
         for a in (LOCAL, REMOTE):
@@ -613,7 +613,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
-                 shuffle: bool = False, 
+                 shuffle: bool = False,
                  prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
@@ -986,7 +986,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return len(self.get_all())
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-        log.log(TRACE, "lookup %s", debug_sig(oid))
+        """Called by the event manager when an event happens."""
+
+        log.log(TRACE, "lookup oid %s, sig %s", oid, debug_sig(oid))
         ent: SyncEntry = self.lookup_oid(side, oid)
 
         prior_ent = None
@@ -1027,6 +1029,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
+        if exists is None:
+            exists = Exists.UNKNOWN
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype)
 
     def change(self, age):
@@ -1194,6 +1198,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return defer_ent, defer, replace_ent, replace
 
     def unconditionally_get_no_info(self, ent, i):
+        if ent[i].exists == UNKNOWN:
+            if not self.providers[i].oid_is_path:
+                # missing oid from oid provider == trashed
+                ent[i].exists = TRASHED
+
         if ent[i].exists == LIKELY_TRASHED:
             if self.providers[i].oid_is_path:
                 # note: oid_is_path providers are not supposed to do this
