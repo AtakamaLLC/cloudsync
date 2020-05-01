@@ -6,7 +6,7 @@ try:
 except ImportError:
     daemon = None
 
-from cloudsync import CloudSync
+from cloudsync import CloudSync, SqliteStorage
 
 from .utils import CloudURI, get_providers, log, SubCmd
 
@@ -28,6 +28,8 @@ class SyncCmd(SubCmd):
         self.parser.add_argument('dest', help='Provider uri 2')
         self.parser.add_argument('-o', '--onetime', help='Just walk/copy files once and exit', action="store_true")
         self.parser.add_argument('-D', '--daemon', help='Run in the background', action="store_true")
+        default_state = os.path.expanduser("~/.config/cloudsync/state")
+        self.parser.add_argument('-S', '--statedb', help='State file path', action="store", default=default_state)
 
     @staticmethod
     def run(args):
@@ -41,7 +43,9 @@ class SyncCmd(SubCmd):
         provs = (_provs[0], _provs[1])
         roots = (uris[0].path, uris[1].path)
 
-        cs = CloudSync(provs, roots)
+        storage = SqliteStorage(args.statedb)
+
+        cs = CloudSync(provs, roots, storage=storage)
 
         done = None
         if args.onetime:
