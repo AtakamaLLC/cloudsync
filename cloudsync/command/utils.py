@@ -44,12 +44,13 @@ class FauxURI:     # pylint: disable=too-few-public-methods
     For example: foo:bar
     """
     def __init__(self, uri):
+        (method, path) = ('file', uri)
         if ':' in uri:
-            m = re.match(r"([^:]+):(.*)", uri)
+            # this enhrines that provider names must be 2 or more characters
+            # and it protects us from seeing c:/whatever as a provider
+            m = re.match(r"([^:]{2,}):(.*)", uri)
             if m:
                 (method, path) = m.groups()
-        else:
-            (method, path) = ('file', uri)
 
         self.method = method
         self.path = path
