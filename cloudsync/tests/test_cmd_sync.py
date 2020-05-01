@@ -59,7 +59,7 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
         tf2.flush()
         tf2.close()
 
-        args.creds = tf2.name if creds == "with_creds" else "/permission-denied-at-root"
+        args.creds = tf2.name if creds == "with_creds" else tf2.name + "/invalid"
 
         if conf == "with_conf":
             args.config = tf.name
@@ -71,7 +71,7 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
         err: type = CloudTokenError
 
         if creds != "with_creds" and not args.quiet:
-            err = PermissionError
+            err = FileExistsError
 
         with pytest.raises(err):
             called = 0
@@ -97,7 +97,7 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
 
     logs = caplog.record_tuples
 
-    if err != PermissionError:
+    if err != FileExistsError:
         assert any("connect gdrive" in t[2].lower() for t in logs)
 
 
