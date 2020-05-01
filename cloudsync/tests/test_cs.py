@@ -255,16 +255,16 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
     local_parent = "/local"
     local_folder = local_parent + "/folder"
     local_path = local_folder + "/stuff"
-    
+
     remote_parent = "/remote"
     remote_folder = remote_parent + "/folder"
     remote_path = remote_folder + "/stuff"
-    
+
     numfiles = 20
     local_objects = [(DIRECTORY, local_folder, b""), ]
     for i in range(1, 1 + numfiles):
         local_objects.append((FILE, local_path + str(i), b"Hello, world!"))
-    
+
     for i in range(0, 4):
         log.debug("aging %s is %s", i, four_local_cs[i].aging)
     cs1_local_infos = multi_local_cs_setup(four_local_cs, local_objects)
@@ -288,7 +288,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
     latest_print = time.monotonic()
     start = time.monotonic()
-    
+
     def finished_condition(i, timeout):
         nonlocal start, four_local_cs, latest_print
         now = time.monotonic()
@@ -310,7 +310,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
         for i in range(0, 4):
             start = time.monotonic()
-            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=1)
+            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=10)
     finally:
         for i in range(0, 4):
             four_local_cs[i].stop()  # Stop the sync
@@ -1529,7 +1529,7 @@ def test_cs_rename_folder_case(mock_provider_creator, left, right):
     assert rinfo1.path == remote_path1
     assert rinfo2.path == remote_path2
 
-# TODO: important tests: 
+# TODO: important tests:
 #    1. events coming in for path updates for conflicted files.... we should note conflict oids, and not insert them
 #    2. for oid_as_path... events coming in for old creations, long since deleted or otherwise overwritten (renamed away, etc)
 

@@ -1,6 +1,6 @@
-import sys
-import logging
+# pylint: disable=missing-docstring
 
+import sys
 from cloudsync.command.main import main
 
 
@@ -15,11 +15,10 @@ def test_main(capsys):
 
     assert ex.code == 0
 
-    out = capsys.readouterr().out
-    err = capsys.readouterr().err
+    rd = capsys.readouterr()
 
-    assert "usage" in out.lower()
-    assert err == ""
+    assert "usage" in rd.out.lower()
+    assert rd.err == ""
 
 
 def test_main_badcmd(capsys):
@@ -34,10 +33,10 @@ def test_main_badcmd(capsys):
     # raise an error
     assert ex.code > 0
 
-    err = capsys.readouterr().err
+    rd = capsys.readouterr()
 
     # show some usage
-    assert "usage" in err.lower()
+    assert "usage" in rd.err.lower()
 
 
 def test_main_disp(capsys):
@@ -52,8 +51,24 @@ def test_main_disp(capsys):
     if ex:
         assert ex.code == 0
 
-    out = capsys.readouterr().out
-    err = capsys.readouterr().err
+    rd = capsys.readouterr()
 
-    assert out == ""
-    assert err == ""
+    assert rd.out == ""
+    assert rd.err == ""
+
+
+def test_main_err(capsys):
+    sys.argv = ["cloudsync", "sync fozay:55 refo:66"]
+
+    ex = None
+    try:
+        main()
+    except SystemExit as e:
+        ex = e
+
+    if ex:
+        assert ex.code > 0
+
+    rd = capsys.readouterr()
+
+    assert rd.err != ""

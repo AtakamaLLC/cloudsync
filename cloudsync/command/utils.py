@@ -8,9 +8,6 @@ from typing import Optional
 
 from cloudsync import get_provider, known_providers, OAuthConfig, Provider, Creds
 
-# all files written as user-only for this whole system
-os.umask(0o77)
-
 log = logging.getLogger()
 
 def cli_providers():
@@ -82,8 +79,10 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             if not args.quiet and not creds and connect:
                 creds = prov.authenticate()
 
+            log.info("got %s", creds)
             if creds:
                 prov.set_creds(creds)
+
             if connect:
                 prov.connect(creds)
         else:
@@ -125,8 +124,6 @@ def config(args):
         try:
             log.debug("config : %s", args.config)
             _config = json.load(open(args.config, "r"))
-            if _config is None:
-                raise ValueError("Invalid json file %s" % args.config)
         except FileNotFoundError:
             log.debug("config not used: %s", args.config)
             _config = {}
@@ -164,13 +161,14 @@ class CliOAuthConfig(OAuthConfig):
             super().creds_changed(creds)
             return
 
-        os.umask(0o77)
-
-        self.creds.update({self.prov: creds})
-
-        os.makedirs(os.path.dirname(self.save.path), mode=0o700, exist_ok=True)
-        with open(self.save.path, "w") as f:
-            json.dump(self.creds, f)
+        try:
+            was = os.umask(0o77)
+            self.creds.update({self.prov: creds})
+            os.makedirs(os.path.dirname(self.save.path), mode=0o700, exist_ok=True)
+            with open(self.save.path, "w") as f:
+                json.dump(self.creds, f)
+        finally:
+            os.umask(was)
 
 def get_oauth_config(args, name, save_uri):
     """Reads oauth config from the global config singleton, or uses the defaults"""

@@ -10,10 +10,6 @@ from cloudsync import CloudSync, SqliteStorage
 
 from .utils import CloudURI, get_providers, log, SubCmd
 
-# all files written as user-only
-os.umask(0o77)
-
-
 class SyncCmd(SubCmd):
     """Sync subcommand: primary method of spinning up a sync."""
 

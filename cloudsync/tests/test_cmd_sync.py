@@ -1,3 +1,5 @@
+# pylint: disable=protected-access, missing-docstring
+
 import os
 import logging
 import importlib
@@ -23,8 +25,10 @@ def test_sync_basic(caplog, tmpdir):
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
     args.statedb = str(tmpdir / "storage")
+    args.creds = "whatevs"
 
     csync.SyncCmd.run(args)
+
 
     logs = caplog.record_tuples
 
@@ -32,8 +36,9 @@ def test_sync_basic(caplog, tmpdir):
 
 
 @pytest.mark.parametrize("conf", ["with_conf", "no_conf"])
+@pytest.mark.parametrize("creds", ["with_creds", "no_creds"])
 @pytest.mark.parametrize("quiet", [True, False])
-def test_sync_oauth(caplog, conf, quiet, tmpdir):
+def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
     args = MagicMock()
 
     args.src = "mock_oid_cs:/a"
@@ -54,7 +59,7 @@ def test_sync_oauth(caplog, conf, quiet, tmpdir):
         tf2.flush()
         tf2.close()
 
-        args.creds = tf2.name
+        args.creds = tf2.name if creds == "with_creds" else "/permission-denied-at-root"
 
         if conf == "with_conf":
             args.config = tf.name
@@ -62,15 +67,29 @@ def test_sync_oauth(caplog, conf, quiet, tmpdir):
             args.config = "someconfigthatisnthere"
 
         log.info("start sync")
-        with pytest.raises(CloudTokenError):
-            with patch.object(get_provider("gdrive"), "authenticate") as mock_auth:
+
+        err: type = CloudTokenError
+
+        if creds != "with_creds" and not args.quiet:
+            err = PermissionError
+
+        with pytest.raises(err):
+            called = 0
+
+            def authen(self):
+                nonlocal called
+                self._oauth_config.creds_changed({"k":"v"})
+                called += 1
+                return {"k":"v"}
+
+            with patch.object(get_provider("gdrive"), "authenticate", authen):
                 try:
                     csync.SyncCmd.run(args)
                 except CloudTokenError:
                     if args.quiet:
-                        mock_auth.assert_not_called()
+                        assert called == 0
                     else:
-                        mock_auth.assert_called_once()
+                        assert called == 1
                     raise
     finally:
         os.unlink(tf.name)
@@ -78,7 +97,8 @@ def test_sync_oauth(caplog, conf, quiet, tmpdir):
 
     logs = caplog.record_tuples
 
-    assert any("connect gdrive" in t[2].lower() for t in logs)
+    if err != PermissionError:
+        assert any("connect gdrive" in t[2].lower() for t in logs)
 
 
 @pytest.mark.parametrize("daemon", ["with_daemon", "no_daemon"])

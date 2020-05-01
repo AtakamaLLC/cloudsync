@@ -1,4 +1,3 @@
-import os
 import logging
 import datetime
 
@@ -7,9 +6,6 @@ from typing import Union
 from cloudsync.utils import debug_sig
 
 from .utils import CloudURI, SubCmd
-
-# all files written as user-only
-os.umask(0o77)
 
 log = logging.getLogger()
 
@@ -48,9 +44,9 @@ class ListCmd(SubCmd):
             if args.long:
                 print("%-40s %-20s %8s %s" % ("name", "time", "size", "oid"))
                 print("%-40s %-20s %8s %s" % ("----", "----", "----", "---"))
-                ftime: Union[str, float] = f.mtime
+                ftime: Union[str, float] = f.mtime or 0
                 if not isinstance(ftime, str):
-                    mtime = datetime.datetime.fromtimestamp(f.mtime)
+                    mtime = datetime.datetime.fromtimestamp(ftime)
                     ftime = datetime.datetime.strftime(mtime, "%Y%M%D %H:%M:%S")
 
                 print("%-40s %-20s %8s %s" % (f.name, ftime, sizeof_fmt(f.size), debug_sig(f.oid)))
