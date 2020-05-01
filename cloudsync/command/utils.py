@@ -80,7 +80,6 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             if not args.quiet and not creds and connect:
                 creds = prov.authenticate()
 
-            log.info("got %s", creds)
             if creds:
                 prov.set_creds(creds)
 

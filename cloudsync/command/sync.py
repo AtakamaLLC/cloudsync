@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 
 try:
@@ -55,7 +56,7 @@ class SyncCmd(SubCmd):
         if args.daemon:
             if not daemon:
                 raise NotImplementedError("daemon mode is not available")
-            with daemon.DaemonContext():
+            with daemon.DaemonContext(stderr=sys.stderr, stdout=sys.stdout):
                 cs.start(until=done)
                 cs.wait()
         else:
