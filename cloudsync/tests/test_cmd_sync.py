@@ -1,6 +1,7 @@
 # pylint: disable=protected-access, missing-docstring
 
 import os
+import sys
 import logging
 import importlib
 from tempfile import NamedTemporaryFile
@@ -59,7 +60,16 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
         tf2.flush()
         tf2.close()
 
-        args.creds = tf2.name if creds == "with_creds" else tf2.name + "/invalid"
+        err: type = CloudTokenError
+
+        if sys.platform == "linux":
+            badname = "/not-allowed"
+            plat_err = PermissionError
+        else:
+            badname = "bad*name"
+            plat_err = FileNotFoundError
+
+        args.creds = tf2.name if creds == "with_creds" else badname
 
         if conf == "with_conf":
             args.config = tf.name
@@ -68,10 +78,8 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
 
         log.info("start sync")
 
-        err: tuple = (CloudTokenError, )
-
         if creds != "with_creds" and not args.quiet:
-            err = (FileExistsError, NotADirectoryError)
+            err = plat_err
 
         with pytest.raises(err):
             called = 0
