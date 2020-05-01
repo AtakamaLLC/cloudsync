@@ -14,7 +14,7 @@ import cloudsync.command.sync as csync
 log = logging.getLogger(__name__)
 
 
-def test_sync_basic(caplog):
+def test_sync_basic(caplog, tmpdir):
     args = MagicMock()
 
     args.src = "mock_oid_cs:/a"
@@ -22,6 +22,7 @@ def test_sync_basic(caplog):
     args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
+    args.statedb = str(tmpdir / "storage")
 
     csync.SyncCmd.run(args)
 
@@ -32,7 +33,7 @@ def test_sync_basic(caplog):
 
 @pytest.mark.parametrize("conf", ["with_conf", "no_conf"])
 @pytest.mark.parametrize("quiet", [True, False])
-def test_sync_oauth(caplog, conf, quiet):
+def test_sync_oauth(caplog, conf, quiet, tmpdir):
     args = MagicMock()
 
     args.src = "mock_oid_cs:/a"
@@ -40,6 +41,7 @@ def test_sync_oauth(caplog, conf, quiet):
     args.quiet = quiet           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
+    args.statedb = str(tmpdir / "storage")
 
     try:
         tf = NamedTemporaryFile(delete=False)
@@ -80,12 +82,13 @@ def test_sync_oauth(caplog, conf, quiet):
 
 
 @pytest.mark.parametrize("daemon", ["with_daemon", "no_daemon"])
-def test_sync_daemon(daemon):
+def test_sync_daemon(daemon, tmpdir):
     args = MagicMock()
 
     args.src = "mock_oid_cs:/a"
     args.dest = "mock_path_cs:/b"
     args.daemon = True         # don't keep running after i quit
+    args.statedb = str(tmpdir / "storage")
 
     if daemon == "with_daemon":
         # daemon module is available - forcibly
