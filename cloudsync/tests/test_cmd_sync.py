@@ -66,7 +66,7 @@ def test_sync_oauth(caplog, conf, creds, quiet, tmpdir):
             badname = "/not-allowed"
             plat_err = PermissionError
         else:
-            badname = "bad*name"
+            badname = "x:/bad"
             plat_err = FileNotFoundError
 
         args.creds = tf2.name if creds == "with_creds" else badname
