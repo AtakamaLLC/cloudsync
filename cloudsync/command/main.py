@@ -2,6 +2,7 @@ import sys
 import argparse
 import logging
 import importlib
+import traceback
 from typing import Any
 
 from .utils import SubCmd
@@ -39,6 +40,6 @@ def main():
     try:
         args.func(args)
     except Exception as e:
-        if args.verbose:
-            log.exception("error running command")
         print("Error ", e, file=sys.stderr)
+        if args.verbose:
+            traceback.print_exc(None, sys.stderr)

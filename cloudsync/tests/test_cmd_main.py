@@ -58,7 +58,7 @@ def test_main_disp(capsys):
 
 
 def test_main_err(capsys):
-    sys.argv = ["cloudsync", "sync fozay:55 refo:66"]
+    sys.argv = "cloudsync sync -v fozay:55 refo:66".split(" ")
 
     ex = None
     try:
@@ -72,3 +72,5 @@ def test_main_err(capsys):
     rd = capsys.readouterr()
 
     assert rd.err != ""
+    # verbose logs a traceback on failz
+    assert "aceback" in rd.err
