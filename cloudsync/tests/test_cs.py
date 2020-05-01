@@ -232,7 +232,7 @@ def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent
     counter = 1
     for cs in css:
         log.info("SETUP TABLE 1 cs%s\n%s", counter, cs.state.pretty_print())
-        cs.run_until_clean(timeout=1)
+        cs.run_until_clean(timeout=3)
         log.info("SETUP TABLE 2 cs%s\n%s", counter, cs.state.pretty_print())
         counter += 1
 
