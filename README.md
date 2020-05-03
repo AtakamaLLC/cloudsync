@@ -1,5 +1,5 @@
 [![Build Status](https://travis-ci.com/AtakamaLLC/cloudsync.svg?branch=master&token=WD7aozR2wQ3ePGe1QpA8)](https://travis-ci.com/AtakamaLLC/cloudsync)
-[![codecov](https://codecov.io/gh/AtakamaLLC/cloudsync/branch/master/graph/badge.svg)](https://codecov.io/gh/AtakamaLLC/cloudsync)
+[![Code Coverage](https://codecov.io/gh/AtakamaLLC/cloudsync/branch/master/graph/badge.svg)](https://codecov.io/gh/AtakamaLLC/cloudsync)
 
 # cloudsync README
 
