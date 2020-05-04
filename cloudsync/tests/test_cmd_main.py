@@ -1,6 +1,7 @@
 # pylint: disable=missing-docstring
 
 import sys
+import pytest
 from cloudsync.command.main import main
 
 
@@ -20,9 +21,27 @@ def test_main(capsys):
     assert "usage" in rd.out.lower()
     assert rd.err == ""
 
+@pytest.mark.parametrize("arg", [["badcommand"], []])
+def test_main_badcmd(capsys, arg):
+    sys.argv = ["cloudsync"]
 
-def test_main_badcmd(capsys):
-    sys.argv = ["cloudsync", "badcommand"]
+    ex = None
+    try:
+        main()
+    except SystemExit as e:
+        ex = e
+
+    # raise an error
+    assert ex.code > 0
+
+    rd = capsys.readouterr()
+
+    # show some usage
+    assert "usage" in rd.err.lower()
+
+
+def test_main_nocmd(capsys):
+    sys.argv = ["cloudsync"]
 
     ex = None
     try:
