@@ -1,8 +1,10 @@
 import os
 import pytest
+import time
 import logging
 
 from cloudsync.utils import debug_args, memoize, NamedTemporaryFile, debug_sig
+from .fixtures import RunUntilHelper
 
 log = logging.getLogger(__name__)
 
@@ -159,3 +161,11 @@ def test_already_gone():
 def test_debug_sig():
     test_sig = debug_sig("Hello, world!")
     assert test_sig == '9YM'  # debug_sig should be deterministic across runs
+
+def test_wait_until():
+    def found_callable_too_long():
+        time.sleep(0.3)
+        return False
+
+    with pytest.raises(TimeoutError):
+        RunUntilHelper().wait_until(found=found_callable_too_long, timeout=0.1)
