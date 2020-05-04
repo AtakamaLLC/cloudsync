@@ -85,7 +85,6 @@ class NotificationManager(Runnable):
     def notify(self, e: Notification):
         """Add notification to the queue"""
         self.__queue.put(e)
-        log.info("added to queue %s", e)
 
     def stop(self, forever=True):
         """Stop the server"""
