@@ -49,14 +49,15 @@ def test_list_err(caplog, tmpdir):
 
 
 @pytest.mark.parametrize("long", [True, False])
-def test_list_fs(capsys, long, tmpdir):
+@pytest.mark.parametrize("fsname", ["file", "filesystem"])
+def test_list_fs(capsys, long, fsname, tmpdir):
     args = MagicMock()
 
     # make one long to test size formatting code path
     (tmpdir / "foo").write("yo" * 2048)
     (tmpdir / "bar").write("yo")
 
-    args.prov = "filesystem:%s" % tmpdir
+    args.prov = "%s:%s" % (fsname, tmpdir)
     args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit

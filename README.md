@@ -19,7 +19,19 @@ pip install cloudsync-gdrive
 *   [Documentation](https://atakama-llc-cloudsync.readthedocs-hosted.com/en/latest/)
 *   [Source Code + Issue Tracker](https://github.com/AtakamaLLC/cloudsync)
 
-## Example
+## Command-line Example
+
+```bash
+
+cloudsync sync --help
+
+cloudsync sync file:c:/users/me/documents gdrive:/mydocs
+
+# on linux you can pass -D for 'daemon mode', which will detatch and run in the background
+```
+
+
+## Code Example
 
 ```python
 import cloudsync

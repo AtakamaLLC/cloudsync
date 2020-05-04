@@ -21,7 +21,9 @@ class SubCmd(abc.ABC):
     """Base class for sub commands"""
 
     def __init__(self, main, name, help):               # pylint: disable=redefined-builtin
-        self.parser: argparse.ArgumentParser = main.add_parser(name, help=help,
+        self.parser: argparse.ArgumentParser = main.add_parser(
+                name,
+                help=help,
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     def common_sync_args(self):
