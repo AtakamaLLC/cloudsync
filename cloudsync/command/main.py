@@ -35,7 +35,7 @@ def main():
         log.setLevel(logging.DEBUG)
         print("# args", args.__dict__, file=sys.stderr)
 
-    if "func" not in vars(args):
+    if not args.func:
         parser.print_help(file=sys.stderr)
         sys.exit(1)
 
