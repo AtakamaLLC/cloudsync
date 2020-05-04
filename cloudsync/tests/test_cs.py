@@ -2507,7 +2507,8 @@ def test_walk_carefully3(setup_offline_state):
     assert b.getvalue() == b"changed-while-stopped"
 
 
-def test_notify_bad_name(cs):
+@pytest.mark.parametrize("method", ["create", "mkdir"])
+def test_notify_bad_name(cs, method):
     setup_remote_local(cs)
     called = False
 
@@ -2519,7 +2520,10 @@ def test_notify_bad_name(cs):
 
     local, remote = cs.providers
     remote._forbidden_chars = ['`']
-    local.create('/local/bad`.txt', BytesIO(b'data'))
+    if method == "create":
+        local.create('/local/bad`.txt', BytesIO(b'data'))
+    else:
+        local.mkdir('/local/bad`.txt')
     cs.start(until=lambda: called, timeout=2)  # Need to use start() because the notification manager do() blocks
     log.debug("Now waiting")
     cs.wait()

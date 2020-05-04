@@ -6,16 +6,18 @@ from io import BytesIO
 from typing import List
 from itertools import permutations
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError
+from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError,\
+        LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError, Notification,\
+        NotificationManager, NotificationType
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED
+from cloudsync.sync.state import TRASHED, SideState
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +25,17 @@ TIMEOUT = 4
 
 
 class SyncMgrMixin(SyncManager, RunUntilHelper):
+    def __init__(self, state, prov, trans, resolv, **kw):
+        self.notifications: List[Notification] = []
+        def handler(evt):
+            self.notifications.append(evt)
+        self.nmgr = NotificationManager(handler)
+        super().__init__(state, prov, trans, resolv, notification_manager=self.nmgr, **kw)
+
+    def process_notifications(self):
+        self.nmgr.notify(None)
+        self.nmgr.run()
+
     def process_events(self, side=None):
         for i in (LOCAL, REMOTE):
             prov = self.providers[i]
@@ -31,7 +44,7 @@ class SyncMgrMixin(SyncManager, RunUntilHelper):
                     self.state.update(i, e.otype, path=e.path, oid=e.oid, hash=e.hash, prior_oid=e.prior_oid, exists=e.exists)
 
 
-def make_sync(request, mock_provider_generator, shuffle, case_sensitive=True):
+def make_sync(_request, mock_provider_generator, shuffle, case_sensitive=True):
     providers = (mock_provider_generator(case_sensitive=case_sensitive), mock_provider_generator(oid_is_path=False, case_sensitive=case_sensitive))
 
     state = SyncState(providers, shuffle=shuffle)
@@ -45,7 +58,7 @@ def make_sync(request, mock_provider_generator, shuffle, case_sensitive=True):
 
         raise ValueError("bad path: %s" % path)
 
-    def resolve(f1, f2):
+    def resolve(_f1, _f2):
         return None
 
     # two providers and a translation function that converts paths in one to paths in the other
@@ -1228,16 +1241,16 @@ def test_delete_out_of_order_events(sync):
 
     assert not remote.info_path("/remote/f")
 
-def test_sync_ex(sync):
+def test_sync_unknown_ex(sync):
     (local, remote) = sync.providers
 
     (
-        (lf, rf),
+        (lf, _rf),
     ) = setup_remote_local(sync, "a")
 
     local.delete(lf.oid)
 
-    sync.create_event(LOCAL, FILE, path="/local/f/a", oid=lf.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/a", oid=lf.oid, exists=False)
     with patch.object(remote, "delete", side_effect=lambda *a, **kw: 4/0):
         # all exceptions are converted to backoff errors
         with pytest.raises(_BackoffError):
@@ -1245,7 +1258,83 @@ def test_sync_ex(sync):
             sync.do()
 
     # and then everything is ok
-    sync.run(until=lambda:not remote.info_path("/remote/f"), timeout=2)
+    sync.run(until=lambda:not remote.info_path("/remote/a"), timeout=2)
     log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+
+def test_sync_fnf_during_sync(sync):
+    (local, _remote) = sync.providers
+    setup_remote_local(sync)
+
+    lb = local.create("/local/b", BytesIO(b'hello'))
+    sync.create_event(LOCAL, FILE, path="/local/b", oid=lb.oid, exists=True, hash=local.hash_data(BytesIO(b'hello')))
+
+    # just deletes local temp and retries - no backoff
+    def fnf(*a, **k):
+        raise FileNotFoundError
+
+    # temp error
+    def perm(*a, **k):
+        raise PermissionError
+
+    sync.nothing_happened = MagicMock()
+    sync.process_notifications()
+    log.info("notif 1 %s", sync.notifications)
+    sync.notifications.clear()
+
+    with patch.object(local, "download", side_effect=fnf),\
+            patch.object(SideState, "clean_temp") as ct:
+        sync.do()
+        sync.do()
+        ct.assert_called()
+
+    sync.process_notifications()
+    log.info("notif 2 %s", sync.notifications)
+    assert not sync.notifications
+
+    # when nothing happens, not even an exception, the nothing_happened flag gets set
+    # this prevents backoff from being cleared on noop
+    sync.nothing_happened.assert_called()
+
+    with pytest.raises(_BackoffError):
+        with patch.object(local, "download", side_effect=perm):
+            sync.do()
+            sync.do()
+
+    # dump notification queue
+    sync.process_notifications()
+
+    log.info("notif %s", sync.notifications)
+
+    assert sync.notifications[0].ntype == NotificationType.TEMPORARY_ERROR
+
+    sync.run_until_found((REMOTE, "remote/b"))
+
+
+@pytest.mark.parametrize("unverif", [True, False])
+def test_sync_change_count(sync, unverif):
+    (local, _remote) = sync.providers
+
+    (
+        (la, _ra),
+    ) = setup_remote_local(sync, "a")
+
+    local.delete(la.oid)
+
+    lb = local.create("/local/b", BytesIO(b'hello'))
+
+    # ignored event for verified counts, but not ignored for raw counts
+    sync.create_event(LOCAL, FILE, path="/local/a", oid=la.oid, exists=False)
+    # new file event, counted for both
+    sync.create_event(LOCAL, FILE, path="/local/b", oid=lb.oid, exists=True, hash=local.hash_data(BytesIO(b'hello')))
+    # irrelevant event, ignored for both
+    sync.create_event(LOCAL, FILE, path="/irrelevant/a", oid=la.oid, exists=True)
+
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+    if unverif:
+        assert sync.change_count(unverified=unverif) == 2
+    else:
+        assert sync.change_count(unverified=unverif) == 1
+
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)

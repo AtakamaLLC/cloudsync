@@ -206,7 +206,6 @@ class SyncManager(Runnable):
 
         if need_to_sleep:
             time.sleep(self.aging)
-??? from here until ???END lines may have been inserted/deleted
 
         if not something_got_done:
             # don't clear the backoff flag if all we did was punt
@@ -240,19 +239,20 @@ class SyncManager(Runnable):
             sides = (side, )
 
         if unverified:
+            return self.state.changeset_len
+
+        for e in self.state.changes:
             for i in sides:
-                count += self.state.changeset_len
-        else:
-            for e in self.state.changes:
-                for i in sides:
-                    if e[i].path and e[i].changed:
-                        # we check 2 things..
-                        # if the file translates and the file has hash changes (create/upload needed)
-                        # metadata sync changes aren't relevant for visual display
-                        translated_path = self.translate(other_side(i), e[i].path)
-                        if translated_path:
-                            if e[i].sync_hash != e[i].hash:
-                                count += 1
+                if e[i].path and e[i].changed:
+                    # we check 2 things..
+                    # if the file translates and the file has hash changes (create/upload needed)
+                    # metadata sync changes aren't relevant for visual display
+                    translated_path = self.translate(other_side(i), e[i].path)
+                    if translated_path:
+                        if e[i].sync_hash != e[i].hash:
+                            count += 1
+                            # never double-count a single entry
+                            # if both sides have changed - it's one sync
                             break
 
         return count
@@ -670,8 +670,9 @@ class SyncManager(Runnable):
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
     def insert_event(self, side, event: Event):
+        # used by event_permute to insert event instead of create/insert above
         self.state.update(side, otype=event.otype, oid=event.oid, path=event.path, hash=event.path,
-                          exists=event.exists, prior_oid=event.prior_oid)
+            exists=event.exists, prior_oid=event.prior_oid)
 
     def create_synced(self, changed, sync, translated_path):  # pylint: disable=too-many-branches, too-many-statements
         synced = other_side(changed)
