@@ -206,6 +206,7 @@ class SyncManager(Runnable):
 
         if need_to_sleep:
             time.sleep(self.aging)
+??? from here until ???END lines may have been inserted/deleted
 
         if not something_got_done:
             # don't clear the backoff flag if all we did was punt
@@ -229,6 +230,7 @@ class SyncManager(Runnable):
         return self.state.changeset_len
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
+        """Show the number of changes for UX purposes."""
         count = 0
 
         sides: Tuple[int, ...]
@@ -244,9 +246,13 @@ class SyncManager(Runnable):
             for e in self.state.changes:
                 for i in sides:
                     if e[i].path and e[i].changed:
+                        # we check 2 things..
+                        # if the file translates and the file has hash changes (create/upload needed)
+                        # metadata sync changes aren't relevant for visual display
                         translated_path = self.translate(other_side(i), e[i].path)
                         if translated_path:
-                            count += 1
+                            if e[i].sync_hash != e[i].hash:
+                                count += 1
                             break
 
         return count
@@ -946,7 +952,7 @@ class SyncManager(Runnable):
 
         # deltions don't always have paths
         if sync[changed].path:
-            translated_path = self.translate(synced, sync[changed].path) 
+            translated_path = self.translate(synced, sync[changed].path)
             if translated_path:
                 # find conflicting entries that will be  renamed away
                 ents = list(self.state.lookup_path(synced, translated_path))
@@ -1371,7 +1377,7 @@ class SyncManager(Runnable):
             return FINISHED
 
         if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
-            log.debug("dont upload new contents over an already deleted file, instead zero out trashed side " 
+            log.debug("dont upload new contents over an already deleted file, instead zero out trashed side "
                       "turning the 'upload' into a 'create'")
             # not an upload
             # todo: change to clear()

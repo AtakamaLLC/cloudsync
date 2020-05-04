@@ -12,6 +12,7 @@ import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
 from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError, LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError
+from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.sync.state import TRASHED
@@ -1232,27 +1233,19 @@ def test_sync_ex(sync):
 
     (
         (lf, rf),
-        (la, ra),
-        (lb, rb),
-    ) = setup_remote_local(sync, "f/", "f/a", "f/b")
+    ) = setup_remote_local(sync, "a")
 
-    local.delete(la.oid)
-    local.delete(lb.oid)
     local.delete(lf.oid)
 
-    sync.create_event(LOCAL, FILE, path="/local/f/a", oid=la.oid, exists=False)
-    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=False)
-    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=True)  # liar!
-    sync.create_event(LOCAL, FILE, path="/local/f", oid=lf.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/a", oid=lf.oid, exists=False)
+    with patch.object(remote, "delete", side_effect=lambda *a, **kw: 4/0):
+        # all exceptions are converted to backoff errors
+        with pytest.raises(_BackoffError):
+            sync.do()
+            sync.do()
 
-    log.info("TABLE 0\n%s", sync.state.pretty_print())
-
+    # and then everything is ok
     sync.run(until=lambda:not remote.info_path("/remote/f"), timeout=2)
-
     log.info("TABLE 2\n%s", sync.state.pretty_print())
-
-    assert not remote.info_path("/remote/f")
-
-
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
