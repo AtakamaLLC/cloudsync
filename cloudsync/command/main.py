@@ -26,14 +26,16 @@ def main():
         cmd.parser.add_argument('-v', '--verbose', help='More verbose logging', action="store_true")
         cmd.parser.set_defaults(func=cmd.run)
 
-    args = parser.parse_args()
+    args = argparse.Namespace(verbose=False, func=None)
+
+    parser.parse_args(namespace=args)
 
     log.setLevel(logging.INFO)
     if args.verbose:
         log.setLevel(logging.DEBUG)
         print("# args", args.__dict__, file=sys.stderr)
 
-    if "func" not in args:
+    if not args.func:
         parser.print_help(file=sys.stderr)
         sys.exit(1)
 

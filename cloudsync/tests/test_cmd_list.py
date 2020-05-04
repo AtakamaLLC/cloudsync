@@ -44,7 +44,7 @@ def test_list_err(caplog, tmpdir):
         csync.ListCmd.run(args)
     args.creds = "file not found"
     args.prov = "-dfjfhj::fdsf:/"
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError):
         csync.ListCmd.run(args)
 
 

@@ -10,6 +10,10 @@ from cloudsync import get_provider, known_providers, OAuthConfig, Provider, Cred
 
 log = logging.getLogger()
 
+PROVIDER_ALIASES = {
+    "file" : "filesystem",
+}
+
 def cli_providers():
     return sorted(p for p in known_providers() if not p.startswith("test") and not p.startswith("mock_"))
 
@@ -63,6 +67,10 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
     """
     def __init__(self, uri):
         super().__init__(uri)
+        if self.method in PROVIDER_ALIASES:
+            self.method = PROVIDER_ALIASES[self.method]
+        if self.method not in known_providers():
+            raise ValueError("Unknown provider %s, try pip install cloudsync[%s] or pip install cloudsync-%s" % (self.method, self.method, self.method))
         self.provider_type = get_provider(self.method)
 
     def provider_instance(self, args, *, connect=True) -> Provider:
