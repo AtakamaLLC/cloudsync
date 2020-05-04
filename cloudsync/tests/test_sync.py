@@ -1040,10 +1040,10 @@ def test_folder_del_loop(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
     local_file = "/local/sub/file"
-    
+
     local_sub2 = "/local/sub2"
     local_file2 = "/local/sub2/file"
-    
+
     remote_sub = "/remote/sub"
     remote_file = "/remote/sub/file"
     remote_sub2 = "/remote/sub2"
@@ -1202,6 +1202,32 @@ def test_rename_same_name(sync_ci):
 
 
 def test_delete_out_of_order_events(sync):
+    (local, remote) = sync.providers
+
+    (
+        (lf, rf),
+        (la, ra),
+        (lb, rb),
+    ) = setup_remote_local(sync, "f/", "f/a", "f/b")
+
+    local.delete(la.oid)
+    local.delete(lb.oid)
+    local.delete(lf.oid)
+
+    sync.create_event(LOCAL, FILE, path="/local/f/a", oid=la.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=False)
+    sync.create_event(LOCAL, FILE, path="/local/f/b", oid=lb.oid, exists=True)  # liar!
+    sync.create_event(LOCAL, FILE, path="/local/f", oid=lf.oid, exists=False)
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda:not remote.info_path("/remote/f"), timeout=2)
+
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    assert not remote.info_path("/remote/f")
+
+def test_sync_ex(sync):
     (local, remote) = sync.providers
 
     (
