@@ -85,10 +85,11 @@ class RunUntilHelper:
             raise TimeoutError("timed out while waiting: %s" % errs)
 
     def wait_until(self: Any, found: Callable, timeout=TIMEOUT):
+        start = time.monotonic()
         while not found():
             time.sleep(0.1)
-        if not found():
-            raise TimeoutError("timed out while waiting")
+            if time.monotonic() - start > timeout and not found():
+                raise TimeoutError("timed out while waiting")
 
     def wait_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT):
         log.debug("waiting until found")
