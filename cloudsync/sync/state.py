@@ -762,6 +762,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 sub[side].path = new_path
 
                 # now do the same thing for the sync_path
+                # do not change path! this can cause weird recursion, also it's wrong
+                # you're not changing what it *should be* (path)
+                # just what it is (sync_path)
                 if sub[side].sync_path:
                     sync_rel = provider.is_subpath(prior_path, sub[side].sync_path)
                     if sync_rel:
