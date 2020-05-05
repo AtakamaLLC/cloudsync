@@ -1,3 +1,5 @@
+import sys
+
 import logging
 import datetime
 
@@ -42,8 +44,13 @@ class ListCmd(SubCmd):
         prov = uri.provider_instance(args)
 
         if args.namespaces:
-            for n in prov.list_ns():
-                print(n)
+            ns = prov.list_ns()
+            if ns is None:
+                print("Namspaces not supported.", sys.stderr)
+            else:
+                for n in prov.list_ns():
+                    print(n)
+            return
 
         for f in prov.listdir_path(uri.path):
             if args.long:
