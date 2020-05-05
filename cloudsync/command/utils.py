@@ -67,9 +67,16 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
     Represents a faux-cloud-URI passed on the command line.
 
     For example: gdrive:/path/to/file
+                 onedrive@team/namespace:path/to/file
     """
     def __init__(self, uri):
         super().__init__(uri)
+
+        self.namespace = ""
+        namespace = re.match(r"(.*)@(.*)", self.method)
+        if namespace:
+            (self.method, self.namespace) = namespace.groups()
+
         if self.method in PROVIDER_ALIASES:
             self.method = PROVIDER_ALIASES[self.method]
         if self.method not in known_providers():
@@ -108,6 +115,9 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             if cls.name.startswith("mock_"):
                 prov.set_creds({"fake" : "creds"})
             prov.reconnect()
+
+        if self.namespace:
+            prov.namespace = self.namespace
 
         return prov
 

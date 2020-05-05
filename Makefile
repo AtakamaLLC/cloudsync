@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+PYTEST = pytest -rfE --cov=cloudsync --durations=1 -n=8 cloudsync/tests --tb=short --timeout=10
 
 ifeq ($(OS),Windows_NT)
 	ENVBIN="scripts"
@@ -28,13 +29,14 @@ lint-md: ./node_modules/.bin/remark
 
 test: test-py test-doc
 
-test-py:
-	pytest -rfE --cov=cloudsync --durations=1 -n=8 cloudsync/tests --tb=short --timeout=10
+.coverage: $(shell find cloudsync -type f -name '*.py')
+	$(PYTEST)
 
 test-doc:
 	docs/test.sh
 
-.coverage: test-py
+test-py:
+	$(PYTEST)
 
 coverage.xml: .coverage
 	coverage xml
