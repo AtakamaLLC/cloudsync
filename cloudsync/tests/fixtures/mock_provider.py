@@ -169,7 +169,7 @@ class MockProvider(Provider):
             self.__namespace_id = val + "-id"
         else:
             # calling super setter in python is a horrid hack, but this is the only way to do it
-            super(MockProvider, self.__class__).namespace.fset(self, val)    # pylint: disable=no-member
+            super(MockProvider, self.__class__).namespace.fset(self, val)    # type: ignore  # pylint: disable=no-member
 
     @lock
     def connect_impl(self, creds):
