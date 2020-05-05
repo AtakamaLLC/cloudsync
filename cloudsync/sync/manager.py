@@ -669,7 +669,7 @@ class SyncManager(Runnable):
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
-    def insert_event(self, side, event: Event):
+    def insert_event(self, side, event: Event):    # pragma: no cover
         # used by event_permute to insert event instead of create/insert above
         self.state.update(side, otype=event.otype, oid=event.oid, path=event.path, hash=event.path,
             exists=event.exists, prior_oid=event.prior_oid)
