@@ -1,20 +1,27 @@
+# pylint: disable=missing-docstring
+
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from cloudsync.tests.fixtures import MockProvider
+from cloudsync import CloudNamespaceError
 import cloudsync.command.list as csync
 
+log = logging.getLogger(__name__)
 
 @pytest.mark.parametrize("long", [True, False])
 def test_list_basic(caplog, long):
     args = MagicMock()
 
+    logging.getLogger().setLevel(logging.DEBUG)
     args.prov = "mock_oid_cs:/"
     args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
     args.long = long
+    args.namespaces = False
 
     with patch.object(MockProvider, "listdir_path") as mock:
         csync.ListCmd.run(args)
@@ -24,7 +31,45 @@ def test_list_basic(caplog, long):
 
     assert any("connect mock" in t[2].lower() for t in logs)
 
-def test_list_err(caplog, tmpdir):
+def test_list_ns(caplog, capsys):
+    args = MagicMock()
+
+    args.prov = "mock_oid_ci_ns@namespace:/"
+    args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
+    args.verbose = True         # log a lot (overrides quiet)
+    args.daemon = False         # don't keep running after i quit
+    args.long = False
+    args.namespaces = True
+
+    csync.ListCmd.run(args)
+
+    logs = caplog.record_tuples
+    out = capsys.readouterr().out
+
+    log.debug("out %s", out)
+
+    assert any("connect mock" in t[2].lower() for t in logs)
+
+    # mock prov lists ns1, ns2 as namespaces
+
+    assert "ns1" in out
+    assert "ns2" in out
+
+
+def test_list_badns():
+    args = MagicMock()
+
+    args.prov = "mock_oid_ci@namespace:/"
+    args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
+    args.verbose = True         # log a lot (overrides quiet)
+    args.daemon = False         # don't keep running after i quit
+    args.long = False
+    args.namespaces = True
+
+    with pytest.raises(CloudNamespaceError):
+        csync.ListCmd.run(args)
+
+def test_list_err(tmpdir):
     args = MagicMock()
 
     args.prov = "gdrive:/"
@@ -32,6 +77,8 @@ def test_list_err(caplog, tmpdir):
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
     args.long = False
+    args.namespaces = False
+
     badj = tmpdir / "bad"
     with open(badj, "w") as f:
         f.write("bad stuff")
@@ -62,6 +109,7 @@ def test_list_fs(capsys, long, fsname, tmpdir):
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
     args.long = long
+    args.namespaces = False
 
     csync.ListCmd.run(args)
 

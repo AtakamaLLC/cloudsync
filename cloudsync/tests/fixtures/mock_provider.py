@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 
 
 class MockFSObject:         # pylint: disable=too-few-public-methods
+    """Mock fs entry, either file or folder."""
     FILE = 'mock file'
     DIR = 'mock dir'
 
@@ -69,6 +70,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
 
 class MockEvent:  # pylint: disable=too-few-public-methods
+    """Mock fs event."""
     ACTION_CREATE = "provider create"
     ACTION_RENAME = "provider rename"
     ACTION_UPDATE = "provider modify"
@@ -94,20 +96,19 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 def lock(func):
     def wrap(self, *args, **kw):
-        if True:
-            with self._lock:
-                return func(self, *args, **kw)
-        else:
+        with self._lock:
             return func(self, *args, **kw)
     return wrap
 
 
 class MockProvider(Provider):
+    """In-memory provider with lots of options for testing."""
     default_sleep = 0.01
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None, hash_func=None, oidless_folder_trash_events: bool = False):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
+            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = False):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -117,6 +118,9 @@ class MockProvider(Provider):
         log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
+        self._use_ns = use_ns
+        self.__namesapce = None
+        self.__namesapce_id = None
         self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
@@ -144,6 +148,28 @@ class MockProvider(Provider):
         self.__in_connect = False
         new_fs_object = MockFSObject("/", MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
+
+    def list_ns(self):
+        if self._use_ns:
+            return ["ns1", "ns2"]
+        else:
+            return super().list_ns()
+
+    @property
+    def namespace(self):
+        if self._use_ns:
+            return self.__namespace
+        else:
+            return super().namespace
+
+    @namespace.setter
+    def namespace(self, val):
+        if self._use_ns:
+            self.__namespace = val
+            self.__namespace_id = val + "-id"
+        else:
+            # calling super setter in python is a horrid hack, but this is the only way to do it
+            super(MockProvider, self.__class__).namespace.fset(self, val)    # type: ignore  # pylint: disable=no-member
 
     @lock
     def connect_impl(self, creds):
@@ -574,8 +600,16 @@ class MockOidCi(MockProvider):
     def __init__(self):
         super().__init__(oid_is_path=False, case_sensitive=False)
 
+class MockOidCiNs(MockProvider):
+    name = "mock_oid_ci_ns"
+
+    def __init__(self):
+        super().__init__(oid_is_path=False, case_sensitive=False, use_ns=True)
+
+
 
 register_provider(MockPathCs)
 register_provider(MockPathCi)
 register_provider(MockOidCs)
 register_provider(MockOidCi)
+register_provider(MockOidCiNs)
