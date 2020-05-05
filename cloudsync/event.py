@@ -44,7 +44,7 @@ class EventManager(Runnable):
         if not self.provider.connection_id:
             raise ValueError("provider must be connected when starting the event manager")
 
-        self.label: str = f"{self.provider.name}:{self.provider.connection_id}"
+        self.label: str = f"{self.provider.name}:{self.provider.connection_id}:{self.provider.namespace_id}"
         self.events = Muxer(provider.events, restart=True)
         self.state: 'SyncState' = state
         self.side: int = side

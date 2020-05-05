@@ -23,6 +23,9 @@ Hash = Union[Dict[str, 'Hash'], Tuple['Hash', ...], str, int, bytes, float, None
 Cursor = Union[Dict[str, 'Cursor'], Tuple['Cursor', ...], str, int, bytes, float, None]    # type: ignore
 Creds = Dict[str, Union[str, int]]
 
+CONNECTION_NOT_NEEDED = "connection-not-needed"
+
+__all__ = ["Provider", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     """
@@ -43,6 +46,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     case_sensitive: bool = True               ; """Provider is case sensitive"""
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
+    test_root: str = '/'                      ; """Root folder to use during provider tests"""
     _namespace: str = None                    ; """current namespace, if needed """
     _namespace_id: str = None                 ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
@@ -92,7 +96,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             A combination of a provider name and a login/userid could be sufiicient, but
             it is suggested to use a provider specific identity, if available.
         """
-        return self.connection_id or self.name
+        return self.connection_id or CONNECTION_NOT_NEEDED
 
 #    @final                             # uncomment when 3.8 is lowest supported
     def connect(self, creds):
@@ -408,19 +412,23 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
 
-    def normalize_path(self, path: str):
-        """Used internally for comparing paths in a case and sep insensitive manner, as appropriate."""
-        norm_path = path.rstrip(self.sep)
-        if self.sep in ["\\", "/"]:
-            parts = re.split(r'[\\/]+', norm_path)
-        else:
-            parts = re.split(r'[%s]+' % self.sep, norm_path)
+    def normalize_path(self, path: str, for_display: bool = False):
+        """Used internally for comparing paths in a case and sep insensitive manner, as appropriate.
+
+        Args:
+            path: the path to normalize
+            for_display: when true, preserve case of path's leaf node
+        """
+        if self.alt_sep:
+            path = path.replace(self.alt_sep, self.sep)
+        parts = re.split(f"[{re.escape(self.sep)}]+", path.rstrip(self.sep))
         norm_path = self.join(*parts)
-        if not self.case_sensitive:
-            norm_path = norm_path.lower()
-        else:
-            norm_path = self.join(self.dirname(norm_path).lower(), self.basename(norm_path))
-        return norm_path
+
+        if self.case_sensitive:
+            return norm_path
+        elif for_display:
+            return self.join(self.dirname(norm_path).lower(), self.basename(norm_path))
+        return norm_path.lower()
 
     def is_subpath(self, folder, target, strict=False):
         """True if the target is within the folder.
@@ -467,14 +475,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             return retval if relative != "" else self.sep
         raise ValueError("replace_path used without subpath")
 
-    def paths_match(self, patha, pathb):
+    def paths_match(self, patha, pathb, for_display=False):
         """True if two paths are equal, uses normalize_path()."""
         if patha is None and pathb is None:
             return True
         elif patha is None or pathb is None:
             return False
 
-        return self.normalize_path(patha) == self.normalize_path(pathb)
+        return self.normalize_path(patha, for_display) == self.normalize_path(pathb, for_display)
 
     def dirname(self, path: str):
         """Just like `os.dirname`, but for provider paths."""

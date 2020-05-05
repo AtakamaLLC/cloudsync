@@ -171,7 +171,9 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def set_root_oid(self, side, oid):
+        log.debug("set root oid for %s to %s", side, oid)
         self.__root_oids[side] = oid
+        self.__root_paths[side] = None
 
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
@@ -292,8 +294,8 @@ class SyncManager(Runnable):
         if ent[1].path == translated_path:
             return False
 
-        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path) and \
+        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path, for_display=True) and \
+            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path, for_display=True) and \
             not ent.is_temp_rename
 
     def check_revivify(self, sync: SyncEntry):
@@ -482,7 +484,8 @@ class SyncManager(Runnable):
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent[synced].exists = MISSING
+                if ent[synced].exists != TRASHED:
+                    ent[synced].exists = MISSING
             else:
                 nc.append(ent)
 
@@ -575,6 +578,9 @@ class SyncManager(Runnable):
 
         try:
             return self.unsafe_mkdir_synced(changed, synced, sync, translated_path)
+        except ex.CloudFileExistsError:
+            sync.mark_dirty(synced)
+
         except ex.CloudFileNotFoundError:
             if sync.priority <= 0:
                 return PUNT
@@ -726,7 +732,7 @@ class SyncManager(Runnable):
                             parent_ent[changed].changed = True
                             parent_ent[synced].exists = MISSING
                             assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                            log.debug("updated entry %s", parent)
+                            log.debug("updated entry as missing %s", parent)
         except ex.CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -1007,6 +1013,9 @@ class SyncManager(Runnable):
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
 
+        # Mark us changed, so we will sync after kids, not before
+        sync[changed].changed = time.time()
+
         return PUNT
 
     def _get_untrashed_peers(self, sync, changed, synced, translated_path):
@@ -1165,10 +1174,7 @@ class SyncManager(Runnable):
 
         assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
 
-        sdir, sbase = self.providers[synced].split(translated_path)
-        cdir, cbase = self.providers[synced].split(sync[synced].sync_path)
-
-        if self.providers[synced].paths_match(sdir, cdir) and sbase == cbase:
+        if self.providers[synced].paths_match(translated_path, sync[synced].sync_path, for_display=True):
             log.debug("no rename %s %s", translated_path, sync[synced].sync_path)
             return FINISHED
 
@@ -1414,6 +1420,7 @@ class SyncManager(Runnable):
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
+            log.debug("marking missing %s", debug_sig(sync[changed].oid))
             sync[changed].exists = MISSING
             return
 

@@ -24,7 +24,7 @@ lint-mypy:
 	mypy cloudsync
 
 lint-md: ./node_modules/.bin/remark
-	./node_modules/.bin/remark -f docs/*.md	
+	./node_modules/.bin/remark -f docs/*.md *.md
 
 test: test-py test-doc
 

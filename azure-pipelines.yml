@@ -1,0 +1,31 @@
+# Python package
+# Create and test a Python package on multiple Python versions.
+# Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/python
+
+trigger:
+- master
+
+strategy:
+  matrix:
+    windows:
+      imageName: 'windows-latest'
+
+pool:
+  vmImage: $(imageName)
+  
+steps:
+- script: |
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+    pip install -r requirements-dev.txt
+  displayName: 'install dependencies'
+
+- script: bash azure-test.sh
+  displayName: 'pytest'
+
+- script: bash codecov.sh
+  displayName: 'upload coverage'
+  env:
+      CODECOV_TOKEN: $(CODECOV_TOKEN)
+  condition: succeeded()
