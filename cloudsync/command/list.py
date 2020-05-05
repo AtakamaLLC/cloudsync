@@ -28,6 +28,7 @@ class ListCmd(SubCmd):
         super().__init__(cmds, 'list', help='List files at provider')
         self.parser.add_argument('prov', help='Provider uri')
         self.parser.add_argument('-l', "--long", help='Long listing', action='store_true')
+        self.parser.add_argument('-n', "--namespaces", help='List namespaces', action='store_true')
 
         self.common_sync_args()
 
@@ -39,6 +40,10 @@ class ListCmd(SubCmd):
 
         uri = CloudURI(args.prov)
         prov = uri.provider_instance(args)
+
+        if args.namespaces:
+            for n in prov.list_ns():
+                print(n)
 
         for f in prov.listdir_path(uri.path):
             if args.long:
