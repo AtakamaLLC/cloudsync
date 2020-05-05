@@ -123,14 +123,16 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
 
 
 # TODO: better documentation on how to get your own one of these
+#"id": "797a365f-772d-421f-a3fe-7b55ab6defa4",
 OAUTH_CONFIG = {
     "gdrive": {
         "id": "918922786103-f842erh49vb7jecl9oo4b5g4gm1eka6v.apps.googleusercontent.com",
         "secret": "F2CdO5YTzX6TfKGlOMDbV1WS",
     },
     "onedrive" : {
-        "id": "7e11e2bd-7def-4058-8a90-93cb1a872214",
-        "secret": "3fRGo-3Z5j6Ff@AVaj]UDhafQp=.R?8W",
+        "id": "825dab3b-e12d-4e5f-aa17-796b3f7569a6",
+        "secret": "",
+
     }
 }
 
