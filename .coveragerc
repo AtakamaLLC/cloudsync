@@ -2,6 +2,7 @@
 branch=True
 omit = 
     cloudsync/providers/*
+    cloudsync/tests/*
 
 [report]
 exclude_lines =
