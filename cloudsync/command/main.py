@@ -1,47 +1,41 @@
-import os
 import sys
 import argparse
 import logging
+import importlib
+import traceback
+from typing import Any
 
-from .debug import do_debug
-from .sync import do_sync
+from .utils import SubCmd
 
-logging.basicConfig()
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
-
+logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+        datefmt='%Y-%m-%d:%H:%M:%S',)
+log = logging.getLogger()
 
 def main():
     """cloudsync command line main"""
+
     parser = argparse.ArgumentParser(description='cloudsync - monitor and sync between cloud providers')
     cmds = parser.add_subparsers(title="Commands")
+
     cmds.metavar = "Commands:"
+    sub_cmds = ["debug", "sync", "list"]
+    for sub_cmd in sub_cmds:
+        module: Any = importlib.import_module(".." + sub_cmd, __name__)
+        cmd: SubCmd = module.cmd_class(cmds)
 
-    default_config = os.path.expanduser("~/.config/cloudsync")
+        cmd.parser.add_argument('-v', '--verbose', help='More verbose logging', action="store_true")
+        cmd.parser.set_defaults(func=cmd.run)
 
-    debug_sub = cmds.add_parser('debug', help='Debug commands')
-    debug_sub.add_argument('-s', '--state', help='Debug state file', action="store")
-    debug_sub.add_argument('-c', '--changed', help='Only changed records', action="store_true")
-    debug_sub.add_argument('-d', '--discarded', help='Show discarded records', action="store_true")
-    debug_sub.add_argument('-j', '--json', help='Output as json', action="store_true")
-    debug_sub.set_defaults(func=do_debug)
+    args = argparse.Namespace(verbose=False, func=None)
 
-    sync_sub = cmds.add_parser('sync', help='Sync commands')
-    sync_sub.add_argument('src', help='Provider uri 1')
-    sync_sub.add_argument('dest', help='Provider uri 2')
-    sync_sub.add_argument('-q', '--quiet', help='Quiet mode, no interactive auth for provider', action="store_true")
-    sync_sub.add_argument('-v', '--verbose', help='More verbose logging', action="store_true")
-    sync_sub.add_argument('-c', '--creds', help='Read credentials from a file, instead of authorizing', action="store")
-    sync_sub.add_argument('-o', '--onetime', help='Just walk/copy files once and exit', action="store_true")
-    sync_sub.add_argument('-D', '--daemon', help='Run in the background', action="store_true")
-    sync_sub.add_argument('-C', '--config', help='Use this config file', action="store", default=default_config)
-    sync_sub.set_defaults(func=do_sync)
+    parser.parse_args(namespace=args)
 
-    args = parser.parse_args()
+    log.setLevel(logging.INFO)
+    if args.verbose:
+        log.setLevel(logging.DEBUG)
+    log.debug("args %s", args.__dict__)
 
-    print("# args", args.__dict__, file=sys.stderr)
-
-    if "func" not in args:
+    if not args.func:
         parser.print_help(file=sys.stderr)
         sys.exit(1)
 
@@ -49,3 +43,5 @@ def main():
         args.func(args)
     except Exception as e:
         print("Error ", e, file=sys.stderr)
+        if args.verbose:
+            traceback.print_exc(None, sys.stderr)

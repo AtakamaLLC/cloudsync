@@ -171,7 +171,9 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def set_root_oid(self, side, oid):
+        log.debug("set root oid for %s to %s", side, oid)
         self.__root_oids[side] = oid
+        self.__root_paths[side] = None
 
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
@@ -227,6 +229,7 @@ class SyncManager(Runnable):
         return self.state.changeset_len
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
+        """Show the number of changes for UX purposes."""
         count = 0
 
         sides: Tuple[int, ...]
@@ -236,15 +239,20 @@ class SyncManager(Runnable):
             sides = (side, )
 
         if unverified:
+            return self.state.changeset_len
+
+        for e in self.state.changes:
             for i in sides:
-                count += self.state.changeset_len
-        else:
-            for e in self.state.changes:
-                for i in sides:
-                    if e[i].path and e[i].changed:
-                        translated_path = self.translate(other_side(i), e[i].path)
-                        if translated_path:
+                if e[i].path and e[i].changed:
+                    # we check 2 things..
+                    # if the file translates and the file has hash changes (create/upload needed)
+                    # metadata sync changes aren't relevant for visual display
+                    translated_path = self.translate(other_side(i), e[i].path)
+                    if translated_path:
+                        if e[i].sync_hash != e[i].hash:
                             count += 1
+                            # never double-count a single entry
+                            # if both sides have changed - it's one sync
                             break
 
         return count
@@ -275,8 +283,8 @@ class SyncManager(Runnable):
         if ent[1].path == translated_path:
             return False
 
-        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path) and \
-            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path) and \
+        return not self.providers[0].paths_match(ent[0].path, ent[0].sync_path, for_display=True) and \
+            not self.providers[1].paths_match(ent[1].path, ent[1].sync_path, for_display=True) and \
             not ent.is_temp_rename
 
     def check_revivify(self, sync: SyncEntry):
@@ -463,7 +471,8 @@ class SyncManager(Runnable):
         for ent in conflicts:
             info = self.providers[synced].info_oid(ent[synced].oid)
             if not info:
-                ent[synced].exists = MISSING
+                if ent[synced].exists != TRASHED:
+                    ent[synced].exists = MISSING
             else:
                 nc.append(ent)
 
@@ -556,6 +565,9 @@ class SyncManager(Runnable):
 
         try:
             return self.unsafe_mkdir_synced(changed, synced, sync, translated_path)
+        except ex.CloudFileExistsError:
+            sync.mark_dirty(synced)
+
         except ex.CloudFileNotFoundError:
             if sync.priority <= 0:
                 return PUNT
@@ -657,9 +669,10 @@ class SyncManager(Runnable):
         # used only for testing
         self.state.update(side, otype, oid, path=path, hash=hash, exists=exists, prior_oid=prior_oid)
 
-    def insert_event(self, side, event: Event):
+    def insert_event(self, side, event: Event):    # pragma: no cover
+        # used by event_permute to insert event instead of create/insert above
         self.state.update(side, otype=event.otype, oid=event.oid, path=event.path, hash=event.path,
-                          exists=event.exists, prior_oid=event.prior_oid)
+            exists=event.exists, prior_oid=event.prior_oid)
 
     def create_synced(self, changed, sync, translated_path):  # pylint: disable=too-many-branches, too-many-statements
         synced = other_side(changed)
@@ -707,7 +720,7 @@ class SyncManager(Runnable):
                             parent_ent[changed].changed = True
                             parent_ent[synced].exists = MISSING
                             assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                            log.debug("updated entry %s", parent)
+                            log.debug("updated entry as missing %s", parent)
         except ex.CloudFileExistsError:
             # there's a file or folder in the way, let that resolve if possible
             log.debug("can't create %s, try punting", translated_path)
@@ -940,7 +953,7 @@ class SyncManager(Runnable):
 
         # deltions don't always have paths
         if sync[changed].path:
-            translated_path = self.translate(synced, sync[changed].path) 
+            translated_path = self.translate(synced, sync[changed].path)
             if translated_path:
                 # find conflicting entries that will be  renamed away
                 ents = list(self.state.lookup_path(synced, translated_path))
@@ -987,6 +1000,9 @@ class SyncManager(Runnable):
         log.debug("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
+
+        # Mark us changed, so we will sync after kids, not before
+        sync[changed].changed = time.time()
 
         return PUNT
 
@@ -1146,10 +1162,7 @@ class SyncManager(Runnable):
 
         assert sync[synced].sync_hash or sync[synced].otype == DIRECTORY
 
-        sdir, sbase = self.providers[synced].split(translated_path)
-        cdir, cbase = self.providers[synced].split(sync[synced].sync_path)
-
-        if self.providers[synced].paths_match(sdir, cdir) and sbase == cbase:
+        if self.providers[synced].paths_match(translated_path, sync[synced].sync_path, for_display=True):
             log.debug("no rename %s %s", translated_path, sync[synced].sync_path)
             return FINISHED
 
@@ -1369,7 +1382,7 @@ class SyncManager(Runnable):
             return FINISHED
 
         if sync[synced].exists in (TRASHED, MISSING) or sync[synced].oid is None:
-            log.debug("dont upload new contents over an already deleted file, instead zero out trashed side " 
+            log.debug("dont upload new contents over an already deleted file, instead zero out trashed side "
                       "turning the 'upload' into a 'create'")
             # not an upload
             # todo: change to clear()
@@ -1399,6 +1412,7 @@ class SyncManager(Runnable):
 
         info = self.providers[changed].info_oid(sync[changed].oid)
         if not info:
+            log.debug("marking missing %s", debug_sig(sync[changed].oid))
             sync[changed].exists = MISSING
             return
 

@@ -1,16 +1,14 @@
-import io
-import sys
+# pylint: disable=missing-docstring
+
 import logging
 import json
-import os
-from typing import IO
 
 from unittest.mock import MagicMock
 
 import pytest
 
 from cloudsync.utils import NamedTemporaryFile
-from cloudsync.command.debug import do_debug
+from cloudsync.command.debug import DebugCmd
 
 from cloudsync import SqliteStorage, SyncState, LOCAL, FILE, IgnoreReason
 
@@ -44,7 +42,7 @@ def test_debug_mode(capsys, arg_json, arg_discard, arg_changed):
         args.changed = arg_changed
 
         res = ""
-        do_debug(args)
+        DebugCmd.run(args)
         res = capsys.readouterr().out
 
         assert "whatever" in res

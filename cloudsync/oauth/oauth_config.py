@@ -139,6 +139,7 @@ class OAuthConfig:
             self._session = OAuth2Session(client_id=self.app_id, scope=scope, redirect_uri=self.redirect_uri)
         extra["client_id"] = self.app_id
         extra["client_secret"] = self.app_secret
+        extra["timeout"] = 60
         if isinstance(token, OAuthToken):
             token = token.refresh_token
         self._token = OAuthToken(self._session.refresh_token(refresh_url, refresh_token=token, **extra))

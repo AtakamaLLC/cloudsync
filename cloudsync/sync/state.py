@@ -43,6 +43,7 @@ class Exists(Enum):
     EXISTS = "exists"
     TRASHED = "trashed"
     MISSING = "missing"
+    LIKELY_TRASHED = "likely-trashed"           # this oid was trashed, but then another event came in saying it wasn't
 
     def __bool__(self):
         """
@@ -54,6 +55,7 @@ class Exists(Enum):
 UNKNOWN = Exists.UNKNOWN
 EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
+LIKELY_TRASHED = Exists.LIKELY_TRASHED
 MISSING = Exists.MISSING
 
 
@@ -139,7 +141,7 @@ class SideState():
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.path != self.sync_path or
-               self.exists == TRASHED)
+               self.exists in (TRASHED, LIKELY_TRASHED))
 
     def clean_temp(self):
         if self.temp_file:
@@ -179,7 +181,7 @@ class Storage(ABC):
 
     @overload
     @abstractmethod
-    def read_all(self) -> Dict[str, Dict[Any, bytes]]: 
+    def read_all(self) -> Dict[str, Dict[Any, bytes]]:
         """yield all the serialized strings in a generator"""
         ...
 
@@ -371,7 +373,7 @@ class SyncEntry:
            self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
             return True
         return False
-    
+
     def is_pending_delete(self):
         pending_delete = False
         for a in (LOCAL, REMOTE):
@@ -555,6 +557,9 @@ class SyncEntry:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
 
+    def mark_dirty(self, side):
+        self[side]._last_gotten = 0
+
     def is_latest(self) -> bool:
         max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
         for side in (LOCAL, REMOTE):
@@ -608,7 +613,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
-                 shuffle: bool = False, 
+                 shuffle: bool = False,
                  prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
@@ -757,6 +762,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 sub[side].path = new_path
 
                 # now do the same thing for the sync_path
+                # do not change path! this can cause weird recursion, also it's wrong
+                # you're not changing what it *should be* (path)
+                # just what it is (sync_path)
                 if sub[side].sync_path:
                     sync_rel = provider.is_subpath(prior_path, sub[side].sync_path)
                     if sync_rel:
@@ -873,6 +881,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].hash = hash
 
         if exists is not None and exists is not ent[side].exists:
+            if ent[side].exists is TRASHED and exists:
+                # oid was deleted, and then re-created, this can only happen for oid-is-path providers
+                # we mark it as LIKELY_TRASHED, to protect against out-of-order events
+                # see: https://vidaid.atlassian.net/browse/VFM-7246
+                exists = LIKELY_TRASHED
             ent[side].exists = exists
 
         if changed:
@@ -976,7 +989,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return len(self.get_all())
 
     def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
-        log.log(TRACE, "lookup %s", debug_sig(oid))
+        """Called by the event manager when an event happens."""
+
+        log.log(TRACE, "lookup oid %s, sig %s", oid, debug_sig(oid))
         ent: SyncEntry = self.lookup_oid(side, oid)
 
         prior_ent = None
@@ -1017,6 +1032,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
+        if exists is None:
+            exists = Exists.UNKNOWN
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype)
 
     def change(self, age):
@@ -1183,6 +1200,23 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return defer_ent, defer, replace_ent, replace
 
+    def unconditionally_get_no_info(self, ent, i):
+        if ent[i].exists == UNKNOWN:
+            if not self.providers[i].oid_is_path:
+                # missing oid from oid provider == trashed
+                ent[i].exists = TRASHED
+
+        if ent[i].exists == LIKELY_TRASHED:
+            if self.providers[i].oid_is_path:
+                # note: oid_is_path providers are not supposed to do this
+                # it's possible we are wrong, and there's a trashed event arriving soon
+                log.info("possible out of order events received for trashed/exists: %s", ent)
+            ent[i].exists = TRASHED
+
+        if ent[i].exists != TRASHED:
+            # we haven't gotten a trashed event yet
+            ent[i].exists = MISSING
+
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
             if ent[i].exists not in (TRASHED, MISSING):
@@ -1192,9 +1226,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
-            if ent[i].exists != TRASHED:
-                # we never got a trash event
-                ent[i].exists = MISSING
+            self.unconditionally_get_no_info(ent, i)
             return
 
         ent[i].exists = EXISTS

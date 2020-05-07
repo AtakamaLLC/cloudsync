@@ -46,5 +46,5 @@ from .cs import *
 from .long_poll import *
 from .registry import *
 from .notification import *
-
+from .oauth import OAuthConfig
 from .providers import *
