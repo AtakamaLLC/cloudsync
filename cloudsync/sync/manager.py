@@ -708,6 +708,10 @@ class SyncManager(Runnable):
         return PUNT
 
     def handle_cloud_file_not_found_error(self, changed, sync, synced):
+        if sync.priority > 5:
+            log.exception("punted too many times on CloudFileNotFoundError, giving up")
+            return FINISHED
+
         # parent presumably exists
         parent = self.providers[changed].dirname(sync[changed].path)
         log.debug("make %s first before %s", parent, sync[changed].path)
@@ -717,7 +721,7 @@ class SyncManager(Runnable):
             if info:
                 self.state.update(changed, DIRECTORY, info.oid, path=parent)
             else:
-                log.info("no info and no dir, ignoring?")
+                log.info("no info and no dir, ignoring")
 
         else:
             parent_ent = ents[0]
@@ -749,7 +753,9 @@ class SyncManager(Runnable):
                         parent_ent[synced].exists = MISSING
                         assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
                         log.debug("updated entry as missing %s", parent)
-        return PUNT 
+
+        log.debug("CloudFileNotFoundError, punt")
+        return PUNT
 
     def handle_file_name_error(self, sync, synced, translated_path):
         # pretend this sync translated as "None"
@@ -1174,6 +1180,7 @@ class SyncManager(Runnable):
         try:
             new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
         except ex.CloudFileNotFoundError as e:
+            log.debug("ERROR: can't rename for now %s: %s", sync, repr(e))
             return self.handle_cloud_file_not_found_error(changed, sync, synced)
         except ex.CloudFileExistsError:
             log.debug("can't rename, file exists")

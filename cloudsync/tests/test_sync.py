@@ -1000,7 +1000,7 @@ def test_create_cloud_fnf_error(sync):
     local_dir_to_create = "/local/dir"
     remote_file = "/remote/dir/file"
     remote_dir_to_create = "/remote/dir/"
-    
+
     sync.providers[LOCAL].mkdir(local_parent)
     # Local provider is aware of dir_to_create but doesn't send event to cloudsync
     # This will cause the remote create to throw a CloudFileNotFoundError
@@ -1021,7 +1021,7 @@ def test_rename_cloud_fnf_error(sync):
     remote_file = "/remote/file"
     remote_file_moved = "/remote/dir/file"
     remote_dir_to_create = "/remote/dir/"
-    
+
     sync.providers[LOCAL].mkdir(local_parent)
     # Local provider is aware of dir_to_create but doesn't send event to cloudsync
     # This will cause the remote rename to throw a CloudFileNotFoundError
