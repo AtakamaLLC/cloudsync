@@ -994,16 +994,16 @@ def test_modif_rename(sync):
 
     assert sync.providers[REMOTE].info_path(remote_file2)
 
-def test_rename_no_parent(sync):
+def test_create_cloud_fnf_error(sync):
     local_parent = "/local"
-    local_file = "/local/file"
-    local_file_moved = "/local/dir/file"
-    remote_file = "/remote/file"
-    remote_file_moved = "/remote/dir/file"
+    local_file = "/local/dir/file"
     local_dir_to_create = "/local/dir"
+    remote_file = "/remote/dir/file"
     remote_dir_to_create = "/remote/dir/"
     
     sync.providers[LOCAL].mkdir(local_parent)
+    # Local provider is aware of dir_to_create but doesn't send event to cloudsync
+    # This will cause the remote create to throw a CloudFileNotFoundError
     with patch.object(sync.providers[LOCAL], "_register_event"):
         sync.providers[LOCAL].mkdir(local_dir_to_create)
     linfo1 = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
@@ -1011,13 +1011,32 @@ def test_rename_no_parent(sync):
     sync.create_event(LOCAL, FILE, path=local_file, oid=linfo1.oid, hash=linfo1.hash)
     sync.run_until_found((REMOTE, remote_file))
 
-    with patch.object(sync.providers[LOCAL], "_verify_parent_folder_exists"):
-        new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file_moved)
+    assert sync.providers[REMOTE].info_path(remote_dir_to_create)
+
+def test_rename_cloud_fnf_error(sync):
+    local_parent = "/local"
+    local_file = "/local/file"
+    local_file_moved = "/local/dir/file"
+    local_dir_to_create = "/local/dir"
+    remote_file = "/remote/file"
+    remote_file_moved = "/remote/dir/file"
+    remote_dir_to_create = "/remote/dir/"
+    
+    sync.providers[LOCAL].mkdir(local_parent)
+    # Local provider is aware of dir_to_create but doesn't send event to cloudsync
+    # This will cause the remote rename to throw a CloudFileNotFoundError
+    with patch.object(sync.providers[LOCAL], "_register_event"):
+        sync.providers[LOCAL].mkdir(local_dir_to_create)
+    linfo1 = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    sync.create_event(LOCAL, FILE, path=local_file, oid=linfo1.oid, hash=linfo1.hash)
+    sync.run_until_found((REMOTE, remote_file))
+
+    new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file_moved)
     sync.create_event(LOCAL, FILE, path=local_file_moved, oid=new_loid, hash=None, prior_oid=linfo1.oid)
     sync.run_until_found((REMOTE, remote_file_moved))
 
     assert sync.providers[REMOTE].info_path(remote_dir_to_create)
-
 
 def test_re_mkdir_synced(sync):
     local_parent = "/local"
