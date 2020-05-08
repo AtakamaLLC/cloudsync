@@ -994,14 +994,13 @@ def test_modif_rename(sync):
 
     assert sync.providers[REMOTE].info_path(remote_file2)
 
-@patch("cloudsync.Provider._verify_parent_folder_exists")
 def test_rename_no_parent(sync):
     local_parent = "/local"
     local_file = "/local/file"
     local_file_moved = "/local/dir/file"
     remote_file = "/remote/file"
     remote_file_moved = "/remote/dir/file"
-    local_dir_to_create = "/local/dir/"
+    local_dir_to_create = "/local/dir"
     remote_dir_to_create = "/remote/dir/"
     
     sync.providers[LOCAL].mkdir(local_parent)
@@ -1012,7 +1011,8 @@ def test_rename_no_parent(sync):
     sync.create_event(LOCAL, FILE, path=local_file, oid=linfo1.oid, hash=linfo1.hash)
     sync.run_until_found((REMOTE, remote_file))
 
-    new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file_moved)
+    with patch.object(sync.providers[LOCAL], "_verify_parent_folder_exists"):
+        new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file_moved)
     sync.create_event(LOCAL, FILE, path=local_file_moved, oid=new_loid, hash=None, prior_oid=linfo1.oid)
     sync.run_until_found((REMOTE, remote_file_moved))
 
