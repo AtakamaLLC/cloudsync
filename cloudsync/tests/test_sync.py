@@ -5,6 +5,7 @@ import time
 from io import BytesIO
 from typing import List
 from itertools import permutations
+from hashlib import md5
 
 from unittest.mock import patch, MagicMock
 
@@ -16,7 +17,7 @@ from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileN
         NotificationManager, NotificationType
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
-from cloudsync.types import OInfo, IgnoreReason
+from cloudsync.types import OInfo, IgnoreReason, OType
 from cloudsync.sync.state import TRASHED, SideState
 
 log = logging.getLogger(__name__)
@@ -1091,6 +1092,62 @@ def test_path_conflict_deleted_remotely(sync):
     sync.run_until_clean()  # with the bug, this will loop forever/timeout
     assert not sync.providers[LOCAL].info_oid(new_local_oid)
     assert not sync.providers[REMOTE].info_oid(new_remote_oid)
+
+def test_ilya(sync):
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_file = "/local/sub/file"
+
+    remote_sub = "/remote/sub"
+    remote_file = "/remote/sub/file"
+
+    lfil = None
+
+    # local provider hash func generates event
+    def custom_hash(a):
+        if lfil:
+            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        return md5(a).digest()
+    sync.providers[LOCAL]._hash_func = custom_hash
+
+    # create local folders + file
+    sync.providers[LOCAL].mkdir(local_parent)
+    lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    # sync local file to remote
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.run_until_clean(timeout=100)
+    log.info("TABLE 0:\n%s", sync.state.pretty_print())
+
+    # simulate remote folder + file deleted while offline -- mark remote trashed + notknown
+    rfil_oid = sync.providers[REMOTE].info_path(remote_file).oid
+    del sync.providers[REMOTE]._fs_by_oid[rfil_oid]
+    rsub_oid = sync.providers[REMOTE].info_path(remote_sub).oid
+    del sync.providers[REMOTE]._fs_by_oid[rsub_oid]
+
+    sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
+    sync_entry._priority = 1
+    sync_entry[REMOTE].exists = TRASHED
+    sync_entry[REMOTE]._otype = OType.NOTKNOWN
+    sync_entry[LOCAL].sync_path = "/local/sub\\file"
+
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync_entry[REMOTE].changed = sync_entry[LOCAL].changed + 10
+
+    #skips the "update kids" codepath on dir delete attempt
+    sync_entry = sync.state.lookup_oid(LOCAL, lsub_oid)
+    sync_entry._priority = 1
+
+    log.info("TABLE 1:\n%s", sync.state.pretty_print())
+
+    sync.create_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
+    log.info("TABLE 2:\n%s", sync.state.pretty_print())
+
+    sync.run_until_clean(timeout=100)
+    log.info("TABLE 3:\n%s", sync.state.pretty_print())
+
+    assert False
 
 
 def test_folder_del_loop(sync):
