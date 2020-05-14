@@ -303,6 +303,7 @@ class ProviderTestMixin(ProviderBase):
     # HELPERS
 
     def temp_name(self, name="tmp", *, folder=None):
+        # Temp name with some special characters
         fname = self.prov.join(folder or self.prov.sep, os.urandom(16).hex() + "(. # " + name)
         return fname
 
