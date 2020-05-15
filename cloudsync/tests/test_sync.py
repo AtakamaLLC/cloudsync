@@ -3,7 +3,7 @@
 import logging
 import time
 from io import BytesIO
-from typing import List
+from typing import List, Tuple, Union
 from itertools import permutations
 
 from unittest.mock import patch, MagicMock
@@ -91,7 +91,7 @@ def fixture_sync_ci(request, mock_provider_generator):
     yield from make_sync(request, mock_provider_generator, shuffle=True, case_sensitive=False)
 
 
-def setup_remote_local(sync, *names, content=b'hello'):
+def setup_remote_local(sync, *names, content: Union[bytes, Tuple] = b'hello'):
     local, remote = sync.providers
 
     remote_parent = "/remote"
@@ -1181,6 +1181,7 @@ def test_replace_rename(sync, order):
     bio = BytesIO()
     remote.download_path(ra.path, bio)
     assert bio.getvalue() == b'b'
+    # assert False
 
 
 def test_rename_same_name(sync_ci):
@@ -1213,6 +1214,34 @@ def test_rename_same_name(sync_ci):
         assert not m.called
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+
+def test_missing_not_finished(sync):
+    (local, remote) = sync.providers
+    (
+        (ld, rd),
+        (la, ra),
+    ) = setup_remote_local(sync, "d/", "d/a", content=(b'', b'a'))
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    local._delete(la.oid, without_event=True)
+    local.delete(ld.oid)
+
+    sync.create_event(LOCAL, FILE, path="/local/d/a", oid=la.oid, hash=la.hash, exists=True)
+    sync.create_event(LOCAL, FILE, path="/local/d", oid=ld.oid, hash=ld.hash, exists=False)
+    log.info("TABLE 1\n%s", sync.state.pretty_print())
+    sync.run(until=lambda: not sync.busy, timeout=3)
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+    assert local.exists_path('/local/d')
+    assert local.exists_path('/local/d/a')
+
+
+
+
+
+
+
 
 
 def test_delete_out_of_order_events(sync):

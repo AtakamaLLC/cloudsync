@@ -141,7 +141,8 @@ class SideState():
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.path != self.sync_path or
-               self.exists in (TRASHED, LIKELY_TRASHED))
+               self.exists in (TRASHED, LIKELY_TRASHED)  # do we want to add MISSING here?
+        )
 
     def clean_temp(self):
         if self.temp_file:
