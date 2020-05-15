@@ -1093,7 +1093,7 @@ def test_path_conflict_deleted_remotely(sync):
     assert not sync.providers[LOCAL].info_oid(new_local_oid)
     assert not sync.providers[REMOTE].info_oid(new_remote_oid)
 
-def test_ilya(sync):
+def test_contrived_sync_stuck_scenario(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
     local_file = "/local/sub/file"
@@ -1117,37 +1117,33 @@ def test_ilya(sync):
 
     # sync local file to remote
     sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
-    sync.run_until_clean(timeout=100)
+    sync.run_until_clean(timeout=1)
     log.info("TABLE 0:\n%s", sync.state.pretty_print())
 
-    # simulate remote folder + file deleted while offline -- mark remote trashed + notknown
+    # delete remotes
     rfil_oid = sync.providers[REMOTE].info_path(remote_file).oid
     del sync.providers[REMOTE]._fs_by_oid[rfil_oid]
     rsub_oid = sync.providers[REMOTE].info_path(remote_sub).oid
     del sync.providers[REMOTE]._fs_by_oid[rsub_oid]
 
+    # /sub/file entry
     sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
     sync_entry._priority = 1
     sync_entry[REMOTE].exists = TRASHED
-    sync_entry[REMOTE]._otype = OType.NOTKNOWN
     sync_entry[LOCAL].sync_path = "/local/sub\\file"
-
     sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
     sync_entry[REMOTE].changed = sync_entry[LOCAL].changed + 10
 
-    #skips the "update kids" codepath on dir delete attempt
+    # /sub entry
     sync_entry = sync.state.lookup_oid(LOCAL, lsub_oid)
     sync_entry._priority = 1
+    sync.create_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
 
     log.info("TABLE 1:\n%s", sync.state.pretty_print())
-
-    sync.create_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
+    sync.run_until_clean(timeout=1) # times out when we get into the rename codepath
     log.info("TABLE 2:\n%s", sync.state.pretty_print())
 
-    sync.run_until_clean(timeout=100)
-    log.info("TABLE 3:\n%s", sync.state.pretty_print())
-
-    assert False
+    #assert False
 
 
 def test_folder_del_loop(sync):
