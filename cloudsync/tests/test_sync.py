@@ -5,7 +5,6 @@ import time
 from io import BytesIO
 from typing import List
 from itertools import permutations
-from hashlib import md5
 
 from unittest.mock import patch, MagicMock
 
@@ -17,7 +16,7 @@ from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileN
         NotificationManager, NotificationType
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
-from cloudsync.types import OInfo, IgnoreReason, OType
+from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.sync.state import TRASHED, SideState
 
 log = logging.getLogger(__name__)
@@ -1123,22 +1122,15 @@ def test_equivalent_path_and_sync_path_do_nothing(sync):
         nothing_happened.assert_called()
 
 
-def test_contrived_sync_stuck_scenario(sync):
+def test_reprioritize_sync_trash_loop(sync):
+    # an admittedly contrived scenario that causes sync to loop forever
+
     local_parent = "/local"
     local_sub = "/local/sub"
     local_file = "/local/sub/file"
 
     remote_sub = "/remote/sub"
     remote_file = "/remote/sub/file"
-
-    lfil = None
-
-    # local provider hash func generates event
-    def custom_hash(a):
-        if lfil:
-            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
-        return md5(a).digest()
-    sync.providers[LOCAL]._hash_func = custom_hash
 
     # create local folders + file
     sync.providers[LOCAL].mkdir(local_parent)
@@ -1170,10 +1162,21 @@ def test_contrived_sync_stuck_scenario(sync):
     sync.create_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
 
     log.info("TABLE 1:\n%s", sync.state.pretty_print())
-    sync.run_until_clean(timeout=1) # times out when we get into the rename codepath
-    log.info("TABLE 2:\n%s", sync.state.pretty_print())
 
-    #assert False
+    # hash func generates LOCAL event
+    def hash_creates_event(self):
+        if self.type == self.DIR:
+            return None
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        return self._hash_func(self.contents)
+
+    with patch("cloudsync.tests.fixtures.mock_provider.MockFSObject.hash", new=hash_creates_event):
+        sync.run_until_clean(timeout=1) # times out if we get into the rename codepath
+
+    for entry in sync.state._changeset:
+        assert entry.is_discarded()
+
+    log.info("TABLE 2:\n%s", sync.state.pretty_print())
 
 
 def test_folder_del_loop(sync):
