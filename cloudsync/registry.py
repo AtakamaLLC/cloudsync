@@ -44,7 +44,7 @@ def get_provider(name: str):
 
 def create_provider(name: str, *args, **kws) -> Provider:
     """Construct a provider instance"""
-    return get_provider(name)(*args, *kws)
+    return get_provider(name)(*args, **kws)
 
 
 def known_providers() -> List[str]:
