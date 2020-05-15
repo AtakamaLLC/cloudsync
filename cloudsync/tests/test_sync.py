@@ -1173,8 +1173,8 @@ def test_reprioritize_sync_trash_loop(sync):
     with patch("cloudsync.tests.fixtures.mock_provider.MockFSObject.hash", new=hash_creates_event):
         sync.run_until_clean(timeout=1) # times out if we get into the rename codepath
 
-    for entry in sync.state._changeset:
-        assert entry.is_discarded()
+    # ensure all entries are discarded
+    assert sync.state.entry_count() == 0
 
     log.info("TABLE 2:\n%s", sync.state.pretty_print())
 
