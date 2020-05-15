@@ -1093,6 +1093,36 @@ def test_path_conflict_deleted_remotely(sync):
     assert not sync.providers[LOCAL].info_oid(new_local_oid)
     assert not sync.providers[REMOTE].info_oid(new_remote_oid)
 
+
+def test_equivalent_path_and_sync_path_do_nothing(sync):
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_file = "/local/sub/file"
+
+    # create local folders + file
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    # sync local file to remote
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.run_until_clean(timeout=1)
+    log.info("TABLE 0:\n%s", sync.state.pretty_print())
+    sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
+
+    with patch.object(sync, "nothing_happened") as nothing_happened:
+        sync_entry[LOCAL].sync_path = "/local/sub\\file"
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        sync.run_until_clean(timeout=1)
+        nothing_happened.assert_called()
+
+    with patch.object(sync, "nothing_happened") as nothing_happened:
+        sync_entry[LOCAL].sync_path = "\\local\\sub/file"
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        sync.run_until_clean(timeout=1)
+        nothing_happened.assert_called()
+
+
 def test_contrived_sync_stuck_scenario(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
