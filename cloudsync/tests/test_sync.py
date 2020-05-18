@@ -1093,6 +1093,92 @@ def test_path_conflict_deleted_remotely(sync):
     assert not sync.providers[REMOTE].info_oid(new_remote_oid)
 
 
+def test_equivalent_path_and_sync_path_do_nothing(sync):
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_file = "/local/sub/file"
+
+    # create local folders + file
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    # sync local file to remote
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.run_until_clean(timeout=1)
+    log.info("TABLE 0:\n%s", sync.state.pretty_print())
+    sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
+
+    with patch.object(sync, "nothing_happened") as nothing_happened:
+        sync_entry[LOCAL].sync_path = "/local/sub\\file"
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        sync.run_until_clean(timeout=1)
+        nothing_happened.assert_called()
+
+    with patch.object(sync, "nothing_happened") as nothing_happened:
+        sync_entry[LOCAL].sync_path = "\\local\\sub/file"
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        sync.run_until_clean(timeout=1)
+        nothing_happened.assert_called()
+
+
+def test_reprioritize_sync_trash_loop(sync):
+    # an admittedly contrived scenario that causes sync to loop forever
+
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_file = "/local/sub/file"
+
+    remote_sub = "/remote/sub"
+    remote_file = "/remote/sub/file"
+
+    # create local folders + file
+    sync.providers[LOCAL].mkdir(local_parent)
+    lsub_oid = sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+
+    # sync local file to remote
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.run_until_clean(timeout=1)
+    log.info("TABLE 0:\n%s", sync.state.pretty_print())
+
+    # delete remotes
+    rfil_oid = sync.providers[REMOTE].info_path(remote_file).oid
+    del sync.providers[REMOTE]._fs_by_oid[rfil_oid]
+    rsub_oid = sync.providers[REMOTE].info_path(remote_sub).oid
+    del sync.providers[REMOTE]._fs_by_oid[rsub_oid]
+
+    # /sub/file entry
+    sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
+    sync_entry._priority = 1
+    sync_entry[REMOTE].exists = TRASHED
+    sync_entry[LOCAL].sync_path = "/local/sub\\file"
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync_entry[REMOTE].changed = sync_entry[LOCAL].changed + 10
+
+    # /sub entry
+    sync_entry = sync.state.lookup_oid(LOCAL, lsub_oid)
+    sync_entry._priority = 1
+    sync.create_event(REMOTE, DIRECTORY, oid=rsub_oid, exists=TRASHED)
+
+    log.info("TABLE 1:\n%s", sync.state.pretty_print())
+
+    # hash func generates LOCAL event
+    def hash_creates_event(self):
+        if self.type == self.DIR:
+            return None
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        return self._hash_func(self.contents)
+
+    with patch("cloudsync.tests.fixtures.mock_provider.MockFSObject.hash", new=hash_creates_event):
+        sync.run_until_clean(timeout=1) # times out if we get into the rename codepath
+
+    # ensure all entries are discarded
+    assert sync.state.entry_count() == 0
+
+    log.info("TABLE 2:\n%s", sync.state.pretty_print())
+
+
 def test_folder_del_loop(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
