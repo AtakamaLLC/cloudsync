@@ -118,13 +118,11 @@ class OAuthConfig:
                     raise OAuthError(self.failure_info)
                 raise OAuthError("Oauth interrupted")
 
-            if "timeout" not in kwargs:
-                kwargs["timeout"] = 60
-
             self._token = OAuthToken(self._session.fetch_token(token_url,
                                      include_client_id=True,
                                      client_secret=self.app_secret,
                                      code=self.success_code,
+                                     timeout=60,
                                      **kwargs))
             self._token_changed()
             return self._token
