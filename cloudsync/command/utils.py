@@ -128,11 +128,18 @@ OAUTH_CONFIG = {
         "id": "918922786103-f842erh49vb7jecl9oo4b5g4gm1eka6v.apps.googleusercontent.com",
         "secret": "F2CdO5YTzX6TfKGlOMDbV1WS",
     },
-    "onedrive" : {
+    "onedrive": {
         "id": "797a365f-772d-421f-a3fe-7b55ab6defa4",
         "secret": "",
     }
 }
+
+
+def generic_oauth_config(provider_name):
+    oauth = OAUTH_CONFIG.get(provider_name, None)
+    if not oauth:
+        return None
+    return OAuthConfig(app_id=oauth['id'], app_secret=oauth['secret'])
 
 
 _config = None

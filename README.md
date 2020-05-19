@@ -29,24 +29,60 @@ cloudsync sync file:c:/users/me/documents gdrive:/mydocs
 
 # on linux you can pass -D for 'daemon mode', which will detatch and run in the background
 ```
-
-## Code Example
+## Example of a single cloud provider integration
 
 ```python
 import cloudsync
 
-# local file provide + gdrive provider
-local = cloudsync.get_provider("filesystem")
-remote = cloudsync.get_provider("gdrive")
+# Get a generic client_id and client_secret. Do not use this in production code.
+# For more information on getting your own client_id and client_secret, see README_OAUTH.md
+gdrive_oauth_config = cloudsync.command.utils.generic_oauth_config('gdrive')
 
-# oauth
-creds = remote.authorize()
+# get an instance of the gdrive provider class
+provider = cloudsync.create_provider('gdrive', oauth_config=gdrive_oauth_config)
 
-# connect with creds
+# Start the oauth process to login in to the cloud provider
+creds = provider.authenticate()
+
+# Use the credentials to connect to the cloud provider
+provider.connect(creds)
+
+# Perform cloud operations
+for entry in provider.listdir_path("/"):
+    print(entry.path)
+```
+## Example of a syncronization between two cloud providers
+
+```python
+import cloudsync
+import tempfile
+import os
+
+# a little setup
+local_root = tempfile.mkdtemp()
+remote_root = "/cloudsync_test"
+provider = 'drive'
+print("syncronizing between %s locally and %s on %s" % (local_root, remote_root, provider))
+
+# Get a generic client_id and client_secret. Do not use this in production code.
+# For more information on getting your own client_id and client_secret, see README_OAUTH.md
+gdrive_oauth_config = cloudsync.command.utils.generic_oauth_config('gdrive')
+
+# local file provider + gdrive provider
+local = cloudsync.create_provider("filesystem")
+remote = cloudsync.create_provider("gdrive", oauth_config=gdrive_oauth_config)
+
+# Authenticate with the remote provider using oauth
+creds = remote.authenticate()
+
+# connect with the credentials acquired by authenticating with the provider
 remote.connect(creds)
 
-# root for sync
-roots = ("/home/me/gd", "/")
+# create the folder on google drive to syncronize locally
+remote.mkdir(remote_root)
+
+# which folders to syncronize -- choose these folders carefully when running this sample!
+roots = (local_root, remote_root)
 
 # new sync engine
 sync = cloudsync.CloudSync((local, remote), roots)
@@ -54,18 +90,24 @@ sync = cloudsync.CloudSync((local, remote), roots)
 sync.start()
 
 # should sync this file as soon as it's noticed by watchdog
-with open("/home/me/gd/hello.txt", "w") as f:
+local_hello_path = local.join(local_root, "hello.txt")
+with open(local_hello_path, "w") as f:
     f.write("hello")
 
-# wait for sync
-while not remote.exists_path("/home/alice/hello.txt"):
+# note remote.join, NOT local.join, or os.path.join... Gets the path separator correct
+remote_hello_path = remote.join(remote_root, "hello.txt")
+
+# wait for sync to upload the new file to the cloud
+while not remote.exists_path(remote_hello_path):
     time.sleep(1)
 
 # rename in the cloud
-remote.rename("/hello.txt", "/goodbye.txt")
+local_goodbye_path = local.join(local_root, "goodbye.txt")
+remote_goodbye_path = remote.join(remote_root, "goodbye.txt")
+remote.rename(remote_hello_path, remote_goodbye_path)
 
-# wait for sync
-while not local.exists_path("/home/alice/goodbye.txt"):
+# wait for sync to cause the file to get renamed locally
+while not local.exists_path(local_goodbye_path):
     time.sleep(1)
 
 print("synced")
