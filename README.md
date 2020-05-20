@@ -102,7 +102,6 @@ remote_hello_path = remote.join(remote_root, "hello.txt")
 
 # wait for sync to upload the new file to the cloud
 while not remote.exists_path(remote_hello_path):
-    print("waiting for %s to sync up to %s on %s" % (local_hello_path, remote_hello_path, provider_name))
     time.sleep(1)
 
 remote_hello_info = remote.info_path(remote_hello_path)
@@ -115,7 +114,6 @@ remote.rename(remote_hello_info.oid, remote_goodbye_path)  # rename refers to th
 
 # wait for sync to cause the file to get renamed locally
 while not local.exists_path(local_goodbye_path):
-    print("waiting for %s to rename to %s locally" % (local_hello_path, local_goodbye_path))
     time.sleep(1)
 
 print("synced")
