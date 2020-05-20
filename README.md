@@ -36,10 +36,10 @@ import cloudsync
 
 # Get a generic client_id and client_secret. Do not use this in production code.
 # For more information on getting your own client_id and client_secret, see README_OAUTH.md
-gdrive_oauth_config = cloudsync.command.utils.generic_oauth_config('gdrive')
+oauth_config = cloudsync.command.utils.generic_oauth_config('gdrive')
 
 # get an instance of the gdrive provider class
-provider = cloudsync.create_provider('gdrive', oauth_config=gdrive_oauth_config)
+provider = cloudsync.create_provider('gdrive', oauth_config=oauth_config)
 
 # Start the oauth process to login in to the cloud provider
 creds = provider.authenticate()
@@ -56,59 +56,70 @@ for entry in provider.listdir_path("/"):
 ```python
 import cloudsync
 import tempfile
-import os
+import time
 
 # a little setup
 local_root = tempfile.mkdtemp()
-remote_root = "/cloudsync_test"
-provider = 'drive'
-print("syncronizing between %s locally and %s on %s" % (local_root, remote_root, provider))
+remote_root = "/cloudsync_test/" + time.strftime("%Y%m%d%H%M")
+provider_name = 'gdrive'
+print("syncronizing between %s locally and %s on %s" % (local_root, remote_root, provider_name))
 
 # Get a generic client_id and client_secret. Do not use this in production code.
 # For more information on getting your own client_id and client_secret, see README_OAUTH.md
-gdrive_oauth_config = cloudsync.command.utils.generic_oauth_config('gdrive')
+cloud_oauth_config = cloudsync.command.utils.generic_oauth_config(provider_name)
 
-# local file provider + gdrive provider
+# get instances of the local file provider and cloud provider from the provider factory
 local = cloudsync.create_provider("filesystem")
-remote = cloudsync.create_provider("gdrive", oauth_config=gdrive_oauth_config)
+remote = cloudsync.create_provider(provider_name, oauth_config=cloud_oauth_config)
 
-# Authenticate with the remote provider using oauth
+# Authenticate with the remote provider using OAuth
 creds = remote.authenticate()
 
-# connect with the credentials acquired by authenticating with the provider
+# Connect with the credentials acquired by authenticating with the provider
+local.namespace = local_root  # filesystem provider wants to know the root namespace before connecting
+local.connect(None)
 remote.connect(creds)
 
-# create the folder on google drive to syncronize locally
-remote.mkdir(remote_root)
+# Create the folder on google drive to syncronize locally
+print("Creating folder %s on %s" % (remote_root, provider_name))
+remote.mkdirs(remote_root)  # provider.mkdirs() will automatically create any necessary parent folders
 
-# which folders to syncronize -- choose these folders carefully when running this sample!
-roots = (local_root, remote_root)
+# Specify which folders to syncronize
+sync_roots = (local_root, remote_root)
 
-# new sync engine
-sync = cloudsync.CloudSync((local, remote), roots)
-
+# instantiate a new sync engine and start syncing
+sync = cloudsync.CloudSync((local, remote), roots=sync_roots)
 sync.start()
 
 # should sync this file as soon as it's noticed by watchdog
 local_hello_path = local.join(local_root, "hello.txt")
+print("Creating local file %s" % local_hello_path)
 with open(local_hello_path, "w") as f:
     f.write("hello")
 
-# note remote.join, NOT local.join, or os.path.join... Gets the path separator correct
+# note remote.join, NOT os.path.join... Gets the path separator correct
 remote_hello_path = remote.join(remote_root, "hello.txt")
 
 # wait for sync to upload the new file to the cloud
 while not remote.exists_path(remote_hello_path):
+    print("waiting for %s to sync up to %s on %s" % (local_hello_path, remote_hello_path, provider_name))
     time.sleep(1)
+
+remote_hello_info = remote.info_path(remote_hello_path)
 
 # rename in the cloud
 local_goodbye_path = local.join(local_root, "goodbye.txt")
 remote_goodbye_path = remote.join(remote_root, "goodbye.txt")
-remote.rename(remote_hello_path, remote_goodbye_path)
+print("renaming %s to %s on %s" % (remote_hello_path, remote_goodbye_path, provider_name))
+remote.rename(remote_hello_info.oid, remote_goodbye_path)  # rename refers to the file to rename by oid
 
 # wait for sync to cause the file to get renamed locally
 while not local.exists_path(local_goodbye_path):
+    print("waiting for %s to rename to %s locally" % (local_hello_path, local_goodbye_path))
     time.sleep(1)
 
 print("synced")
+
+local.disconnect()
+remote.disconnect()
 ```
