@@ -118,6 +118,7 @@ while not local.exists_path(local_goodbye_path):
 
 print("synced")
 
+sync.stop(forever=True)
 local.disconnect()
 remote.disconnect()
 ```
