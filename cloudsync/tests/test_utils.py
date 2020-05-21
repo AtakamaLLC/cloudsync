@@ -4,6 +4,7 @@ import time
 import logging
 
 from cloudsync.utils import debug_args, memoize, NamedTemporaryFile, debug_sig
+from cloudsync import OAUTH_CONFIG, generic_oauth_config
 from .fixtures import RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -162,6 +163,7 @@ def test_debug_sig():
     test_sig = debug_sig("Hello, world!")
     assert test_sig == '9YM'  # debug_sig should be deterministic across runs
 
+
 def test_wait_until():
     def found_callable_too_long():
         time.sleep(0.3)
@@ -169,3 +171,10 @@ def test_wait_until():
 
     with pytest.raises(TimeoutError):
         RunUntilHelper().wait_until(found=found_callable_too_long, timeout=0.1)
+
+
+def test_generic_oauth_config():
+    provider = list(OAUTH_CONFIG.keys())[0]
+    test_config = generic_oauth_config(provider)
+    assert test_config.app_id == OAUTH_CONFIG[provider]['id']
+    assert test_config.app_secret == OAUTH_CONFIG[provider]['secret']

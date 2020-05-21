@@ -190,8 +190,14 @@ class CliOAuthConfig(OAuthConfig):
         finally:
             os.umask(was)
 
+
 def generic_oauth_config(name):
-    return get_oauth_config(None, name, None)
+    class FakeArgs:
+        config = ''
+
+    args = FakeArgs()
+    return get_oauth_config(args, name, None)
+
 
 def get_oauth_config(args, name, save_uri):
     """Reads oauth config from the global config singleton, or uses the defaults"""
