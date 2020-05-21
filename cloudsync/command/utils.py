@@ -192,17 +192,16 @@ class CliOAuthConfig(OAuthConfig):
 
 
 def generic_oauth_config(name):
-    class FakeArgs:
-        config = ''
-
-    args = FakeArgs()
-    return get_oauth_config(args, name, None)
+    return get_oauth_config(None, name, None)
 
 
 def get_oauth_config(args, name, save_uri):
     """Reads oauth config from the global config singleton, or uses the defaults"""
-    top = config(args).get("oauth", {})
-    oauth = top.get(name, {})
+    if args:
+        top = config(args).get("oauth", {})
+        oauth = top.get(name, {})
+    else:
+        oauth = {}
     default = OAUTH_CONFIG.get(name, {})
 
     for k in ["id", "secret", "host", "ports"]:
