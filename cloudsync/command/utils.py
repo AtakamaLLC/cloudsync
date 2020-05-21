@@ -128,12 +128,11 @@ OAUTH_CONFIG = {
         "id": "918922786103-f842erh49vb7jecl9oo4b5g4gm1eka6v.apps.googleusercontent.com",
         "secret": "F2CdO5YTzX6TfKGlOMDbV1WS",
     },
-    "onedrive" : {
+    "onedrive": {
         "id": "797a365f-772d-421f-a3fe-7b55ab6defa4",
         "secret": "",
     }
 }
-
 
 _config = None
 
@@ -191,10 +190,18 @@ class CliOAuthConfig(OAuthConfig):
         finally:
             os.umask(was)
 
+
+def generic_oauth_config(name):
+    return get_oauth_config(None, name, None)
+
+
 def get_oauth_config(args, name, save_uri):
     """Reads oauth config from the global config singleton, or uses the defaults"""
-    top = config(args).get("oauth", {})
-    oauth = top.get(name, {})
+    if args:
+        top = config(args).get("oauth", {})
+        oauth = top.get(name, {})
+    else:
+        oauth = {}
     default = OAUTH_CONFIG.get(name, {})
 
     for k in ["id", "secret", "host", "ports"]:
