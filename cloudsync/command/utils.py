@@ -134,14 +134,6 @@ OAUTH_CONFIG = {
     }
 }
 
-
-def generic_oauth_config(provider_name):
-    oauth = OAUTH_CONFIG.get(provider_name, None)
-    if not oauth:
-        return None
-    return OAuthConfig(app_id=oauth['id'], app_secret=oauth['secret'])
-
-
 _config = None
 
 
@@ -197,6 +189,9 @@ class CliOAuthConfig(OAuthConfig):
                 json.dump(self.creds, f)
         finally:
             os.umask(was)
+
+def generic_oauth_config(name):
+    return get_oauth_config(None, name, None)
 
 def get_oauth_config(args, name, save_uri):
     """Reads oauth config from the global config singleton, or uses the defaults"""
