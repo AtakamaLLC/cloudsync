@@ -31,14 +31,24 @@ class Event:
     new_cursor: Optional[str] = None
 
 
+def create_event_manager(provider: "Provider", state: "SyncState", side: int,           # pylint: disable=too-many-arguments
+                 notification_manager: 'Optional[NotificationManager]' = None,
+                 root_path: Optional[str] = None, reauth: Callable[[], None] = None,
+                 root_oid: Optional[str] = None):
+    if provider.supports_event_filter:
+        return FilteredEventManager(provider, state, side, notification_manager, root_path, reauth, root_oid)
+    else:
+        return EventManager(provider, state, side, notification_manager, root_path, reauth, root_oid)
+
+
 @strict             # pylint: disable=too-many-instance-attributes
 class EventManager(Runnable):
     """Runnable that is owned by CloudSync, reading events and updating the SyncState."""
     def __init__(self, provider: "Provider", state: "SyncState", side: int,              # pylint: disable=too-many-arguments
                  notification_manager: 'Optional[NotificationManager]' = None,
-                 walk_root: Optional[str] = None, reauth: Callable[[], None] = None,
-                 walk_oid: Optional[str] = None):
-        log.debug("provider %s, root %s", provider.name, walk_root)
+                 root_path: Optional[str] = None, reauth: Callable[[], None] = None,
+                 root_oid: Optional[str] = None):
+        log.debug("provider %s, root %s", provider.name, root_path)
         self.provider = provider
 
         if not self.provider.connection_id:
@@ -55,12 +65,12 @@ class EventManager(Runnable):
 
         self.cursor = self.state.storage_get_data(self._cursor_tag)
 
-        self.walk_root = walk_root
-        self.walk_oid = walk_oid
+        self.root_path = root_path
+        self.root_oid = root_oid
         self.need_walk: bool = False
         self._walk_tag: Optional[str] = None
-        if self.walk_root or self.walk_oid:
-            self._walk_tag = self.label + "_walked_" + (self.walk_root or self.walk_oid)
+        if self.root_path or self.root_oid:
+            self._walk_tag = self.label + "_walked_" + (self.root_path or self.root_oid)
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
                 self.need_walk = True
 
@@ -125,16 +135,15 @@ class EventManager(Runnable):
 
     def _do_walk_if_needed(self):
         if self.need_walk:
-            # walk_oid or walk_root was set at class startup, so we walk
-            log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
-                      self.provider.name, self.walk_root, self.walk_oid)
+            log.debug("walking all %s/%s-%s files as events",
+                      self.provider.name, self.root_path, self.root_oid)
             self._queue = []
             try:
-                if self.walk_root:
-                    for event in self.provider.walk(self.walk_root):
+                if self.root_path:
+                    for event in self.provider.walk(self.root_path):
                         self._process_event(event, from_walk=True)
                 else:
-                    for event in self.provider.walk_oid(self.walk_oid):
+                    for event in self.provider.walk_oid(self.root_oid):
                         self._process_event(event, from_walk=True)
             except CloudFileNotFoundError as e:
                 log.debug('File to walk not found %s', e)
@@ -159,6 +168,13 @@ class EventManager(Runnable):
                     raise
             self._first_do = False
 
+    def _process_provider_events(self):
+        for event in self.events:
+            if not event:
+                log.error("%s got BAD event %s", self.label, event)
+                continue
+            self._process_event(event)
+
     def _do_unsafe(self):
         self._do_first_init()
         self._do_walk_if_needed()
@@ -171,11 +187,7 @@ class EventManager(Runnable):
             self._queue = []
 
         # regular events
-        for event in self.events:
-            if not event:
-                log.error("%s got BAD event %s", self.label, event)
-                continue
-            self._process_event(event)
+        self._process_provider_events()
 
         self._save_current_cursor()
 
@@ -271,3 +283,57 @@ class EventManager(Runnable):
         if forever:
             self.events.shutdown = True
         super().stop(forever=forever)
+
+
+class ProviderGuard(set):
+    def add(self, provider):
+        if provider in self:
+            raise ValueError("Provider instances should not be re-used in multiple syncs.  Create a new provider instance.")
+        super().add(provider)
+
+
+_provider_guard = ProviderGuard()
+
+
+def empty_generator():
+    yield from ()
+
+
+@strict
+class FilteredEventManager(EventManager):
+    """Runnable that is owned by CloudSync, reads filtered events and updates SyncState."""
+    def __init__(self, provider: "Provider", state: "SyncState", side: int,              # pylint: disable=too-many-arguments
+                 notification_manager: 'Optional[NotificationManager]' = None,
+                 root_path: Optional[str] = None, reauth: Callable[[], None] = None,
+                 root_oid: Optional[str] = None):
+        _provider_guard.add(provider)
+        super().__init__(provider, state, side, notification_manager, root_path, reauth, root_oid)
+        #self.events = None
+        self.events = Muxer(empty_generator, restart=True)
+
+    @property
+    def busy(self):
+        self.do()
+        return not self.need_walk
+
+    def _do_first_init(self):
+        if self.root_oid is None:
+            info = self.provider.info_path(self.root_path)
+            if info:
+                self.root_oid = info.oid
+            else:
+                raise CloudFileNotFoundError("Root path %s not found" % self.root_path)
+        super()._do_first_init()
+
+    def _process_provider_events(self):
+        for event in self.provider.events(oid=self.root_oid):
+            if not event:
+                log.error("%s got BAD event %s", self.label, event)
+                continue
+            self._process_event(event)
+
+    def _drain(self):
+        # for tests, delete events
+        self._queue = []
+        for _ in self.provider.events(oid=self.root_oid):
+            pass
