@@ -1,3 +1,0 @@
-[submodule "cloudsync\\providers\\onedrive"]
-	path = cloudsync\\providers\\onedrive
-	url = https://github.com/AtakamaLLC/cloudsync-onedrive.git

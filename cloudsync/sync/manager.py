@@ -374,7 +374,8 @@ class SyncManager(Runnable):
 
             response = self.embrace_change(sync, side, other_side(side))
             if response == FINISHED:
-                something_got_done = True
+                if sync[side].changed:
+                    something_got_done = True
                 self.finished(side, sync)
             elif response == PUNT:
                 sync.punt()
