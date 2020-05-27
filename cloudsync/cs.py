@@ -7,7 +7,7 @@ from pystrict import strict
 
 from .sync import SyncManager, SyncState, Storage
 from .runnable import Runnable
-from .event import EventManager, create_event_manager
+from .event import EventManager
 from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
@@ -82,10 +82,10 @@ class CloudSync(Runnable):
         self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            create_event_manager(smgr.providers[0], state, 0, self.nmgr, root_path=self.__roots[0],
-                                 reauth=lambda: self.authenticate(0), root_oid=self.__root_oids[0]),
-            create_event_manager(smgr.providers[1], state, 1, self.nmgr, root_path=self.__roots[1],
-                                 reauth=lambda: self.authenticate(1), root_oid=self.__root_oids[1])
+            EventManager(smgr.providers[0], state, 0, self.nmgr, root_path=self.__roots[0],
+                         reauth=lambda: self.authenticate(0), root_oid=self.__root_oids[0]),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, root_path=self.__roots[1],
+                         reauth=lambda: self.authenticate(1), root_oid=self.__root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -96,7 +96,7 @@ class CloudSync(Runnable):
 
     def set_root_oid(self, side, val):
         self.smgr.set_root_oid(side, val)
-        self.emgrs[side].walk_oid = val
+        self.emgrs[side].set_root_oid(val)
 
     def forget(self):
         """

@@ -45,9 +45,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     oid_is_path: bool = False                 ; """Objects stored in cloud are only referenced by path"""
     case_sensitive: bool = True               ; """Provider is case sensitive"""
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
-    supports_event_filter: bool = False       ; """Support for provider-side event filtering by oid and/or path """
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
     test_root: str = '/'                      ; """Root folder to use during provider tests"""
+    _root_path: str = None                    ; """Root path to use for syncing, event filtering, etc."""
+    _root_oid: str = None                     ; """Root oid to use for syncing, event filtering, etc."""
     _namespace: str = None                    ; """current namespace, if needed """
     _namespace_id: str = None                 ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
@@ -120,6 +121,21 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     def set_creds(self, creds):
         """Set credentials without connecting."""
         self._creds = creds
+
+    def set_root(self, root_path, root_oid):
+        """Set sync root path and oid. Once set, these values cannot be changed."""
+        if self._root_path or self._root_oid:
+            raise ValueError("Sync root already set and cannot be changed")
+        if not root_path and not root_oid:
+            return (None, None)
+
+        info = self.info_path(root_path) if root_path else self.info_oid(root_oid)
+        if not info:
+            raise CloudFileNotFoundError(f"Failed to get info for root oid/path: {root_oid} / {root_path}")
+
+        self._root_path = info.path
+        self._root_oid = info.oid
+        return (self._root_path, self._root_oid)
 
     def reconnect(self):
         """Reconnect to provider, using existing creds.

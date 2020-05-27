@@ -6,7 +6,6 @@ from pystrict import strict
 
 from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
 from .runnable import Runnable
-from .muxer import Muxer
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
 
@@ -31,14 +30,14 @@ class Event:
     new_cursor: Optional[str] = None
 
 
-def create_event_manager(provider: "Provider", state: "SyncState", side: int,           # pylint: disable=too-many-arguments
-                 notification_manager: 'Optional[NotificationManager]' = None,
-                 root_path: Optional[str] = None, reauth: Callable[[], None] = None,
-                 root_oid: Optional[str] = None):
-    if provider.supports_event_filter:
-        return FilteredEventManager(provider, state, side, notification_manager, root_path, reauth, root_oid)
-    else:
-        return EventManager(provider, state, side, notification_manager, root_path, reauth, root_oid)
+class ProviderGuard(set):
+    def add(self, provider):
+        if provider in self:
+            raise ValueError("Provider instances should not be re-used in multiple syncs.  Create a new provider instance.")
+        super().add(provider)
+
+
+_provider_guard = ProviderGuard()
 
 
 @strict             # pylint: disable=too-many-instance-attributes
@@ -49,38 +48,30 @@ class EventManager(Runnable):
                  root_path: Optional[str] = None, reauth: Callable[[], None] = None,
                  root_oid: Optional[str] = None):
         log.debug("provider %s, root %s", provider.name, root_path)
-        self.provider = provider
-
-        if not self.provider.connection_id:
+        if not provider.connection_id:
             raise ValueError("provider must be connected when starting the event manager")
 
+        _provider_guard.add(provider)
+        self.provider = provider
+        (self.root_path, self.root_oid) = provider.set_root(root_path, root_oid)
         self.label: str = f"{self.provider.name}:{self.provider.connection_id}:{self.provider.namespace_id}"
-        self.events = Muxer(provider.events, restart=True)
         self.state: 'SyncState' = state
         self.side: int = side
         self._cursor_tag: str = self.label + "_cursor"
         self.__nmgr = notification_manager
         self._queue: 'List[Tuple[Event, bool]]' = []
         self.need_auth = False
-
+        self.reauthenticate = reauth or self.__reauth
         self.cursor = self.state.storage_get_data(self._cursor_tag)
-
-        self.root_path = root_path
-        self.root_oid = root_oid
-        self.need_walk: bool = False
-        self._walk_tag: Optional[str] = None
-        if self.root_path or self.root_oid:
-            self._walk_tag = self.label + "_walked_" + (self.root_path or self.root_oid)
-            if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
-                self.need_walk = True
-
+        self._walk_tag: str = self.label + "_walked_" + (self.root_path or self.root_oid)
+        self.need_walk: bool = self.cursor is None or self.state.storage_get_data(self._walk_tag) is None
         self._first_do = True
-
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 10
         self.mult_backoff = 2
 
-        self.reauthenticate = reauth or self.__reauth
+    def set_root_oid(self, root_oid):
+        (self.root_path, self.root_oid) = self.provider.set_root(None, root_oid)
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
@@ -96,10 +87,10 @@ class EventManager(Runnable):
 
     @property
     def busy(self):
-        return not self.events.empty or self.need_walk
+        self.do()
+        return not self.need_walk
 
     def do(self):
-        self.events.shutdown = False
         try:
             if not self.provider.connected:
                 if self.need_auth:
@@ -168,13 +159,6 @@ class EventManager(Runnable):
                     raise
             self._first_do = False
 
-    def _process_provider_events(self):
-        for event in self.events:
-            if not event:
-                log.error("%s got BAD event %s", self.label, event)
-                continue
-            self._process_event(event)
-
     def _do_unsafe(self):
         self._do_first_init()
         self._do_walk_if_needed()
@@ -187,7 +171,11 @@ class EventManager(Runnable):
             self._queue = []
 
         # regular events
-        self._process_provider_events()
+        for event in self.provider.events():
+            if not event:
+                log.error("%s got BAD event %s", self.label, event)
+                continue
+            self._process_event(event)
 
         self._save_current_cursor()
 
@@ -201,7 +189,7 @@ class EventManager(Runnable):
     def _drain(self):
         # for tests, delete events
         self._queue = []
-        for _ in self.events:
+        for _ in self.provider.events():
             pass
 
     def queue(self, event: Event, from_walk: bool = False):
@@ -280,60 +268,4 @@ class EventManager(Runnable):
                 event.hash = info.hash
 
     def stop(self, forever=True):
-        if forever:
-            self.events.shutdown = True
         super().stop(forever=forever)
-
-
-class ProviderGuard(set):
-    def add(self, provider):
-        if provider in self:
-            raise ValueError("Provider instances should not be re-used in multiple syncs.  Create a new provider instance.")
-        super().add(provider)
-
-
-_provider_guard = ProviderGuard()
-
-
-def empty_generator():
-    yield from ()
-
-
-@strict
-class FilteredEventManager(EventManager):
-    """Runnable that is owned by CloudSync, reads filtered events and updates SyncState."""
-    def __init__(self, provider: "Provider", state: "SyncState", side: int,              # pylint: disable=too-many-arguments
-                 notification_manager: 'Optional[NotificationManager]' = None,
-                 root_path: Optional[str] = None, reauth: Callable[[], None] = None,
-                 root_oid: Optional[str] = None):
-        _provider_guard.add(provider)
-        super().__init__(provider, state, side, notification_manager, root_path, reauth, root_oid)
-        #self.events = None
-        self.events = Muxer(empty_generator, restart=True)
-
-    @property
-    def busy(self):
-        self.do()
-        return not self.need_walk
-
-    def _do_first_init(self):
-        if self.root_oid is None:
-            info = self.provider.info_path(self.root_path)
-            if info:
-                self.root_oid = info.oid
-            else:
-                raise CloudFileNotFoundError("Root path %s not found" % self.root_path)
-        super()._do_first_init()
-
-    def _process_provider_events(self):
-        for event in self.provider.events(oid=self.root_oid):
-            if not event:
-                log.error("%s got BAD event %s", self.label, event)
-                continue
-            self._process_event(event)
-
-    def _drain(self):
-        # for tests, delete events
-        self._queue = []
-        for _ in self.provider.events(oid=self.root_oid):
-            pass
