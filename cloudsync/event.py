@@ -51,6 +51,8 @@ class EventManager(Runnable):
         if not provider.connection_id:
             raise ValueError("provider must be connected when starting the event manager")
 
+        # TODO: raise error if root oid and path are missing, or default to "/"
+
         _provider_guard.add(provider)
         self.provider = provider
         (self.root_path, self.root_oid) = provider.set_root(root_path, root_oid)
