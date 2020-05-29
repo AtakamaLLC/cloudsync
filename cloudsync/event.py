@@ -73,7 +73,7 @@ class EventManager(Runnable):
         self.mult_backoff = 2
 
     def set_root_oid(self, root_oid):
-        (self.root_path, self.root_oid) = self.provider.set_root(None, root_oid)
+        self.root_oid = root_oid
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
@@ -90,7 +90,7 @@ class EventManager(Runnable):
     @property
     def busy(self):
         self.do()
-        return not self.need_walk
+        return self.need_walk
 
     def do(self):
         try:

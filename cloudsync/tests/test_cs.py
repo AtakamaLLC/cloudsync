@@ -99,6 +99,7 @@ def fixture_multi_local_cs(mock_provider_generator):
     yield from multi_local_cs_generator(2, mock_provider_generator)
 
 
+# TODO: provider reuse
 # multi remote test has one local provider with two folders, and each of those folders
 # syncs up with a folder on one of two remote providers.
 @pytest.fixture(name="multi_remote_cs")
@@ -120,7 +121,6 @@ def fixture_multi_remote_cs(mock_provider_generator):
 
     cs1.done()
     cs2.done()
-
 
 def test_sync_rename_away(multi_remote_cs):
     timeout = 2
@@ -1200,7 +1200,7 @@ def test_cs_folder_conflicts_file(cs, use_prio):
 def storage_fixture(request):
     return request.param
 
-
+# TODO: provider reuse
 def test_storage(storage):
     storage_class = storage[0]
     storage_mechanism = storage[1]
@@ -1658,16 +1658,15 @@ def test_cursor(cs_storage):
     p2 = cs.providers[REMOTE]
     p1.current_cursor = None
     p2.current_cursor = None
-    roots = cs.roots
 
-    cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
-    cs2.run_until_found(
+    cs.forget()
+    cs.run_until_found(
         (LOCAL, local_path2),
         timeout=2)
-    cs2.run_until_found(
+    cs.run_until_found(
         (REMOTE, remote_path2),
         timeout=2)
-    cs2.done()
+    cs.done()
 
 @pytest.mark.repeat(3)
 def test_cs_rename_up(cs):
@@ -2443,7 +2442,8 @@ def test_walk_carefully1(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
-    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[0].forget()
+    cs.emgrs[1].forget()
     cs.emgrs[LOCAL].cursor = None
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
@@ -2469,11 +2469,11 @@ def test_walk_carefully2(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
-    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[0].forget()
+    cs.emgrs[1].forget()
     cs.emgrs[LOCAL].cursor = None
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
-
     cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
 
     b = BytesIO()
@@ -2489,7 +2489,8 @@ def test_walk_carefully3(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
-    cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
+    cs.emgrs[0].forget()
+    cs.emgrs[1].forget()
     cs.emgrs[LOCAL].cursor = None
 
     log.info("TABLE 2\n%s", cs.state.pretty_print())
