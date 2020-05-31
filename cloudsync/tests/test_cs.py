@@ -1200,13 +1200,10 @@ def test_cs_folder_conflicts_file(cs, use_prio):
 def storage_fixture(request):
     return request.param
 
-# TODO: provider reuse
+
 def test_storage(storage):
     storage_class = storage[0]
     storage_mechanism = storage[1]
-
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
 
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
@@ -1221,12 +1218,13 @@ def test_storage(storage):
     log.debug("cursor=%s", old_cursor)
 
     test_cs_basic(cs1)  # do some syncing, to get some entries into the state table
+    state1 = cs1.state
 
     storage2 = storage_class(storage_mechanism)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
+    state2 = SyncState((p1, p2), storage2, tag=cs1.storage_label())
 
-    log.debug(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
-    log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
+    log.debug(f"state1 = {state1.entry_count()}\n{state2.pretty_print()}")
+    log.debug(f"state2 = {state2.entry_count()}\n{state2.pretty_print()}")
 
     def not_dirty(s: SyncState):
         return not s._dirtyset
@@ -1244,10 +1242,10 @@ def test_storage(storage):
                 ret.append(e1)
         return ret
 
-    not_dirty(cs1.state)
+    not_dirty(state1)
 
-    missing1 = compare_states(cs1.state, cs2.state)
-    missing2 = compare_states(cs2.state, cs1.state)
+    missing1 = compare_states(state1, state2)
+    missing2 = compare_states(state2, state1)
 
     for e in missing1:
         log.debug(f"entry in 1 not found in 2\n{e.pretty()}")
@@ -1255,8 +1253,8 @@ def test_storage(storage):
         log.debug(f"entry in 2 not found in 1\n{e.pretty()}")
 
     if missing1 or missing2:
-        log.debug("TABLE 1\n%s", cs1.state.pretty_print())
-        log.debug("TABLE 2\n%s", cs2.state.pretty_print())
+        log.debug("TABLE 1\n%s", state1.pretty_print())
+        log.debug("TABLE 2\n%s", state2.pretty_print())
 
     assert not missing1
     assert not missing2
@@ -1265,12 +1263,12 @@ def test_storage(storage):
     assert new_cursor is not None
     assert old_cursor != new_cursor
 
-    before_forget = storage2.read_all()
+    before_forget = storage1.read_all()
     log.info("tags = %s", before_forget.keys())
     log.debug("before = %s", len(before_forget))
     assert len(before_forget) > 0
-    cs2.forget()
-    after_forget = storage2.read_all()
+    cs1.forget()
+    after_forget = storage1.read_all()
     log.debug("after = %s\n%s", len(after_forget), after_forget)
     assert len(after_forget) == 0
 
