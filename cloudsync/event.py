@@ -48,12 +48,9 @@ class EventManager(Runnable):
         self.events = Muxer(provider.events, restart=True)
         self.state: 'SyncState' = state
         self.side: int = side
-        self._cursor_tag: str = self.label + "_cursor"
         self.__nmgr = notification_manager
         self._queue: 'List[Tuple[Event, bool]]' = []
         self.need_auth = False
-
-        self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         self.walk_root = walk_root
         self.walk_oid = walk_oid
@@ -61,8 +58,13 @@ class EventManager(Runnable):
         self._walk_tag: Optional[str] = None
         if self.walk_root or self.walk_oid:
             self._walk_tag = self.label + "_walked_" + (self.walk_root or self.walk_oid)
+            self._cursor_tag = self.label + "_cursor_" + (self.walk_root or self.walk_oid)
+            self.cursor = self.state.storage_get_data(self._cursor_tag)
             if self.cursor is None or self.state.storage_get_data(self._walk_tag) is None:
                 self.need_walk = True
+        else:
+            self._cursor_tag = self.label = "_cursor"
+            self.cursor = self.state.storage_get_data(self._cursor_tag)
 
         self._first_do = True
 

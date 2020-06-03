@@ -343,9 +343,6 @@ def test_cs_rename_file_and_folder_conflicts_with_delete(cs):
     cs.emgrs[REMOTE].do()
     cs.run_until_clean(timeout=3)
 
-
-
-
 def test_sync_multi_local_rename_conflict(multi_local_cs):
     cs1, cs2 = multi_local_cs
 
@@ -2803,3 +2800,41 @@ def test_root_needed(cs, cs_root_oid, mode):
         cs.start(until=until)
         cs.wait(timeout=2)
         assert until()
+
+def test_cursor_tag_delete(mock_provider_generator):
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+
+    mock_remote_connection_id = "sharedConn"
+    mock_cursor_1 = 1
+    mock_cursor_2 = 2
+
+    p1 = mock_provider_generator()
+    p2 = mock_provider_generator()
+    p3 = mock_provider_generator()
+
+    # The two remote providers share a connection id
+    p2.connection_id = mock_remote_connection_id
+    p2.current_cursor = mock_cursor_1
+    p3.connection_id = mock_remote_connection_id
+    p3.current_cursor = mock_cursor_2
+
+    roots1 = ("/local1", "/remote1")
+    roots2 = ("/local2", "/remote2")
+
+    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
+
+    cs1.done()
+    cs2.done()
+
+    cs1.do()
+    cs2.do()
+
+    assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) == mock_cursor_1
+    assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
+
+    # Delete cs1 cursor, leave cs2 cursor unchanged
+    cs1.forget()
+    assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) is None
+    assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
