@@ -2020,10 +2020,9 @@ def test_set_ns_offline(unwrapped_provider):
         pass
 
     provider.namespace_id = 'bad-namespace-is-ok-at-least-when-offline'
-    provider.connect(provider._test_creds)
     log.info("ns id %s", provider.namespace_id)
     with pytest.raises(CloudNamespaceError):
-        log.info("ns list %s", list(provider.listdir_path("/")))
+        provider.connect(provider._test_creds)
     assert provider.namespace is None  # setting a bad ns id makes this None, setting a good one makes this the name
     with pytest.raises(CloudNamespaceError):
         provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
