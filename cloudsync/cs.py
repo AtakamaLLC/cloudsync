@@ -57,6 +57,8 @@ class CloudSync(Runnable):
 
         self.providers = providers
         self.roots = roots
+        self.__roots: Tuple[Optional[str], Optional[str]] = roots if roots else (None, None)
+        self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
 
         if sleep is None:
             sleep = (providers[0].default_sleep, providers[1].default_sleep)
@@ -71,16 +73,14 @@ class CloudSync(Runnable):
                           prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                           self.resolve_conflict, self.nmgr, sleep=sleep)
+                           self.resolve_conflict, self.nmgr, sleep=sleep,
+                           root_paths=self.__roots, root_oids=self.__root_oids)
 
         # for tests, make these accessible
         self.state = state
         self.smgr = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
-        self.__roots: Tuple[Optional[str], Optional[str]] = roots if roots else (None, None)
-        self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
-
         self.emgrs: Tuple[EventManager, EventManager] = (
             EventManager(smgr.providers[0], state, 0, self.nmgr, root_path=self.__roots[0],
                          reauth=lambda: self.authenticate(0), root_oid=self.__root_oids[0]),
@@ -93,10 +93,6 @@ class CloudSync(Runnable):
         self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
-
-    def set_root_oid(self, side, val):
-        self.smgr.set_root_oid(side, val)
-        self.emgrs[side].set_root_oid(val)
 
     def forget(self):
         """

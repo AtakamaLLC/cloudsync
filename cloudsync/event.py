@@ -8,6 +8,7 @@ from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursor
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
+#from .provider import Cursor
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
@@ -51,29 +52,66 @@ class EventManager(Runnable):
         if not provider.connection_id:
             raise ValueError("provider must be connected when starting the event manager")
 
-        # TODO: raise error if root oid and path are missing, or default to "/"
-
         _provider_guard.add(provider)
         self.provider = provider
-        (self.root_path, self.root_oid) = provider.set_root(root_path, root_oid)
         self.label: str = f"{self.provider.name}:{self.provider.connection_id}:{self.provider.namespace_id}"
+        
         self.state: 'SyncState' = state
         self.side: int = side
-        self._cursor_tag: str = self.label + "_cursor"
         self.__nmgr = notification_manager
         self._queue: 'List[Tuple[Event, bool]]' = []
         self.need_auth = False
         self.reauthenticate = reauth or self.__reauth
-        self.cursor = self.state.storage_get_data(self._cursor_tag)
-        self._walk_tag: str = self.label + "_walked_" + (self.root_path or self.root_oid)
-        self.need_walk: bool = self.cursor is None or self.state.storage_get_data(self._walk_tag) is None
         self._first_do = True
         self.min_backoff = provider.default_sleep / 10
         self.max_backoff = provider.default_sleep * 10
         self.mult_backoff = 2
 
-    def set_root_oid(self, root_oid):
-        self.root_oid = root_oid
+        self.root_oid: str = root_oid
+        self.root_path: str = root_path
+        self.cursor = None
+        self._cursor_tag: str = None
+        self._walk_tag: str = None
+        self.need_walk: bool = False
+        self._need_init_root = True
+
+        try:
+            # this is an online operation if root_path or root_oid is specified
+            self._init_root()
+        except CloudDisconnectedError:
+            log.info("root init failed (disconnected) - will retry on reconnect")
+
+
+    def _init_root(self):
+        if self._need_init_root:
+            (self.root_path, self.root_oid) = self.provider.set_root(self.root_path, self.root_oid)
+            if self.root_path or self.root_oid:
+                self._cursor_tag = self.label + "_cursor_" + (self.root_path or self.root_oid)
+                self._walk_tag = self.label + "_walked_" + (self.root_path or self.root_oid)
+                self.need_walk = self.cursor is None or self.state.storage_get_data(self._walk_tag) is None
+            else:
+                self._cursor_tag = self.label = "_cursor"
+            self.cursor = self.state.storage_get_data(self._cursor_tag)
+            self._need_init_root = False
+
+
+    def _reconnect(self):
+        if not self.provider.connected:
+            if self.need_auth:
+                try:
+                    # possibly this is a temporary loss of authorization
+                    self.provider.reconnect()
+                except CloudTokenError:
+                    log.warning("Need auth, calling reauthenticate")
+                    try:
+                        self.reauthenticate()
+                    except NotImplementedError:
+                        raise CloudTokenError("No auth method defined")
+                self.need_auth = False
+            else:
+                log.info("reconnect to %s", self.provider.name)
+                self.provider.reconnect()
+            self._init_root()
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
@@ -94,21 +132,7 @@ class EventManager(Runnable):
 
     def do(self):
         try:
-            if not self.provider.connected:
-                if self.need_auth:
-                    try:
-                        # possibly this is a temporary loss of authorization
-                        self.provider.reconnect()
-                    except CloudTokenError:
-                        log.warning("Need auth, calling reauthenticate")
-                        try:
-                            self.reauthenticate()
-                        except NotImplementedError:
-                            raise CloudTokenError("No auth method defined")
-                    self.need_auth = False
-                else:
-                    log.info("reconnect to %s", self.provider.name)
-                    self.provider.reconnect()
+            self._reconnect()
             self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
             log.warning("temporary error %s[%s] in event watcher", type(e), e)

@@ -122,19 +122,29 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Set credentials without connecting."""
         self._creds = creds
 
-    def set_root(self, root_path, root_oid):
+    def set_root(self, root_path=None, root_oid=None):
         """Set sync root path and oid. Once set, these values cannot be changed."""
         if self._root_path or self._root_oid:
             raise ValueError("Sync root already set and cannot be changed")
         if not root_path and not root_oid:
             return (None, None)
 
-        info = self.info_path(root_path) if root_path else self.info_oid(root_oid)
-        if not info:
-            raise CloudFileNotFoundError(f"Failed to get info for root oid/path: {root_oid} / {root_path}")
+        if root_oid:
+            info = self.info_oid(root_oid)
+            if not info:
+                raise CloudFileNotFoundError(f"Failed to get info for root oid: {root_oid}")
+            if info.otype != DIRECTORY:
+                raise CloudFileNotFoundError(f"Root oid is not a directory: {root_oid} => {info.path}")
+            if root_path and not self.paths_match(root_path, info.path):
+                raise CloudFileNotFoundError(f"Root oid/path mismatch: {root_path} - {info.path}")
+            root_path = info.path
+        else: # got root_path only
+            info = self.info_path(root_path)
+            root_oid = info.oid if info else self.mkdir(root_path)
 
-        self._root_path = info.path
-        self._root_oid = info.oid
+        self._root_path = root_path
+        self._root_oid = root_oid
+
         return (self._root_path, self._root_oid)
 
     def reconnect(self):
