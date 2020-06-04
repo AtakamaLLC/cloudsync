@@ -100,7 +100,6 @@ def fixture_multi_local_cs(mock_provider_generator):
     yield from multi_local_cs_generator(2, mock_provider_generator)
 
 
-# TODO: provider reuse
 # multi remote test has one local provider with two folders, and each of those folders
 # syncs up with a folder on one of two remote providers.
 @pytest.fixture(name="multi_remote_cs")
