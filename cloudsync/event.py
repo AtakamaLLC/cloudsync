@@ -8,7 +8,6 @@ from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursor
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
-#from .provider import Cursor
 
 if TYPE_CHECKING:
     from cloudsync.sync import SyncState
@@ -69,7 +68,7 @@ class EventManager(Runnable):
 
         self.root_oid: str = root_oid
         self.root_path: str = root_path
-        self.cursor = None
+        self.cursor: Any = None
         self._cursor_tag: str = None
         self._walk_tag: str = None
         self.need_walk: bool = False

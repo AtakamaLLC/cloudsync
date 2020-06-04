@@ -14,7 +14,7 @@ from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
 import time
 
-from .fixtures import MockProvider, MockStorage, mock_provider_instance
+from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -71,13 +71,14 @@ def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
 # given a provider_generator, creates as many cs's as you want, all of which share a single remote bed
 def multi_local_cs_generator(how_many_cs: int, provider_generator):
     storage_dict: Dict[Any, Any] = dict()
-    local_ps = []
     css = []
     storage = MockStorage(storage_dict)
-    remote_p = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # remote (cloud) storage
+    remote_mock_fs = MockFS()
     for i in range(0, how_many_cs):
-        local_ps.append(provider_generator())
-        css.append(CloudSyncMixin((local_ps[i], remote_p), roots, storage, sleep=None))
+        local_provider = provider_generator()
+        remote_provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+        remote_provider._set_mock_fs(remote_mock_fs)
+        css.append(CloudSyncMixin((local_provider, remote_provider), roots, storage, sleep=None))
 
     yield css
 
@@ -107,15 +108,17 @@ def fixture_multi_remote_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
-    p1 = mock_provider_generator()
+    p1a = mock_provider_generator()
+    p1b = mock_provider_generator()
+    p1b._set_mock_fs(p1a._mock_fs)
     p2 = mock_provider_generator()
     p3 = mock_provider_generator()
 
     roots1 = ("/local1", "/remote")
     roots2 = ("/local2", "/remote")
 
-    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
+    cs1 = CloudSyncMixin((p1a, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1b, p3), roots2, storage, sleep=None)
 
     yield cs1, cs2
 
@@ -2661,7 +2664,6 @@ def test_reconn_after_disconn():
 
     # syncs on reconnect
     remote._creds = {"ok": "ok"}
-    remote.reconnect()
 
     # yay
     cs.wait_until_found((REMOTE, "/remote"))
@@ -2720,7 +2722,8 @@ def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
 
-
+#TODO: salvage this test
+@pytest.mark.skip("because set_root_oid() no longer exists")
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
@@ -2728,14 +2731,12 @@ def test_root_needed(cs, cs_root_oid, mode):
 
     if preroot:
         cs = cs_root_oid
-        assert cs.providers[0].info_path("/local")
-        assert cs.providers[1].info_path("/remote")
 
     (local, remote) = cs.providers
-
-    if preroot:
-        remote.delete(remote.info_path("/remote").oid)
-        assert remote.info_path("/remote") is None
+    assert local.info_path("/local")
+    assert remote.info_path("/remote")
+    remote.delete(remote.info_path("/remote").oid)
+    assert remote.info_path("/remote") is None
 
     if not create:
         # set root oid to random stuff that will break any checks
