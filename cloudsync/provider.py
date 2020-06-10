@@ -274,6 +274,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Yield one entry for each namespace supported, or None if namespaces are not needed"""
         return None
 
+    def list_sub_ns(self, parent_ns: str) -> List[str]:                        # pylint: disable=no-self-use
+        """Yield one entry for each sub-namespace supported, or None if namespaces are not needed"""
+        return None
+
     @property
     def namespace(self) -> Optional[str]:
         """Some providers have multiple 'namespaces', that can be listed and changed.

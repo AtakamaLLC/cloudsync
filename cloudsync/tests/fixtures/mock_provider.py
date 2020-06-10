@@ -108,7 +108,8 @@ class MockProvider(Provider):
     # TODO: normalize names to get rid of trailing slashes, etc.
 
     def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
-            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = False):
+            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = False,
+            use_sub_ns: bool = False):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -119,6 +120,7 @@ class MockProvider(Provider):
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
         self._use_ns = use_ns
+        self._use_sub_ns = use_sub_ns
         self.__namesapce = None
         self.__namesapce_id = None
         self._lock = RLock()
@@ -154,6 +156,12 @@ class MockProvider(Provider):
             return ["ns1", "ns2"]
         else:
             return super().list_ns()
+
+    def list_sub_ns(self, parent_ns: str):
+        if self._use_ns and self._use_sub_ns:
+            return [f"{parent_ns}-a", f"{parent_ns}-b"]
+        else:
+            return super().list_sub_ns(parent_ns)
 
     @property
     def namespace(self):
