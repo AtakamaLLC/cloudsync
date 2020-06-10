@@ -626,19 +626,19 @@ def test_namespace(provider):
     saved = provider.namespace
 
     try:
-        provider.namespace = ns[0]
+        provider.namespace = ns[0].name
         nid = provider.namespace_id
         provider.namespace_id = nid
 
         assert provider.namespace_id == nid
 
         if len(ns) > 1:
-            provider.namespace = ns[1]
-            log.info("test recon persist %s", ns[1])
+            provider.namespace = ns[1].name
+            log.info("test recon persist %s", ns[1].name)
             provider.disconnect()
             provider.reconnect()
             log.info("namespace is %s", provider.namespace)
-            assert provider.namespace == ns[1]
+            assert provider.namespace == ns[1].name
         else:
             log.info("not test recon persist")
     finally:
