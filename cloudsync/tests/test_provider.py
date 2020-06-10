@@ -38,6 +38,7 @@ import cloudsync.providers
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
         CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
+from cloudsync.provider import Namespace
 from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -623,22 +624,26 @@ def test_namespace(provider):
     if not ns:
         return
 
+    def ns_to_str(ns):
+        return ns.name if type(ns) is Namespace else ns
+
     saved = provider.namespace
 
     try:
-        provider.namespace = ns[0].name
+        provider.namespace = ns_to_str(ns[0])
         nid = provider.namespace_id
         provider.namespace_id = nid
 
         assert provider.namespace_id == nid
 
         if len(ns) > 1:
-            provider.namespace = ns[1].name
-            log.info("test recon persist %s", ns[1].name)
+            ns1 = ns_to_str(ns[1])
+            provider.namespace = ns1
+            log.info("test recon persist %s", ns1)
             provider.disconnect()
             provider.reconnect()
             log.info("namespace is %s", provider.namespace)
-            assert provider.namespace == ns[1].name
+            assert provider.namespace == ns1
         else:
             log.info("not test recon persist")
     finally:
