@@ -7,7 +7,7 @@ import os
 import logging
 import random
 import time
-from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
+from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO, NamedTuple
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
@@ -25,7 +25,14 @@ Creds = Dict[str, Union[str, int]]
 
 CONNECTION_NOT_NEEDED = "connection-not-needed"
 
-__all__ = ["Provider", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
+__all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
+
+
+class Namespace(NamedTuple):
+    name: str
+    id: Optional[str]
+    is_parent: bool = False
+
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     """
@@ -270,7 +277,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Returns info for an object with specified oid, or None if not found"""
         ...
 
-    def list_ns(self) -> List[str]:                        # pylint: disable=no-self-use
+    def list_ns(self, recursive: bool = True, parent: Namespace = None) -> List[Namespace]:   # pylint: disable=no-self-use,unused-argument
         """Yield one entry for each namespace supported, or None if namespaces are not needed"""
         return None
 
