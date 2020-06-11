@@ -39,7 +39,6 @@ import cloudsync.providers
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
         CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
 from cloudsync.provider import Namespace
-from cloudsync.providers import DropboxProvider
 from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -550,7 +549,7 @@ def test_connect(scoped_provider):
     provider = scoped_provider
 
     # TODO: fix and re-enable this test for dropbox
-    if type(provider.prov) is DropboxProvider:
+    if type(provider.prov).__name__ == "DropboxProvider":
         return
 
     assert provider.connected
