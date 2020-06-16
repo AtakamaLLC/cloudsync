@@ -1362,6 +1362,25 @@ def test_rename_same_name(sync_ci):
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
+def test_dir_removal_missing_child(sync):
+    (local, remote) = sync.providers
+
+    (
+        (lf, rf),
+    ) = setup_remote_local(sync, "f/")
+
+    # Missing event for remote create, should sync down when we try to delete its parent
+    ra = remote.create("/remote/f/a", BytesIO(b"hello"))
+    local.delete(lf.oid)
+    sync.create_event(LOCAL, DIRECTORY, path="/local/f", oid=lf.oid, exists=False)
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: local.info_path("/local/f/a"), timeout=2)
+
+    log.info("TABLE 1\n%s", sync.state.pretty_print())
+
+    assert local.info_path("/local/f/a")
 
 def test_delete_out_of_order_events(sync):
     (local, remote) = sync.providers
