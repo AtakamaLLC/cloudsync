@@ -20,7 +20,7 @@ from watchdog.observers import Observer as watchdog_observer
 # from watchdog.observers.polling import PollingObserver as watchdog_observer
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider
+from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 import cloudsync.exceptions as ex
@@ -706,8 +706,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         fpath = self._oid_to_fpath(oid)
         return self.__info_path(None, fpath)
 
-    def list_ns(self):
-        return [self._test_namespace]
+    def list_ns(self, recursive=True, parent=None):
+        return [Namespace(name=self._test_namespace, id=self._test_namespace)]
 
 
 register_provider(FileSystemProvider)
