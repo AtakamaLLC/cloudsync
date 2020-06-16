@@ -999,17 +999,18 @@ class SyncManager(Runnable):
                     all_synced = False
                     break
             if all_synced:
-                log.info("dropping dir removal because children appear fully synced %s", sync[changed].path)
+                log.info("Attempt dropping dir removal because children appear fully synced %s", sync[changed].path)
                 remaining = []
-                # Potentially missing ents in state table, walk synced provider
-                for ent in self.providers[synced].walk_oid(sync[synced].oid):
+                # Potentially missing ents in state table
+                for ent in self.providers[synced].listdir(sync[synced].oid):
                     remaining.append(ent.path or ent.oid)
                     self.state.update(side=synced, otype=ent.otype, oid=ent.oid, path=ent.path, hash=ent.hash,
-                            exists=True, prior_oid=ent.prior_oid)
+                            exists=True)
                     self.state.storage_commit()
 
                 if remaining:
                     log.warning("Children %s exist on side %s. Syncing in progress", remaining, synced)
+                    return PUNT
                 return FINISHED
             else:
                 log.debug("all children not fully synced, punt %s", sync[changed].path)
