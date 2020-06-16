@@ -1009,7 +1009,7 @@ class SyncManager(Runnable):
                     self.state.storage_commit()
 
                 if remaining:
-                    log.warning("Children %s exist on side %s. Syncing in progress", remaining, synced)
+                    log.warning("Children %s exist on side %s. Syncing", remaining, synced)
                     return PUNT
                 return FINISHED
             else:
