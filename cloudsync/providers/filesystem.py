@@ -334,7 +334,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @property
     def namespace_id(self):
-        return self._namespace
+        return self._fpath_to_oid(self._namespace)
 
     @namespace_id.setter
     def namespace_id(self, oid):
