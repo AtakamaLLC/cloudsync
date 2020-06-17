@@ -707,7 +707,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        basename = self._test_namespace[self._test_namespace.rfind('/')+1:]
+        basename = self._test_namespace[self._test_namespace.rfind('/'):]
         return [Namespace(name=basename, id=basename)]
 
 
