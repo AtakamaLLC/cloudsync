@@ -622,11 +622,12 @@ def test_create_upload_download(provider):
     dest.seek(0)
     assert dest.getvalue() == dat
 
-#TODO: reenable
-@pytest.mark.manual
 def test_namespace(provider):
     ns = provider.list_ns()
     if not ns:
+        return
+
+    if provider.prov.name == "filesystem":
         return
 
     saved = provider.namespace_id
