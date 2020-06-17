@@ -622,36 +622,31 @@ def test_create_upload_download(provider):
     dest.seek(0)
     assert dest.getvalue() == dat
 
-
 def test_namespace(provider):
     ns = provider.list_ns()
     if not ns:
         return
 
-    def ns_to_str(ns):
-        return ns.name if type(ns) is Namespace else ns
+    if provider.prov.name == "filesystem":
+        return
 
-    saved = provider.namespace
+    saved = provider.namespace_id
 
     try:
-        provider.namespace = ns_to_str(ns[0])
-        nid = provider.namespace_id
-        provider.namespace_id = nid
-
-        assert provider.namespace_id == nid
+        provider.namespace_id = ns[0].id
+        assert provider.namespace_id == ns[0].id
 
         if len(ns) > 1:
-            ns1 = ns_to_str(ns[1])
-            provider.namespace = ns1
-            log.info("test recon persist %s", ns1)
+            provider.namespace_id = ns[1].id
+            log.info("test recon persist %s", ns[1].id)
             provider.disconnect()
             provider.reconnect()
-            log.info("namespace is %s", provider.namespace)
-            assert provider.namespace == ns1
+            log.info("namespace is %s", provider.namespace_id)
+            assert provider.namespace_id == ns[1].id
         else:
             log.info("not test recon persist")
     finally:
-        provider.namespace = saved
+        provider.namespace_id = saved
 
 
 def test_rename(provider):
