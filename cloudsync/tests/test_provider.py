@@ -622,14 +622,11 @@ def test_create_upload_download(provider):
     dest.seek(0)
     assert dest.getvalue() == dat
 
-
+#TODO: reenable
+@pytest.mark.manual
 def test_namespace(provider):
     ns = provider.list_ns()
     if not ns:
-        return
-
-    # TODO: fix and re-enable this test for filesystem
-    if type(provider.prov).__name__ == "FileSystemProvider":
         return
 
     saved = provider.namespace_id
@@ -947,11 +944,6 @@ def test_event_basic(provider):
     assert received_event is not None
     assert received_event2 is not None
     assert received_event.oid
-
-    # TODO: fix this
-    if provider.prov.name == "filesystem":
-        return
-
     assert not received_event.exists
     if received_event.path is not None:
         # assert that the basename of the path and dest are the same
