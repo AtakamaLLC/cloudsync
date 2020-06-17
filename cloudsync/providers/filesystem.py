@@ -707,7 +707,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        return [Namespace(name=self._test_namespace, id=self._test_namespace)]
+        normalized = self._fpath_to_oid(self._test_namespace)
+        return [Namespace(name=normalized, id=normalized)]
 
 
 register_provider(FileSystemProvider)
