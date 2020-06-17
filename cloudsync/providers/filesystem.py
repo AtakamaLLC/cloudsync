@@ -334,7 +334,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @property
     def namespace_id(self):
-        return self._fpath_to_oid(self._namespace)
+        return self._namespace
 
     @namespace_id.setter
     def namespace_id(self, oid):
@@ -707,8 +707,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        basename = self._test_namespace[self._test_namespace.rfind('/'):]
-        return [Namespace(name=basename, id=basename)]
+        return [Namespace(name=self._test_namespace, id=self._test_namespace)]
 
 
 register_provider(FileSystemProvider)
