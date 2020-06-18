@@ -547,11 +547,6 @@ def test_join(mock_provider):
 
 def test_connect(scoped_provider):
     provider = scoped_provider
-
-    # TODO: fix and re-enable this test for dropbox
-    if type(provider.prov).__name__ == "DropboxProvider":
-        return
-
     assert provider.connected
     provider.disconnect()
     assert not provider.connected
