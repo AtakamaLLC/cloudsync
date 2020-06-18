@@ -960,7 +960,7 @@ class SyncManager(Runnable):
                 sync.ignore(IgnoreReason.DISCARDED)
                 return FINISHED
 
-        # deltions don't always have paths
+        # deletions don't always have paths
         if sync[changed].path:
             translated_path = self.translate(synced, sync[changed].path)
             if translated_path:
@@ -980,7 +980,7 @@ class SyncManager(Runnable):
             except ex.CloudFileNotFoundError:
                 pass
             except ex.CloudFileExistsError:
-                return self._handle_dir_delete_not_empty(sync, changed)
+                return self._handle_dir_delete_not_empty(sync, changed, synced)
         else:
             log.debug("was never synced, ignoring deletion")
 
@@ -990,7 +990,7 @@ class SyncManager(Runnable):
             sync.ignore(IgnoreReason.DISCARDED, previous_reasons=IgnoreReason.IRRELEVANT)
         return FINISHED
 
-    def _handle_dir_delete_not_empty(self, sync, changed):
+    def _handle_dir_delete_not_empty(self, sync, changed, synced):
         # punt once to allow children to be processed, if already done just forget about it
         if sync.priority > 0:
             all_synced = True
@@ -999,7 +999,18 @@ class SyncManager(Runnable):
                     all_synced = False
                     break
             if all_synced:
-                log.info("dropping dir removal because children fully synced %s", sync[changed].path)
+                log.info("Attempt dropping dir removal because children appear fully synced %s", sync[changed].path)
+                remaining = []
+                # Potentially missing ents in state table
+                for ent in self.providers[synced].listdir(sync[synced].oid):
+                    remaining.append(ent.path or ent.oid)
+                    self.state.update(side=synced, otype=ent.otype, oid=ent.oid, path=ent.path, hash=ent.hash,
+                            exists=True)
+                    self.state.storage_commit()
+
+                if remaining:
+                    log.warning("Children %s exist on side %s. Syncing", remaining, synced)
+                    return PUNT
                 return FINISHED
             else:
                 log.debug("all children not fully synced, punt %s", sync[changed].path)
