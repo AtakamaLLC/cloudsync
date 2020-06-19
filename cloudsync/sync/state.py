@@ -140,9 +140,8 @@ class SideState():
     def needs_sync(self):
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
-               self.path != self.sync_path or
-               self.exists in (TRASHED, LIKELY_TRASHED)  # do we want to add MISSING here?
-        )
+               self.parent.paths_differ(self.side) or
+               self.exists in (TRASHED, LIKELY_TRASHED))  # do we want to add MISSING here?
 
     def clean_temp(self):
         if self.temp_file:
@@ -352,21 +351,27 @@ class SyncEntry:
         return False
 
     def is_path_change(self, changed):
-        return self[changed].sync_path is not None and self[changed].path != self[changed].sync_path
+        return self[changed].sync_path and self.paths_differ(changed)
 
     def is_creation(self, changed):
         return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
                 and self[changed].path and self[changed].exists == EXISTS
 
     def is_rename(self, changed):
-        return (self[changed].sync_path and self[changed].path
-                and self[changed].sync_path != self[changed].path)
+        return self[changed].sync_path and self[changed].path and self.paths_differ(changed)
+
+    def paths_match(self, side):
+        prov = self.parent.providers[side]
+        return prov.paths_match(self[side].sync_path, self[side].path, for_display=True)
+
+    def paths_differ(self, side):
+        return not self.paths_match(side)
 
     def needs_sync(self):
         for i in (LOCAL, REMOTE):
             if not self[i].changed:
                 continue
-            if self[i].path != self[i].sync_path and self[i].oid:
+            if self.paths_differ(i) and self[i].oid:
                 return True
             if self[i].hash != self[i].sync_hash and self[i].oid:
                 return True

@@ -343,9 +343,6 @@ def test_cs_rename_file_and_folder_conflicts_with_delete(cs):
     cs.emgrs[REMOTE].do()
     cs.run_until_clean(timeout=3)
 
-
-
-
 def test_sync_multi_local_rename_conflict(multi_local_cs):
     cs1, cs2 = multi_local_cs
 
@@ -659,6 +656,29 @@ def test_rename_conflict_and_irrelevant(cs, irrelevant_side):
         assert xl1 is not None, "xl1 should exist"
         assert xr1 is not None, "xr1 should exist"
 
+def test_shutdown_mid_download(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    from threading import Event
+    evt = Event()
+    # Download call takes 2 seconds, event will cause cs.stop to be called within this 2 second window
+    def mock_download(*args, **kwargs):
+        nonlocal evt
+        log.debug("Mock download")
+        evt.set()
+        time.sleep(2)
+
+    cs.providers[LOCAL].download = mock_download
+    cs.start()
+    evt.wait(timeout=2)
+    # Previously, this would throw an exception as stop would try to remove the temp file that download was holding open
+    cs.stop()
 
 def test_cs_basic(cs):
     local_parent = "/local"
@@ -2803,3 +2823,41 @@ def test_root_needed(cs, cs_root_oid, mode):
         cs.start(until=until)
         cs.wait(timeout=2)
         assert until()
+
+def test_cursor_tag_delete(mock_provider_generator):
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+
+    mock_remote_connection_id = "sharedConn"
+    mock_cursor_1 = 1
+    mock_cursor_2 = 2
+
+    p1 = mock_provider_generator()
+    p2 = mock_provider_generator()
+    p3 = mock_provider_generator()
+
+    # The two remote providers share a connection id
+    p2.connection_id = mock_remote_connection_id
+    p2.current_cursor = mock_cursor_1
+    p3.connection_id = mock_remote_connection_id
+    p3.current_cursor = mock_cursor_2
+
+    roots1 = ("/local1", "/remote1")
+    roots2 = ("/local2", "/remote2")
+
+    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
+
+    cs1.done()
+    cs2.done()
+
+    cs1.do()
+    cs2.do()
+
+    assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) == mock_cursor_1
+    assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
+
+    # Delete cs1 cursor, leave cs2 cursor unchanged
+    cs1.forget()
+    assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) is None
+    assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2

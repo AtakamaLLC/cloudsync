@@ -9,7 +9,7 @@ from threading import RLock
 import pytest
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider
+from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
@@ -149,9 +149,9 @@ class MockProvider(Provider):
         new_fs_object = MockFSObject("/", MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
 
-    def list_ns(self):
+    def list_ns(self, recursive=True, parent=None):
         if self._use_ns:
-            return ["ns1", "ns2"]
+            return [Namespace(name="ns1", id="ns1-id"), Namespace(name="ns2", id="ns2-id")]
         else:
             return super().list_ns()
 
