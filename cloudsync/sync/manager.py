@@ -1379,9 +1379,9 @@ class SyncManager(Runnable):
 
         if sync[changed].exists == MISSING:
             if (sync[synced].exists == EXISTS and
-                    not sync[synced].changed and
-                    sync[changed].path == sync[changed].sync_path
-                    and sync[changed].hash == sync[changed].sync_hash
+                    #not sync[synced].changed and #TODO: was in Mike's original change
+                    self.providers[changed].paths_match(sync[changed].path, sync[changed].sync_path, for_display=True) and
+                    sync[changed].hash == sync[changed].sync_hash
             ):
                 if sync.priority <= 2:
                     log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)

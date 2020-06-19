@@ -3,7 +3,7 @@
 import logging
 import time
 from io import BytesIO
-from typing import List, Tuple, Union
+from typing import List
 from itertools import permutations
 
 from unittest.mock import patch, MagicMock
