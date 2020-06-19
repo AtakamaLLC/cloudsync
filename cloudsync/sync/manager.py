@@ -1,7 +1,7 @@
+# pylint: disable=too-many-lines, missing-docstring
 """
 Sync manager and associated tools.
 """
-# pylint: disable=missing-docstring
 
 import os
 import logging
@@ -1378,26 +1378,7 @@ class SyncManager(Runnable):
             return self.delete_synced(sync, changed, synced)
 
         if sync[changed].exists == MISSING:
-            if (sync[synced].exists == EXISTS and
-                    #not sync[synced].changed and #TODO: was in Mike's original change
-                    self.providers[changed].paths_match(sync[changed].path, sync[changed].sync_path, for_display=True) and
-                    sync[changed].hash == sync[changed].sync_hash
-            ):
-                if sync.priority <= 2:
-                    log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)
-                    return PUNT
-                # The synced side thinks it's synced, but it isn't -- the file is missing on the changed side
-                # We need to not only mark the synced side as changed, but UNSYNC it by removing the sync path
-                # otherwise needs_sync will return False,
-                log.warning("%s missing, other side exists. Marking other side unsynced: %s", sync[changed].path, sync)
-                sync[changed].clear()
-                sync[synced].sync_path = None
-                sync[synced].sync_hash = None
-                sync[synced].changed = time.time()
-                log.warning("%s now unsynced: %s", sync[synced].path, sync)
-                # raise BaseException("Got here")
-            log.debug("%s missing", sync[changed].path)
-            return FINISHED
+            return self.handle_changed_is_missing(sync, changed, synced)
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
             log.debug("is_path_change %s", sync.is_path_change(changed))
@@ -1416,6 +1397,29 @@ class SyncManager(Runnable):
 
         log.debug("nothing changed %s", sync)
         return FINISHED
+
+    def handle_changed_is_missing(self, sync, changed, synced):
+        if (sync[synced].exists == EXISTS and
+            #not sync[synced].changed and #TODO: was in Mike's original change
+            self.providers[changed].paths_match(sync[changed].path, sync[changed].sync_path, for_display=True) and
+            sync[changed].hash == sync[changed].sync_hash
+        ):
+            if sync.priority <= 2:
+                log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)
+                return PUNT
+            # The synced side thinks it's synced, but it isn't -- the file is missing on the changed side
+            # We need to not only mark the synced side as changed, but UNSYNC it by removing the sync path
+            # otherwise needs_sync will return False,
+            log.warning("%s missing, other side exists. Marking other side unsynced: %s", sync[changed].path, sync)
+            sync[changed].clear()
+            sync[synced].sync_path = None
+            sync[synced].sync_hash = None
+            sync[synced].changed = time.time()
+            log.warning("%s now unsynced: %s", sync[synced].path, sync)
+            # raise BaseException("Got here")
+        log.debug("%s missing", sync[changed].path)
+        return FINISHED
+
 
     def handle_hash_diff(self, sync, changed, synced):
         if sync[changed].path is None:
