@@ -1007,9 +1007,6 @@ class SyncManager(Runnable):
                     all_synced = False
                     break
             if all_synced:
-                # from https://github.com/AtakamaLLC/cloudsync/pull/256/files
-                # This is bad, because we don't even check the file system to ensure that we are actually synced,
-                # we're depending on the state table, but needs_sync() doesn't cover every possibility?
                 log.info("Attempt dropping dir removal because children appear fully synced %s", sync[changed].path)
                 remaining = []
                 # Potentially missing ents in state table

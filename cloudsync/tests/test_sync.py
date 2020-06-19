@@ -17,7 +17,7 @@ from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileN
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, SideState
+from cloudsync.sync.state import TRASHED, MISSING, SideState
 
 log = logging.getLogger(__name__)
 
@@ -1329,7 +1329,6 @@ def test_replace_rename(sync, order):
     bio = BytesIO()
     remote.download_path(ra.path, bio)
     assert bio.getvalue() == b'b'
-    # assert False
 
 
 def test_rename_same_name(sync_ci):
@@ -1363,6 +1362,7 @@ def test_rename_same_name(sync_ci):
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
+
 def test_dir_removal_missing_child(sync):
     (local, remote) = sync.providers
 
@@ -1383,6 +1383,7 @@ def test_dir_removal_missing_child(sync):
 
     assert local.info_path("/local/f/a")
 
+
 def test_missing_not_finished(sync):
     (local, remote) = sync.providers
     (
@@ -1398,17 +1399,15 @@ def test_missing_not_finished(sync):
     sync.create_event(LOCAL, FILE, path="/local/d/a", oid=la.oid, hash=la.hash, exists=True)
     sync.create_event(LOCAL, FILE, path="/local/d", oid=ld.oid, hash=ld.hash, exists=False)
     log.info("TABLE 1\n%s", sync.state.pretty_print())
-    sync.run(until=lambda: not sync.busy, timeout=3)
+
+    sync.run(until=lambda: sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == MISSING, timeout=1)
+    assert sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == MISSING
     log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: not sync.busy, timeout=3)
+    log.info("TABLE 3\n%s", sync.state.pretty_print())
     assert local.exists_path('/local/d')
     assert local.exists_path('/local/d/a')
-
-
-
-
-
-
-
 
 
 def test_delete_out_of_order_events(sync):
