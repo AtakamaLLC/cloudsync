@@ -1395,12 +1395,10 @@ class SyncManager(Runnable):
         log.debug("nothing changed %s", sync)
         return FINISHED
 
-    def handle_changed_is_missing(self, sync, changed, synced):
-        if (sync[synced].exists == EXISTS and
+    def handle_changed_is_missing(self, sync, changed, synced):     # pylint: disable=no-self-use
+        if (sync[synced].exists == EXISTS and sync.paths_match(changed) and
+            sync[changed].hash == sync[changed].sync_hash):
             #not sync[synced].changed and #TODO: was in Mike's original change
-            self.providers[changed].paths_match(sync[changed].path, sync[changed].sync_path, for_display=True) and
-            sync[changed].hash == sync[changed].sync_hash
-        ):
             if sync.priority <= 2:
                 log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)
                 return PUNT
@@ -1413,10 +1411,8 @@ class SyncManager(Runnable):
             sync[synced].sync_hash = None
             sync[synced].changed = time.time()
             log.warning("%s now unsynced: %s", sync[synced].path, sync)
-            # raise BaseException("Got here")
         log.debug("%s missing", sync[changed].path)
         return FINISHED
-
 
     def handle_hash_diff(self, sync, changed, synced):
         if sync[changed].path is None:
