@@ -339,8 +339,7 @@ class SyncManager(Runnable):
         something_got_done = False
 
         for side in ordered:
-            missing_not_finished = sync[side].exists == MISSING and sync[other_side(side)].exists == EXISTS
-            if not sync[side].needs_sync() and not missing_not_finished:
+            if not sync[side].needs_sync() and not sync.side_missing_other_exists(side):
                 if sync[side].changed:
                     log.log(TRACE, "Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                 sync[side].changed = 0
