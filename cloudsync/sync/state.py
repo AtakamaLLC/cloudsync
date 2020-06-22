@@ -1225,6 +1225,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if ent[i].exists != TRASHED:
             # we haven't gotten a trashed event yet
             ent[i].exists = MISSING
+            if not self.providers[i].oid_is_path:
+                ent[i].exists = TRASHED
 
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
