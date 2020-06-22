@@ -582,9 +582,6 @@ class SyncEntry:
                     return True
         return False
 
-    def side_missing_other_exists(self, side):
-        return self[side].exists == MISSING and self[other_side(side)].exists == EXISTS
-
 
 @strict
 class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-public-methods

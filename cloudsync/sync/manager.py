@@ -339,9 +339,9 @@ class SyncManager(Runnable):
         something_got_done = False
 
         for side in ordered:
-            if not sync[side].needs_sync() and not sync.side_missing_other_exists(side):
+            if not sync[side].needs_sync():
                 if sync[side].changed:
-                    log.log(TRACE, "Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
+                    log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                 sync[side].changed = 0
                 continue
 
@@ -714,9 +714,6 @@ class SyncManager(Runnable):
             return FINISHED
 
         # parent presumably exists
-        # why are we using the changed side path without translating it to local?
-        # why are we marking the folder as changed on the changed side?
-        # This won't do anything if we don't change the sync path or sync hash, btw...
         parent = self.providers[changed].dirname(sync[changed].path)
         log.debug("sync %s first before %s", parent, sync[changed].path)
         ents = self.state.lookup_path(changed, parent)
