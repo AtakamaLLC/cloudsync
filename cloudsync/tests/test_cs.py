@@ -303,6 +303,8 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
             raise TimeoutError()
         return cs.state.changeset_len == 0
 
+    log.info("TABLE %s\n%s", i, cs1.state.pretty_print())
+
     try:
         for i in range(0, 4):
             four_local_cs[i].start(sleep=0.01)  # Start the sync

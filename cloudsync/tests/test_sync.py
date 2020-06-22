@@ -1400,14 +1400,25 @@ def test_missing_not_finished(sync):
     sync.create_event(LOCAL, FILE, path="/local/d", oid=ld.oid, hash=ld.hash, exists=False)
     log.info("TABLE 1\n%s", sync.state.pretty_print())
 
-    sync.run(until=lambda: sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == MISSING, timeout=1)
-    assert sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == MISSING
+    local_expected = MISSING if local.oid_is_path else TRASHED
+    sync.run(until=lambda: sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == local_expected, timeout=1)
+
+    assert sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == local_expected
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
     sync.run(until=lambda: not sync.busy, timeout=3)
     log.info("TABLE 3\n%s", sync.state.pretty_print())
-    assert local.exists_path('/local/d')
-    assert local.exists_path('/local/d/a')
+
+    if local.oid_is_path:
+        # missing events for oid_is_path shold never happen, and if they do, we re-vivify the missing files
+        # this is for safety
+        assert local.exists_path('/local/d')
+        assert local.exists_path('/local/d/a')
+    else:
+        # missing events for oid_is_oid may happen (oneddrive, gdrive do this)
+        # however, the object id is unique and winn never be reused, so we know not to recreate
+        assert not local.exists_path('/local/d')
+        assert not local.exists_path('/local/d/a')
 
 
 def test_delete_out_of_order_events(sync):
