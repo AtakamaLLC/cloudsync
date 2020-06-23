@@ -1394,8 +1394,7 @@ class SyncManager(Runnable):
     def handle_changed_is_missing(self, sync, changed, synced):     # pylint: disable=no-self-use
         if (sync[synced].exists == EXISTS and sync.paths_match(changed) and
             sync[changed].hash == sync[changed].sync_hash):
-            #TODO: and not sync[synced].changed -- another condition that was in Mike's original change
-            if sync.priority <= 2:
+            if sync.priority <= 5:
                 log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)
                 return PUNT
             # The synced side thinks it's synced, but it isn't -- the file is missing on the changed side

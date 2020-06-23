@@ -1410,13 +1410,13 @@ def test_missing_not_finished(sync):
     log.info("TABLE 3\n%s", sync.state.pretty_print())
 
     if local.oid_is_path:
-        # missing events for oid_is_path shold never happen, and if they do, we re-vivify the missing files
+        # missing events for oid_is_path should never happen, and if they do, we re-vivify the missing files
         # this is for safety
         assert local.exists_path('/local/d')
         assert local.exists_path('/local/d/a')
     else:
-        # missing events for oid_is_oid may happen (oneddrive, gdrive do this)
-        # however, the object id is unique and winn never be reused, so we know not to recreate
+        # missing events for oid_is_oid may happen (onedrive, gdrive do this)
+        # however, the object id is unique and will never be reused, so we know not to recreate
         assert not local.exists_path('/local/d')
         assert not local.exists_path('/local/d/a')
 

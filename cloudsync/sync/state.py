@@ -141,7 +141,7 @@ class SideState():
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.parent.paths_differ(self.side) or
-               self.exists in (TRASHED, LIKELY_TRASHED, MISSING))  # do we want to add MISSING here?
+               self.exists in (TRASHED, LIKELY_TRASHED, MISSING))
 
     def clean_temp(self):
         if self.temp_file:
@@ -1221,9 +1221,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[i].exists != TRASHED:
             # we haven't gotten a trashed event yet
-            ent[i].exists = MISSING
-            if not self.providers[i].oid_is_path:
-                ent[i].exists = TRASHED
+            ent[i].exists = MISSING if self.providers[i].oid_is_path else TRASHED
 
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
