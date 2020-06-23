@@ -71,7 +71,7 @@ class CloudSync(Runnable):
                           prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                           self.resolve_conflict, self.nmgr, sleep=sleep)
+                           self.resolve_conflict, self.nmgr, sleep=sleep, is_syncable_path=self.is_syncable_path)
 
         # for tests, make these accessible
         self.state = state
@@ -180,6 +180,9 @@ class CloudSync(Runnable):
 
         """
         return 0
+
+    def is_syncable_path(self, side: int, path: str) -> bool:
+        return self.translate(side, path) != None
 
     def translate(self, side: int, path: str):
         """Override this method to translate between local and remote paths
