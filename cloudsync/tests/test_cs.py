@@ -232,7 +232,7 @@ def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent
     counter = 1
     for cs in css:
         log.info("SETUP TABLE 1 cs%s\n%s", counter, cs.state.pretty_print())
-        cs.run_until_clean(timeout=3)
+        cs.run_until_clean(timeout=10)
         log.info("SETUP TABLE 2 cs%s\n%s", counter, cs.state.pretty_print())
         counter += 1
 
@@ -303,6 +303,8 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
             raise TimeoutError()
         return cs.state.changeset_len == 0
 
+    log.info("TABLE %s\n%s", i, cs1.state.pretty_print())
+
     try:
         for i in range(0, 4):
             four_local_cs[i].start(sleep=0.01)  # Start the sync
@@ -310,7 +312,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
         for i in range(0, 4):
             start = time.monotonic()
-            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=10)
+            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=30)
     finally:
         for i in range(0, 4):
             four_local_cs[i].stop()  # Stop the sync

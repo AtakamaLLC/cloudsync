@@ -647,11 +647,15 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         with self._api():
             path = self._oid_to_fpath(oid)
             if os.path.isdir(path):
+                log.debug("delete dir %s", path)
                 if self._folder_oid_has_contents(oid):
                     raise ex.CloudFileExistsError("Cannot delete non-empty folder %s:%s" % (oid, path))
                 os.rmdir(path)
             elif os.path.exists(path):
+                log.debug("delete file %s", path)
                 os.unlink(path)
+            else:
+                log.debug("delete ??? %s", path)
 
     def exists_oid(self, oid):
         with self._api():

@@ -13,7 +13,7 @@ from boxsdk.object.item import Item as BoxItem
 from boxsdk.object.folder import Folder as BoxFolder
 from boxsdk.object.file import File as BoxFile
 from boxsdk.object.event import Event as BoxEvent
-from boxsdk.exception import BoxAPIException, BoxNetworkException, BoxOAuthException
+from boxsdk.exception import BoxAPIException, BoxNetworkException, BoxOAuthException, BoxValueError
 from boxsdk.session.session import Session, AuthorizedSession
 
 from cloudsync.hierarchical_cache import HierarchicalCache
@@ -217,6 +217,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 except BoxNetworkException as e:
                     self.__box.disconenct()
                     raise CloudDisconnectedError("disconnected %s" % e)
+                except BoxValueError:
+                    raise CloudFileNotFoundError()
                 except BoxAPIException as e:
                     if e.status == 400 and e.code == 'folder_not_empty':
                         raise CloudFileExistsError()

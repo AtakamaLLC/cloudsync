@@ -17,7 +17,7 @@ from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileN
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, SideState
+from cloudsync.sync.state import TRASHED, MISSING, SideState
 
 log = logging.getLogger(__name__)
 
@@ -1362,6 +1362,7 @@ def test_rename_same_name(sync_ci):
 
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
+
 def test_dir_removal_missing_child(sync):
     (local, remote) = sync.providers
 
@@ -1381,6 +1382,44 @@ def test_dir_removal_missing_child(sync):
     log.info("TABLE 1\n%s", sync.state.pretty_print())
 
     assert local.info_path("/local/f/a")
+
+
+def test_missing_not_finished(sync):
+    (local, remote) = sync.providers
+    (
+        (ld, rd),
+        (la, ra),
+    ) = setup_remote_local(sync, "d/", "d/a", content=(b'', b'a'))
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    local._delete(la.oid, without_event=True)
+    local.delete(ld.oid)
+
+    sync.create_event(LOCAL, FILE, path="/local/d/a", oid=la.oid, hash=la.hash, exists=True)
+    sync.create_event(LOCAL, FILE, path="/local/d", oid=ld.oid, hash=ld.hash, exists=False)
+    log.info("TABLE 1\n%s", sync.state.pretty_print())
+
+    local_expected = MISSING if local.oid_is_path else TRASHED
+    sync.run(until=lambda: sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == local_expected, timeout=1)
+
+    assert sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == local_expected
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: not sync.busy, timeout=3)
+    log.info("TABLE 3\n%s", sync.state.pretty_print())
+
+    if local.oid_is_path:
+        # missing events for oid_is_path should never happen, and if they do, we re-vivify the missing files
+        # this is for safety
+        assert local.exists_path('/local/d')
+        assert local.exists_path('/local/d/a')
+    else:
+        # missing events for oid_is_oid may happen (onedrive, gdrive do this)
+        # however, the object id is unique and will never be reused, so we know not to recreate
+        assert not local.exists_path('/local/d')
+        assert not local.exists_path('/local/d/a')
+
 
 def test_delete_out_of_order_events(sync):
     (local, remote) = sync.providers
@@ -1407,6 +1446,7 @@ def test_delete_out_of_order_events(sync):
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
     assert not remote.info_path("/remote/f")
+
 
 def test_sync_unknown_ex(sync):
     (local, remote) = sync.providers

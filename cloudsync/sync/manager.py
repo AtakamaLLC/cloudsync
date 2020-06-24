@@ -1,7 +1,7 @@
+# pylint: disable=too-many-lines, missing-docstring
 """
 Sync manager and associated tools.
 """
-# pylint: disable=missing-docstring
 
 import os
 import logging
@@ -340,6 +340,8 @@ class SyncManager(Runnable):
 
         for side in ordered:
             if not sync[side].needs_sync():
+                if sync[side].changed:
+                    log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                 sync[side].changed = 0
                 continue
 
@@ -713,7 +715,7 @@ class SyncManager(Runnable):
 
         # parent presumably exists
         parent = self.providers[changed].dirname(sync[changed].path)
-        log.debug("make %s first before %s", parent, sync[changed].path)
+        log.debug("sync %s first before %s", parent, sync[changed].path)
         ents = self.state.lookup_path(changed, parent)
         if not ents:
             info = self.providers[changed].info_path(parent)
@@ -724,6 +726,7 @@ class SyncManager(Runnable):
 
         else:
             parent_ent = ents[0]
+            log.debug("parent=%s", parent_ent)
             if not parent_ent[changed].changed or not parent_ent.is_creation(changed):
                 if sync.priority <= 2:  # punt if not already punted, meaning, punt at least once
                     log.debug("Provider %s parent folder %s reported missing. punting", self.providers[synced].name, parent)
@@ -748,10 +751,11 @@ class SyncManager(Runnable):
                         # Clear the sync_path, and set synced to MISSING,
                         # that way, we will recognize that this dir needs to be created
                         parent_ent[changed].sync_path = None
-                        parent_ent[changed].changed = True
+                        parent_ent[changed].changed = time.time()
                         parent_ent[synced].exists = MISSING
                         assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
-                        log.debug("updated entry as missing %s", parent)
+                        assert parent_ent[changed].needs_sync(), "%s doesn't need sync" % parent_ent
+                        log.debug("updated entry as missing %s", parent_ent)
 
         log.debug("CloudFileNotFoundError, punt")
         return PUNT
@@ -1367,8 +1371,7 @@ class SyncManager(Runnable):
             return self.delete_synced(sync, changed, synced)
 
         if sync[changed].exists == MISSING:
-            log.debug("%s missing", sync[changed].path)
-            return FINISHED
+            return self.handle_changed_is_missing(sync, changed, synced)
 
         if sync.is_path_change(changed) or sync.is_creation(changed):
             log.debug("is_path_change %s", sync.is_path_change(changed))
@@ -1386,6 +1389,25 @@ class SyncManager(Runnable):
             return self.handle_hash_diff(sync, changed, synced)
 
         log.debug("nothing changed %s", sync)
+        return FINISHED
+
+    def handle_changed_is_missing(self, sync, changed, synced):     # pylint: disable=no-self-use
+        log.debug("%s missing", sync[changed].path)
+
+        if sync[synced].exists == EXISTS:
+            if sync.priority <= 4:
+                log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)
+                return PUNT
+            # The synced side thinks it's synced, but it isn't -- the file is missing on the changed side
+            # We need to not only mark the synced side as changed, but UNSYNC it by removing the sync path
+            # otherwise needs_sync will return False,
+            log.warning("%s missing, other side exists. Marking other side unsynced: %s", sync[changed].path, sync)
+            sync[changed].clear()
+            sync[synced].sync_path = None
+            sync[synced].sync_hash = None
+            sync[synced].changed = time.time()
+            log.warning("%s now unsynced: %s", sync[synced].path, sync)
+
         return FINISHED
 
     def handle_hash_diff(self, sync, changed, synced):
