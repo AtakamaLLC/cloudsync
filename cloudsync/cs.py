@@ -50,7 +50,7 @@ class CloudSync(Runnable):
 
         File names are translated between both sides using the `translate` function, which can be overriden
             to deal with incompatible naming conventions, special character translation, etc. Files can be excluded
-            from sync by overriding the `is_relevant_path` function. By default, invalid names are not synced, and
+            from sync by overriding the `is_syncable_path` function. By default, invalid names are not synced, and
             notifications about this are sent to py::method::`handle_notification`.
         """
         if not roots and self.translate == CloudSync.translate:     # pylint: disable=comparison-with-callable
@@ -72,7 +72,7 @@ class CloudSync(Runnable):
                           prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                           self.is_relevant_path, self.resolve_conflict, self.nmgr, sleep=sleep)
+                           self.is_syncable_path, self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
@@ -209,8 +209,9 @@ class CloudSync(Runnable):
             return None
         return self.providers[side].join(self.roots[side], relative)
 
-    def is_relevant_path(self, side: int, path: str) -> bool:
-        """Override this method to exlude certain paths from syncing
+    def is_syncable_path(self, side: int, path: str) -> bool:
+        """Override this method to exlude certain paths from syncing.
+        This method also provides the functionality for unidirectional sync
 
         The default behavior is to assume anything that translates to
         non-null values is relevant and should be synced
@@ -222,7 +223,7 @@ class CloudSync(Runnable):
         Returns:
             True if the path is relevant, false otherwise
         """
-        return self.translate(side, path) != None
+        return self.translate(side, path) is not None
 
     def resolve_conflict(self, f1: IO, f2: IO) -> Tuple[Any, bool]:     # pylint: disable=no-self-use, unused-argument
         """Override this method to handle conflict resolution of files

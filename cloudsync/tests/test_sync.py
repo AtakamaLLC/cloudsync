@@ -59,7 +59,7 @@ def make_sync(_request, mock_provider_generator, shuffle, case_sensitive=True):
         raise ValueError("bad path: %s" % path)
 
     def is_relevant(to, path):
-        return translate(to, path) != None
+        return translate(to, path) is not None
 
     def resolve(_f1, _f2):
         return None
