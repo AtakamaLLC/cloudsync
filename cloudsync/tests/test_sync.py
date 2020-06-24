@@ -25,12 +25,12 @@ TIMEOUT = 4
 
 
 class SyncMgrMixin(SyncManager, RunUntilHelper):
-    def __init__(self, state, prov, trans, resolv, **kw):
+    def __init__(self, state, prov, trans, is_relevant, resolv, **kw):
         self.notifications: List[Notification] = []
         def handler(evt):
             self.notifications.append(evt)
         self.nmgr = NotificationManager(handler)
-        super().__init__(state, prov, trans, resolv, notification_manager=self.nmgr, **kw)
+        super().__init__(state, prov, trans, is_relevant, resolv, notification_manager=self.nmgr, **kw)
 
     def process_notifications(self):
         self.nmgr.notify(None)
@@ -58,11 +58,14 @@ def make_sync(_request, mock_provider_generator, shuffle, case_sensitive=True):
 
         raise ValueError("bad path: %s" % path)
 
+    def is_relevant(to, path):
+        return translate(to, path) != None
+
     def resolve(_f1, _f2):
         return None
 
     # two providers and a translation function that converts paths in one to paths in the other
-    sync = SyncMgrMixin(state, providers, translate, resolve)
+    sync = SyncMgrMixin(state, providers, translate, is_relevant, resolve)
 
     yield sync
 

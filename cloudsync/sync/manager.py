@@ -142,14 +142,14 @@ class SyncManager(Runnable):
     def __init__(self, state: SyncState,
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
+                 is_relevant_path: Callable,
                  resolve_conflict: Callable,
                  notification_manager: Optional['NotificationManager'] = None,
-                 sleep: Optional[Tuple[float, float]] = None,
-                 is_syncable_path: Optional[Callable] = None):
+                 sleep: Optional[Tuple[float, float]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
-        self.__is_syncable_path = is_syncable_path
+        self.__is_relevant_path = is_relevant_path
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
@@ -226,17 +226,15 @@ class SyncManager(Runnable):
         else:
             return None
 
-    def is_syncable_path(self, side, path):
-        # Maintain backwards compatibibility for now
-        log.debug("REED_DEBUG, %s, %s", side, path)
-        if self.__is_syncable_path:
-            return self.__is_syncable_path(side, path)
+    def is_relevant_path(self, side, path):
+        if path:
+            return self.__is_relevant_path(side, path)
         else:
-            log.debug("REED_DEBUG, %s", self.translate(side, path))
-            return self.translate(side, path) != None
+            return False
 
-    def to_sync(self, side, path):
-        return self.translate(side, path) and self.is_syncable_path(side, path)
+    def is_syncable(self, side, path):
+        # syncable if translates and is relevant
+        return self.translate(side, path) and self.is_relevant_path(side, path)
 
     @property
     def busy(self):
@@ -261,7 +259,7 @@ class SyncManager(Runnable):
                     # we check 2 things..
                     # if the file is syncable and the file has hash changes (create/upload needed)
                     # metadata sync changes aren't relevant for visual display
-                    if self.to_sync(other_side(i), e[i].path):
+                    if self.is_syncable(other_side(i), e[i].path):
                         if e[i].sync_hash != e[i].hash:
                             count += 1
                             # never double-count a single entry
@@ -320,7 +318,7 @@ class SyncManager(Runnable):
                 provider_path = provider_info.path
                 if not provider_path:
                     continue
-                if sync.is_irrelevant and self.to_sync(synced, provider_path) and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                if sync.is_irrelevant and self.is_syncable(synced, provider_path) and not sync[changed].sync_path:  # was irrelevant, but now is relevant
                     log.debug(">>>about to embrace %s", sync)
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
@@ -1116,7 +1114,7 @@ class SyncManager(Runnable):
                 log.debug("requeue trashed event %s", sync)
                 return PUNT
 
-        if not self.to_sync(synced, sync[changed].path):
+        if not self.is_syncable(synced, sync[changed].path):
             # ignore these
             return FINISHED
 
@@ -1323,12 +1321,12 @@ class SyncManager(Runnable):
     def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
         if sync[changed].path or (sync[changed].exists == EXISTS):
             translated_path = self.translate(synced, sync[changed].path)
-            is_syncable_path = self.is_syncable_path(synced, sync[changed].path)
-            if not translated_path:
+            is_relevant_path = self.is_relevant_path(synced, sync[changed].path)
+            if not translated_path and sync[changed].sync_path:
                 log.debug(">>>Removing remnants of file moved out of cloud root")
                 sync[changed].exists = TRASHED  # This will discard the ent later
-            elif not is_syncable_path:  # we don't have a new or old translated path... just irrelevant so discard
-                log.log(TRACE, ">>>Not a syncable path %s, ignoring", sync[changed].path)
+            elif not is_relevant_path:  # we don't have a new or old translated path... just irrelevant so discard
+                log.log(TRACE, ">>>Not a relevant path %s, ignoring", sync[changed].path)
                 sync.ignore(IgnoreReason.IRRELEVANT)
 
         if sync.is_discarded:

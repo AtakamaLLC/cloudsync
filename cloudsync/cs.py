@@ -49,8 +49,9 @@ class CloudSync(Runnable):
             been done, then the sync engine will trigger a walk of all files.
 
         File names are translated between both sides using the `translate` function, which can be overriden
-            to deal with incompatible naming conventions, special character translation, etc.  By default,
-            invalid names are not synced, and notifications about this are sent to py::method::`handle_notification`.
+            to deal with incompatible naming conventions, special character translation, etc. Files can be excluded
+            from sync by overriding the `is_relevant_path` function. By default, invalid names are not synced, and
+            notifications about this are sent to py::method::`handle_notification`.
         """
         if not roots and self.translate == CloudSync.translate:     # pylint: disable=comparison-with-callable
             raise ValueError("Either override the translate() function, or pass in a pair of roots")
@@ -71,7 +72,7 @@ class CloudSync(Runnable):
                           prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                           self.resolve_conflict, self.nmgr, sleep=sleep, is_syncable_path=self.is_syncable_path)
+                           self.is_relevant_path, self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state = state
@@ -181,9 +182,6 @@ class CloudSync(Runnable):
         """
         return 0
 
-    def is_syncable_path(self, side: int, path: str) -> bool:
-        return self.translate(side, path) != None
-
     def translate(self, side: int, path: str):
         """Override this method to translate between local and remote paths
 
@@ -210,6 +208,21 @@ class CloudSync(Runnable):
             log.log(TRACE, "%s is not subpath of %s", path, self.roots[1-side])
             return None
         return self.providers[side].join(self.roots[side], relative)
+
+    def is_relevant_path(self, side: int, path: str) -> bool:
+        """Override this method to exlude certain paths from syncing
+
+        The default behavior is to assume anything that translates to
+        non-null values is relevant and should be synced
+
+        Args:
+            side: either 0 (LOCAL) or 1 (REMOTE)
+            path: a path valid in the (1-side) provider
+
+        Returns:
+            True if the path is relevant, false otherwise
+        """
+        return self.translate(side, path) != None
 
     def resolve_conflict(self, f1: IO, f2: IO) -> Tuple[Any, bool]:     # pylint: disable=no-self-use, unused-argument
         """Override this method to handle conflict resolution of files
