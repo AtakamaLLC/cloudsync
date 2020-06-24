@@ -1392,8 +1392,9 @@ class SyncManager(Runnable):
         return FINISHED
 
     def handle_changed_is_missing(self, sync, changed, synced):     # pylint: disable=no-self-use
-        if (sync[synced].exists == EXISTS and sync.paths_match(changed) and
-            sync[changed].hash == sync[changed].sync_hash):
+        log.debug("%s missing", sync[changed].path)
+
+        if sync[synced].exists == EXISTS:
             if sync.priority <= 4:
                 log.warning("%s missing, other side exists. punting: %s", sync[changed].path, sync)
                 return PUNT
@@ -1406,7 +1407,7 @@ class SyncManager(Runnable):
             sync[synced].sync_hash = None
             sync[synced].changed = time.time()
             log.warning("%s now unsynced: %s", sync[synced].path, sync)
-        log.debug("%s missing", sync[changed].path)
+
         return FINISHED
 
     def handle_hash_diff(self, sync, changed, synced):
