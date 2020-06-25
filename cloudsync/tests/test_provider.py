@@ -542,6 +542,8 @@ def test_join(mock_provider):
     assert "/a/b/c" == mock_provider.join("a", "b", "c")
     assert "/a/c" == mock_provider.join("a", None, "c")
     assert "/a/b/c" == mock_provider.join("/a", "/b", "/c")
+    assert "/a/b/c" == mock_provider.join("/a", "\\b", "\\c")
+    assert "/a/b/c" == mock_provider.join("\\a", "\\b\\c")
     assert "/a/c" == mock_provider.join("a", "/", "c")
 
 
@@ -2447,6 +2449,41 @@ def test_globalize_subfolder(provider):
     # wrong value
     with pytest.raises(ValueError):
         provider.localize_oid(sub_oid)
+
+
+def test_split(provider):
+    assert provider.split("/a/b") == ("/a", "b")
+    assert provider.split("\\a\\b") == ("/a", "b")
+    assert provider.split("\\") == ("/", "")
+    assert provider.split("") == ("", "")
+    assert provider.split("a") == ("", "a")
+
+
+def test_is_subpath(provider):
+    assert provider.is_subpath("/", "/a/b") == "/a/b"
+    assert provider.is_subpath("\\", "/a\\b\\") == "/a/b"
+    assert provider.is_subpath("\\a", "\\a\\b/") == "/b"
+    assert provider.is_subpath("\\c", "\\a/b") == False
+    assert provider.is_subpath("/c", "\\a/b") == False
+
+
+def test_replace_path(provider):
+    assert provider.replace_path("/a/b", "/a", "/c") == "/c/b"
+    assert provider.replace_path("/a/b", "\\a", "\\c") == "/c/b"
+    assert provider.replace_path("\\a/b", "\\a", "\\c") == "/c/b"
+    assert provider.replace_path("\\a\\b", "\\a", "\\c") == "/c/b"
+
+
+def test_normalize_path_separators(provider):
+    assert provider.normalize_path_separators(None) is None
+    assert provider.normalize_path_separators("") == ""
+    assert provider.normalize_path_separators("/") == "/"
+    assert provider.normalize_path_separators("\\") == "/"
+    assert provider.normalize_path_separators("\\a\\b") == "/a/b"
+    assert provider.normalize_path_separators("\\\\a\\\\b") == "//a//b"
+    assert provider.normalize_path_separators("\\a\\b\\") == "/a/b"
+    assert provider.normalize_path_separators("\\a\\b/") == "/a/b"
+    assert provider.normalize_path_separators("\\a\\b//") == "/a/b"
 
 
 @pytest.mark.providers(["mock_path_cs", "mock_oid_ci"])
