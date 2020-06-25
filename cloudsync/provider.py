@@ -381,20 +381,21 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Args:
             paths: zero or more paths
         """
-        res = ""
         rl: List[str] = []
         for path in paths:
-            if not path or path == cls.sep:
+            if not path:
                 continue
 
             if isinstance(path, str):
-                rl = rl + [path.strip(cls.sep).strip(cls.alt_sep)]
+                path = cls.normalize_path_separators(path)
+                if path and path != cls.sep:
+                    rl += [path.strip(cls.sep)]
                 continue
 
             for sub_path in path:
-                if sub_path is None or sub_path == cls.sep or sub_path == cls.alt_sep:
-                    continue
-                rl = rl + [sub_path.strip(cls.sep)]
+                sub_path = cls.normalize_path_separators(sub_path)
+                if sub_path and sub_path != cls.sep:
+                    rl += [sub_path.strip(cls.sep)]
 
         if not rl:
             return cls.sep
@@ -408,16 +409,24 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     def split(self, path):
         """Splits a path into a dirname, filename, just like 1os.path.split()1"""
-        # todo cache regex
+        path = self.normalize_path_separators(path)
         index = path.rfind(self.sep)
-        if self.alt_sep:
-            index = max(index, path.rfind(self.alt_sep))
-
         if index == -1:
             return "", path
         if index == 0:
             return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
+
+    @classmethod
+    def normalize_path_separators(cls, path: str):
+        """Normalizes path separators only.
+
+        Replaces alternate separators with primary, strips separators from end of path string.
+        """
+        if path:
+            path = path.replace(cls.alt_sep, cls.sep) if cls.alt_sep else path
+            path = path.rstrip(cls.sep) if path != cls.sep else path
+        return path
 
     def normalize_path(self, path: str, for_display: bool = False):
         """Used internally for comparing paths in a case and sep insensitive manner, as appropriate.
@@ -426,9 +435,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             path: the path to normalize
             for_display: when true, preserve case of path's leaf node
         """
-        if self.alt_sep:
-            path = path.replace(self.alt_sep, self.sep)
-        parts = re.split(f"[{re.escape(self.sep)}]+", path.rstrip(self.sep))
+        path = self.normalize_path_separators(path)
+        parts = re.split(f"[{re.escape(self.sep)}]+", path)
         norm_path = self.join(*parts)
 
         if self.case_sensitive:
@@ -445,17 +453,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             target: the potential sub-file or folder
             strict: whether to return True if folder==target
         """
-        sep = self.sep
-        alt_sep = self.alt_sep
-        if alt_sep:
-            folder = folder.replace(alt_sep, sep)
-            target = target.replace(alt_sep, sep)
+        folder_full = self.normalize_path_separators(folder)
+        target_full = self.normalize_path_separators(target)
 
-        # Will return True for is-same-path in addition to target
-        folder_full = str(folder)
-        folder_full = folder_full.rstrip(sep)
-        target_full = str(target)
-        target_full = target_full.rstrip(sep)
         # .lower() instead of normcase because normcase will also mess with separators
         if not self.case_sensitive:
             folder_full_case = folder_full.lower()
@@ -466,8 +466,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         # target is same as folder, or target is a subpath (ensuring separator is there for base)
         if folder_full_case == target_full_case:
-            return False if strict else sep
-        elif len(target_full) > len(folder_full) and target_full[len(folder_full)] == sep:
+            return False if strict else self.sep
+        if folder_full_case == self.sep and target_full_case[0] == self.sep:
+            return target_full
+        elif len(target_full) > len(folder_full) and target_full[len(folder_full)] == self.sep:
             if target_full_case.startswith(folder_full_case):
                 return target_full[len(folder_full):]
             else:
@@ -478,8 +480,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Replaces from_dir with to_dir in path, but only if from_dir `is_subpath` of path."""
         relative = self.is_subpath(from_dir, path)
         if relative:
-            retval = to_dir + (relative if relative != self.sep else "")
-            return retval if relative != "" else self.sep
+            return self.normalize_path_separators(to_dir) + (relative if relative != self.sep else "")
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb, for_display=False):
