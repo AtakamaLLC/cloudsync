@@ -931,25 +931,24 @@ def test_no_change_does_nothing(sync):
 
 def test_file_name_error(sync):
     local_parent = "/local"
-    local_file1 = "/local/file"
-    remote_file1 = "/remote/file"
+    local_file1 = "/local/file1"
+    local_file2 = "/local/file2"
+    local_file3 = "/local/file3"
+    remote_file1 = "/remote/file1"
+    remote_file2 = "/remote/file2"
+    remote_file3 = "/remote/file3"
 
     sync.providers[LOCAL].mkdir(local_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
 
     sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
 
-    _create = sync.providers[REMOTE].create
-
-    throws = True
     called = False
 
-    def _called(name, data):
+    def _called(*args):
         nonlocal called
         called = True
-        if throws:
-            raise CloudFileNameError("file name error")
-        return _create(name, data)
+        raise CloudFileNameError("file name error")
 
     with patch.object(sync.providers[REMOTE], "create", new=_called):
         sync.run(until=lambda: called, timeout=1)
@@ -957,9 +956,24 @@ def test_file_name_error(sync):
     sync.do()
 
     assert not sync.providers[REMOTE].info_path(remote_file1)
-
     assert sync.state.lookup_oid(LOCAL, linfo1.oid).ignored == IgnoreReason.IRRELEVANT
 
+    linfo2 = sync.providers[LOCAL].create(local_file2, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=local_file2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.run(until=lambda: sync.providers[REMOTE].exists_path(remote_file2), timeout=1)
+    assert sync.providers[REMOTE].info_path(remote_file2)
+
+    new_oid = sync.providers[LOCAL].rename(linfo2.oid, local_file3)
+    sync.create_event(LOCAL, FILE, path=local_file3, oid=new_oid, hash=linfo2.hash, prior_oid=linfo2.oid)
+
+    called = False
+    with patch.object(sync.providers[REMOTE], "rename", new=_called):
+        sync.run(until=lambda: called, timeout=1)
+
+    sync.do()
+
+    assert not sync.providers[REMOTE].info_path(remote_file3)
+    assert sync.state.lookup_oid(LOCAL, new_oid).ignored == IgnoreReason.IRRELEVANT
 
 def test_modif_rename(sync):
     local_parent = "/local"
