@@ -645,6 +645,8 @@ class SyncManager(Runnable):
             log.debug("use existing %s", info)
         except ex.CloudFileNotFoundError:
             raise
+        except ex.CloudFileNameError:
+            raise
         except Exception as e:
             log.exception("failed to create %s, %s", translated_path, e)
             raise
