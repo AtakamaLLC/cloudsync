@@ -79,7 +79,7 @@ class ResolveFile():
                     self.provider.download(self.info.oid, f)
                 os.rename(self.__temp_file + ".tmp", self.__temp_file)
             except Exception as e:
-                log.error("error downloading %s", e)
+                log.warning("error downloading %s", e)
                 try:
                     os.unlink(self.__temp_file)
                 except FileNotFoundError:
@@ -458,7 +458,7 @@ class SyncManager(Runnable):
             raise ex.CloudTemporaryError("download or rename exception %s" % e)
 
         except ex.CloudFileNotFoundError:
-            log.error("download from %s failed fnf, switch to not exists",
+            log.warning("download from %s failed fnf, switch to not exists",
                       self.providers[changed].name)
             sync[changed].exists = MISSING
             return False
@@ -573,7 +573,7 @@ class SyncManager(Runnable):
             if sync.priority <= 0:
                 return PUNT
 
-            log.error("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
+            log.warning("mkdir %s : %s failed fnf, TODO fix mkdir code and stuff",
                       self.providers[synced].name, translated_path)
             raise NotImplementedError("TODO mkdir, and make state etc")
         except ex.CloudFileNameError:
@@ -1319,7 +1319,7 @@ class SyncManager(Runnable):
                     log.info(">>>Removing remnants of file moved out of cloud root")
                     sync[changed].exists = TRASHED  # This will discard the ent later
                 else:  # we don't have a new or old translated path... just irrelevant so discard
-                    log.info(">>>Not a cloud path %s, ignoring", sync[changed].path)
+                    log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
                     sync.ignore(IgnoreReason.IRRELEVANT)
 
         if sync.is_discarded:
