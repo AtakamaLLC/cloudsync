@@ -548,7 +548,7 @@ class SyncManager(Runnable):
                 if ent[changed].otype == DIRECTORY:
                     # these we can toss, they are other folders
                     # keep the current one, since it exists for sure
-                    log.info("discard %s", ent)
+                    log.debug("discard %s", ent)
                     ent.ignore(IgnoreReason.DISCARDED)
 
         ents = [ent for ent in ents if TRASHED not in (
@@ -558,10 +558,10 @@ class SyncManager(Runnable):
 
         if ents:
             if sync.priority <= 0:
-                log.info("punt mkdir %s", translated_path)
+                log.info("punt mkdir %s", translated_path)  # pragma: no cover
                 return PUNT
 
-            log.info("rename to fix conflict %s", translated_path)
+            log.info("rename to fix conflict %s", translated_path)  # pragma: no cover
             self.rename_to_fix_conflict(sync, synced, translated_path)
 
         try:
