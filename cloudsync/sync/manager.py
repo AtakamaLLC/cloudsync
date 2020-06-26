@@ -601,7 +601,7 @@ class SyncManager(Runnable):
                 sync, synced, exists=True, oid=info.oid, path=sync[synced].sync_path)
             return True
         except FileNotFoundError:
-            log.error("FNF during upload %s:%s", sync[synced].sync_path, sync[changed].temp_file)
+            log.warning("FNF during upload %s:%s", sync[synced].sync_path, sync[changed].temp_file)
             return False
         except ex.CloudFileNotFoundError:
             info = self.providers[synced].info_oid(sync[synced].oid)
