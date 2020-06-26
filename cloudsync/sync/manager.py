@@ -645,6 +645,8 @@ class SyncManager(Runnable):
             log.debug("use existing %s", info)
         except ex.CloudFileNotFoundError:
             raise
+        except ex.CloudFileNameError:
+            raise
         except Exception as e:
             log.exception("failed to create %s, %s", translated_path, e)
             raise
@@ -1196,6 +1198,9 @@ class SyncManager(Runnable):
         except ex.CloudFileNotFoundError as e:
             log.debug("ERROR: can't rename for now %s: %s", sync, repr(e))
             return self.handle_cloud_file_not_found_error(changed, sync, synced)
+        except ex.CloudFileNameError as e:
+            self.handle_file_name_error(sync, synced, translated_path)
+            return FINISHED
         except ex.CloudFileExistsError:
             log.debug("can't rename, file exists")
             if sync.priority <= 0:
