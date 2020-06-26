@@ -634,7 +634,7 @@ class SyncManager(Runnable):
                 info = self.providers[synced].create(translated_path, f)
             log.debug("created %s", info)
         except ex.CloudFileExistsError:
-            log.error("exists error %s", translated_path)
+            log.warning("exists error %s", translated_path)
             info = self.providers[synced].info_path(translated_path)
             if not info:
                 raise
@@ -990,7 +990,7 @@ class SyncManager(Runnable):
 
         sync[synced].exists = TRASHED
         if not sync.is_conflicted:
-            log.info("mark entry discarded %s", sync)
+            log.debug("mark entry discarded %s", sync)
             sync.ignore(IgnoreReason.DISCARDED, previous_reasons=IgnoreReason.IRRELEVANT)
         return FINISHED
 
@@ -1194,7 +1194,7 @@ class SyncManager(Runnable):
         try:
             new_oid = self.providers[synced].rename(sync[synced].oid, translated_path)
         except ex.CloudFileNotFoundError as e:
-            log.error("ERROR: can't rename for now %s: %s", sync, repr(e))
+            log.warning("ERROR: can't rename for now %s: %s", sync, repr(e))
             return self.handle_cloud_file_not_found_error(changed, sync, synced)
         except ex.CloudFileExistsError:
             log.warning("can't rename, file exists")
