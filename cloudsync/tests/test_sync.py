@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError,\
+from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNotFoundError, CloudFileNameError,\
         LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError, Notification,\
         NotificationManager, NotificationType
 from cloudsync.runnable import _BackoffError
@@ -931,25 +931,24 @@ def test_no_change_does_nothing(sync):
 
 def test_file_name_error(sync):
     local_parent = "/local"
-    local_file1 = "/local/file"
-    remote_file1 = "/remote/file"
+    local_file1 = "/local/file1"
+    local_file2 = "/local/file2"
+    local_file3 = "/local/file3"
+    remote_file1 = "/remote/file1"
+    remote_file2 = "/remote/file2"
+    remote_file3 = "/remote/file3"
 
     sync.providers[LOCAL].mkdir(local_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
 
     sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
 
-    _create = sync.providers[REMOTE].create
-
-    throws = True
     called = False
 
-    def _called(name, data):
+    def _called(*args):
         nonlocal called
         called = True
-        if throws:
-            raise CloudFileNameError("file name error")
-        return _create(name, data)
+        raise CloudFileNameError("file name error")
 
     with patch.object(sync.providers[REMOTE], "create", new=_called):
         sync.run(until=lambda: called, timeout=1)
@@ -957,9 +956,24 @@ def test_file_name_error(sync):
     sync.do()
 
     assert not sync.providers[REMOTE].info_path(remote_file1)
-
     assert sync.state.lookup_oid(LOCAL, linfo1.oid).ignored == IgnoreReason.IRRELEVANT
 
+    linfo2 = sync.providers[LOCAL].create(local_file2, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=local_file2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.run(until=lambda: sync.providers[REMOTE].exists_path(remote_file2), timeout=1)
+    assert sync.providers[REMOTE].info_path(remote_file2)
+
+    new_oid = sync.providers[LOCAL].rename(linfo2.oid, local_file3)
+    sync.create_event(LOCAL, FILE, path=local_file3, oid=new_oid, hash=linfo2.hash, prior_oid=linfo2.oid)
+
+    called = False
+    with patch.object(sync.providers[REMOTE], "rename", new=_called):
+        sync.run(until=lambda: called, timeout=1)
+
+    sync.do()
+
+    assert not sync.providers[REMOTE].info_path(remote_file3)
+    assert sync.state.lookup_oid(LOCAL, new_oid).ignored == IgnoreReason.IRRELEVANT
 
 def test_modif_rename(sync):
     local_parent = "/local"
@@ -1542,6 +1556,38 @@ def test_sync_change_count(sync, unverif):
         assert sync.change_count(unverified=unverif) == 2
     else:
         assert sync.change_count(unverified=unverif) == 1
+
+def test_create_file_exists_to_name_error(sync):
+    (local, remote) = sync.providers
+
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+
+    _create = sync.providers[REMOTE].create
+    called = False
+
+    def _called(sync, synced, translated_path):
+        nonlocal called
+        called = True
+
+    # Create throws CloudFileExistsError even though directory doesn't exist
+    def _create_w_error(name, data):
+        nonlocal called, remote_file1
+        if name == remote_file1:
+            raise CloudFileExistsError("File exists error")
+        return _create(name, data)
+
+    # Ensure this situation is handled as a file name error
+    sync.handle_file_name_error = _called
+
+    with patch.object(sync.providers[REMOTE], "create", new=_create_w_error):
+        sync.run(until=lambda: called, timeout=3)
 
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
