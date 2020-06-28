@@ -249,7 +249,7 @@ class ObserverPool:
 
     def add(self, path, callback):
         npath = self.generic_normalize_path(path)
-        if path not in self.pool:
+        if npath not in self.pool:
             self.pool[npath] = Observer(path)
         log.debug("add observer %s", callback)
         self.pool[npath].add(callback)
