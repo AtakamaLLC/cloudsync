@@ -295,7 +295,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     _max_queue = 10000
     _test_event_timeout = 2
     _test_event_sleep = 0.001
-    _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
     _additional_invalid_characters = ":" if is_windows() else ""
 
@@ -311,6 +310,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         self._rmdirs = []
         self._cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
+        self._test_namespace = self._fpath_to_oid(os.path.join(tempfile.gettempdir(), os.urandom(16).hex()))
         super().__init__()
 
     @property
@@ -319,7 +319,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @namespace.setter
     def namespace(self, path):
-        path = self.normalize_path(path)
+        path = self._fpath_to_oid(path)
         if self.paths_match(self._namespace, path):
             return
         if not os.path.exists(path):

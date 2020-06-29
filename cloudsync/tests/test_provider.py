@@ -629,10 +629,6 @@ def test_namespace(provider):
     if not ns:
         return
 
-    # TODO
-    if provider.prov.name == "filesystem":
-        return
-
     saved = provider.namespace_id
 
     try:
@@ -1025,6 +1021,7 @@ def test_event_del_create(provider):
         # If we didn't see create1, it doesn't matter if we saw delete1.
         if create1 is not None:
             assert delete1 is not None
+            # NOTE: filesystem provider sometimes fails this test
             assert create1 < delete1
 
         # If we got delete1, it needs to come before create2
