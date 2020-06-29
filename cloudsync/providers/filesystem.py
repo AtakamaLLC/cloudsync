@@ -248,6 +248,8 @@ class ObserverPool:
         return path
 
     def add(self, path, callback):
+        if path == "/":
+            return
         npath = self.generic_normalize_path(path)
         if npath not in self.pool:
             self.pool[npath] = Observer(path)
