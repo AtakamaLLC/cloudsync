@@ -629,6 +629,7 @@ def test_namespace(provider):
     if not ns:
         return
 
+    # TODO
     if provider.prov.name == "filesystem":
         return
 
@@ -1660,6 +1661,7 @@ def test_cursor(provider):
     info = provider.create("/file2", BytesIO(b"there"))
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
     found = False
+    # NOTE: timeout=600
     for e in provider.events_poll(timeout=600, until=lambda: found):
         log.debug("event = %s", e)
         if e.oid == info.oid:

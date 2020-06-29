@@ -270,14 +270,16 @@ class ObserverPool:
             return
         log.debug("remove observer %s", callback)
         self.pool[npath].discard(callback)
+
         # we should run this code below, but not right away
         # maybe set an event on a thread that wakes up, sleeps for a few seconds
         # then sees if anything is empty, and stops them
         # the reason is that windows starts to fail if we thrash
         #
-        # if self.pool[npath].empty():
-        #     self.pool[npath].stop()
-        #     del self.pool[npath]
+        if self.pool[npath].empty():
+            log.debug("delete observer for %s", npath)
+            self.pool[npath].stop()
+            del self.pool[npath]
 
 
 class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -317,6 +319,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @namespace.setter
     def namespace(self, path):
+        path = self.normalize_path(path)
         if self.paths_match(self._namespace, path):
             return
         if not os.path.exists(path):
