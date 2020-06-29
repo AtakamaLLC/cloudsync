@@ -295,6 +295,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     _max_queue = 10000
     _test_event_timeout = 2
     _test_event_sleep = 0.001
+    _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
     _additional_invalid_characters = ":" if is_windows() else ""
 
@@ -310,7 +311,6 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         self._rmdirs = []
         self._cache_enabled = True
         self._hash_cache: typing.Dict[str, CacheEnt] = {}
-        self._test_namespace = self._fpath_to_oid(os.path.join(tempfile.gettempdir(), os.urandom(16).hex()))
         super().__init__()
 
     @property
@@ -319,14 +319,13 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @namespace.setter
     def namespace(self, path):
-        path = self._fpath_to_oid(path)
         if self.paths_match(self._namespace, path):
             return
         if not os.path.exists(path):
             os.mkdir(path)
         path = get_long_path_name(path)
         log.info("set namespace %s", path)
-        self._namespace = path
+        self._namespace = self._fpath_to_oid(path)
         try:
             self._connect_observer()
         except OSError:
@@ -716,7 +715,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        return [Namespace(name=self._test_namespace, id=self._test_namespace)]
+        ns = self._fpath_to_oid(get_long_path_name(self._test_namespace))
+        return [Namespace(name=ns, id=ns)]
 
 
 register_provider(FileSystemProvider)
