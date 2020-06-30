@@ -211,16 +211,16 @@ class Observer(watchdog_events.FileSystemEventHandler):
         """Called by watchdog on fs events."""
 
         # filter out lots of the same events in the same millisecond
-        if (type(event) == self.prev_event_type and
-                event.src_path == self.prev_event_src and
-                getattr(event, "dest_path", None) == self.prev_event_dest and
-                time.monotonic() < self.prev_event_time + 0.01):
-            return
+        # if (type(event) == self.prev_event_type and
+        #         event.src_path == self.prev_event_src and
+        #         getattr(event, "dest_path", None) == self.prev_event_dest and
+        #         time.monotonic() < self.prev_event_time + 0.01):
+        #     return
 
-        self.prev_event_type = type(event)
-        self.prev_event_src = event.src_path
-        self.prev_event_dest = getattr(event, "dest_path", None)
-        self.prev_event_time = time.monotonic()
+        # self.prev_event_type = type(event)
+        # self.prev_event_src = event.src_path
+        # self.prev_event_dest = getattr(event, "dest_path", None)
+        # self.prev_event_time = time.monotonic()
 
 # uncomment for too-heavy debugging
 #        log.debug("raw event %s %s", id(self), event)
