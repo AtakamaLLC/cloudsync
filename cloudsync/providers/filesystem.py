@@ -184,8 +184,8 @@ class Observer(watchdog_events.FileSystemEventHandler):
     def __init__(self, path):
         self.path = path
         self.callbacks = set()
-        log.debug("start observer %s", path)
         self.thread = watchdog_observer()
+        log.info("start %s for path %s", type(self.thread), path)
         self.thread.schedule(self, path, recursive=True)
         self.thread.start()
 
@@ -248,8 +248,12 @@ class ObserverPool:
         return path
 
     def add(self, path, callback):
+        # fixes inotify limit errors on linux
+        if path == "/":
+            return
+
         npath = self.generic_normalize_path(path)
-        if path not in self.pool:
+        if npath not in self.pool:
             self.pool[npath] = Observer(path)
         log.debug("add observer %s", callback)
         self.pool[npath].add(callback)
@@ -268,14 +272,19 @@ class ObserverPool:
             return
         log.debug("remove observer %s", callback)
         self.pool[npath].discard(callback)
+
         # we should run this code below, but not right away
         # maybe set an event on a thread that wakes up, sleeps for a few seconds
         # then sees if anything is empty, and stops them
         # the reason is that windows starts to fail if we thrash
         #
-        # if self.pool[npath].empty():
-        #     self.pool[npath].stop()
-        #     del self.pool[npath]
+        # update: 
+        # this resolves test failures due to having too many active observers
+        # so far, have not noticed any windows thrashing problems as mentioned above
+        if self.pool[npath].empty():
+            self.pool[npath].stop()
+            log.debug("delete observer for %s", npath)
+            del self.pool[npath]
 
 
 class FileSystemProvider(Provider):                     # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -321,7 +330,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             os.mkdir(path)
         path = get_long_path_name(path)
         log.info("set namespace %s", path)
-        self._namespace = path
+        self._namespace = self._fpath_to_oid(path)
         try:
             self._connect_observer()
         except OSError:
@@ -711,7 +720,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        return [Namespace(name=self._test_namespace, id=self._test_namespace)]
+        ns = self._fpath_to_oid(get_long_path_name(self._test_namespace))
+        return [Namespace(name=ns, id=ns)]
 
 
 register_provider(FileSystemProvider)
