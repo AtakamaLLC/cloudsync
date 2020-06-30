@@ -1021,7 +1021,6 @@ def test_event_del_create(provider):
         # If we didn't see create1, it doesn't matter if we saw delete1.
         if create1 is not None:
             assert delete1 is not None
-            # NOTE: filesystem provider sometimes fails this test
             assert create1 < delete1
 
         # If we got delete1, it needs to come before create2
@@ -1658,7 +1657,7 @@ def test_cursor(provider):
     info = provider.create("/file2", BytesIO(b"there"))
     log.debug(f"current={provider.current_cursor} latest={provider.latest_cursor} oid={info.oid}")
     found = False
-    # NOTE: timeout=600
+    # NOTE: will hang for 10 min if event does not come through
     for e in provider.events_poll(timeout=600, until=lambda: found):
         log.debug("event = %s", e)
         if e.oid == info.oid:

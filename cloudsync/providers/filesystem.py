@@ -184,8 +184,8 @@ class Observer(watchdog_events.FileSystemEventHandler):
     def __init__(self, path):
         self.path = path
         self.callbacks = set()
-        log.debug("start observer %s", path)
         self.thread = watchdog_observer()
+        log.info("start %s for path %s", type(self.thread), path)
         self.thread.schedule(self, path, recursive=True)
         self.thread.start()
 
@@ -248,8 +248,10 @@ class ObserverPool:
         return path
 
     def add(self, path, callback):
+        # fixes inotify limit errors on linux
         if path == "/":
             return
+
         npath = self.generic_normalize_path(path)
         if npath not in self.pool:
             self.pool[npath] = Observer(path)
@@ -276,9 +278,12 @@ class ObserverPool:
         # then sees if anything is empty, and stops them
         # the reason is that windows starts to fail if we thrash
         #
+        # update: 
+        # this resolves test failures due to having too many active observers
+        # so far, have not noticed any windows thrashing problems as mentioned above
         if self.pool[npath].empty():
-            log.debug("delete observer for %s", npath)
             self.pool[npath].stop()
+            log.debug("delete observer for %s", npath)
             del self.pool[npath]
 
 
