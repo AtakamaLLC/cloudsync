@@ -34,7 +34,7 @@ def test_list_basic(caplog, long):
 def test_list_ns(caplog, capsys):
     args = MagicMock()
 
-    args.prov = "mock_oid_ci_ns@namespace:/"
+    args.prov = "mock_oid_ci_ns@ns1:/"
     args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit
@@ -59,7 +59,7 @@ def test_list_ns(caplog, capsys):
 def test_list_badns():
     args = MagicMock()
 
-    args.prov = "mock_oid_ci@namespace:/"
+    args.prov = "mock_oid_ci_ns@namespace:/"
     args.quiet = False           # log less, don't prompt for auth, get tokens from files or other commands
     args.verbose = True         # log a lot (overrides quiet)
     args.daemon = False         # don't keep running after i quit

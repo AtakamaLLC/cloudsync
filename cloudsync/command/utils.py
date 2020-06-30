@@ -107,9 +107,9 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             if cls.name == "filesystem":
                 # todo: this is a crappy hack because we don't initialze providers with the root oid or path
                 # once that's done, this can go away
-                ns = self.path
+                prov = cls()
+                prov.namespace_id = self.path
                 self.path = "/"
-                prov = cls(namespace=ns)
             else:
                 prov = cls()
             if cls.name.startswith("mock_"):
