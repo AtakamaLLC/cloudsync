@@ -30,7 +30,7 @@ __all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_N
 
 class Namespace(NamedTuple):
     name: str
-    id: Optional[str]
+    id: str
     is_parent: bool = False
 
 
@@ -54,8 +54,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
     test_root: str = '/'                      ; """Root folder to use during provider tests"""
-    _namespace: str = None                    ; """current namespace, if needed """
-    _namespace_id: str = None                 ; """current namespace id, if needed """
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None         ; """OAuth providers can set this in init"""
     _listdir_page_size: Optional[int] = None  ; """Used for testing listdir"""
@@ -282,24 +280,24 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return None
 
     @property
-    def namespace(self) -> Optional[str]:
+    def namespace(self) -> Optional[Namespace]:            # pylint: disable=no-self-use
         """Some providers have multiple 'namespaces', that can be listed and changed.
 
         Cannot be set when not connected.
         """
-        return self._namespace
+        raise CloudNamespaceError("This provider does not support namespaces")
 
     @namespace.setter
-    def namespace(self, ns: str):                          # pylint: disable=no-self-use
+    def namespace(self, ns: Namespace):                    # pylint: disable=no-self-use
         raise CloudNamespaceError("This provider does not support namespaces")
 
     @property
-    def namespace_id(self) -> Optional[str]:
+    def namespace_id(self) -> Optional[str]:               # pylint: disable=no-self-use
         """Unique id corresponding to a namespace name.
 
         Can be set when not connected.
         """
-        return self._namespace_id
+        raise CloudNamespaceError("This provider does not support namespaces")
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
