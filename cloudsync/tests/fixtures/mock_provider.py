@@ -109,7 +109,7 @@ class MockProvider(Provider):
     # TODO: normalize names to get rid of trailing slashes, etc.
 
     def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
-            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = False):
+            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = True):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -139,7 +139,8 @@ class MockProvider(Provider):
         self._test_event_timeout = 1
         self._test_event_sleep = 0.001
         self._test_creds = {"key": "val"}
-        # self.connect(self._test_creds)
+        if use_ns:
+            self._test_namespace = self.list_ns()[0]
         self._hash_func = hash_func
         if hash_func is None:
             self._hash_func = lambda a: md5(a).digest()
@@ -163,7 +164,7 @@ class MockProvider(Provider):
     def namespace(self, namespace: Namespace):
         if self._use_ns:
             if type(namespace) is Namespace:
-                self._namespace_id = namespace.id
+                self.namespace_id = namespace.id
             elif type(namespace) is str:
                 self._namespace = next((ns for ns in self.list_ns() if ns.name == namespace), None)
             if not self._namespace:
@@ -174,8 +175,8 @@ class MockProvider(Provider):
         return self._namespace.id if self._use_ns and self._namespace else None
 
     @namespace_id.setter
-    def namespace_id(self, id: str):
-        self._namespace = next((ns for ns in self.list_ns() if ns.id == id), None)
+    def namespace_id(self, namespace_id: str):
+        self._namespace = next((ns for ns in self.list_ns() if ns.id == namespace_id), None)
         if not self._namespace:
             raise CloudNamespaceError("invalid namespace")
 
@@ -581,7 +582,7 @@ def mock_provider_generator(request):
 def mock_provider_creator():
     return mock_provider_instance
 
-
+# one of two default providers for test_provider.py tests
 class MockPathCs(MockProvider):
     name = "mock_path_cs"
 
@@ -602,11 +603,12 @@ class MockOidCs(MockProvider):
     def __init__(self):
         super().__init__(oid_is_path=False, case_sensitive=True)
 
+# one of two default providers for test_provider.py tests
 class MockOidCi(MockProvider):
     name = "mock_oid_ci"
 
     def __init__(self):
-        super().__init__(oid_is_path=False, case_sensitive=False)
+        super().__init__(oid_is_path=False, case_sensitive=False, use_ns=False)
 
 class MockOidCiNs(MockProvider):
     name = "mock_oid_ci_ns"
