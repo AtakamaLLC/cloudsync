@@ -974,15 +974,12 @@ def test_event_del_create(provider):
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
     infox = provider.create(dest2, temp2)
-
-    done = False
+    time.sleep(1)
 
     log.info("test oid 1 %s", info1.oid)
     log.info("test oid 2 %s", info2.oid)
     events = []
-    event_num = 1
-    create1, delete1, create2 = [None] * 3
-    for event in provider.events_poll(provider._test_event_timeout * 2, until=lambda: done):
+    for event in provider.events():
         log.info("test event %s", event)
         # you might get events for the root folder here or other setup stuff
         path = event.path
@@ -992,11 +989,13 @@ def test_event_del_create(provider):
                 path = info.path
 
         # always possible to get events for other things
-        if not (path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid)):
-            continue
+        if path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid):
+            events.append(event)
 
-        events.append(event)
-
+    event_num = 0
+    create1, delete1, create2 = [None] * 3
+    for event in events:
+        event_num += 1
         if event.exists:
             if event.oid == info1.oid and (not provider.oid_is_path or create1 is None):
                 create1 = event_num
@@ -1008,17 +1007,6 @@ def test_event_del_create(provider):
             if event.oid == info1.oid:
                 delete1 = event_num
                 log.info("delete1 = %s", event_num)
-
-        event_num = event_num + 1
-        if event.oid == infox.oid and (create1 is not None and delete1 is not None) or (create1 is None):
-            if event.oid == infox.oid:
-                log.info("infox.oid")
-            if create1 is not None and delete1 is not None:
-                log.info("create1+delete1")
-            if create1 is None:
-                log.info("not-create1")
-            log.info("done")
-            done = True
 
     assert len(events), "Event loop timed out before getting any events"
     if create1 is not None:
@@ -1039,6 +1027,8 @@ def test_event_del_create(provider):
     if provider.prov.name == 'box':
         logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
         logging.getLogger('urllib3.connectionpool').setLevel(cpll)
+
+    assert False
 
 
 def test_event_rename(provider):
