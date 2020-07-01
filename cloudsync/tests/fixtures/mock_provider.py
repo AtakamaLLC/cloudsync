@@ -13,7 +13,8 @@ from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
-    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError
+    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError, \
+    CloudNamespaceError
 
 from cloudsync.utils import debug_sig
 
@@ -119,8 +120,7 @@ class MockProvider(Provider):
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
         self._use_ns = use_ns
-        self.__namesapce = None
-        self.__namesapce_id = None
+        self._namespace: Namespace = None
         self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
@@ -156,20 +156,28 @@ class MockProvider(Provider):
             return super().list_ns()
 
     @property
-    def namespace(self):
-        if self._use_ns:
-            return self.__namespace
-        else:
-            return super().namespace
+    def namespace(self) -> Namespace:
+        return self._namespace if self._use_ns else None
 
     @namespace.setter
-    def namespace(self, val):
+    def namespace(self, namespace: Namespace):
         if self._use_ns:
-            self.__namespace = val
-            self.__namespace_id = val + "-id"
-        else:
-            # calling super setter in python is a horrid hack, but this is the only way to do it
-            super(MockProvider, self.__class__).namespace.fset(self, val)    # type: ignore  # pylint: disable=no-member
+            if type(namespace) is Namespace:
+                self._namespace_id = namespace.id
+            elif type(namespace) is str:
+                self._namespace = next((ns for ns in self.list_ns() if ns.name == namespace), None)
+            if not self._namespace:
+                raise CloudNamespaceError("invalid namespace")
+
+    @property
+    def namespace_id(self) -> str:
+        return self._namespace.id if self._use_ns and self._namespace else None
+
+    @namespace_id.setter
+    def namespace_id(self, id: str):
+        self._namespace = next((ns for ns in self.list_ns() if ns.id == id), None)
+        if not self._namespace:
+            raise CloudNamespaceError("invalid namespace")
 
     @lock
     def connect_impl(self, creds):
