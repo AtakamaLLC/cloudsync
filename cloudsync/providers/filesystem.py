@@ -306,7 +306,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     def __init__(self):
         """Constructor for FileSystemProvider."""
-        self._namespace: Namespace = None
+        self._namespace: typing.Optional[Namespace] = None
         self._cursor = 0
         self._latest_cursor = 0
         self._events: typing.Deque[Event] = collections.deque([])
@@ -319,7 +319,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         super().__init__()
 
     @property
-    def namespace(self) -> Namespace:
+    def namespace(self) -> typing.Optional[Namespace]:
         return self._namespace
 
     @namespace.setter
@@ -333,7 +333,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             raise ex.CloudNamespaceError("invalid namespace")
 
     @property
-    def namespace_id(self) -> str:
+    def namespace_id(self) -> typing.Optional[str]:
         return self._namespace.id if self._namespace else None
 
     @namespace_id.setter

@@ -120,7 +120,7 @@ class MockProvider(Provider):
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
         self._use_ns = use_ns
-        self._namespace: Namespace = None
+        self._namespace: Optional[Namespace] = None
         self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
@@ -157,7 +157,7 @@ class MockProvider(Provider):
             return super().list_ns()
 
     @property
-    def namespace(self) -> Namespace:
+    def namespace(self) -> Optional[Namespace]:
         return self._namespace if self._use_ns else None
 
     @namespace.setter
@@ -171,7 +171,7 @@ class MockProvider(Provider):
                 raise CloudNamespaceError("invalid namespace")
 
     @property
-    def namespace_id(self) -> str:
+    def namespace_id(self) -> Optional[str]:
         return self._namespace.id if self._use_ns and self._namespace else None
 
     @namespace_id.setter
