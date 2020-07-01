@@ -1000,14 +1000,24 @@ def test_event_del_create(provider):
         if event.exists:
             if event.oid == info1.oid and (not provider.oid_is_path or create1 is None):
                 create1 = event_num
+                log.info("create1 = %s", event_num)
             if event.oid == info2.oid or (provider.oid_is_path and event.oid == info1.oid and create1 is not None):
                 create2 = event_num
+                log.info("create2 = %s", event_num)
         else:
             if event.oid == info1.oid:
                 delete1 = event_num
+                log.info("delete1 = %s", event_num)
 
         event_num = event_num + 1
         if event.oid == infox.oid and (create1 is not None and delete1 is not None) or (create1 is None):
+            if event.oid == infox.oid:
+                log.info("infox.oid")
+            if create1 is not None and delete1 is not None:
+                log.info("create1+delete1")
+            if create1 is None:
+                log.info("not-create1")
+            log.info("done")
             done = True
 
     assert len(events), "Event loop timed out before getting any events"
@@ -1029,6 +1039,8 @@ def test_event_del_create(provider):
     if provider.prov.name == 'box':
         logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
         logging.getLogger('urllib3.connectionpool').setLevel(cpll)
+
+    assert False
 
 
 def test_event_rename(provider):
