@@ -1040,8 +1040,6 @@ def test_event_del_create(provider):
         logging.getLogger('boxsdk.network.default_network').setLevel(dnll)
         logging.getLogger('urllib3.connectionpool').setLevel(cpll)
 
-    assert False
-
 
 def test_event_rename(provider):
     if provider.prov.name == 'gdrive':
