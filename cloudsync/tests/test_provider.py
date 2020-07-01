@@ -1009,6 +1009,12 @@ def test_event_del_create(provider):
                 log.info("delete1 = %s", event_num)
 
     assert len(events), "Event loop timed out before getting any events"
+
+    # if we only got 1 create event for info1, it is most likely for the 2nd create
+    if provider.oid_is_path and create1 == create2:
+        assert not delete1
+        create1 = None
+
     if create1 is not None:
         assert delete1 is not None  # make sure we got delete1 if we got create1
     assert create2  # we definitely have to see the second create
