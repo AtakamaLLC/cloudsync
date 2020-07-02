@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 @pytest.fixture
 def fsp():
     fsp = FileSystemProvider()
-    fsp.namespace = fsp.list_ns()[0]
+    fsp.namespace = fsp._test_namespace
     yield fsp
     shutil.rmtree(fsp.namespace_id)
 
