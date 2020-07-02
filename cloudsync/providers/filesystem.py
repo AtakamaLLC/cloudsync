@@ -324,13 +324,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     @namespace.setter
     def namespace(self, namespace: Namespace):
-        if type(namespace) is Namespace:
-            self.namespace_id = namespace.id
-        elif type(namespace) is str:
-            self.namespace_id = str(namespace)
-        else:
-            log.error("invalid namespace: %s", namespace)
-            raise ex.CloudNamespaceError("invalid namespace")
+        self.namespace_id = namespace.id
 
     @property
     def namespace_id(self) -> typing.Optional[str]:
@@ -727,7 +721,8 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        ns = self._fpath_to_oid(get_long_path_name(self._test_namespace))
+        long_path = get_long_path_name(self._test_namespace)
+        ns = self._fpath_to_oid(long_path) if long_path else self._test_namespace
         return [Namespace(name=ns, id=ns)]
 
 

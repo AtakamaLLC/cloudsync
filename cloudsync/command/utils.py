@@ -6,7 +6,7 @@ import argparse
 import abc
 from typing import Optional
 
-from cloudsync import get_provider, known_providers, OAuthConfig, Provider, Creds
+from cloudsync import get_provider, known_providers, OAuthConfig, Provider, Creds, CloudNamespaceError
 
 log = logging.getLogger()
 
@@ -83,6 +83,19 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             raise ValueError("Unknown provider %s, try pip install cloudsync[%s] or pip install cloudsync-%s" % (self.method, self.method, self.method))
         self.provider_type = get_provider(self.method)
 
+    def _set_namespace(self, provider: Provider):
+        if provider.name == "filesystem":
+            # todo: this is a crappy hack because we don't initialze providers with the root oid or path
+            # once that's done, this can go away
+            provider.namespace_id = self.path
+            self.path = "/"
+        elif self.namespace:
+            # lookup namespace by name
+            namespace = next((ns for ns in provider.list_ns() if ns.name == self.namespace), None)
+            if not namespace:
+                raise CloudNamespaceError(f"unknown namespace: {self.namespace}")
+            provider.namespace = namespace
+
     def provider_instance(self, args, *, connect=True) -> Provider:
         """Given command-line args, construct a provider object, and connect it."""
 
@@ -104,21 +117,12 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             if connect:
                 prov.connect(creds)
         else:
-            if cls.name == "filesystem":
-                # todo: this is a crappy hack because we don't initialze providers with the root oid or path
-                # once that's done, this can go away
-                prov = cls()
-                prov.namespace_id = self.path
-                self.path = "/"
-            else:
-                prov = cls()
+            prov = cls()
             if cls.name.startswith("mock_"):
                 prov.set_creds({"fake" : "creds"})
             prov.reconnect()
 
-        if self.namespace:
-            prov.namespace = self.namespace
-
+        self._set_namespace(prov)
         return prov
 
 

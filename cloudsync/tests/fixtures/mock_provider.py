@@ -163,12 +163,7 @@ class MockProvider(Provider):
     @namespace.setter
     def namespace(self, namespace: Namespace):
         if self._use_ns:
-            if type(namespace) is Namespace:
-                self.namespace_id = namespace.id
-            elif type(namespace) is str:
-                self._namespace = next((ns for ns in self.list_ns() if ns.name == namespace), None)
-            if not self._namespace:
-                raise CloudNamespaceError("invalid namespace")
+            self.namespace_id = namespace.id
 
     @property
     def namespace_id(self) -> Optional[str]:
