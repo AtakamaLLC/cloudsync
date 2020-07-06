@@ -300,13 +300,13 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     _max_queue = 10000
     _test_event_timeout = 2
     _test_event_sleep = 0.001
-    _test_namespace = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
+    _test_namespace_path = os.path.join(tempfile.gettempdir(), os.urandom(16).hex())
     _observers = ObserverPool(case_sensitive)
     _additional_invalid_characters = ":" if is_windows() else ""
 
-    def __init__(self, namespace="/"):
+    def __init__(self):
         """Constructor for FileSystemProvider."""
-        self._namespace = namespace
+        self._namespace: typing.Optional[Namespace] = None
         self._cursor = 0
         self._latest_cursor = 0
         self._events: typing.Deque[Event] = collections.deque([])
@@ -319,49 +319,50 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         super().__init__()
 
     @property
-    def namespace(self):
+    def namespace(self) -> typing.Optional[Namespace]:
         return self._namespace
 
     @namespace.setter
-    def namespace(self, path):
-        if self.paths_match(self._namespace, path):
+    def namespace(self, namespace: Namespace):
+        self.namespace_id = namespace.id
+
+    @property
+    def namespace_id(self) -> typing.Optional[str]:
+        return self._namespace.id if self._namespace else None
+
+    @namespace_id.setter
+    def namespace_id(self, path: str):
+        if self._namespace and self.paths_match(self._namespace.id, path):
             return
         if not os.path.exists(path):
             os.mkdir(path)
-        path = get_long_path_name(path)
+        path = self._fpath_to_oid(get_long_path_name(path))
         log.info("set namespace %s", path)
-        self._namespace = self._fpath_to_oid(path)
-        try:
-            self._connect_observer()
-        except OSError:
-            log.info("cannot get events on %s", path)
-
-    def _connect_observer(self):
-        with self._api():
-            self._observers.discard(path=None, callback=self._on_any_event)
-            self._observers.add(self._namespace, self._on_any_event)
-
-    @property
-    def namespace_id(self):
-        return self._fpath_to_oid(self._namespace)
-
-    @namespace_id.setter
-    def namespace_id(self, oid):
-        self.namespace = self._oid_to_fpath(oid)
+        self._namespace = Namespace(name=path, id=path)
+        self._connect_observer(path)
 
     def disconnect(self):
-        self._observers.discard(self._namespace, self._on_any_event)
+        if self._namespace:
+            self._observers.discard(self._namespace.id, self._on_any_event)
         super().disconnect()
 
-    def connect_impl(self, creds):
+    def _connect_observer(self, path: str):
         try:
-            self._connect_observer()
+            with self._api():
+                self._observers.discard(path=None, callback=self._on_any_event)
+                self._observers.add(path, self._on_any_event)
         except OSError:
-            log.info("cannot get events for %s", self._namespace)
+            log.info("cannot get events for %s", path)
+
+    def connect_impl(self, creds):
+        if self._namespace:
+            self._connect_observer(self._namespace.id)
         return super().connect_impl(creds)
 
     def get_quota(self):
-        ret = shutil.disk_usage(self._namespace)
+        if not self._namespace:
+            raise ex.CloudDisconnectedError("namespace not set")
+        ret = shutil.disk_usage(self._namespace.id)
         return {
             "used": ret.used,
             "limit": ret.total,
@@ -567,7 +568,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                 raise ex.CloudFileNotFoundError("not a directory")
 
     def create(self, path, file_like, metadata=None) -> OInfo:
-        fpath = self.join(self.namespace, path)
+        fpath = self.join(self.namespace_id, path)
         with self._api():
             parent = self.dirname(fpath)
             if os.path.exists(fpath) or (os.path.exists(parent) and not os.path.isdir(parent)):
@@ -591,7 +592,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                 shutil.copyfileobj(src, file_like)
 
     def rename(self, oid, path) -> str:
-        fpath = self.join(self.namespace, path)
+        fpath = self.join(self.namespace_id, path)
         with self._api():
             path_from = self._oid_to_fpath(oid)
             if not os.path.exists(path_from):
@@ -629,7 +630,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return self._fpath_to_oid(fpath)
 
     def mkdir(self, path) -> str:
-        fpath = self.join(self.namespace, path)
+        fpath = self.join(self.namespace_id, path)
         with self._api():
             parent = self.dirname(fpath)
             if os.path.isfile(parent) or os.path.isfile(fpath):
@@ -672,7 +673,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return os.path.exists(path)
 
     def exists_path(self, path) -> bool:
-        path = self.join(self.namespace, path)
+        path = self.join(self.namespace_id, path)
         with self._api():
             return os.path.exists(path)
 
@@ -690,7 +691,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     def __info_path(self, path: str, fpath: str, canonicalize=False) -> typing.Optional[OInfo]:
         if fpath is None:
-            fpath = self.join(self.namespace, path)
+            fpath = self.join(self.namespace_id, path)
 
         if not os.path.exists(fpath):
             return None
@@ -709,10 +710,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             return ret
 
     def _trim_ns(self, path):
-        subs = self.is_subpath(self.namespace, path)
+        subs = self.is_subpath(self.namespace_id, path)
         if subs:
             return subs
-        log.debug("%s is not within %s", path, self.namespace)
+        log.debug("%s is not within %s", path, self.namespace_id)
         return None
 
     def info_oid(self, oid: str, use_cache=True) -> typing.Optional[OInfo]:
@@ -720,8 +721,13 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         return self.__info_path(None, fpath)
 
     def list_ns(self, recursive=True, parent=None):
-        ns = self._fpath_to_oid(get_long_path_name(self._test_namespace))
-        return [Namespace(name=ns, id=ns)]
+        return [self._test_namespace]
+
+    @property
+    def _test_namespace(self):
+        long_path = get_long_path_name(self._test_namespace_path)
+        ns = self._fpath_to_oid(long_path) if long_path else self._test_namespace_path
+        return Namespace(name=ns, id=ns)
 
 
 register_provider(FileSystemProvider)
