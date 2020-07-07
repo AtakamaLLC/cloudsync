@@ -140,7 +140,7 @@ class ProviderTestMixin(ProviderBase):
 
     def make_root(self):
         ns = self.prov.list_ns()
-        if ns:
+        if ns and hasattr(self.prov, "_test_namespace"):
             self.prov.namespace = self.prov._test_namespace
 
         log.debug("mkdir test_root %s", self.test_root)
@@ -2028,10 +2028,13 @@ def test_set_ns_offline(unwrapped_provider):
         pass
 
     provider.namespace_id = 'bad-namespace-is-ok-at-least-when-offline'
-    provider.connect(provider._test_creds)
     log.info("ns id %s", provider.namespace_id)
+    pytest.skip("providers are in the process of migrating to new namespace id contract")# Delete this crap once the providers are changed to the new namespace id contract
     with pytest.raises(CloudNamespaceError):
-        log.info("ns list %s", list(provider.listdir_path("/")))
+        provider.connect(provider._test_creds)
+    assert provider.namespace is None  # setting a bad ns id makes this None, setting a good one makes this the name
+    with pytest.raises(CloudNamespaceError):
+        provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
 
 
 @pytest.mark.manual
