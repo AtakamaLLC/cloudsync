@@ -140,7 +140,7 @@ class ProviderTestMixin(ProviderBase):
 
     def make_root(self):
         ns = self.prov.list_ns()
-        if ns:
+        if ns and hasattr(self.prov, "_test_namespace"):
             self.prov.namespace = self.prov._test_namespace
 
         log.debug("mkdir test_root %s", self.test_root)
