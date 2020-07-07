@@ -10,7 +10,6 @@ import pytest
 from cloudsync.exceptions import CloudTokenError
 from cloudsync.providers import BoxProvider
 from cloudsync.oauth import OAuthConfig, OAuthProviderInfo
-from cloudsync.utils import is_subpath
 from cloudsync.oauth.apiserver import ApiServer, ApiError, api_route
 
 from .fixtures import FakeApi, fake_oauth_provider

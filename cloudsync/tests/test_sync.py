@@ -11,13 +11,13 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileNotFoundError, CloudFileNameError,\
+from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNotFoundError, CloudFileNameError,\
         LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError, Notification,\
         NotificationManager, NotificationType
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, SideState
+from cloudsync.sync.state import TRASHED, MISSING, SideState
 
 log = logging.getLogger(__name__)
 
@@ -931,25 +931,24 @@ def test_no_change_does_nothing(sync):
 
 def test_file_name_error(sync):
     local_parent = "/local"
-    local_file1 = "/local/file"
-    remote_file1 = "/remote/file"
+    local_file1 = "/local/file1"
+    local_file2 = "/local/file2"
+    local_file3 = "/local/file3"
+    remote_file1 = "/remote/file1"
+    remote_file2 = "/remote/file2"
+    remote_file3 = "/remote/file3"
 
     sync.providers[LOCAL].mkdir(local_parent)
     linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
 
     sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
 
-    _create = sync.providers[REMOTE].create
-
-    throws = True
     called = False
 
-    def _called(name, data):
+    def _called(*args):
         nonlocal called
         called = True
-        if throws:
-            raise CloudFileNameError("file name error")
-        return _create(name, data)
+        raise CloudFileNameError("file name error")
 
     with patch.object(sync.providers[REMOTE], "create", new=_called):
         sync.run(until=lambda: called, timeout=1)
@@ -957,9 +956,24 @@ def test_file_name_error(sync):
     sync.do()
 
     assert not sync.providers[REMOTE].info_path(remote_file1)
-
     assert sync.state.lookup_oid(LOCAL, linfo1.oid).ignored == IgnoreReason.IRRELEVANT
 
+    linfo2 = sync.providers[LOCAL].create(local_file2, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=local_file2, oid=linfo2.oid, hash=linfo2.hash)
+    sync.run(until=lambda: sync.providers[REMOTE].exists_path(remote_file2), timeout=1)
+    assert sync.providers[REMOTE].info_path(remote_file2)
+
+    new_oid = sync.providers[LOCAL].rename(linfo2.oid, local_file3)
+    sync.create_event(LOCAL, FILE, path=local_file3, oid=new_oid, hash=linfo2.hash, prior_oid=linfo2.oid)
+
+    called = False
+    with patch.object(sync.providers[REMOTE], "rename", new=_called):
+        sync.run(until=lambda: called, timeout=1)
+
+    sync.do()
+
+    assert not sync.providers[REMOTE].info_path(remote_file3)
+    assert sync.state.lookup_oid(LOCAL, new_oid).ignored == IgnoreReason.IRRELEVANT
 
 def test_modif_rename(sync):
     local_parent = "/local"
@@ -1363,6 +1377,64 @@ def test_rename_same_name(sync_ci):
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
 
+def test_dir_removal_missing_child(sync):
+    (local, remote) = sync.providers
+
+    (
+        (lf, rf),
+    ) = setup_remote_local(sync, "f/")
+
+    # Missing event for remote create, should sync down when we try to delete its parent
+    ra = remote.create("/remote/f/a", BytesIO(b"hello"))
+    local.delete(lf.oid)
+    sync.create_event(LOCAL, DIRECTORY, path="/local/f", oid=lf.oid, exists=False)
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: local.info_path("/local/f/a"), timeout=2)
+
+    log.info("TABLE 1\n%s", sync.state.pretty_print())
+
+    assert local.info_path("/local/f/a")
+
+
+def test_missing_not_finished(sync):
+    (local, remote) = sync.providers
+    (
+        (ld, rd),
+        (la, ra),
+    ) = setup_remote_local(sync, "d/", "d/a", content=(b'', b'a'))
+
+    log.info("TABLE 0\n%s", sync.state.pretty_print())
+
+    local._delete(la.oid, without_event=True)
+    local.delete(ld.oid)
+
+    sync.create_event(LOCAL, FILE, path="/local/d/a", oid=la.oid, hash=la.hash, exists=True)
+    sync.create_event(LOCAL, FILE, path="/local/d", oid=ld.oid, hash=ld.hash, exists=False)
+    log.info("TABLE 1\n%s", sync.state.pretty_print())
+
+    local_expected = MISSING if local.oid_is_path else TRASHED
+    sync.run(until=lambda: sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == local_expected, timeout=1)
+
+    assert sync.state.lookup_oid(LOCAL, la.oid)[LOCAL].exists == local_expected
+    log.info("TABLE 2\n%s", sync.state.pretty_print())
+
+    sync.run(until=lambda: not sync.busy, timeout=3)
+    log.info("TABLE 3\n%s", sync.state.pretty_print())
+
+    if local.oid_is_path:
+        # missing events for oid_is_path should never happen, and if they do, we re-vivify the missing files
+        # this is for safety
+        assert local.exists_path('/local/d')
+        assert local.exists_path('/local/d/a')
+    else:
+        # missing events for oid_is_oid may happen (onedrive, gdrive do this)
+        # however, the object id is unique and will never be reused, so we know not to recreate
+        assert not local.exists_path('/local/d')
+        assert not local.exists_path('/local/d/a')
+
+
 def test_delete_out_of_order_events(sync):
     (local, remote) = sync.providers
 
@@ -1388,6 +1460,7 @@ def test_delete_out_of_order_events(sync):
     log.info("TABLE 2\n%s", sync.state.pretty_print())
 
     assert not remote.info_path("/remote/f")
+
 
 def test_sync_unknown_ex(sync):
     (local, remote) = sync.providers
@@ -1483,6 +1556,38 @@ def test_sync_change_count(sync, unverif):
         assert sync.change_count(unverified=unverif) == 2
     else:
         assert sync.change_count(unverified=unverif) == 1
+
+def test_create_file_exists_to_name_error(sync):
+    (local, remote) = sync.providers
+
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+
+    _create = sync.providers[REMOTE].create
+    called = False
+
+    def _called(sync, synced, translated_path):
+        nonlocal called
+        called = True
+
+    # Create throws CloudFileExistsError even though directory doesn't exist
+    def _create_w_error(name, data):
+        nonlocal called, remote_file1
+        if name == remote_file1:
+            raise CloudFileExistsError("File exists error")
+        return _create(name, data)
+
+    # Ensure this situation is handled as a file name error
+    sync.handle_file_name_error = _called
+
+    with patch.object(sync.providers[REMOTE], "create", new=_create_w_error):
+        sync.run(until=lambda: called, timeout=3)
 
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)

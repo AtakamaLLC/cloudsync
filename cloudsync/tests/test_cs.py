@@ -232,7 +232,7 @@ def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent
     counter = 1
     for cs in css:
         log.info("SETUP TABLE 1 cs%s\n%s", counter, cs.state.pretty_print())
-        cs.run_until_clean(timeout=3)
+        cs.run_until_clean(timeout=10)
         log.info("SETUP TABLE 2 cs%s\n%s", counter, cs.state.pretty_print())
         counter += 1
 
@@ -303,6 +303,8 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
             raise TimeoutError()
         return cs.state.changeset_len == 0
 
+    log.info("TABLE %s\n%s", i, cs1.state.pretty_print())
+
     try:
         for i in range(0, 4):
             four_local_cs[i].start(sleep=0.01)  # Start the sync
@@ -310,7 +312,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
         for i in range(0, 4):
             start = time.monotonic()
-            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=10)
+            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=30)
     finally:
         for i in range(0, 4):
             four_local_cs[i].stop()  # Stop the sync
@@ -656,6 +658,29 @@ def test_rename_conflict_and_irrelevant(cs, irrelevant_side):
         assert xl1 is not None, "xl1 should exist"
         assert xr1 is not None, "xr1 should exist"
 
+def test_shutdown_mid_download(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    from threading import Event
+    evt = Event()
+    # Download call takes 2 seconds, event will cause cs.stop to be called within this 2 second window
+    def mock_download(*args, **kwargs):
+        nonlocal evt
+        log.debug("Mock download")
+        evt.set()
+        time.sleep(2)
+
+    cs.providers[LOCAL].download = mock_download
+    cs.start()
+    evt.wait(timeout=2)
+    # Previously, this would throw an exception as stop would try to remove the temp file that download was holding open
+    cs.stop()
 
 def test_cs_basic(cs):
     local_parent = "/local"

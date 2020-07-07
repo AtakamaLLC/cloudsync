@@ -185,8 +185,6 @@ class Runnable(ABC):
             if threading.current_thread() != self.__thread:
                 self.wait()
                 self.__thread = None
-        elif forever:
-            self.done()
 
     def done(self):
         """

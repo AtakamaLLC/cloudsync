@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-PYTEST = pytest -rfE --cov=cloudsync --durations=1 -n=8 cloudsync/tests --tb=short --timeout=10
+PYTEST = pytest -rfE --cov=cloudsync --durations=1 -n=8 cloudsync/tests --tb=short --timeout=20
 
 ifeq ($(OS),Windows_NT)
 	ENVBIN="scripts"

@@ -9,11 +9,12 @@ from threading import RLock
 import pytest
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider
+from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
-    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError
+    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError, \
+    CloudNamespaceError
 
 from cloudsync.utils import debug_sig
 
@@ -108,7 +109,7 @@ class MockProvider(Provider):
     # TODO: normalize names to get rid of trailing slashes, etc.
 
     def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
-            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = False):
+            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = True):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
@@ -119,8 +120,7 @@ class MockProvider(Provider):
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
         self._use_ns = use_ns
-        self.__namesapce = None
-        self.__namesapce_id = None
+        self._namespace: Optional[Namespace] = None
         self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
@@ -139,7 +139,8 @@ class MockProvider(Provider):
         self._test_event_timeout = 1
         self._test_event_sleep = 0.001
         self._test_creds = {"key": "val"}
-        # self.connect(self._test_creds)
+        if use_ns:
+            self._test_namespace = self.list_ns()[0]
         self._hash_func = hash_func
         if hash_func is None:
             self._hash_func = lambda a: md5(a).digest()
@@ -149,27 +150,30 @@ class MockProvider(Provider):
         new_fs_object = MockFSObject("/", MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
 
-    def list_ns(self):
+    def list_ns(self, recursive=True, parent=None):
         if self._use_ns:
-            return ["ns1", "ns2"]
+            return [Namespace(name="ns1", id="ns1-id"), Namespace(name="ns2", id="ns2-id")]
         else:
             return super().list_ns()
 
     @property
-    def namespace(self):
-        if self._use_ns:
-            return self.__namespace
-        else:
-            return super().namespace
+    def namespace(self) -> Optional[Namespace]:
+        return self._namespace if self._use_ns else None
 
     @namespace.setter
-    def namespace(self, val):
+    def namespace(self, namespace: Namespace):
         if self._use_ns:
-            self.__namespace = val
-            self.__namespace_id = val + "-id"
-        else:
-            # calling super setter in python is a horrid hack, but this is the only way to do it
-            super(MockProvider, self.__class__).namespace.fset(self, val)    # type: ignore  # pylint: disable=no-member
+            self.namespace_id = namespace.id
+
+    @property
+    def namespace_id(self) -> Optional[str]:
+        return self._namespace.id if self._use_ns and self._namespace else None
+
+    @namespace_id.setter
+    def namespace_id(self, namespace_id: str):
+        self._namespace = next((ns for ns in self.list_ns() if ns.id == namespace_id), None)
+        if not self._namespace:
+            raise CloudNamespaceError("invalid namespace")
 
     @lock
     def connect_impl(self, creds):
@@ -573,7 +577,7 @@ def mock_provider_generator(request):
 def mock_provider_creator():
     return mock_provider_instance
 
-
+# one of two default providers for test_provider.py tests
 class MockPathCs(MockProvider):
     name = "mock_path_cs"
 
@@ -594,11 +598,12 @@ class MockOidCs(MockProvider):
     def __init__(self):
         super().__init__(oid_is_path=False, case_sensitive=True)
 
+# one of two default providers for test_provider.py tests
 class MockOidCi(MockProvider):
     name = "mock_oid_ci"
 
     def __init__(self):
-        super().__init__(oid_is_path=False, case_sensitive=False)
+        super().__init__(oid_is_path=False, case_sensitive=False, use_ns=False)
 
 class MockOidCiNs(MockProvider):
     name = "mock_oid_ci_ns"
