@@ -69,11 +69,11 @@ def _verok(ver):
         if str(ie) != e:
             raise ValueError("Component '%s' is not a simple integer" % e)
 
-        if ie == 0 and i != 0:
-            raise ValueError("Component '%s' out of range" % ie)
-
         if ie <= -1 or ie > COMPONENT_INT_MAX:
             raise ValueError("Component '%s' out of range" % ie)
+
+    if tup == ['0'] * len(tup):
+        raise ValueError("All components cannot be zero")
 
     return ver
 
