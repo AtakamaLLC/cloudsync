@@ -15,7 +15,7 @@ def fixture_manager(mock_provider_generator):
     provider = mock_provider_generator()
     state = SyncState((provider, provider), shuffle=True)
 
-    ret = EventManager(provider, state, LOCAL, reauth=MagicMock())
+    ret = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path="/")
     yield ret
     ret.stop()
 
@@ -57,11 +57,11 @@ def test_events_shutdown_event_shouldnt_process(manager):
         manager.stop()
         time.sleep(.4)
         try:
-            manager.events.__next__()
+            manager.provider.events().__next__()
         except StopIteration:
             assert False
         try:
-            manager.events.__next__()
+            manager.provider.events().__next__()
             assert False
         except StopIteration:
             pass
@@ -80,7 +80,7 @@ def test_events_shutdown_force_process_event(manager):
         assert provider.latest_cursor > provider.current_cursor
         manager.do()
         try:
-            manager.events.__next__()
+            manager.provider.events().__next__()
             assert False
         except StopIteration:
             pass

@@ -78,14 +78,14 @@ class CloudSync(Runnable):
         self.smgr = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
-        self.__roots: Tuple[Optional[str], Optional[str]] = roots if roots else (None, None)
-        self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
+        event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)
+        event_root_oids: Tuple[Optional[str], Optional[str]] = root_oids or (None, None)
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, walk_root=self.__roots[0],
-                         reauth=lambda: self.authenticate(0), walk_oid=self.__root_oids[0]),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, walk_root=self.__roots[1],
-                         reauth=lambda: self.authenticate(1), walk_oid=self.__root_oids[1])
+            EventManager(smgr.providers[0], state, 0, self.nmgr, root_path=event_root_paths[0],
+                         reauth=lambda: self.authenticate(0), root_oid=event_root_oids[0]),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
+                         reauth=lambda: self.authenticate(1), root_oid=event_root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -95,6 +95,8 @@ class CloudSync(Runnable):
         self.test_mgr_order: List[int] = []
 
     def set_root_oid(self, side, val):
+        # TODO: salvage?
+        raise ValueError("deprecated")
         self.smgr.set_root_oid(side, val)
         self.emgrs[side].walk_oid = val
 

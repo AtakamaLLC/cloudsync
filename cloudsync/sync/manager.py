@@ -139,20 +139,22 @@ class SyncManager(Runnable):
         notification_manager: and instance of NotificationManager
         sleep: a tuple of seconds to sleep
     """
-    def __init__(self, state: SyncState,
+    def __init__(self, state: SyncState,                        # pylint: disable=too-many-arguments
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
                  resolve_conflict: Callable,
                  notification_manager: Optional['NotificationManager'] = None,
-                 sleep: Optional[Tuple[float, float]] = None):
+                 sleep: Optional[Tuple[float, float]] = None,
+                 root_paths: Optional[Tuple[str, str]] = None,
+                 root_oids: Optional[Tuple[str, str]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
-        self.__root_oids: List[str] = [None, None]
-        self.__root_paths: List[str] = [None, None]
+        self.__root_oids: List[str] = list(root_oids) if root_oids else [None, None]
+        self.__root_paths: List[str] = list(root_paths) if root_paths else [None, None]
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -171,6 +173,8 @@ class SyncManager(Runnable):
         assert len(self.providers) == 2
 
     def set_root_oid(self, side, oid):
+        # TODO: salvage?
+        raise ValueError("deprecated")
         log.debug("set root oid for %s to %s", side, oid)
         self.__root_oids[side] = oid
         self.__root_paths[side] = None
