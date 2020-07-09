@@ -624,6 +624,10 @@ class SyncManager(Runnable):
 
             return self.handle_split_conflict(
                 defer_ent, defer_side, replace_ent, replace_side)
+        except ex.CloudFileNameError:
+            # Nothing else to sync
+            self.handle_file_name_error(sync, synced, sync[synced].path)
+            return True
 
     def _create_synced(self, changed, sync, translated_path):
         synced = other_side(changed)
