@@ -96,9 +96,7 @@ class CloudSync(Runnable):
 
     def set_root_oid(self, side, val):
         # TODO: salvage?
-        raise ValueError("deprecated")
-        self.smgr.set_root_oid(side, val)
-        self.emgrs[side].walk_oid = val
+        pass
 
     def forget(self):
         """
