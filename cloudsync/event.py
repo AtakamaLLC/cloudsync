@@ -110,9 +110,12 @@ class EventManager(Runnable):
 
     @property
     def busy(self):
-        # TODO: make this more light-weight?
-        self.do()
-        return self.need_walk
+        if self._queue or self.need_walk:
+            return True
+        for event in self.provider.events():
+            self.queue(event)
+            return True
+        return False
 
     def _reconnect(self):
         if not self.provider.connected:

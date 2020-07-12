@@ -16,8 +16,6 @@ import cloudsync.command.sync as csync
 
 log = logging.getLogger(__name__)
 
-# TODO: fix this
-@pytest.mark.skip(reason="doesn't work")
 def test_cmd_sync_basic(caplog, tmpdir):
     args = MagicMock()
 
@@ -30,10 +28,7 @@ def test_cmd_sync_basic(caplog, tmpdir):
     args.creds = "whatevs"
 
     csync.SyncCmd.run(args)
-
-
     logs = caplog.record_tuples
-
     assert any("initialized" in t[2].lower() for t in logs)
 
 
@@ -109,8 +104,6 @@ def test_cmd_sync_oauth(caplog, conf, creds, quiet, tmpdir):
     if err == CloudTokenError:
         assert any("connect gdrive" in t[2].lower() for t in logs)
 
-# TODO: fix this
-@pytest.mark.skip(reason="doesn't work")
 @pytest.mark.parametrize("daemon", ["with_daemon", "no_daemon"])
 def test_cmd_sync_daemon(daemon, tmpdir):
     args = MagicMock()
