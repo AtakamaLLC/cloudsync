@@ -1679,14 +1679,15 @@ def test_cursor(cs_storage):
     p2.current_cursor = None
     roots = cs.roots
 
-    cs.forget()
-    cs.run_until_found(
+    cs.done()
+    cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
+    cs2.run_until_found(
         (LOCAL, local_path2),
         timeout=2)
-    cs.run_until_found(
+    cs2.run_until_found(
         (REMOTE, remote_path2),
         timeout=2)
-    cs.done()
+    cs2.done()
 
 @pytest.mark.repeat(3)
 def test_cs_rename_up(cs):
@@ -2684,8 +2685,7 @@ def test_reconn_after_disconn():
 
     # syncs on reconnect
     remote._creds = {"ok": "ok"}
-    # TODO: why?
-    #remote.reconnect()
+    remote.reconnect()
 
     # yay
     cs.wait_until_found((REMOTE, "/remote"))
