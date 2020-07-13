@@ -120,3 +120,20 @@ def test_backoff(manager):
         manager.wait()
     finally:
         manager.stop()
+
+
+def test_event_provider_guard(manager):
+    prov = manager.provider
+
+    with pytest.raises(ValueError):
+        # do not reuse provider while another event manager is actively using it
+        manager = EventManager(prov, MagicMock(), LOCAL)
+
+    manager.done()
+    # ok to reuse provider once the other event manager is done with it
+    manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+
+    manager.done()
+    with pytest.raises(ValueError):
+        # cannot change root of a provider after it is set
+        manager = EventManager(prov, MagicMock(), LOCAL)
