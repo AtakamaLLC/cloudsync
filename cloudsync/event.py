@@ -53,7 +53,6 @@ class EventManager(Runnable):
                  root_oid: Optional[str] = None):
         log.debug("provider %s, root %s", provider.name, root_path)
 
-        # TODO: needed?
         if not provider.connection_id:
             raise ValueError("provider must be connected when starting the event manager")
 

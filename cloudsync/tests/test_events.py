@@ -9,13 +9,27 @@ import logging
 log = logging.getLogger(__name__)
 
 
+def create_event_manager(provider_generator, root_path):
+    provider = provider_generator()
+    state = SyncState((provider, provider), shuffle=True)
+    if provider.oid_is_path:
+        return EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_path)
+    else:
+        return EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
+
+
 @pytest.fixture(name="manager")
 def fixture_manager(mock_provider_generator):
     # TODO extend this to take any provider
-    provider = mock_provider_generator()
-    state = SyncState((provider, provider), shuffle=True)
+    ret = create_event_manager(mock_provider_generator, "/")
+    yield ret
+    ret.stop()
 
-    ret = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path="/")
+
+@pytest.fixture(name="rootless_manager")
+def fixture_rootless_manager(mock_provider_generator):
+    # TODO extend this to take any provider
+    ret = create_event_manager(mock_provider_generator, None)
     yield ret
     ret.stop()
 
@@ -121,19 +135,36 @@ def test_backoff(manager):
     finally:
         manager.stop()
 
+@pytest.mark.parametrize("mode", ["root", "no-root"])
+def test_event_provider_contract(manager, rootless_manager, mode):
+    if mode == "no-root":
+        manager = rootless_manager
 
-def test_event_provider_guard(manager):
     prov = manager.provider
 
     with pytest.raises(ValueError):
-        # do not reuse provider while another event manager is actively using it
+        # do not reuse provider while another EventManager is actively using it
         manager = EventManager(prov, MagicMock(), LOCAL)
 
+    # ok to reuse provider once the other EventManager is done with it
     manager.done()
-    # ok to reuse provider once the other event manager is done with it
     manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
 
     manager.done()
+    if mode == "root":
+        with pytest.raises(ValueError):
+            manager = EventManager(prov, MagicMock(), LOCAL, root_path="/cannot-change-after-set")
+
+    manager.done()
+    manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+    assert not manager.busy
+    prov.mkdir("/busy-test")
+    assert manager.busy
+
+    prov.connection_id = None
     with pytest.raises(ValueError):
-        # cannot change root of a provider after it is set
-        manager = EventManager(prov, MagicMock(), LOCAL)
+        # connection id is required
+        manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+
+    manager.done()
+    rootless_manager.done()
