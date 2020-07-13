@@ -94,10 +94,6 @@ class CloudSync(Runnable):
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
 
-    def set_root_oid(self, side, val):
-        self.smgr.set_root_oid(side, val)
-        self.emgrs[side].root_oid = val
-
     def forget(self):
         """
         Forget and discard state information, and drop any events in the queue.  This will trigger a walk.

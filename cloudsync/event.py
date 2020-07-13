@@ -71,8 +71,8 @@ class EventManager(Runnable):
         self._cursor_tag: Optional[str] = None
         self._walk_tag: Optional[str] = None
         self.need_walk: bool = False
-        self.root_path: Optional[str] = root_path
-        self.root_oid: Optional[str] = root_oid
+        self._root_path: Optional[str] = root_path
+        self._root_oid: Optional[str] = root_oid
         self._root_validated: bool = False
         self._validate_root()
 
@@ -84,8 +84,8 @@ class EventManager(Runnable):
 
     def _validate_root(self):
         if not self._root_validated and self.provider.connected:
-            (self.root_path, self.root_oid) = self.provider.set_root(self.root_path, self.root_oid)
-            my_root = self.root_path or self.root_oid
+            (self._root_path, self._root_oid) = self.provider.set_root(self._root_path, self._root_oid)
+            my_root = self._root_path or self._root_oid
             if my_root:
                 self._walk_tag = self.label + "_walked_" + my_root
                 self._cursor_tag = self.label + "_cursor_" + my_root
@@ -158,11 +158,11 @@ class EventManager(Runnable):
     def _do_walk_if_needed(self):
         if self.need_walk:
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
-                      self.provider.name, self.root_path, self.root_oid)
+                      self.provider.name, self._root_path, self._root_oid)
             self._queue = []
             try:
-                if self.root_oid:
-                    for event in self.provider.walk_oid(self.root_oid):
+                if self._root_oid:
+                    for event in self.provider.walk_oid(self._root_oid):
                         self._process_event(event, from_walk=True)
             except CloudFileNotFoundError as e:
                 log.debug('File to walk not found %s', e)

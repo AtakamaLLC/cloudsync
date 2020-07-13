@@ -2744,8 +2744,6 @@ def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
 
-#TODO: salvage this test
-#@pytest.mark.skip("because set_root_oid() no longer exists")
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
@@ -2761,9 +2759,15 @@ def test_root_needed(cs, cs_root_oid, mode):
     cs.emgrs[REMOTE]._drain()
     assert remote.info_path("/remote") is None
 
+    def set_root(cs, side, oid, path):
+        cs.smgr._root_oids[side] = oid
+        cs.smgr._root_paths[side] = path
+        cs.emgrs[side]._root_oid = oid
+        cs.emgrs[side]._root_path = path
+
     if not create:
         # set root oid to random stuff that will break any checks
-        cs.set_root_oid(REMOTE, 'xxxx')
+        set_root(cs, REMOTE, 'xxxx', None)
 
     def translate(side, path):
         relative = cs.providers[1-side].is_subpath(roots[1-side], path)
@@ -2784,7 +2788,7 @@ def test_root_needed(cs, cs_root_oid, mode):
         pass
 
     oid = local.mkdir("/local")
-    cs.set_root_oid(LOCAL, oid)
+    set_root(cs, LOCAL, oid, "/local")
     local.mkdir("/local/a")
     local.mkdir("/local/a/b")
 
@@ -2823,7 +2827,7 @@ def test_root_needed(cs, cs_root_oid, mode):
 
         # then we create the root:
         oid = remote.mkdir("/remote")
-        cs.set_root_oid(REMOTE, oid)
+        set_root(cs, REMOTE, oid, "/remote")
 
         # and everything syncs up
         until = lambda: remote.info_path("/remote/a/b/c")
