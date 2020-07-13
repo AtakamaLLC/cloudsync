@@ -95,8 +95,8 @@ class CloudSync(Runnable):
         self.test_mgr_order: List[int] = []
 
     def set_root_oid(self, side, val):
-        # TODO: salvage?
-        pass
+        self.smgr.set_root_oid(side, val)
+        self.emgrs[side].root_oid = val
 
     def forget(self):
         """

@@ -2745,7 +2745,7 @@ def test_walk_bad_vals(cs):
         cs.walk(root="foo")
 
 #TODO: salvage this test
-@pytest.mark.skip("because set_root_oid() no longer exists")
+#@pytest.mark.skip("because set_root_oid() no longer exists")
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
@@ -2757,10 +2757,9 @@ def test_root_needed(cs, cs_root_oid, mode):
         assert cs.providers[1].info_path("/remote")
 
     (local, remote) = cs.providers
-
-    if preroot:
-        remote.delete(remote.info_path("/remote").oid)
-        assert remote.info_path("/remote") is None
+    remote.delete(remote.info_path("/remote").oid)
+    cs.emgrs[REMOTE]._drain()
+    assert remote.info_path("/remote") is None
 
     if not create:
         # set root oid to random stuff that will break any checks
@@ -2791,6 +2790,10 @@ def test_root_needed(cs, cs_root_oid, mode):
 
     cs.emgrs[LOCAL]._drain()            # mkdir stuff never gets events
 
+    remote_info = remote.info_path("/remote")
+    if remote_info:
+        remote.delete(remote_info.oid)
+        cs.emgrs[REMOTE]._drain()
     assert remote.info_path("/remote") is None
 
     log.info("=== CREATE SUBDIR WITH NO ROOT OR PARENTS ===")

@@ -157,15 +157,11 @@ class EventManager(Runnable):
 
     def _do_walk_if_needed(self):
         if self.need_walk:
-            # walk_oid or walk_root was set at class startup, so we walk
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
                       self.provider.name, self.root_path, self.root_oid)
             self._queue = []
             try:
-                if self.root_path:
-                    for event in self.provider.walk(self.root_path):
-                        self._process_event(event, from_walk=True)
-                else:
+                if self.root_oid:
                     for event in self.provider.walk_oid(self.root_oid):
                         self._process_event(event, from_walk=True)
             except CloudFileNotFoundError as e:
