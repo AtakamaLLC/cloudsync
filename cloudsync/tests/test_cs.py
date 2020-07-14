@@ -100,7 +100,7 @@ def fixture_multi_local_cs(mock_provider_generator):
     yield from multi_local_cs_generator(2, mock_provider_generator)
 
 
-# multi remote test has one local provider with two folders, and each of those folders
+# multi remote test has a local provider for each of two folders on a shared MockFS, and each of those folders
 # syncs up with a folder on one of two remote providers.
 @pytest.fixture(name="multi_remote_cs")
 def fixture_multi_remote_cs(mock_provider_generator):
@@ -1226,7 +1226,6 @@ def storage_fixture(request):
     return request.param
 
 
-# TODO: restore test to using 2 CS objects
 def test_storage(storage):
     storage_class = storage[0]
     storage_mechanism = storage[1]

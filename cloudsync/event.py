@@ -116,7 +116,7 @@ class EventManager(Runnable):
             return True
         return False
 
-    def _reconnect(self):
+    def _reconnect_if_needed(self):
         if not self.provider.connected:
             if self.need_auth:
                 try:
@@ -136,7 +136,7 @@ class EventManager(Runnable):
 
     def do(self):
         try:
-            self._reconnect()
+            self._reconnect_if_needed()
             self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
