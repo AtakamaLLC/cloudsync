@@ -1564,12 +1564,12 @@ def test_create_file_exists_to_name_error(sync):
     local_file1 = "/local/file"
     remote_file1 = "/remote/file"
 
-    sync.providers[LOCAL].mkdir(local_parent)
-    linfo1 = sync.providers[LOCAL].create(local_file1, BytesIO(b"hello"))
+    local.mkdir(local_parent)
+    linfo1 = local.create(local_file1, BytesIO(b"hello"))
 
     sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
 
-    _create = sync.providers[REMOTE].create
+    _create = remote.create
     called = False
 
     def _called(sync, synced, translated_path):
@@ -1586,8 +1586,35 @@ def test_create_file_exists_to_name_error(sync):
     # Ensure this situation is handled as a file name error
     sync.handle_file_name_error = _called
 
-    with patch.object(sync.providers[REMOTE], "create", new=_create_w_error):
+    with patch.object(remote, "create", new=_create_w_error):
         sync.run(until=lambda: called, timeout=3)
+
+def test_hash_diff_file_name_error(sync):
+    (local, remote) = sync.providers
+
+    local_parent = "/local"
+    local_file1 = "/local/file"
+    remote_file1 = "/remote/file"
+
+    local.mkdir(local_parent)
+    info1 = local.create(local_file1, BytesIO(b"hello"))
+
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=info1.oid, hash=info1.hash)
+    sync.run(until=lambda: remote.exists_path(remote_file1), timeout=2)
+
+    info2 = local.upload(info1.oid, BytesIO(b"goodbye"))
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=info2.oid, hash=info2.hash)
+
+    def _raise(*args):
+        raise CloudFileNameError("invalid name")
+
+    with patch.object(remote, "upload", new=_raise):
+        sync.run(until=lambda: not sync.busy, timeout=3)
+
+    check = BytesIO()
+    remote.download_path(remote_file1, check)
+    assert check.getvalue() == b"hello"
+    assert sync.state.lookup_oid(LOCAL, info2.oid).ignored == IgnoreReason.IRRELEVANT
 
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
