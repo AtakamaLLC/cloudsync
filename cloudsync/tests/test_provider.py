@@ -2464,6 +2464,11 @@ def test_split(provider):
 
 
 def test_is_subpath(provider):
+    assert provider.is_subpath(None, None) == False
+    assert provider.is_subpath(None, "") == False
+    assert provider.is_subpath(None, "/") == False
+    assert provider.is_subpath("/", None) == False
+    assert provider.is_subpath("/", "") == False
     assert provider.is_subpath("/", "/a/b") == "/a/b"
     assert provider.is_subpath("\\", "/a\\b\\") == "/a/b"
     assert provider.is_subpath("\\a", "\\a\\b/") == "/b"
