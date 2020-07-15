@@ -290,7 +290,7 @@ class EventManager(Runnable):
                     state = self.state.lookup_oid(self.side, lookup_oid)
                     if state:
                         # found in state, so this was moved out of a path we care about -- delete
-                        log.debug("delete due to move from relevance to irrelevance: %s", state.path)
+                        log.debug("delete due to move from relevance to irrelevance: %s", state[self.side].path)
                         event.exists = False
                     else:
                         # not in the state db, so a create or a move outside our root -- irrelelvant
