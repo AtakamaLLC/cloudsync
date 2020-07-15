@@ -477,6 +477,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             target: the potential sub-file or folder
             strict: whether to return True if folder==target
         """
+        if not folder or not target:
+            return False
+
         folder_full = self.normalize_path_separators(folder)
         target_full = self.normalize_path_separators(target)
 
