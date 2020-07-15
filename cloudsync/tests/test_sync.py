@@ -1177,9 +1177,9 @@ def test_reprioritize_sync_trash_loop(sync):
 
     # delete remotes
     rfil_oid = sync.providers[REMOTE].info_path(remote_file).oid
-    del sync.providers[REMOTE]._fs_by_oid[rfil_oid]
+    sync.providers[REMOTE]._delete(rfil_oid, without_event=True)
     rsub_oid = sync.providers[REMOTE].info_path(remote_sub).oid
-    del sync.providers[REMOTE]._fs_by_oid[rsub_oid]
+    sync.providers[REMOTE]._delete(rsub_oid, without_event=True)
 
     # /sub/file entry
     sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)

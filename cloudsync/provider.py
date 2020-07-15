@@ -54,6 +54,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
     test_root: str = '/'                      ; """Root folder to use during provider tests"""
+    _root_path: Optional[str] = None          ; """Root path to use for syncing, event filtering, etc."""
+    _root_oid: Optional[str] = None           ; """Root oid to use for syncing, event filtering, etc."""
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None         ; """OAuth providers can set this in init"""
     _listdir_page_size: Optional[int] = None  ; """Used for testing listdir"""
@@ -120,6 +122,30 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             self.connection_id = new_id
         self.__connected = True
         assert self.connected
+
+    def set_root(self, root_path=None, root_oid=None):
+        """Set sync root path and oid. Once set, these values cannot be changed."""
+        if self._root_path and self._root_oid:
+            if self.paths_match(self._root_path, root_path) or self._root_oid == root_oid:
+                return (self._root_path, self._root_oid)
+            raise ValueError("Sync root already set and cannot be changed")
+        if not root_path and not root_oid:
+            return (None, None)
+        if root_oid:
+            info = self.info_oid(root_oid)
+            if not info:
+                raise CloudFileNotFoundError(f"Failed to get info for root oid: {root_oid}")
+            if info.otype != DIRECTORY:
+                raise CloudFileNotFoundError(f"Root oid is not a directory: {root_oid} => {info.path}")
+            if root_path and not self.paths_match(root_path, info.path):
+                raise CloudFileNotFoundError(f"Root oid/path mismatch: {root_path} - {info.path}")
+            root_path = info.path
+        else: # got root_path only
+            info = self.info_path(root_path)
+            root_oid = info.oid if info else self.mkdir(root_path)
+        self._root_path = root_path
+        self._root_oid = root_oid
+        return (root_path, root_oid)
 
     def set_creds(self, creds):
         """Set credentials without connecting."""
