@@ -3,7 +3,7 @@ from io import BytesIO
 
 import pytest
 
-from cloudsync import EventManager, SyncState, LOCAL, CloudTokenError
+from cloudsync import EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
@@ -138,6 +138,7 @@ def test_backoff(manager):
 @pytest.mark.parametrize("mode", ["root", "no-root"])
 def test_event_provider_contract(manager, rootless_manager, mode):
     if mode == "no-root":
+        manager.done()
         manager = rootless_manager
 
     prov = manager.provider
@@ -165,6 +166,21 @@ def test_event_provider_contract(manager, rootless_manager, mode):
     with pytest.raises(ValueError):
         # connection id is required
         manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+
+    manager.done()
+    rootless_manager.done()
+
+@pytest.mark.parametrize("mode", ["root", "no-root"])
+def test_event_filter(manager, rootless_manager, mode):
+    if mode == "no-root":
+        manager.done()
+        manager = rootless_manager
+
+    event = Event(FILE, "", "", "", False)
+    if mode == "no-root":
+        assert not manager._filter_event(event)
+    else:
+        assert manager._filter_event(event)
 
     manager.done()
     rootless_manager.done()
