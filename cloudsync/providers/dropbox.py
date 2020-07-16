@@ -102,7 +102,7 @@ class DropboxProvider(Provider):
         self._longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config
-        self._long_poll_manager = None
+        self._long_poll_manager: LongPollManager = None
         self._short_poll_only = False
 
         self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
