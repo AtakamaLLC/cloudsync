@@ -164,6 +164,10 @@ class Runnable(ABC):
         self.__stopped = False
         self.__thread.start()
 
+    def start_single_threaded(self, *args, timeout=None, until=None, sleep=0.001):
+        self.__stopped = False
+        self.run(*args, timeout=timeout, until=until, sleep=sleep)
+
     @abstractmethod
     def do(self):
         """

@@ -34,7 +34,7 @@ class SyncMgrMixin(SyncManager, RunUntilHelper):
 
     def process_notifications(self):
         self.nmgr.notify(None)
-        self.nmgr.run()
+        self.nmgr.start_single_threaded()
 
     def process_events(self, side=None):
         for i in (LOCAL, REMOTE):
@@ -1530,7 +1530,6 @@ def test_sync_fnf_during_sync(sync):
     assert sync.notifications[0].ntype == NotificationType.TEMPORARY_ERROR
 
     sync.run_until_found((REMOTE, "remote/b"))
-
 
 @pytest.mark.parametrize("unverif", [True, False])
 def test_sync_change_count(sync, unverif):
