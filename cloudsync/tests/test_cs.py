@@ -8,7 +8,7 @@ from unittest.mock import patch, Mock
 import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY,\
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, \
     CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
@@ -2033,7 +2033,6 @@ def test_cs_give_up_on_fnf(cs):
     remote = cs.providers[REMOTE]
     local.mkdir("/local")
     remote.mkdir("/remote")
-    #cs.run_until_clean(timeout=2)
 
     def create_always_fails(path, file_like):
         raise CloudFileNotFoundError("never")
