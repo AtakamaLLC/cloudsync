@@ -187,7 +187,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
     def disconnect(self):
         super().disconnect()
-        self._long_poll_manager.stop()
+        self._long_poll_manager.stop(forever=False)
         self.__client = None
         self.connection_id = None
 
