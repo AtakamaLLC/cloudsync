@@ -44,6 +44,8 @@ after_success:
 branches:
     only:
     - master
+    - hotfix-1.5
+    - sync-stuck-on-fnf
     - /^v/
 
 install:
