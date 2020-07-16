@@ -83,9 +83,6 @@ class Runnable(ABC):
         self.__log = logging.getLogger(__name__ + "." + self.service_name)
         log.debug("starting %s", self.service_name)
 
-        # ordering of these two prevents race condition if you start/stop quickly
-        # see `def started`
-        self.__stopped = False
         self.__interrupt = threading.Event()
 
         try:
