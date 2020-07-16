@@ -9,3 +9,4 @@ mypy==0.770
 flaky>=3.6
 coverage
 codecov
+diff-cover

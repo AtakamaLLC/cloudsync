@@ -139,20 +139,22 @@ class SyncManager(Runnable):
         notification_manager: and instance of NotificationManager
         sleep: a tuple of seconds to sleep
     """
-    def __init__(self, state: SyncState,
+    def __init__(self, state: SyncState,                        # pylint: disable=too-many-arguments
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
                  resolve_conflict: Callable,
                  notification_manager: Optional['NotificationManager'] = None,
-                 sleep: Optional[Tuple[float, float]] = None):
+                 sleep: Optional[Tuple[float, float]] = None,
+                 root_paths: Optional[Tuple[str, str]] = None,
+                 root_oids: Optional[Tuple[str, str]] = None):
         self.state: SyncState = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
-        self.__root_oids: List[str] = [None, None]
-        self.__root_paths: List[str] = [None, None]
+        self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
+        self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -162,18 +164,11 @@ class SyncManager(Runnable):
         ####
 
         max_sleep = max(sleep)                    # on sync fail, use the worst time for backoff
-
         self.aging = max_sleep / 5                # how long before even trying to sync
         self.min_backoff = max_sleep / 10.0       # event sleep of 15 seconds == 1.5 second backoff on failures
         self.max_backoff = max_sleep * 10.0       # escalating up to a 3 minute wait time
         self.mult_backoff = 2
-
         assert len(self.providers) == 2
-
-    def set_root_oid(self, side, oid):
-        log.debug("set root oid for %s to %s", side, oid)
-        self.__root_oids[side] = oid
-        self.__root_paths[side] = None
 
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
@@ -501,20 +496,20 @@ class SyncManager(Runnable):
             # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
             return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
 
-        if self.__root_oids[synced]:
-            if not self.__root_paths[synced]:
-                info = self.providers[synced].info_oid(self.__root_oids[synced])
+        if self._root_oids[synced]:
+            if not self._root_paths[synced]:
+                info = self.providers[synced].info_oid(self._root_oids[synced])
                 if info:
-                    self.__root_paths[synced] = info.path
+                    self._root_paths[synced] = info.path
                 else:
-                    raise ex.CloudRootMissingError("root missing: %s" % self.__root_oids[synced])
+                    raise ex.CloudRootMissingError("root missing: %s" % self._root_oids[synced])
 
-        if self.__root_paths[synced] and self.providers[synced].is_subpath(self.__root_paths[synced], translated_path):
-            info = self.providers[synced].info_path(self.__root_paths[synced])
+        if self._root_paths[synced] and self.providers[synced].is_subpath(self._root_paths[synced], translated_path):
+            info = self.providers[synced].info_path(self._root_paths[synced])
             if not info:
-                raise ex.CloudRootMissingError("root missing: %s" % self.__root_paths[synced])
-            if info and self.__root_oids[synced] and info.oid != self.__root_oids[synced]:
-                raise ex.CloudRootMissingError("root oid moved: %s" % self.__root_paths[synced])
+                raise ex.CloudRootMissingError("root missing: %s" % self._root_paths[synced])
+            if info and self._root_oids[synced] and info.oid != self._root_oids[synced]:
+                raise ex.CloudRootMissingError("root oid moved: %s" % self._root_paths[synced])
 
         # make the dir
         oid = self.providers[synced].mkdirs(translated_path)

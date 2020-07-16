@@ -14,7 +14,7 @@ from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
 import time
 
-from .fixtures import MockProvider, MockStorage, mock_provider_instance
+from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -71,13 +71,14 @@ def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
 # given a provider_generator, creates as many cs's as you want, all of which share a single remote bed
 def multi_local_cs_generator(how_many_cs: int, provider_generator):
     storage_dict: Dict[Any, Any] = dict()
-    local_ps = []
     css = []
     storage = MockStorage(storage_dict)
-    remote_p = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # remote (cloud) storage
+    remote_mock_fs = MockFS()
     for i in range(0, how_many_cs):
-        local_ps.append(provider_generator())
-        css.append(CloudSyncMixin((local_ps[i], remote_p), roots, storage, sleep=None))
+        local_provider = provider_generator()
+        remote_provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+        remote_provider._set_mock_fs(remote_mock_fs)
+        css.append(CloudSyncMixin((local_provider, remote_provider), roots, storage, sleep=None))
 
     yield css
 
@@ -99,22 +100,24 @@ def fixture_multi_local_cs(mock_provider_generator):
     yield from multi_local_cs_generator(2, mock_provider_generator)
 
 
-# multi remote test has one local provider with two folders, and each of those folders
+# multi remote test has a local provider for each of two folders on a shared MockFS, and each of those folders
 # syncs up with a folder on one of two remote providers.
 @pytest.fixture(name="multi_remote_cs")
 def fixture_multi_remote_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
-    p1 = mock_provider_generator()
+    p1a = mock_provider_generator()
+    p1b = mock_provider_generator()
+    p1b._set_mock_fs(p1a._mock_fs)
     p2 = mock_provider_generator()
     p3 = mock_provider_generator()
 
     roots1 = ("/local1", "/remote")
     roots2 = ("/local2", "/remote")
 
-    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
+    cs1 = CloudSyncMixin((p1a, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1b, p3), roots2, storage, sleep=None)
 
     yield cs1, cs2
 
@@ -1227,9 +1230,6 @@ def test_storage(storage):
     storage_class = storage[0]
     storage_mechanism = storage[1]
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
     p1.connect("creds")
@@ -1243,15 +1243,13 @@ def test_storage(storage):
     log.debug("cursor=%s", old_cursor)
 
     test_cs_basic(cs1)  # do some syncing, to get some entries into the state table
+    cs1.done()
 
     storage2 = storage_class(storage_mechanism)
     cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
     log.debug(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
-
-    def not_dirty(s: SyncState):
-        return not s._dirtyset
 
     def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
         ret = []
@@ -1265,8 +1263,6 @@ def test_storage(storage):
             if not found:
                 ret.append(e1)
         return ret
-
-    not_dirty(cs1.state)
 
     missing1 = compare_states(cs1.state, cs2.state)
     missing2 = compare_states(cs2.state, cs1.state)
@@ -1682,6 +1678,7 @@ def test_cursor(cs_storage):
     p2.current_cursor = None
     roots = cs.roots
 
+    cs.done()
     cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
     cs2.run_until_found(
         (LOCAL, local_path2),
@@ -2465,6 +2462,7 @@ def test_walk_carefully1(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
+    cs.done()
     cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
     cs.emgrs[LOCAL].cursor = None
 
@@ -2491,6 +2489,7 @@ def test_walk_carefully2(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
+    cs.done()
     cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
     cs.emgrs[LOCAL].cursor = None
 
@@ -2511,6 +2510,7 @@ def test_walk_carefully3(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
+    cs.done()
     cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
     cs.emgrs[LOCAL].cursor = None
 
@@ -2743,7 +2743,6 @@ def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
 
-
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
@@ -2755,14 +2754,19 @@ def test_root_needed(cs, cs_root_oid, mode):
         assert cs.providers[1].info_path("/remote")
 
     (local, remote) = cs.providers
+    remote.delete(remote.info_path("/remote").oid)
+    cs.emgrs[REMOTE]._drain()
+    assert remote.info_path("/remote") is None
 
-    if preroot:
-        remote.delete(remote.info_path("/remote").oid)
-        assert remote.info_path("/remote") is None
+    def set_root(cs, side, oid, path):
+        cs.smgr._root_oids[side] = oid
+        cs.smgr._root_paths[side] = path
+        cs.emgrs[side]._root_oid = oid
+        cs.emgrs[side]._root_path = path
 
     if not create:
         # set root oid to random stuff that will break any checks
-        cs.set_root_oid(REMOTE, 'xxxx')
+        set_root(cs, REMOTE, 'xxxx', None)
 
     def translate(side, path):
         relative = cs.providers[1-side].is_subpath(roots[1-side], path)
@@ -2783,12 +2787,16 @@ def test_root_needed(cs, cs_root_oid, mode):
         pass
 
     oid = local.mkdir("/local")
-    cs.set_root_oid(LOCAL, oid)
+    set_root(cs, LOCAL, oid, "/local")
     local.mkdir("/local/a")
     local.mkdir("/local/a/b")
 
     cs.emgrs[LOCAL]._drain()            # mkdir stuff never gets events
 
+    remote_info = remote.info_path("/remote")
+    if remote_info:
+        remote.delete(remote_info.oid)
+        cs.emgrs[REMOTE]._drain()
     assert remote.info_path("/remote") is None
 
     log.info("=== CREATE SUBDIR WITH NO ROOT OR PARENTS ===")
@@ -2818,7 +2826,7 @@ def test_root_needed(cs, cs_root_oid, mode):
 
         # then we create the root:
         oid = remote.mkdir("/remote")
-        cs.set_root_oid(REMOTE, oid)
+        set_root(cs, REMOTE, oid, "/remote")
 
         # and everything syncs up
         until = lambda: remote.info_path("/remote/a/b/c")
@@ -2834,7 +2842,9 @@ def test_cursor_tag_delete(mock_provider_generator):
     mock_cursor_1 = 1
     mock_cursor_2 = 2
 
-    p1 = mock_provider_generator()
+    p1a = mock_provider_generator()
+    p1b = mock_provider_generator()
+    p1b._set_mock_fs(p1a._mock_fs)
     p2 = mock_provider_generator()
     p3 = mock_provider_generator()
 
@@ -2847,8 +2857,8 @@ def test_cursor_tag_delete(mock_provider_generator):
     roots1 = ("/local1", "/remote1")
     roots2 = ("/local2", "/remote2")
 
-    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
+    cs1 = CloudSyncMixin((p1a, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1b, p3), roots2, storage, sleep=None)
 
     cs1.done()
     cs2.done()
