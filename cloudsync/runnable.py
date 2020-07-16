@@ -121,12 +121,12 @@ class Runnable(ABC):
                     self.interruptable_sleep(sleep)
         finally:
             # clear started flag
+            self.__stopping = False
+            self.__stopped = True
             self.__interrupt = None
 
             if self.__shutdown:
                 self.done()
-            self.__stopping = False
-            self.__stopped = True
 
             self.__thread = None
             log.debug("stopping %s", self.service_name)
