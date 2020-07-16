@@ -102,7 +102,8 @@ class DropboxProvider(Provider):
         self._longpoll_mutex = threading.RLock()
         self._session: Dict[Any, Any] = {}
         self._oauth_config = oauth_config
-        self._long_poll_manager = LongPollManager(self._short_poll, self._long_poll, uses_cursor=True)
+        self._long_poll_manager = None
+        self._short_poll_only = False
 
         self.__memoize_quota = memoize(self.__get_quota, expire_secs=CACHE_QUOTA_TIME)
 
@@ -225,6 +226,9 @@ class DropboxProvider(Provider):
             try:
                 self.__memoize_quota.clear()
                 info = self.__memoize_quota()
+                self._long_poll_manager = LongPollManager(self._short_poll, self._long_poll, uses_cursor=True,
+                                                          short_poll_only=self._short_poll_only)
+
                 self._long_poll_manager.start()
                 return info['uid']
             except CloudTokenError:
@@ -372,6 +376,7 @@ class DropboxProvider(Provider):
 
     def disconnect(self):
         self._long_poll_manager.stop()
+        self._long_poll_manager = None
         self._client = None
         self._longpoll_client = None
         self.__memoize_quota.clear()      # pylint: disable=no-member
@@ -488,8 +493,7 @@ class DropboxProvider(Provider):
 
     # this is a crazy interface: todo: clean this nonsense up!
     def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
-        self._long_poll_manager.short_poll_only = short_poll_only
-        self._long_poll_manager.unblock()
+        self._short_poll_only = short_poll_only
 
     def walk(self, path, recursive=True):
         yield from self._events(None, path=path, recursive=recursive, save_cursor=False)

@@ -50,13 +50,14 @@ class Runnable(ABC):
     __shutdown = False
     __interrupt: threading.Event = None
     __stopped = False
+    __stopping = False
     __log: logging.Logger = None
     __clear_on_success: bool = True
 
     @property
     def stopped(self):
         """Set when you call stop()m causes the services to drop out."""
-        return self.__stopped
+        return self.__stopped or self.__shutdown
 
     def interruptable_sleep(self, secs):
         """Call this instead of sleep, so the service can be interrupted"""
@@ -80,17 +81,18 @@ class Runnable(ABC):
         """
         if self.service_name is None:
             self.service_name = self.__class__.__name__
+
         self.__log = logging.getLogger(__name__ + "." + self.service_name)
-        log.debug("starting %s", self.service_name)
+        log.debug("running %s", self.service_name)
 
         # ordering of these two prevents race condition if you start/stop quickly
         # see `def started`
-        self.__stopped = False
         self.__interrupt = threading.Event()
+        self.__stopped = False
 
         try:
             for _ in time_helper(timeout):
-                if self.__stopped:
+                if self.__stopping or self.__shutdown:
                     break
 
                 try:
@@ -109,7 +111,7 @@ class Runnable(ABC):
                     self.__increment_backoff()
                     log.exception("very serious exception in %s", self.service_name)
 
-                if self.__stopped or (until is not None and until()):
+                if self.__stopping or self.__shutdown or (until is not None and until()):
                     break
 
                 if self.in_backoff > 0:
@@ -123,6 +125,8 @@ class Runnable(ABC):
 
             if self.__shutdown:
                 self.done()
+            self.__stopping = False
+            self.__stopped = True
 
             self.__thread = None
             log.debug("stopping %s", self.service_name)
@@ -162,9 +166,13 @@ class Runnable(ABC):
         """
         if self.service_name is None:
             self.service_name = self.__class__.__name__
+        if self.__shutdown:
+            raise RuntimeError("Service was stopped, create a new instance to run.")
+        if self.__thread:
+            raise RuntimeError("Service already started")
+        self.__stopping = False
         self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
         self.__thread.name = self.service_name
-        self.__stopped = False
         self.__thread.start()
 
     @abstractmethod
@@ -178,7 +186,7 @@ class Runnable(ABC):
         """
         Stop the service, allowing any do() to complete first.
         """
-        self.__stopped = True
+        self.__stopping = True
         self.wake()
         self.__shutdown = forever
         if self.__thread:

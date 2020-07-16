@@ -37,7 +37,7 @@ def test_runnable():
     thread.start()
     while not testrun.started:
         time.sleep(0.1)
-    testrun.stop()
+    testrun.stop(forever=False)
     thread.join(timeout=1)
     assert testrun.stopped
     assert not thread.is_alive()
