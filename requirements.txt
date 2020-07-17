@@ -19,7 +19,7 @@ six>=1.12.0
 boxsdk[jwt]
 
 # other providers we run tests for
-cloudsync-onedrive
+cloudsync-onedrive~=1.0.3
 cloudsync-gdrive
 
 # command line 
