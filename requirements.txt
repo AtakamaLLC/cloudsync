@@ -19,12 +19,12 @@ six>=1.12.0
 boxsdk[jwt]
 
 # other providers we run tests for
-cloudsync-onedrive
+cloudsync-onedrive~=2.0.1
 cloudsync-gdrive
 
 # command line 
 python-daemon
 
 # fsprovider
-watchdog==0.10.2
+watchdog
 pywin32; sys.platform == 'win32'

@@ -2813,26 +2813,25 @@ def test_root_needed(cs, cs_root_oid, mode):
             nonlocal called
             if e.ntype == NotificationType.ROOT_MISSING_ERROR:
                 called = True
-        cs.handle_notification = _handle
 
-        # to test failure modes, you need to use start(), not run_until, or do()
-        # we keep backing off because the root isn't there
-        until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 2
-        cs.start(until=until)
-        cs.wait(timeout=2)
-        assert until()
+        with patch.object(cs, "handle_notification", _handle):
+            # to test failure modes, you need to use start(), not run_until, or do()
+            # we keep backing off because the root isn't there
+            until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 50
+            cs.start(until=until)
+            cs.wait(timeout=2)
+            assert until()
+            assert called
 
-        assert called
+            # then we create the root:
+            oid = remote.mkdir("/remote")
+            set_root(cs, REMOTE, oid, "/remote")
 
-        # then we create the root:
-        oid = remote.mkdir("/remote")
-        set_root(cs, REMOTE, oid, "/remote")
-
-        # and everything syncs up
-        until = lambda: remote.info_path("/remote/a/b/c")
-        cs.start(until=until)
-        cs.wait(timeout=2)
-        assert until()
+            # and everything syncs up
+            until = lambda: remote.info_path("/remote/a/b/c")
+            cs.start(until=until)
+            cs.wait(timeout=2)
+            assert until()
 
 def test_cursor_tag_delete(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
