@@ -257,7 +257,7 @@ class EventManager(Runnable):
 
             if from_walk:
                 if not event.path:
-                    log.error("walk %s without full path", self.provider.name)
+                    log.error("walk %s without full path", self.provider.name)  # pragma: no cover
 
                 already = self.state.lookup_oid(self.side, event.oid)
                 if already:
@@ -279,7 +279,7 @@ class EventManager(Runnable):
         if event.path:
             return
         if event.prior_oid:
-            log.error("rename from oid_is_path %s without full path", self.provider.name)
+            log.error("rename from oid_is_path %s without full path", self.provider.name)   # pragma: no cover
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
             event.path = state[self.side].path
