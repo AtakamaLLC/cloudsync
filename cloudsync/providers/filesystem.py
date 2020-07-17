@@ -248,6 +248,9 @@ class ObserverPool:
         return path
 
     def add(self, path, callback):
+        if path == "/":
+            # fixes inotify limit errors on linux
+            return
         npath = self.generic_normalize_path(path)
         if path not in self.pool:
             self.pool[npath] = Observer(path)

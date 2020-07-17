@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+REALLY_FINISHED = 2
 FINISHED = 1
 PUNT = 0
 REQUEUE = -1
@@ -713,7 +714,7 @@ class SyncManager(Runnable):
     def handle_cloud_file_not_found_error(self, changed, sync, synced):
         if sync.priority > 5:
             log.exception("punted too many times on CloudFileNotFoundError, giving up")
-            return FINISHED
+            return REALLY_FINISHED
 
         # parent presumably exists
         parent = self.providers[changed].dirname(sync[changed].path)
@@ -1384,6 +1385,8 @@ class SyncManager(Runnable):
             if ret == PUNT:
                 log.debug("requeue, not handled")
                 return ret
+            if ret == REALLY_FINISHED:
+                return FINISHED
 
             if sync.is_discarded:
                 return FINISHED

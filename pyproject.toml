@@ -21,7 +21,7 @@ requires-python = ">=3.6"
 box = [ "boxsdk", ]
 dropbox = [ "dropbox", "six>=1.14.0"]
 boxcom = [ "boxsdk[jwt]", ]
-onedrive = [ "cloudsync-onedrive", ]
+onedrive = [ "cloudsync-onedrive~=1.0.3", ]
 gdrive = [ "cloudsync-gdrive", ]
 all = [ "cloudsync-gdrive", "cloudsync-onedrive", "boxsdk[jwt]", "dropbox", "boxsdk" ]
 
