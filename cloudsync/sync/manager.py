@@ -384,7 +384,7 @@ class SyncManager(Runnable):
                 # just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
                 break
             else:
-                raise ValueError(f"unknown response code: {response}")
+                raise ValueError(f"unknown response code: {response}")  #pragma: no cover
 
         return something_got_done
 
