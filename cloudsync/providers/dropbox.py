@@ -142,6 +142,7 @@ class DropboxProvider(Provider):
                                            csrf_token_session_key=self._csrf,
                                            locale=None)
         url = self._flow.start()
+        self._oauth_config.authorization_url = url
         webbrowser.open(url)
 
         return url
