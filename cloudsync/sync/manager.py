@@ -369,14 +369,22 @@ class SyncManager(Runnable):
                 else:
                     self.state.split(sync)
 
-            response = self.embrace_change(sync, side, other_side(side))
+            try:
+                response = self.embrace_change(sync, side, other_side(side))
+            except ex.CloudTooManyRetriesError:
+                response = FINISHED
+                log.exception("too many retries - marked finished %s side:%s", sync, side)
+
             if response == FINISHED:
                 something_got_done = True
                 self.finished(side, sync)
             elif response == PUNT:
                 sync.punt()
-            # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
-            break
+            elif response == REQUEUE:
+                # just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+                break
+            else:
+                raise ValueError(f"unknown response code: {response}")
 
         return something_got_done
 
@@ -711,8 +719,7 @@ class SyncManager(Runnable):
 
     def handle_cloud_file_not_found_error(self, changed, sync, synced):
         if sync.priority > 5:
-            log.exception("punted too many times on CloudFileNotFoundError, giving up")
-            return FINISHED
+            raise ex.CloudTooManyRetriesError("punted too many times on CloudFileNotFoundError, giving up")
 
         # parent presumably exists
         parent = self.providers[changed].dirname(sync[changed].path)
@@ -1382,7 +1389,7 @@ class SyncManager(Runnable):
             ret = self.handle_path_change_or_creation(sync, changed, synced)
             if ret == PUNT:
                 log.debug("requeue, not handled")
-                return ret
+                return PUNT
 
             if sync.is_discarded:
                 return FINISHED

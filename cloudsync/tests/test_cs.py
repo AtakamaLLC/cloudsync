@@ -8,7 +8,8 @@ from unittest.mock import patch, Mock
 import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, \
+    CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
@@ -2022,6 +2023,21 @@ def test_out_of_space(cs):
 
     assert cs.in_backoff
     assert cs.state.changeset_len
+
+
+def test_cs_give_up_on_fnf(cs):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    def create_always_fails(path, file_like):
+        raise CloudFileNotFoundError("never")
+
+    with patch.object(remote, "create", create_always_fails):
+        local.create("/local/file", BytesIO(b"create-me"))
+        # should give up on creating the remote file after a few attempts -- otherwise this times out
+        cs.run_until_clean(timeout=2)
 
 
 def test_provider_negative_caches(cs):
