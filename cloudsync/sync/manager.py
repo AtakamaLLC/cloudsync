@@ -311,7 +311,7 @@ class SyncManager(Runnable):
                     sync[changed].changed = time.time()
                     sync[synced].clear()
 
-    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
+    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches,too-many-statements
         """
         Called on each changed entry.
         """

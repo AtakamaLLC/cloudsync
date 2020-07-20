@@ -2053,7 +2053,7 @@ def test_provider_negative_caches(cs):
     old_info_path = remote.info_path
     mkdir_count = 0
     info_path_lie_count = 0
-    info_path_lie_max = 10
+    info_path_lie_max = 8
 
     def new_mkdir(path) -> str:
         """counts how many times rparent is made, while also making all the folders"""
