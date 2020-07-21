@@ -3,7 +3,7 @@ pytest-xdist==1.33.0
 pytest-profiling==1.7.0
 pytest-repeat==0.8.0
 pytest-cov==2.10.0
-pytest-timeout
+pytest-timeout==1.4.2
 pylint
 mypy==0.770
 flaky>=3.6
