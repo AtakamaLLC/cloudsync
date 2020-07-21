@@ -1,7 +1,7 @@
 pytest>=5.3.0
 pytest-xdist==1.33.0
 pytest-profiling==1.7.0
-pytest-repeat
+pytest-repeat==0.8.0
 pytest-cov
 pytest-timeout
 pylint
