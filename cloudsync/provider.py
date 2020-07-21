@@ -311,7 +311,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         Cannot be set when not connected.
         """
-        raise CloudNamespaceError("This provider does not support namespaces")
+        return None
 
     @namespace.setter
     def namespace(self, ns: Namespace):                    # pylint: disable=no-self-use
@@ -323,7 +323,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         Can be set when not connected.
         """
-        raise CloudNamespaceError("This provider does not support namespaces")
+        return None
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
