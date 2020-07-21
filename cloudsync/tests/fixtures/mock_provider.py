@@ -206,22 +206,27 @@ class MockProvider(Provider):
 
     @property
     def namespace(self) -> Optional[Namespace]:
-        return self._namespace if self._use_ns else None
+        return self._namespace if self._use_ns else super().namespace
 
     @namespace.setter
     def namespace(self, namespace: Namespace):
         if self._use_ns:
             self.namespace_id = namespace.id
+        else:
+            Provider.namespace.fset(self, namespace)
 
     @property
     def namespace_id(self) -> Optional[str]:
-        return self._namespace.id if self._use_ns and self._namespace else None
+        return self._namespace.id if self._use_ns and self._namespace else super().namespace_id
 
     @namespace_id.setter
     def namespace_id(self, namespace_id: str):
-        self._namespace = next((ns for ns in self.list_ns() if ns.id == namespace_id), None)
-        if not self._namespace:
-            raise CloudNamespaceError("invalid namespace")
+        if self._use_ns:
+            self._namespace = next((ns for ns in self.list_ns() if ns.id == namespace_id), None)
+            if not self._namespace:
+                raise CloudNamespaceError("invalid namespace")
+        else:
+            Provider.namespace_id.fset(self, namespace_id)
 
     @lock
     def connect_impl(self, creds):
