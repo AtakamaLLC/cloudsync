@@ -26,5 +26,5 @@ cloudsync-gdrive==1.0.4
 python-daemon==2.2.4
 
 # fsprovider
-watchdog==0.10.2
+watchdog==0.10.3
 pywin32; sys.platform == 'win32'
