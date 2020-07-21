@@ -380,11 +380,8 @@ class SyncManager(Runnable):
                 self.finished(side, sync)
             elif response == PUNT:
                 sync.punt()
-            elif response == REQUEUE:
-                # just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
-                break
-            else:
-                raise ValueError(f"unknown response code: {response}")  #pragma: no cover
+            # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+            break
 
         return something_got_done
 
