@@ -9,7 +9,7 @@ xxhash==1.4.4
 # gdrive provider
 google-oauth==1.0.1
 google-auth-httplib2==0.0.4
-google-api-python-client
+google-api-python-client==1.10.0
 
 # dropbox provider
 dropbox>=10.3.0
