@@ -23,7 +23,7 @@ cloudsync-onedrive
 cloudsync-gdrive
 
 # command line 
-python-daemon
+python-daemon==2.2.4
 
 # fsprovider
 watchdog==0.10.2
