@@ -2035,15 +2035,6 @@ def test_set_ns_offline(unwrapped_provider):
     with pytest.raises(CloudNamespaceError):
         provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
 
-@patch('webbrowser.open')
-def test_authorization_url(unwrapped_provider):
-     provider = ProviderTestMixin(unwrapped_provider, connect=False)      # type: ignore
-     if not provider._test_creds:
-        pytest.skip("provider doesn't support testing auth")
-
-     provider.authenticate()
-     # Ensure this gets populated when authenticate is called
-     assert provider._oauth_config.authorization_url is not None
 
 @pytest.mark.manual
 def test_authenticate(unwrapped_provider):
