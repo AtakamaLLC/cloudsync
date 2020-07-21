@@ -2,7 +2,7 @@ pystrict==1.1
 arrow
 msgpack
 dataclasses
-requests_oauthlib
+requests_oauthlib==1.3.0
 requests
 xxhash
 
