@@ -1,5 +1,5 @@
 pystrict==1.1
-arrow
+arrow==0.15.7
 msgpack
 dataclasses
 requests_oauthlib==1.3.0
