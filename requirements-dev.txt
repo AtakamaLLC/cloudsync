@@ -4,7 +4,7 @@ pytest-profiling==1.7.0
 pytest-repeat==0.8.0
 pytest-cov==2.10.0
 pytest-timeout==1.4.2
-pylint
+pylint==2.5.3
 mypy==0.770
 flaky>=3.6
 coverage
