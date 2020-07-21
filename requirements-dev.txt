@@ -7,6 +7,6 @@ pytest-timeout==1.4.2
 pylint==2.5.3
 mypy==0.782
 flaky>=3.6
-coverage
+coverage==5.2
 codecov
 diff-cover
