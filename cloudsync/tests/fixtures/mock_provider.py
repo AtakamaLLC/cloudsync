@@ -213,7 +213,7 @@ class MockProvider(Provider):
         if self._use_ns:
             self.namespace_id = namespace.id
         else:
-            Provider.namespace.fset(self, namespace)
+            Provider.namespace.fset(self, namespace)    # type: ignore
 
     @property
     def namespace_id(self) -> Optional[str]:
@@ -226,7 +226,7 @@ class MockProvider(Provider):
             if not self._namespace:
                 raise CloudNamespaceError("invalid namespace")
         else:
-            Provider.namespace_id.fset(self, namespace_id)
+            Provider.namespace_id.fset(self, namespace_id)  # type: ignore
 
     @lock
     def connect_impl(self, creds):
