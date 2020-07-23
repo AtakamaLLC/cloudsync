@@ -69,6 +69,27 @@ def test_timeout():
     with pytest.raises(TimeoutError):
         testrun.wait(timeout=.01)
 
+def test_no_wait_stop():
+    class TestRun(Runnable):
+        def __init__(self):
+            self.cleaned = False
+            self.called = 0
+
+        def do(self):
+            time.sleep(10)
+            self.called += 1
+
+        def done(self):
+            self.cleaned = True
+
+    testrun = TestRun()
+    testrun.start()
+    while not testrun.started:
+        time.sleep(.01)
+
+    assert testrun.called == 0
+    testrun.stop(wait=False)
+    assert testrun.called == 0
 
 def test_runnable_wake():
     class TestRun(Runnable):

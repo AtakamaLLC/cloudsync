@@ -174,7 +174,7 @@ class Runnable(ABC):
         """
         ...
 
-    def stop(self, forever=True):
+    def stop(self, forever=True, wait=True):
         """
         Stop the service, allowing any do() to complete first.
         """
@@ -183,7 +183,8 @@ class Runnable(ABC):
         self.__shutdown = forever
         if self.__thread:
             if threading.current_thread() != self.__thread:
-                self.wait()
+                if wait:
+                    self.wait()
                 self.__thread = None
 
     def done(self):
