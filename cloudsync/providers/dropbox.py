@@ -489,7 +489,7 @@ class DropboxProvider(Provider):
 
     # this is a crazy interface: todo: clean this nonsense up!
     def test_short_poll_only(self, short_poll_only: bool):  # pylint: disable=unused-argument, no-self-use
-        self._long_poll_manager._short_poll_only = short_poll_only # pylint: disable=protected-access
+        self._long_poll_manager.short_poll_only = short_poll_only # pylint: disable=protected-access
 
     def walk(self, path, recursive=True):
         yield from self._events(None, path=path, recursive=recursive, save_cursor=False)
