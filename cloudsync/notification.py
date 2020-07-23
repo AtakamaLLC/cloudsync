@@ -86,7 +86,7 @@ class NotificationManager(Runnable):
         """Add notification to the queue"""
         self.__queue.put(e)
 
-    def stop(self, forever=True):
+    def stop(self, forever=True, wait=True):
         """Stop the server"""
         self.__queue.put(None)
-        super().stop(forever=forever)
+        super().stop(forever=forever, wait=wait)

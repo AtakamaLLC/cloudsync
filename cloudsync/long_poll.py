@@ -93,6 +93,6 @@ class LongPollManager(Runnable):
                 log.exception('Unhandled exception during long poll %s', e)
                 Runnable.backoff()
 
-    def stop(self):
-        # Could be stuck waiting for up to long_poll_timeout seconds
-        super().stop(wait=False)
+    def stop(self, forever=True, wait=False):
+        # Don't wait for do() to finish, could wait for up to long_poll_timeout seconds
+        super().stop(forever=forever, wait=wait)
