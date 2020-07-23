@@ -8,7 +8,8 @@ from unittest.mock import patch, Mock
 import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, \
+    CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
@@ -2024,6 +2025,21 @@ def test_out_of_space(cs):
     assert cs.state.changeset_len
 
 
+def test_cs_give_up_on_fnf(cs):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    def create_always_fails(path, file_like):
+        raise CloudFileNotFoundError("never")
+
+    with patch.object(remote, "create", create_always_fails):
+        local.create("/local/file", BytesIO(b"create-me"))
+        # should give up on creating the remote file after a few attempts -- otherwise this times out
+        cs.run_until_clean(timeout=2)
+
+
 def test_provider_negative_caches(cs):
     (lbase, rbase) = ("/local", "/remote")
     (parent, child) = ("/parent", "/child")
@@ -2037,7 +2053,7 @@ def test_provider_negative_caches(cs):
     old_info_path = remote.info_path
     mkdir_count = 0
     info_path_lie_count = 0
-    info_path_lie_max = 10
+    info_path_lie_max = 8
 
     def new_mkdir(path) -> str:
         """counts how many times rparent is made, while also making all the folders"""

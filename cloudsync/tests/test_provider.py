@@ -623,6 +623,12 @@ def test_create_upload_download(provider):
 def test_namespace(provider):
     ns = provider.list_ns()
     if not ns:
+        assert not provider.namespace_id
+        assert not provider.namespace
+        with pytest.raises(CloudNamespaceError):
+            provider.namespace_id = "id"
+        with pytest.raises(CloudNamespaceError):
+            provider.namespace = Namespace(name="name", id="space")
         return
 
     saved = provider.namespace_id

@@ -47,3 +47,7 @@ class CloudCursorError(CloudException):               # 'cursor is invalid'
 
 class CloudNamespaceError(CloudException):            # 'namespaces are not supported or the namespace is invalid'
     pass
+
+
+class CloudTooManyRetriesError(CloudException):       # giving up on an operation after N unsucessful attempts
+    pass
