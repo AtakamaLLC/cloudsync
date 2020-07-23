@@ -252,7 +252,7 @@ class CloudSync(Runnable):
         self.nmgr.notify(Notification(SourceEnum.SYNC, NotificationType.STARTED, None))
         self.nmgr.start(**kwargs)
 
-    def stop(self, forever=True):
+    def stop(self, forever=True, wait=True):
         """
         Stops the cloudsync service.
 
@@ -260,10 +260,10 @@ class CloudSync(Runnable):
             forever: If false is passed, then handles are left open for a future start.  Generally used for tests only.
         """
         log.info("stopping sync: %s", self.storage_label())
-        self.smgr.stop(forever=forever)
-        self.emgrs[0].stop(forever=forever)
-        self.emgrs[1].stop(forever=forever)
-        self.nmgr.stop(forever=forever)
+        self.smgr.stop(forever=forever, wait=wait)
+        self.emgrs[0].stop(forever=forever, wait=wait)
+        self.emgrs[1].stop(forever=forever, wait=wait)
+        self.nmgr.stop(forever=forever, wait=wait)
         if self.sthread:
             self.sthread.join()
             self.ethreads[0].join()
