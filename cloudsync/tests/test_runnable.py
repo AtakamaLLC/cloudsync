@@ -69,7 +69,6 @@ def test_timeout():
     with pytest.raises(TimeoutError):
         testrun.wait(timeout=.01)
 
-<<<<<<< HEAD
 def test_start_exceptions():
     class TestRun(Runnable):
         def __init__(self):
