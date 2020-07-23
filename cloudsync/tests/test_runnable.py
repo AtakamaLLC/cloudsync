@@ -64,6 +64,8 @@ def test_timeout():
 
     testrun = TestRun()
     testrun.start()
+    with pytest.raises(RuntimeError):
+        testrun.start()
     while not testrun.started:
         time.sleep(.01)
     with pytest.raises(TimeoutError):
@@ -110,6 +112,8 @@ def test_runnable_wake():
         time.sleep(0.1)
     assert testrun.called == 2
 
-    testrun.stop()
+    testrun.stop(forever=True)
+    with pytest.raises(RuntimeError):
+        testrun.start()
     thread.join(timeout=2)
     assert not thread.is_alive()
