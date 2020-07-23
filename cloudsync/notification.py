@@ -58,7 +58,7 @@ class NotificationManager(Runnable):
             else:
                 # None event == stop
                 if not self.stopped:
-                    super().stop()
+                    super().stop(forever=False)
         except Exception:
             log.exception("Error while handling a notification: %s", e)
 

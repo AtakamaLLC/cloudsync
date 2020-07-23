@@ -547,12 +547,8 @@ def test_join(mock_provider):
     assert "/a/c" == mock_provider.join("a", "/", "c")
 
 
-def test_connect(scoped_provider):
+def test_connect_basic(scoped_provider):
     provider = scoped_provider
-
-    # TODO: fix and re-enable this test for dropbox
-    if type(provider.prov).__name__ == "DropboxProvider":
-        return
 
     assert provider.connected
     provider.disconnect()
