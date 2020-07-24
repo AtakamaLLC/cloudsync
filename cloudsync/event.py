@@ -315,6 +315,9 @@ class EventManager(Runnable):
         return False
 
     def done(self):
-        self.provider.disconnect()
         self._provider_guard.remove(self.provider)
         super().done()
+
+    def stop(self, forever=True, wait=True):
+        self.provider.disconnect()
+        super().stop(forever=forever, wait=wait)

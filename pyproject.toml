@@ -19,7 +19,7 @@ requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]
 box = [ "boxsdk", ]
-dropbox = [ "dropbox>=10.3.0", "six>=1.14.0"]
+dropbox = [ "dropbox", "six>=1.14.0"]
 boxcom = [ "boxsdk[jwt]", ]
 onedrive = [ "cloudsync-onedrive~=2.0.1", ]
 gdrive = [ "cloudsync-gdrive", ]

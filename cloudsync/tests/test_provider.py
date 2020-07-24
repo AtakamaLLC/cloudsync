@@ -2204,6 +2204,28 @@ def test_provider_interface(unconnected_provider):
         log.error(msg)
     assert prov_dir == set()
 
+def test_multi_provider_shutdown(two_scoped_providers):
+    (prov1, prov2) = two_scoped_providers
+
+    if hasattr(prov1, "_test_creds"):
+        prov1.connect(prov1._test_creds)
+    if hasattr(prov2, "_test_creds"):
+        prov2.connect(prov2._test_creds)
+
+    prov2.disconnect()
+    prov1.disconnect()
+    assert not prov1.connected
+    assert not prov2.connected
+
+    if hasattr(prov1, "_test_creds"):
+        prov1.connect(prov1._test_creds)
+    if hasattr(prov2, "_test_creds"):
+        prov2.connect(prov2._test_creds)
+
+    prov1.disconnect()
+    prov2.disconnect()
+    assert not prov1.connected
+    assert not prov2.connected
 
 def test_cache(two_scoped_providers):
     (prov1, prov2) = two_scoped_providers
