@@ -256,43 +256,63 @@ class EventManager(Runnable):
                 return
 
             if from_walk:
-                # this event is from a walk, and we're checking to see if the state has changed
+                if not event.path:
+                    log.error("walk %s without full path", self.provider.name)  # pragma: no cover
+
                 already = self.state.lookup_oid(self.side, event.oid)
                 if already:
                     changed = already[self.side].hash != event.hash or already[self.side].path != event.path
                     if not changed:
+                        # ignore from_walk events where nothing changed
                         return
+            else:
+                self._fill_event_path(event)
 
-            if not event.path:
-                if event.prior_oid:
-                    log.error("rename from oid_is_path %s without full path", self.provider.name)
-
-                if from_walk:
-                    log.error("walk %s without full path", self.provider.name)
-                else:
-                    self._fill_event_path(event)
+            if self._filter_event(event):
+                return
 
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
                               exists=event.exists, prior_oid=event.prior_oid)
             self.state.storage_commit()
 
-    def _fill_event_path(self, event):
-        # certain providers have "expensive path getting"
-        # it's possible we don't need to get the path in all cases
-        # the most obvious example is a "delete" event
-        # we should investigate better ways of doing this to save api hits
-
+    def _fill_event_path(self, event: Event):
+        if event.path:
+            return
+        if event.prior_oid:
+            log.error("rename from oid_is_path %s without full path", self.provider.name)   # pragma: no cover
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
-            # other events can get paths from cache
-            event.path = event.path or state[self.side].path
-
-        if not event.path:
+            event.path = state[self.side].path
+        if not event.path and event.exists:
+            # TODO: is this really necessary?
+            # could we let SyncManager handle this (it calls get_latest on every change) instead?
             info = self.provider.info_oid(event.oid)
             if info:
                 event.path = info.path
                 event.otype = info.otype
                 event.hash = info.hash
+    
+    def _filter_event(self, event: Event) -> bool:
+        # event filtering based on root path
+        if not self._root_path:
+            return False
+        # path not a subpath of root
+        if event.exists and event.path and not self.provider.is_subpath(self._root_path, event.path):
+            lookup_oid = event.prior_oid or event.oid
+            state = self.state.lookup_oid(self.side, lookup_oid)
+            if state:
+                # found in state, so this was moved out of our root -- delete
+                log.debug("change event to delete - moved from relevance to irrelevance: %s", state[self.side].path)
+                event.exists = False
+                return False
+            # not in the state db, so this is a create or a move outside our root -- irrelelvant
+            log.debug("ignore irrelevant move/create: %s", event.path)
+            return True
+        # delete of an item that was not in our state db -- irrelevant
+        elif not event.exists and not self.state.lookup_oid(self.side, event.oid):
+            log.debug("ignore irrelevant delete: %s", event.oid)
+            return True
+        return False
 
     def done(self):
         self._provider_guard.remove(self.provider)

@@ -2829,26 +2829,25 @@ def test_root_needed(cs, cs_root_oid, mode):
             nonlocal called
             if e.ntype == NotificationType.ROOT_MISSING_ERROR:
                 called = True
-        cs.handle_notification = _handle
 
-        # to test failure modes, you need to use start(), not run_until, or do()
-        # we keep backing off because the root isn't there
-        until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 2
-        cs.start(until=until)
-        cs.wait(timeout=2)
-        assert until()
+        with patch.object(cs, "handle_notification", _handle):
+            # to test failure modes, you need to use start(), not run_until, or do()
+            # we keep backing off because the root isn't there
+            until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 50
+            cs.start(until=until)
+            cs.wait(timeout=2)
+            assert until()
+            assert called
 
-        assert called
+            # then we create the root:
+            oid = remote.mkdir("/remote")
+            set_root(cs, REMOTE, oid, "/remote")
 
-        # then we create the root:
-        oid = remote.mkdir("/remote")
-        set_root(cs, REMOTE, oid, "/remote")
-
-        # and everything syncs up
-        until = lambda: remote.info_path("/remote/a/b/c")
-        cs.start(until=until)
-        cs.wait(timeout=2)
-        assert until()
+            # and everything syncs up
+            until = lambda: remote.info_path("/remote/a/b/c")
+            cs.start(until=until)
+            cs.wait(timeout=2)
+            assert until()
 
 def test_cursor_tag_delete(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
@@ -2889,3 +2888,48 @@ def test_cursor_tag_delete(mock_provider_generator):
     cs1.forget()
     assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) is None
     assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
+
+def test_cs_event_filter(cs):
+    log.debug("local root: %s", cs.providers[LOCAL]._root_path)     # /local
+    log.debug("remote root: %s", cs.providers[REMOTE]._root_path)   # /remote
+
+    assert len(cs.state) == 0
+
+    foo = cs.providers[LOCAL].create("/local/foo", BytesIO(b"oo"))
+    bar = cs.providers[REMOTE].create("/remote/bar", BytesIO(b"ar"))
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+    # should now have entries for root, foo, bar
+    assert len(cs.state) == 3
+
+    cs.providers[LOCAL].mkdir("/local-2")
+    cs.providers[REMOTE].mkdir("/remote-2")
+    baz = cs.providers[LOCAL].create("/local-2/baz", BytesIO(b"az"))
+    qux = cs.providers[REMOTE].create("/remote-2/qux", BytesIO(b"ux"))
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    # added new files/folders outside the root, these events should be ignored
+    assert len(cs.state) == 3
+
+    cs.providers[LOCAL].rename(foo.oid, "/local-2/foo")
+    foo = cs.providers[LOCAL].info_path("/local-2/foo")
+    cs.providers[REMOTE].rename(bar.oid, "/remote-2/bar")
+    bar = cs.providers[REMOTE].info_path("/remote-2/bar")
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    # renamed 2 files out of root, these events should be converted to delete
+    assert len(cs.state) == 1
+
+    cs.providers[LOCAL].rename(foo.oid, "/local-2/foo-2")
+    cs.providers[REMOTE].rename(bar.oid, "/remote-2/bar-2")
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+    # renamed 2 irrelevent files, these events should be ignored
+    assert len(cs.state) == 1
+
+    cs.providers[LOCAL].rename(baz.oid, "/local/baz")
+    cs.providers[REMOTE].rename(qux.oid, "/remote/qux")
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 4\n%s", cs.state.pretty_print())
+    # moved 2 files into root, these events should be processed, state entries addded, etc.
+    assert len(cs.state) == 3
