@@ -315,5 +315,6 @@ class EventManager(Runnable):
         return False
 
     def done(self):
+        self.provider.disconnect()
         self._provider_guard.remove(self.provider)
         super().done()
