@@ -2210,7 +2210,8 @@ def test_multi_provider_shutdown(two_scoped_providers):
     start_time = time.monotonic()
 
     (prov1, prov2) = two_scoped_providers
-
+    
+    # Start fresh
     prov1.disconnect()
     prov2.disconnect()
 
