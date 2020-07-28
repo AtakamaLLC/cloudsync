@@ -1,3 +1,5 @@
+# pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
+
 import time
 from io import BytesIO
 
@@ -184,6 +186,13 @@ def test_event_provider_contract(manager, rootless_manager, mode):
     with pytest.raises(ValueError):
         # connection id is required
         manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+
+    def raise_root_missing_error():
+        raise CloudRootMissingError("unrooted")
+
+    with patch.object(manager, "_reconnect_if_needed", raise_root_missing_error):
+        manager.do()
+        assert manager.stopped
 
     manager.done()
     rootless_manager.done()
