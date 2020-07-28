@@ -10,7 +10,8 @@ import time
 from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO, NamedTuple
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
-from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
+from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
+    CloudRootMissingError
 from .oauth import OAuthConfig, OAuthProviderInfo
 from .event import Event
 
@@ -134,11 +135,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         if root_oid:
             info = self.info_oid(root_oid)
             if not info:
-                raise CloudFileNotFoundError(f"Failed to get info for root oid: {root_oid}")
+                raise CloudRootMissingError(f"Failed to get info for root oid: {root_oid}")
             if info.otype != DIRECTORY:
-                raise CloudFileNotFoundError(f"Root oid is not a directory: {root_oid} => {info.path}")
+                raise CloudRootMissingError(f"Root oid is not a directory: {root_oid} => {info.path}")
             if root_path and not self.paths_match(root_path, info.path):
-                raise CloudFileNotFoundError(f"Root oid/path mismatch: {root_path} - {info.path}")
+                raise CloudRootMissingError(f"Root oid/path mismatch: {root_path} - {info.path}")
             root_path = info.path
         else: # got root_path only
             info = self.info_path(root_path)

@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass, replace
 from pystrict import strict
 
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, \
+    CloudNamespaceError, CloudRootMissingError
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
@@ -138,6 +139,11 @@ class EventManager(Runnable):
         try:
             self._reconnect_if_needed()
             self._do_unsafe()
+        except CloudRootMissingError as e:
+            log.exception("Root path/oid error -- stopping sync. %s", e)
+            if self.__nmgr:
+                self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
+            self.stop()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:

@@ -3,7 +3,7 @@ from io import BytesIO
 
 import pytest
 
-from cloudsync import EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudFileNotFoundError
+from cloudsync import EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudRootMissingError
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
@@ -164,12 +164,12 @@ def test_event_provider_contract(manager, rootless_manager, mode):
         foo = prov.create("/foo", BytesIO(b"oo"))
         prov.mkdir("/bar")
         bar = prov.info_path("/bar")
-        with pytest.raises(CloudFileNotFoundError):
+        with pytest.raises(CloudRootMissingError):
             prov.set_root(root_oid="does-not-exist")
-        with pytest.raises(CloudFileNotFoundError):
+        with pytest.raises(CloudRootMissingError):
             # not a folder
             prov.set_root(root_oid=foo.oid)
-        with pytest.raises(CloudFileNotFoundError):
+        with pytest.raises(CloudRootMissingError):
             # oid/path mismatch
             prov.set_root(root_path="mismatch", root_oid=bar.oid)
         manager._drain()
