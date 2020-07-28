@@ -2211,6 +2211,9 @@ def test_multi_provider_shutdown(two_scoped_providers):
 
     (prov1, prov2) = two_scoped_providers
 
+    prov1.disconnect()
+    prov2.disconnect()
+
     if hasattr(prov1, "_test_creds"):
         prov1.connect(prov1._test_creds)
     if hasattr(prov2, "_test_creds"):
