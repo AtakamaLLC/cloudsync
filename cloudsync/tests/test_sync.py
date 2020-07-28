@@ -1156,7 +1156,7 @@ def test_equivalent_path_and_sync_path_do_nothing(sync):
         nothing_happened.assert_called()
 
 
-@pytest.mark.skipif(platform.system() == "Linux", reason="flaky on travis CI")
+@pytest.mark.skipif(system() == "Linux", reason="flaky on travis CI")
 def test_reprioritize_sync_trash_loop(sync):
     # an admittedly contrived scenario that causes sync to loop forever
 
