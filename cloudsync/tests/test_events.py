@@ -172,8 +172,11 @@ def test_event_provider_contract(manager, rootless_manager, mode):
             # not a folder
             prov.set_root(root_oid=foo.oid)
         with pytest.raises(CloudRootMissingError):
-            # oid/path mismatch
-            prov.set_root(root_path="mismatch", root_oid=bar.oid)
+            # not a folder
+            prov.set_root(root_path="/foo")
+        # provider creates folder if it does not already exist
+        prov.set_root(root_path="/new-folder")
+        assert prov.info_path("/new-folder")
         manager._drain()
 
     manager.done()
@@ -189,9 +192,11 @@ def test_event_provider_contract(manager, rootless_manager, mode):
     notify = MagicMock()
     manager = EventManager(prov, MagicMock(), LOCAL, notify, root_path=prov._root_path, root_oid=prov._root_oid)
     with patch.object(manager, "_reconnect_if_needed", raise_root_missing_error):
-        manager.do()
-        notify.notify_from_exception.assert_called_once()
-        assert manager.stopped
+        with pytest.raises(Exception):
+            # _BackoffError
+            manager.do()
+            notify.notify_from_exception.assert_called_once()
+            assert not manager._root_validated
 
     prov.connection_id = None
     with pytest.raises(ValueError):

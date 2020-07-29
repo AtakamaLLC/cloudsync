@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass, replace
 from pystrict import strict
 
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, \
-    CloudNamespaceError, CloudRootMissingError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
@@ -95,6 +94,7 @@ class EventManager(Runnable):
                 self._cursor_tag = self.label = "_cursor"
                 self.cursor = self.state.storage_get_data(self._cursor_tag)
             self._root_validated = True
+        return self._root_validated
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
@@ -133,18 +133,14 @@ class EventManager(Runnable):
             else:
                 log.info("reconnect to %s", self.provider.name)
                 self.provider.reconnect()
-            self._validate_root()
 
     def do(self):
         try:
             self._reconnect_if_needed()
-            self._do_unsafe()
-        except CloudRootMissingError as e:
-            log.exception("Root path/oid error -- stopping sync. %s", e)
-            if self.__nmgr:
-                self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
-            self.stop()
+            if self._validate_root():
+                self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
+            # CloudRootMissingError is a CloudTemporaryError so handled here
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
@@ -302,20 +298,20 @@ class EventManager(Runnable):
         # event filtering based on root path
         if not self._root_path:
             return False
-        # path not a subpath of root
         if event.exists and event.path and not self.provider.is_subpath(self._root_path, event.path):
+            # got an item that exists with a known path, and that path is not a subpath of the root_path
             lookup_oid = event.prior_oid or event.oid
             state = self.state.lookup_oid(self.side, lookup_oid)
             if state:
-                # found in state, so this was moved out of our root -- delete
+                # found in state, so this item was moved out of root_path -- delete
                 log.debug("change event to delete - moved from relevance to irrelevance: %s", state[self.side].path)
                 event.exists = False
                 return False
-            # not in the state db, so this is a create or a move outside our root -- irrelelvant
+            # not in the state db, so this is a create or a move outside root_path -- irrelelvant
             log.debug("ignore irrelevant move/create: %s", event.path)
             return True
-        # delete of an item that was not in our state db -- irrelevant
         elif not event.exists and not self.state.lookup_oid(self.side, event.oid):
+            # delete of an item that was not in the state db -- irrelevant
             log.debug("ignore irrelevant delete: %s", event.oid)
             return True
         return False
