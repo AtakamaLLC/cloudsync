@@ -3,7 +3,7 @@ from io import BytesIO
 
 import pytest
 
-from cloudsync import EventManager, Event, exceptions, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudFileNotFoundError
+from cloudsync import exceptions, EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudFileNotFoundError
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
