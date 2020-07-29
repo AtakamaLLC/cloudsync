@@ -321,8 +321,6 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
         for i in range(0, 4):
             four_local_cs[i].stop()  # Stop the sync
             log.debug("Provider %s", i)
-            four_local_cs[i].providers[LOCAL]._log_debug_state()
-        four_local_cs[0].providers[REMOTE]._log_debug_state()
 
 
 def test_cs_rename_file_and_folder_conflicts_with_delete(cs):

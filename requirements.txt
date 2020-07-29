@@ -16,7 +16,7 @@ dropbox>=10.3.0
 six>=1.12.0
 
 # box provider
-boxsdk[jwt]
+boxsdk[jwt]>=2.9.0
 
 # other providers we run tests for
 cloudsync-onedrive~=2.0.1
