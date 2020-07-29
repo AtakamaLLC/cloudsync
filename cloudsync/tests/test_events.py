@@ -169,10 +169,13 @@ def test_event_provider_contract(manager, rootless_manager, mode):
         with pytest.raises(CloudRootMissingError):
             prov.set_root(root_oid="does-not-exist")
         with pytest.raises(CloudRootMissingError):
-            # not a folder
+            # not a directory oid
             prov.set_root(root_oid=foo.oid)
         with pytest.raises(CloudRootMissingError):
-            # not a folder
+            # oid/path mismatch
+            prov.set_root(root_path="/not-bar", root_oid=bar.oid)
+        with pytest.raises(CloudRootMissingError):
+            # not a directory path
             prov.set_root(root_path="/foo")
         # provider creates folder if it does not already exist
         prov.set_root(root_path="/new-folder")
