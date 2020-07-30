@@ -215,15 +215,27 @@ def test_event_filter(manager):
     event = Event(FILE, "", "", "", False)
     assert manager._filter_event(event)
     # filter out create of unknown oid for a path we don't care about
-    log.warning(manager._root_path)
     event = Event(FILE, "oid-1", "/some-random-path/file-1", "hash-1", True)
     assert manager._filter_event(event)
-    # move out of root path - converted to delete event
+    # move out of root path - do not filter out
     event = Event(FILE, "oid-1", f"{manager._root_path}/file-1", "hash-1", True)
     manager._process_event(event)
+    assert not manager._filter_event(event)
     event = Event(FILE, "oid-1", "/some-other-path/file-1", "hash-1", True)
     manager._filter_event(event)
-    assert not event.exists
+    assert not manager._filter_event(event)
+    # root renamed
+    with pytest.raises(CloudRootMissingError):
+        event = Event(DIRECTORY, manager._root_oid, "/renamed", "hash-1", True)
+        manager._filter_event(event)
+    if manager.provider.oid_is_path:
+        with pytest.raises(CloudRootMissingError):
+            event = Event(DIRECTORY, "/renamed", "", "hash-1", True, prior_oid=f"{manager._root_path}")
+            manager._filter_event(event)
+    # root deleted
+    with pytest.raises(CloudRootMissingError):
+        event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
+        manager._filter_event(event)
     manager.done()
 
 

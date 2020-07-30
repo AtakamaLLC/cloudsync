@@ -736,6 +736,49 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
+def test_cs_move_in_and_out_of_root(cs):
+    # roots are set when cs is created: /local, /remote
+    lp = cs.providers[LOCAL]
+    rp = cs.providers[REMOTE]
+
+    lfile_info = lp.create("/local/file-1", BytesIO(b"hello"))
+    lfodler_oid = lp.mkdir("/local/folder-1")
+    lp.create("/local/folder-1/file-2", BytesIO(b"hello"))
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    # remote file moved out of root - delete and sync
+    rfile_info = rp.info_path("/remote/file-1")
+    rp.rename(rfile_info.oid, "/file-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    assert not lp.info_oid(lfile_info.oid)
+
+    # remote file moved back into root - revivify and sync
+    rp.rename(rfile_info.oid, "/remote/file-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/file-1")
+
+    # local non-empty folder moved out of root - delete and sync
+    lp.mkdir("/some-other-folder")
+    lfodler_oid = lp.rename(lfodler_oid, "/some-other-folder/folder-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 4\n%s", cs.state.pretty_print())
+    assert not rp.info_path("/remote/folder-1")
+    assert not rp.info_path("/remote/folder-1/file-2")
+
+    # local non-empty folder moved back into root - revivify and sync
+    lp.mkdir("/yet-another-folder")
+    lfodler_oid = lp.rename(lfodler_oid, "/yet-another-folder/folder-3")
+    lfodler_oid = lp.rename(lfodler_oid, "/local/folder-4")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 5\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/folder-4/file-2")
+    assert rp.info_path("/remote/folder-4")
+    assert rp.info_path("/remote/folder-4/file-2")
+
+
 def setup_remote_local(cs, *names, content=b'hello'):
     remote_parent = "/remote"
     local_parent = "/local"

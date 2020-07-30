@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass, replace
 from pystrict import strict
 
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, \
+    CloudNamespaceError, CloudRootMissingError
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
@@ -161,15 +162,17 @@ class EventManager(Runnable):
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
                       self.provider.name, self._root_path, self._root_oid)
             self._queue = []
-            try:
-                if self._root_oid:
-                    for event in self.provider.walk_oid(self._root_oid):
-                        self._process_event(event, from_walk=True)
-            except CloudFileNotFoundError as e:
-                log.debug('File to walk not found %s', e)
-
+            self._do_walk_oid(self._root_oid)
             self.state.storage_update_data(self._walk_tag, time.time())
             self.need_walk = False
+
+    def _do_walk_oid(self, oid):
+        try:
+            if oid:
+                for event in self.provider.walk_oid(oid):
+                    self._process_event(event, from_walk=True)
+        except CloudFileNotFoundError as e:
+            log.debug('File to walk not found %s', e)
 
     def _do_first_init(self):
         if self._first_do:
@@ -270,7 +273,7 @@ class EventManager(Runnable):
             else:
                 self._fill_event_path(event)
 
-            if self._filter_event(event):
+            if self._filter_event(event, from_walk):
                 return
 
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
@@ -294,26 +297,47 @@ class EventManager(Runnable):
                 event.otype = info.otype
                 event.hash = info.hash
     
-    def _filter_event(self, event: Event) -> bool:
+    def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
         # event filtering based on root path
+        # return True = ignore event (filter it out), False = process event
         if not self._root_path:
             return False
+
+        # detect root changes
+        if self.provider.root_oid == event.oid:
+            if not event.exists:
+                raise CloudRootMissingError(f"root was deleted for provider: {self.provider.name}")
+            if not self.provider.paths_match(self.provider.root_path, event.path):
+                raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
+        if self.provider.root_oid == event.prior_oid:
+            raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
+
+        if event.prior_oid and event.path and event.otype == DIRECTORY and self.provider.is_subpath_of_root(event.path):
+            # needed for oid-is-path only
+            log.debug("directory renamed into root - walking to pick up events for children")
+            self._do_walk_oid(event.oid)
+            return False
+
         if event.exists and event.path and not self.provider.is_subpath(self._root_path, event.path):
-            # got an item that exists with a known path, and that path is not a subpath of the root_path
+            # got an item that exists, with a known path, and that path is not a subpath of the root_path
             lookup_oid = event.prior_oid or event.oid
             state = self.state.lookup_oid(self.side, lookup_oid)
             if state:
                 # found in state, so this item was moved out of root_path -- delete
-                log.debug("change event to delete - moved from relevance to irrelevance: %s", state[self.side].path)
-                event.exists = False
+                if event.otype == DIRECTORY and not from_walk:
+                    log.debug("directory renamed out of root - walking to pick up events for children")
+                    self._do_walk_oid(event.oid)
+                log.debug("moved from relevance to irrelevance: %s", state[self.side].path)
                 return False
             # not in the state db, so this is a create or a move outside root_path -- irrelelvant
             log.debug("ignore irrelevant move/create: %s", event.path)
             return True
-        elif not event.exists and not self.state.lookup_oid(self.side, event.oid):
+
+        if not event.exists and not self.state.lookup_oid(self.side, event.oid):
             # delete of an item that was not in the state db -- irrelevant
             log.debug("ignore irrelevant delete: %s", event.oid)
             return True
+
         return False
 
     def done(self):

@@ -153,6 +153,16 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         self._root_oid = root_oid
         return (root_path, root_oid)
 
+    @property
+    def root_path(self) -> Optional[str]:
+        """The root path, if any"""
+        return self._root_path
+
+    @property
+    def root_oid(self) -> Optional[str]:
+        """The root oid, if any"""
+        return self._root_oid
+
     def set_creds(self, creds):
         """Set credentials without connecting."""
         self._creds = creds
@@ -508,6 +518,16 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             else:
                 return False
         return False
+
+    def is_subpath_of_root(self, target, strict=False):
+        """True if the target is within the root folder.
+
+        Args:
+            folder: the directory
+            target: the potential sub-file or folder
+            strict: whether to return True if folder==root
+        """
+        return self.is_subpath(self._root_path, target, strict)
 
     def replace_path(self, path, from_dir, to_dir):
         """Replaces from_dir with to_dir in path, but only if from_dir `is_subpath` of path."""
