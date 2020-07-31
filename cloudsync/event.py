@@ -325,7 +325,6 @@ class EventManager(Runnable):
                 log.debug("moved from relevance to irrelevance: %s", state[self.side].path)
                 return False
 
-            # TODO: could limit this to items that are not in state or in state and irrelevant/discarded
             if subpath:
                 # item created in or renamed into root_path -- process event
                 if event.otype == DIRECTORY and not from_walk:
