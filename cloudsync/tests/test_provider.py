@@ -2204,6 +2204,40 @@ def test_provider_interface(unconnected_provider):
         log.error(msg)
     assert prov_dir == set()
 
+def test_multi_provider_shutdown(two_scoped_providers):
+    # Kind of hacky, could use a timeout wrapper on tests
+    MAX_TIME = 10
+    start_time = time.monotonic()
+
+    (prov1, prov2) = two_scoped_providers
+    
+    # Start fresh
+    prov1.disconnect()
+    prov2.disconnect()
+
+    if hasattr(prov1, "_test_creds"):
+        prov1.connect(prov1._test_creds)
+    if hasattr(prov2, "_test_creds"):
+        prov2.connect(prov2._test_creds)
+
+    prov2.disconnect()
+    prov1.disconnect()
+    assert not prov1.connected
+    assert not prov2.connected
+
+    if hasattr(prov1, "_test_creds"):
+        prov1.connect(prov1._test_creds)
+    if hasattr(prov2, "_test_creds"):
+        prov2.connect(prov2._test_creds)
+
+    prov1.disconnect()
+    prov2.disconnect()
+    assert not prov1.connected
+    assert not prov2.connected
+
+    end_time = time.monotonic()
+    if (end_time - start_time > MAX_TIME):
+        raise TimeoutError("Connect/Disconnect taking too long")
 
 def test_cache(two_scoped_providers):
     (prov1, prov2) = two_scoped_providers

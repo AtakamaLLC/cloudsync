@@ -95,4 +95,5 @@ class LongPollManager(Runnable):
 
     def stop(self, forever=True, wait=False):
         # Don't wait for do() to finish, could wait for up to long_poll_timeout seconds
+        self.unblock()
         super().stop(forever=forever, wait=wait)

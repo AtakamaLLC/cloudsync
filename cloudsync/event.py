@@ -349,3 +349,7 @@ class EventManager(Runnable):
     def done(self):
         self._provider_guard.remove(self.provider)
         super().done()
+
+    def stop(self, forever=True, wait=True):
+        self.provider.disconnect()
+        super().stop(forever=forever, wait=wait)

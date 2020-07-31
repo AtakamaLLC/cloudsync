@@ -635,7 +635,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Helper function for oauth providers.
 
         Args:
-            prefix: environment varible prefix
+            prefix: environment variable prefix
             token_key: creds dict key
             token_sep: multi-env var token separator
             port_range: if any, specify tuple

@@ -5,7 +5,7 @@ from io import BytesIO
 
 import pytest
 
-from cloudsync import EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudRootMissingError
+from cloudsync import exceptions, EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudRootMissingError
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
@@ -79,12 +79,7 @@ def test_events_shutdown_event_shouldnt_process(manager):
         time.sleep(.4)
         try:
             manager.provider.events().__next__()
-        except StopIteration:
-            assert False
-        try:
-            manager.provider.events().__next__()
-            assert False
-        except StopIteration:
+        except exceptions.CloudDisconnectedError:
             pass
     finally:
         manager.stop()
