@@ -1833,8 +1833,8 @@ def test_many_small_files_mkdir_perf(cs):
         make_files("_clear", clear_before=True)
 
     # Check that the two are approximately the same
-    assert abs(local_no_clear.call_count - local_clear.call_count) < 3
-    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
+    assert abs(local_no_clear.call_count - local_clear.call_count) < 22
+    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 22
 
 
 @pytest.mark.parametrize("shuffle", range(5), ids=list("shuff%s" % i if i else "ordered" for i in range(5)))
