@@ -123,6 +123,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             self.connection_id = new_id
         self.__connected = True
         assert self.connected
+        self._validate_root(self._root_path, self._root_oid)
 
     def set_root(self, root_path=None, root_oid=None):
         """Set sync root path and oid. Once set, these values cannot be changed."""
@@ -133,6 +134,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise ValueError("Sync root already set and cannot be changed")
         if not root_path and not root_oid:
             return (None, None)
+        (self._root_path, self._root_oid) = self._validate_root(root_path, root_oid)
+        return (self._root_path, self._root_oid)
+
+    def _validate_root(self, root_path, root_oid):
         if root_oid:
             # prefer root_oid
             info = self.info_oid(root_oid)
@@ -143,14 +148,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             if root_path and not self.paths_match(root_path, info.path):
                 raise CloudRootMissingError(f"Root oid/path mismatch: {root_path} - {info.path}")
             root_path = info.path
-        else:
+        elif root_path:
             # got root_path only
             info = self.info_path(root_path)
             if info and info.otype != DIRECTORY:
                 raise CloudRootMissingError(f"Root path is not a directory: {root_path}")
             root_oid = info.oid if info else self.mkdir(root_path)
-        self._root_path = root_path
-        self._root_oid = root_oid
         return (root_path, root_oid)
 
     @property
