@@ -312,27 +312,33 @@ class EventManager(Runnable):
         if self.provider.root_oid == event.prior_oid:
             raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
 
-        if event.prior_oid and event.path and event.otype == DIRECTORY and self.provider.is_subpath_of_root(event.path):
-            # needed for oid-is-path only
-            log.debug("directory renamed into root - walking to pick up events for children")
-            self._do_walk_oid(event.oid)
-            return False
+        # filter for create/modify
+        if event.exists and event.path:
+            subpath = self.provider.is_subpath_of_root(event.path)
+            state = self.state.lookup_oid(self.side, (event.prior_oid or event.oid))
 
-        if event.exists and event.path and not self.provider.is_subpath(self._root_path, event.path):
-            # got an item that exists, with a known path, and that path is not a subpath of the root_path
-            lookup_oid = event.prior_oid or event.oid
-            state = self.state.lookup_oid(self.side, lookup_oid)
-            if state:
-                # found in state, so this item was moved out of root_path -- delete
+            if state and not subpath:
+                # item was moved out of root_path -- treated as delete
                 if event.otype == DIRECTORY and not from_walk:
                     log.debug("directory renamed out of root - walking to pick up events for children")
                     self._do_walk_oid(event.oid)
                 log.debug("moved from relevance to irrelevance: %s", state[self.side].path)
                 return False
-            # not in the state db, so this is a create or a move outside root_path -- irrelelvant
-            log.debug("ignore irrelevant move/create: %s", event.path)
-            return True
 
+            # TODO: could limit this to items that are not in state or in state and irrelevant/discarded
+            if subpath:
+                # item created in or renamed into root_path -- process event
+                if event.otype == DIRECTORY and not from_walk:
+                    log.debug("directory created or renamed into root - walking to pick up events for children")
+                    self._do_walk_oid(event.oid)
+                return False
+
+            if not state and not subpath:
+                # something happened outside root_path -- irrelelvant
+                log.debug("ignore irrelevant move/create: %s", event.path)
+                return True
+
+        # filter for delete
         if not event.exists and not self.state.lookup_oid(self.side, event.oid):
             # delete of an item that was not in the state db -- irrelevant
             log.debug("ignore irrelevant delete: %s", event.oid)
