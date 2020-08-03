@@ -10,3 +10,4 @@ flaky>=3.6
 coverage
 codecov
 diff-cover
+toml
