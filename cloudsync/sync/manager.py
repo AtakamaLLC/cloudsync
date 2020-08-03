@@ -335,9 +335,10 @@ class SyncManager(Runnable):
 
         for side in ordered:
             if not sync[side].needs_sync():
-                prov = self.providers[side]
-                subpath_of_root = prov.is_subpath_of_root(sync[side].path) if prov.root_path and sync[side].path else True
-                if subpath_of_root:
+                # if the changed side's path doesn't translate then ignore 'needs_sync' and process
+                # the change anyway (likely a rename to irrelevent directory)
+                # see test_cs_rename_folder_out_of_root
+                if self.translate(other_side(side), sync[side].path):
                     if sync[side].changed:
                         log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                     sync[side].changed = 0
@@ -1022,8 +1023,11 @@ class SyncManager(Runnable):
                     self.state.storage_commit()
 
                 if remaining:
-                    log.warning("Children %s exist on side %s. Syncing", remaining, synced)
-                    return PUNT
+                    if sync.priority < 10:
+                        log.warning("Children %s exist on side %s. Syncing", remaining, synced)
+                        return PUNT
+                    else:
+                        log.warning("Children %s exist on side %s. Giving up", remaining, synced)
                 return FINISHED
             else:
                 log.info("all children not fully synced, punt %s", sync[changed].path)

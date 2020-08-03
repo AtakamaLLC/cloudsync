@@ -777,6 +777,28 @@ def test_cs_move_in_and_out_of_root(cs):
     assert rp.info_path("/remote/folder-4/file-2")
 
 
+def test_cs_rename_folder_out_of_root(cs):
+    lp = cs.providers[LOCAL]
+    rp = cs.providers[REMOTE]
+
+    # roots are /local, /remote
+    rp.mkdir("/remote")
+    rp.mkdir("/outside-root")
+    lp.mkdir("/local")
+    lp.mkdir("/local/stuff1")
+    lp.create("/local/stuff1/file1", BytesIO(b"file1"))
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    rinfo_stuff1 = rp.info_path("/remote/stuff1")
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    assert rinfo_stuff1
+
+    rp.rename(rinfo_stuff1.oid, "/outside-root/stuff2")
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    assert not lp.info_path("/local/stuff1")
+
+
 def setup_remote_local(cs, *names, content=b'hello'):
     remote_parent = "/remote"
     local_parent = "/local"
