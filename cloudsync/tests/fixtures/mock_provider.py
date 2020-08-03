@@ -430,7 +430,8 @@ class MockProvider(Provider):
         if self.oid_is_path:
             source_object.oid = destination_path
         self._store_object(source_object)
-        self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
+        if event:
+            self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
         log.debug("rename complete %s", source_object.path)
         self._log_debug_state("_rename_single_object")
 
