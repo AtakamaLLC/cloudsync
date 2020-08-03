@@ -732,6 +732,27 @@ def test_cs_basic(cs):
     assert len(cs.state) == 3
     assert not cs.state.changeset_len
 
+def test_cs_rename_folder_out_of_root(cs):
+    lp = cs.providers[LOCAL]
+    rp = cs.providers[REMOTE]
+
+    rp.mkdir("/remote")
+    rp.mkdir("/outside-root")
+    lp.mkdir("/local")
+    lp.mkdir("/local/stuff1")
+    lp.create("/local/stuff1/file1", BytesIO(b"file1"))
+    #cs.run_until_clean(timeout=1)
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    rinfo_stuff1 = rp.info_path("/remote/stuff1")
+    assert rinfo_stuff1
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    rp.rename(rinfo_stuff1.oid, "/outside-root/stuff2")
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    #cs.run_until_clean(timeout=1)
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
 
 def setup_remote_local(cs, *names, content=b'hello'):
     remote_parent = "/remote"
