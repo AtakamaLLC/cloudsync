@@ -732,7 +732,8 @@ def test_cs_basic(cs):
     assert len(cs.state) == 3
     assert not cs.state.changeset_len
 
-def test_cs_rename_folder_out_of_root(cs):
+@pytest.mark.parametrize("give_up_on_unsynced_kids", [True, False])
+def test_cs_rename_folder_out_of_root(cs, give_up_on_unsynced_kids):
     lp = cs.providers[LOCAL]
     rp = cs.providers[REMOTE]
 
@@ -747,11 +748,24 @@ def test_cs_rename_folder_out_of_root(cs):
     rinfo_stuff1 = rp.info_path("/remote/stuff1")
     log.info("TABLE 1\n%s", cs.state.pretty_print())
     assert rinfo_stuff1
-
     rp.rename(rinfo_stuff1.oid, "/outside-root/stuff2")
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
-    log.info("TABLE 2\n%s", cs.state.pretty_print())
-    assert not lp.info_path("/local/stuff1")
+
+    if give_up_on_unsynced_kids:
+        original_translate = cs.translate
+        def bad_translation(side: int, path: str):
+            log.info("bad_translation %s %s", side, path)
+            if side == LOCAL and path == "/outside-root/stuff2/file1":
+                return "/local/stuff1/file1"
+            return original_translate(side, path)
+
+        with patch.object(cs, "translate", bad_translation):
+            # times out if SyncManager does not give up after a few retires
+            cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
+            log.info("TABLE 2\n%s", cs.state.pretty_print())
+    else:
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+        log.info("TABLE 2\n%s", cs.state.pretty_print())
+        assert not lp.info_path("/local/stuff1")
 
 def setup_remote_local(cs, *names, content=b'hello'):
     remote_parent = "/remote"
