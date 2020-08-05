@@ -273,7 +273,9 @@ class EventManager(Runnable):
             else:
                 self._fill_event_path(event)
 
+            self._notify_on_root_change_event(event)
             if self._filter_event(event, from_walk):
+                log.debug("filtered out: %s %s %s", event.path, event.oid, event.exists)
                 return
 
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
@@ -298,52 +300,55 @@ class EventManager(Runnable):
                 event.hash = info.hash
     
     def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
-        # event filtering based on root path
+        # event filtering based on root path and event path
         # return True = ignore event (filter it out), False = process event
-        if not self._root_path:
+        if not self._root_path or not self.provider.events_have_path:
             return False
 
-        # detect root changes
-        if self.provider.root_oid == event.oid:
+        curr_subpath = self.provider.is_subpath_of_root(event.path)
+        prior_subpath = None
+        if self.provider.oid_is_path:
+            if not event.prior_oid:
+                # create or delete - ignore if not subpath of root
+                return not curr_subpath
+            prior_subpath = self.provider.is_subpath_of_root(event.prior_oid)
+        else:
+            state_ent = self.state.lookup_oid(self.side, event.oid)
+            if state_ent:
+                prior_subpath = self.provider.is_subpath_of_root(state_ent[self.side].path)
             if not event.exists:
-                raise CloudRootMissingError(f"root was deleted for provider: {self.provider.name}")
-            if not self.provider.paths_match(self.provider.root_path, event.path):
+                # delete - ignore if not in state, or in state but is not subpath of root
+                return not prior_subpath
+
+        if curr_subpath and not prior_subpath:
+            # rename into root
+            ignore = False
+            if event.otype == DIRECTORY and not from_walk:
+                log.debug("directory renamed into root - walking: %s", event.path)
+                self._process_event(event, from_walk=True)
+                self._do_walk_oid(event.oid)
+                ignore = True
+            log.debug("renamed into root: %s", event.path)
+            return ignore
+
+        if prior_subpath and not curr_subpath:
+            # rename out of root
+            log.debug("renamed out of root: %s", event.path)
+            return False
+
+        # both curr and prior are subpaths == rename within root (process event)
+        # neither is subpath == rename outside root (ignore)
+        return not curr_subpath
+
+    def _notify_on_root_change_event(self, event: Event):
+        if self._root_path and self._root_oid:
+            if self.provider.root_oid == event.oid:
+                if not event.exists:
+                    raise CloudRootMissingError(f"root was deleted for provider: {self.provider.name}")
+                if event.path and not self.provider.paths_match(self.provider.root_path, event.path):
+                    raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
+            if self.provider.root_oid == event.prior_oid:
                 raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
-        if self.provider.root_oid == event.prior_oid:
-            raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
-
-        # filter for create/modify
-        if event.exists and event.path:
-            subpath = self.provider.is_subpath_of_root(event.path)
-            state = self.state.lookup_oid(self.side, (event.prior_oid or event.oid))
-
-            if state and not subpath:
-                # item was moved out of root_path -- treated as delete
-                if event.otype == DIRECTORY and not from_walk:
-                    log.debug("directory renamed out of root - walking to pick up events for children")
-                    self._do_walk_oid(event.oid)
-                log.debug("moved from relevance to irrelevance: %s", state[self.side].path)
-                return False
-
-            if subpath:
-                # item created in or renamed into root_path -- process event
-                if event.otype == DIRECTORY and not from_walk:
-                    log.debug("directory created or renamed into root - walking to pick up events for children")
-                    self._do_walk_oid(event.oid)
-                return False
-
-            if not state and not subpath:
-                # something happened outside root_path -- irrelelvant
-                log.debug("ignore irrelevant move/create: %s", event.path)
-                return True
-
-        # filter for delete
-        if not event.exists and not self.state.lookup_oid(self.side, event.oid):
-            # delete of an item that was not in the state db -- irrelevant
-            log.debug("ignore irrelevant delete: %s", event.oid)
-            return True
-
-        return False
 
     def done(self):
         self._provider_guard.remove(self.provider)

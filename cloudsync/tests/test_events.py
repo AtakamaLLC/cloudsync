@@ -201,37 +201,35 @@ def test_event_provider_contract(manager, rootless_manager, mode):
         # connection id is required
         manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
 
-    manager.done()
-    rootless_manager.done()
-
 
 def test_event_filter(manager):
+    manager.provider.events_have_path = True
+
     # filter out delete of unknown oid
     event = Event(FILE, "", "", "", False)
     assert manager._filter_event(event)
     # filter out create of unknown oid for a path we don't care about
     event = Event(FILE, "oid-1", "/some-random-path/file-1", "hash-1", True)
     assert manager._filter_event(event)
-    # move out of root path - do not filter out
-    event = Event(FILE, "oid-1", f"{manager._root_path}/file-1", "hash-1", True)
+    # rename out of root path - do not filter out
+    in_root_path = f"{manager._root_path}/file-1"
+    event = Event(FILE, "oid-1", in_root_path, "hash-1", True)
     manager._process_event(event)
-    assert not manager._filter_event(event)
     event = Event(FILE, "oid-1", "/some-other-path/file-1", "hash-1", True)
-    manager._filter_event(event)
+    event.prior_oid = in_root_path if manager.provider.oid_is_path else None
     assert not manager._filter_event(event)
     # root renamed
     with pytest.raises(CloudRootMissingError):
         event = Event(DIRECTORY, manager._root_oid, "/renamed", "hash-1", True)
-        manager._filter_event(event)
+        manager._notify_on_root_change_event(event)
     if manager.provider.oid_is_path:
         with pytest.raises(CloudRootMissingError):
             event = Event(DIRECTORY, "/renamed", "", "hash-1", True, prior_oid=f"{manager._root_path}")
-            manager._filter_event(event)
+            manager._notify_on_root_change_event(event)
     # root deleted
     with pytest.raises(CloudRootMissingError):
         event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
-        manager._filter_event(event)
-    manager.done()
+        manager._notify_on_root_change_event(event)
 
 
 def test_event_filter_rootless(rootless_manager):
@@ -242,4 +240,3 @@ def test_event_filter_rootless(rootless_manager):
     assert not rootless_manager._filter_event(event)
     assert not rootless_manager._filter_event(None)
     assert not rootless_manager._filter_event("foo-bar")
-    rootless_manager.done()

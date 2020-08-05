@@ -737,7 +737,9 @@ def test_cs_basic(cs):
 def test_cs_move_in_and_out_of_root(cs):
     # roots are set when cs is created: /local, /remote
     lp = cs.providers[LOCAL]
+    lp.events_have_path = True
     rp = cs.providers[REMOTE]
+    rp.events_have_path = True
 
     lfile_info = lp.create("/local/file-1", BytesIO(b"hello"))
     lfodler_oid = lp.mkdir("/local/folder-1")
@@ -778,6 +780,7 @@ def test_cs_move_in_and_out_of_root(cs):
 
 
 def test_cs_rename_folder_out_of_root(cs):
+    cs.state.shuffle = True
     lp = cs.providers[LOCAL]
     rp = cs.providers[REMOTE]
 
@@ -787,14 +790,24 @@ def test_cs_rename_folder_out_of_root(cs):
     lp.mkdir("/local")
     lp.mkdir("/local/stuff1")
     lp.create("/local/stuff1/file1", BytesIO(b"file1"))
+    lp.mkdir("/local/stuff1/sub1")
+    lp.create("/local/stuff1/sub1/file2", BytesIO(b"file2"))
+    lp.mkdir("/local/stuff1/sub1/sub2")
+    lp.create("/local/stuff1/sub1/sub2/file3", BytesIO(b"file3"))
+    lp.mkdir("/local/stuff1/sub1/sub2/sub3")
+    lp.create("/local/stuff1/sub1/sub2/sub3/file4", BytesIO(b"file4"))
+    lp.create("/local/stuff1/sub1/sub2/sub3/file4.5", BytesIO(b"file4"))
+    lp.mkdir("/local/stuff1/sub1/sub4")
+    lp.create("/local/stuff1/sub1/sub4/file5", BytesIO(b"file5"))
+    lp.create("/local/stuff1/sub1/sub4/file6", BytesIO(b"file6"))
 
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
-    rinfo_stuff1 = rp.info_path("/remote/stuff1")
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
     log.info("TABLE 1\n%s", cs.state.pretty_print())
+    rinfo_stuff1 = rp.info_path("/remote/stuff1")
     assert rinfo_stuff1
 
     rp.rename(rinfo_stuff1.oid, "/outside-root/stuff2")
-    cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
     log.info("TABLE 2\n%s", cs.state.pretty_print())
     assert not lp.info_path("/local/stuff1")
 

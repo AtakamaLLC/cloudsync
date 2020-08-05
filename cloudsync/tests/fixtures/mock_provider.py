@@ -305,9 +305,7 @@ class MockProvider(Provider):
         mtime = event.get("mtime", None)
         trashed = event.get("trashed", None)
         prior_oid = event.get("prior_oid", None)
-        path = None
-        if self.oid_is_path:
-            path = event.get("path")
+        path = event.get("path") if self.oid_is_path or self.events_have_path else None
         if not self._uses_cursor:
             cursor = None
         if self._oidless_folder_trash_events:
