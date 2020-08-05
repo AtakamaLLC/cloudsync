@@ -1009,7 +1009,7 @@ class SyncManager(Runnable):
         if sync.priority > 0:
             all_synced = True
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
-                if kid.needs_sync():
+                if kid.needs_sync() or not self.translate(synced, sync[changed].path):
                     all_synced = False
                     break
             if all_synced:
