@@ -742,7 +742,7 @@ def test_cs_move_in_and_out_of_root(cs):
     rp.events_have_path = True
 
     lfile_info = lp.create("/local/file-1", BytesIO(b"hello"))
-    lfodler_oid = lp.mkdir("/local/folder-1")
+    lfolder_oid = lp.mkdir("/local/folder-1")
     lp.create("/local/folder-1/file-2", BytesIO(b"hello"))
     cs.run_until_clean(timeout=1)
     log.info("TABLE 1\n%s", cs.state.pretty_print())
@@ -751,18 +751,32 @@ def test_cs_move_in_and_out_of_root(cs):
     rfile_info = rp.info_path("/remote/file-1")
     rp.rename(rfile_info.oid, "/file-1")
     cs.run_until_clean(timeout=1)
-    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    log.info("TABLE 2.0\n%s", cs.state.pretty_print())
     assert not lp.info_oid(lfile_info.oid)
 
     # remote file moved back into root - revivify and sync
     rp.rename(rfile_info.oid, "/remote/file-1")
     cs.run_until_clean(timeout=1)
-    log.info("TABLE 3\n%s", cs.state.pretty_print())
+    log.info("TABLE 2.5\n%s", cs.state.pretty_print())
     assert lp.info_path("/local/file-1")
+
+    # remote folder moved out of root - delete and sync
+    rfolder_info = rp.info_path("/remote/folder-1")
+    rfolder_oid = rp.rename(rfolder_info.oid, "/new-folder-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 3.0\n%s", cs.state.pretty_print())
+    assert not lp.info_oid(lfolder_oid)
+
+    # remote folder moved back into root - revivify and sync
+    rp.rename(rfolder_oid, "/remote/folder-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 3.5\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/folder-1/file-2")
+    lfolder_oid = lp.info_path("/local/folder-1").oid
 
     # local non-empty folder moved out of root - delete and sync
     lp.mkdir("/some-other-folder")
-    lfodler_oid = lp.rename(lfodler_oid, "/some-other-folder/folder-1")
+    lfolder_oid = lp.rename(lfolder_oid, "/some-other-folder/folder-1")
     cs.run_until_clean(timeout=1)
     log.info("TABLE 4\n%s", cs.state.pretty_print())
     assert not rp.info_path("/remote/folder-1")
@@ -770,13 +784,21 @@ def test_cs_move_in_and_out_of_root(cs):
 
     # local non-empty folder moved back into root - revivify and sync
     lp.mkdir("/yet-another-folder")
-    lfodler_oid = lp.rename(lfodler_oid, "/yet-another-folder/folder-3")
-    lfodler_oid = lp.rename(lfodler_oid, "/local/folder-4")
+    lfolder_oid = lp.rename(lfolder_oid, "/yet-another-folder/folder-3")
+    lfolder_oid = lp.rename(lfolder_oid, "/local/folder-4")
     cs.run_until_clean(timeout=1)
-    log.info("TABLE 5\n%s", cs.state.pretty_print())
+    log.info("TABLE 4.5\n%s", cs.state.pretty_print())
     assert lp.info_path("/local/folder-4/file-2")
     assert rp.info_path("/remote/folder-4")
     assert rp.info_path("/remote/folder-4/file-2")
+
+    # create outside remote root, rename into root
+    rcreated_oid = rp.mkdir("/new-folder")
+    rp.create("/new-folder/file-3", BytesIO(b"hello"))
+    rp.rename(rcreated_oid, "/remote/folder-2")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 5\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/folder-2/file-3")
 
 
 def test_cs_rename_folder_out_of_root(cs):
