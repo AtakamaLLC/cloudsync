@@ -336,7 +336,7 @@ class SyncManager(Runnable):
         for side in ordered:
             if not sync[side].needs_sync():
                 # if the changed side's path doesn't translate then ignore 'needs_sync' and process
-                # the change anyway (likely a rename to irrelevent directory)
+                # the change anyway (likely a rename to irrelevant directory)
                 # see test_cs_rename_folder_out_of_root
                 if self.translate(other_side(side), sync[side].path):
                     if sync[side].changed:
