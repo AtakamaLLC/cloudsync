@@ -31,26 +31,23 @@ class CloudSyncMixin(CloudSync, RunUntilHelper):
 
 
 @pytest.fixture(name="cs_storage")
-def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
+def fixture_cs_storage(mock_provider_tuple):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
-    for cs in _fixture_cs(mock_provider_generator, mock_provider_creator, storage):
+    for cs in _fixture_cs(mock_provider_tuple, storage):
         yield cs, storage
 
 
 @pytest.fixture(name="cs")
-def fixture_cs(mock_provider_generator, mock_provider_creator):
-    yield from _fixture_cs(mock_provider_generator, mock_provider_creator)
+def fixture_cs(mock_provider_tuple):
+    yield from _fixture_cs(mock_provider_tuple)
 
 
-def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
-    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
-
+def _fixture_cs(providers, storage=None):
+    cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
     cs.providers[LOCAL].name += '-l'
     cs.providers[REMOTE].name += '-r'
-
     yield cs
-
     cs.done()
 
 
@@ -58,10 +55,12 @@ def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storag
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
-@pytest.fixture(name="cs_root_oid")
-def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
+@pytest.fixture(params=[False, True],
+                ids=["unfiltered", "filtered"],
+                name="cs_root_oid")
+def fixture_cs_root_oid(request, mock_provider_generator, mock_provider_creator):
     p1 = mock_provider_generator()
-    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True)
+    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True, events_have_path=request.param)
     o1 = p1.mkdir(roots[0])
     o2 = p2.mkdir(roots[1])
     cs = CloudSyncMixin((p1, p2), root_oids=(o1, o2), storage=None, sleep=None)
@@ -735,11 +734,14 @@ def test_cs_basic(cs):
 
 
 def test_cs_move_in_and_out_of_root(cs):
+    # TODO: fix this - moving things in/out of root is not fully supported with event filtering turned off
+    cs.providers[0]._events_have_path = True
+    cs.providers[1]._events_have_path = True
+    log.info("set events_have_path=True for all providers")
+
     # roots are set when cs is created: /local, /remote
     lp = cs.providers[LOCAL]
-    lp.events_have_path = True
     rp = cs.providers[REMOTE]
-    rp.events_have_path = True
 
     lfile_info = lp.create("/local/file-1", BytesIO(b"hello"))
     lfolder_oid = lp.mkdir("/local/folder-1")
@@ -755,6 +757,7 @@ def test_cs_move_in_and_out_of_root(cs):
     assert not lp.info_oid(lfile_info.oid)
 
     # remote file moved back into root - revivify and sync
+    rfile_info = rp.info_path("/file-1")
     rp.rename(rfile_info.oid, "/remote/file-1")
     cs.run_until_clean(timeout=1)
     log.info("TABLE 2.5\n%s", cs.state.pretty_print())
@@ -1298,7 +1301,7 @@ def test_cs_folder_conflicts_file(cs, use_prio):
 
     log.info("TABLE 3\n%s", cs.state.pretty_print())
     try:
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
     finally:
         log.info("TABLE 4\n%s", cs.state.pretty_print())
 

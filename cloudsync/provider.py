@@ -51,7 +51,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     sep: str = '/'                            ; """Path delimiter"""
     alt_sep: str = '\\'                       ; """Alternate path delimiter"""
     oid_is_path: bool = False                 ; """Objects stored in cloud are only referenced by path"""
-    events_have_path: bool = False            ; """Item path is included in events. Applicable for OID providers only"""
     case_sensitive: bool = True               ; """Provider is case sensitive"""
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""

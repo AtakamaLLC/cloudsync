@@ -45,9 +45,7 @@ class SyncMgrMixin(SyncManager, RunUntilHelper):
                     self.state.update(i, e.otype, path=e.path, oid=e.oid, hash=e.hash, prior_oid=e.prior_oid, exists=e.exists)
 
 
-def make_sync(_request, mock_provider_generator, shuffle, case_sensitive=True):
-    providers = (mock_provider_generator(case_sensitive=case_sensitive), mock_provider_generator(oid_is_path=False, case_sensitive=case_sensitive))
-
+def make_sync(_request, providers, shuffle):
     state = SyncState(providers, shuffle=shuffle)
 
     def translate(to, path):
@@ -73,23 +71,23 @@ def make_sync(_request, mock_provider_generator, shuffle, case_sensitive=True):
 
 
 @pytest.fixture(name="sync")
-def fixture_sync(request, mock_provider_generator):
-    yield from make_sync(request, mock_provider_generator, shuffle=True)
+def fixture_sync(request, mock_provider_tuple):
+    yield from make_sync(request, mock_provider_tuple, shuffle=True)
 
 
 @pytest.fixture(name="sync_ordered")
-def fixture_sync_ordered(request, mock_provider_generator):
-    yield from make_sync(request, mock_provider_generator, shuffle=False)
+def fixture_sync_ordered(request, mock_provider_tuple):
+    yield from make_sync(request, mock_provider_tuple, shuffle=False)
 
 
 @pytest.fixture(name="sync_sh", params=[0, 1], ids=["sh0", "sh1"])
-def fixture_sync_sh(request, mock_provider_generator):
-    yield from make_sync(request, mock_provider_generator, shuffle=request.param)
+def fixture_sync_sh(request, mock_provider_tuple):
+    yield from make_sync(request, mock_provider_tuple, shuffle=request.param)
 
 
 @pytest.fixture(name="sync_ci")
-def fixture_sync_ci(request, mock_provider_generator):
-    yield from make_sync(request, mock_provider_generator, shuffle=True, case_sensitive=False)
+def fixture_sync_ci(request, mock_provider_tuple_ci):
+    yield from make_sync(request, mock_provider_tuple_ci, shuffle=True)
 
 
 def setup_remote_local(sync, *names, content=b'hello'):

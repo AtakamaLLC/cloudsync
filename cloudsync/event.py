@@ -270,14 +270,13 @@ class EventManager(Runnable):
                     if not changed:
                         # ignore from_walk events where nothing changed
                         return
-            else:
-                self._fill_event_path(event)
 
-            self._notify_on_root_change_event(event)
             if self._filter_event(event, from_walk):
                 log.debug("filtered out: %s %s %s", event.path, event.oid, event.exists)
                 return
 
+            self._fill_event_path(event)
+            self._notify_on_root_change_event(event)
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
                               exists=event.exists, prior_oid=event.prior_oid)
             self.state.storage_commit()
@@ -302,7 +301,7 @@ class EventManager(Runnable):
     def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
         # event filtering based on root path and event path
         # return True = ignore event (filter it out), False = process event
-        if not self._root_path or not self.provider.events_have_path:
+        if not self._root_path:
             return False
 
         curr_subpath = self.provider.is_subpath_of_root(event.path)
@@ -320,25 +319,26 @@ class EventManager(Runnable):
                 # delete - ignore if not in state, or in state but is not subpath of root
                 return not prior_subpath
 
+        if not event.path:
+            return False
+
+        ignore = False
         if curr_subpath and not prior_subpath:
             # rename into root
-            ignore = False
             if event.otype == DIRECTORY and not from_walk:
                 log.debug("directory renamed into root - walking: %s", event.path)
                 self._process_event(event, from_walk=True)
                 self._do_walk_oid(event.oid)
                 ignore = True
             log.debug("renamed into root: %s", event.path)
-            return ignore
-
-        if prior_subpath and not curr_subpath:
+        elif prior_subpath and not curr_subpath:
             # rename out of root
             log.debug("renamed out of root: %s", event.path)
-            return False
-
-        # both curr and prior are subpaths == rename within root (process event)
-        # neither is subpath == rename outside root (ignore)
-        return not curr_subpath
+        else:
+            # both curr and prior are subpaths == rename within root (process event)
+            # neither is subpath == rename outside root (ignore)
+            ignore = not curr_subpath
+        return ignore
 
     def _notify_on_root_change_event(self, event: Event):
         if self._root_path and self._root_oid:
