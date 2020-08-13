@@ -151,16 +151,18 @@ class MockProvider(Provider):
     # TODO: normalize names to get rid of trailing slashes, etc.
 
     def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
-            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = True):
+            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = True,
+            events_have_path: bool = False):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
         :param case_sensitive: Paths are case sensistive
         """
         super().__init__()
-        log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
+        log.debug("mock mode: o:%s, c:%s, e:%s", oid_is_path, case_sensitive, events_have_path)
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
+        self._events_have_path = events_have_path
         self._use_ns = use_ns
         self._namespace: Optional[Namespace] = None
         self._lock = RLock()
@@ -305,9 +307,7 @@ class MockProvider(Provider):
         mtime = event.get("mtime", None)
         trashed = event.get("trashed", None)
         prior_oid = event.get("prior_oid", None)
-        path = None
-        if self.oid_is_path:
-            path = event.get("path")
+        path = event.get("path") if self.oid_is_path or self._events_have_path else None
         if not self._uses_cursor:
             cursor = None
         if self._oidless_folder_trash_events:
@@ -620,6 +620,31 @@ def mock_provider_generator(request):
         mock_provider_instance(
             request.param[0] if oid_is_path is None else oid_is_path,
             request.param[1] if case_sensitive is None else case_sensitive)
+
+
+def mock_provider_tuple_instance(local, remote):
+    return (
+        mock_provider_instance(oid_is_path=local[0], case_sensitive=local[1], events_have_path=local[2]),
+        mock_provider_instance(oid_is_path=remote[0], case_sensitive=remote[1], events_have_path=remote[2])
+    )
+
+
+# parameterization:
+# - (oid-cs-unfiltered, oid-cs-unfiltered)
+# - (path-cs-filtered, oid-cs-filtered)  Note: oid_is_path implies events_have_path, so local is also filtered
+@pytest.fixture(params=[((False, True, False), (False, True, False)), ((True, True, False), (False, True, True))],
+                ids=["mock_oid_cs_unfiltered", "mock_path_cs_filtered"])
+def mock_provider_tuple(request):
+    return mock_provider_tuple_instance(request.param[0], request.param[1])
+
+
+# parameterization:
+# - (oid-ci-unfiltered, oid-ci-unfiltered)
+# - (path-ci-filtered, oid-ci-filtered)  Note: oid_is_path implies events_have_path, so local is also filtered
+@pytest.fixture(params=[((False, False, False), (False, False, False)), ((True, False, False), (False, False, True))],
+                ids=["mock_oid_cs_unfiltered", "mock_path_cs_filtered"])
+def mock_provider_tuple_ci(request):
+    return mock_provider_tuple_instance(request.param[0], request.param[1])
 
 
 @pytest.fixture
