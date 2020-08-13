@@ -1328,12 +1328,17 @@ class SyncManager(Runnable):
         return oinfo.oid, new_oid, conflict_path
 
     def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
+        log.debug("embrace %s, side:%s", sync, changed)
+
         if sync[changed].path or (sync[changed].exists == EXISTS):
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
                     log.info(">>>Removing remnants of file moved out of cloud root")
-                    return self.delete_synced(sync, changed, synced, IgnoreReason.IRRELEVANT)
+                    ret = self.delete_synced(sync, changed, synced, IgnoreReason.IRRELEVANT)
+                    if ret == FINISHED:
+                        self.state.split(sync)
+                    return ret
                 else:  # we don't have a new or old translated path... just irrelevant so discard
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
                     sync.ignore(IgnoreReason.IRRELEVANT)
@@ -1341,8 +1346,6 @@ class SyncManager(Runnable):
         if sync.is_discarded:
             log.log(TRACE, "%s Ignoring entry because %s:%s", debug_sig(id(self)), sync.ignored.value, sync)
             return FINISHED
-
-        log.debug("embrace %s, side:%s", sync, changed)
 
         if sync.is_conflicted:
             log.info("Conflicted file %s is changing", sync[changed].path)
