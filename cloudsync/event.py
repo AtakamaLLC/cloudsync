@@ -304,11 +304,13 @@ class EventManager(Runnable):
         if not self._root_path:
             return False
 
-        curr_subpath = self.provider.is_subpath_of_root(event.path or event.oid)
+        curr_subpath = self.provider.is_subpath_of_root(event.path)
         prior_subpath = None
         if self.provider.oid_is_path:
             if not event.prior_oid:
                 # create or delete - ignore if not subpath of root
+                if not event.path:
+                    curr_subpath = self.provider.is_subpath_of_root(event.oid)
                 return not curr_subpath
             prior_subpath = self.provider.is_subpath_of_root(event.prior_oid)
         else:
