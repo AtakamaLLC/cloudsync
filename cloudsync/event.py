@@ -297,6 +297,10 @@ class EventManager(Runnable):
                 event.path = info.path
                 event.otype = info.otype
                 event.hash = info.hash
+
+    def _get_state_path(self, oid):
+        state_ent = self.state.lookup_oid(self.side, oid)
+        return  state_ent[self.side].path if state_ent else None
     
     def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
         # event filtering based on root path and event path
@@ -304,19 +308,15 @@ class EventManager(Runnable):
         if not self._root_path:
             return False
 
-        curr_subpath = self.provider.is_subpath_of_root(event.path)
-        prior_subpath = None
+        state_path = self._get_state_path(event.oid)
         if self.provider.oid_is_path:
             if not event.prior_oid:
                 # create or delete - ignore if not subpath of root
-                if not event.path:
-                    curr_subpath = self.provider.is_subpath_of_root(event.oid)
-                return not curr_subpath
-            prior_subpath = self.provider.is_subpath_of_root(event.prior_oid)
+                return not self.provider.is_subpath_of_root(event.path or state_path)
+            prior_state_path = self._get_state_path(event.prior_oid)
+            prior_subpath = self.provider.is_subpath_of_root(prior_state_path)
         else:
-            state_ent = self.state.lookup_oid(self.side, event.oid)
-            if state_ent:
-                prior_subpath = self.provider.is_subpath_of_root(state_ent[self.side].path)
+            prior_subpath = self.provider.is_subpath_of_root(state_path)
             if not event.exists:
                 # delete - ignore if not in state, or in state but is not subpath of root
                 return not prior_subpath
@@ -325,6 +325,7 @@ class EventManager(Runnable):
             return False
 
         ignore = False
+        curr_subpath = self.provider.is_subpath_of_root(event.path)
         if curr_subpath and not prior_subpath:
             # rename into root
             if event.otype == DIRECTORY and not from_walk:
