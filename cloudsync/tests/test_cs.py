@@ -786,14 +786,16 @@ def test_cs_move_in_and_out_of_root(cs):
     assert not rp.info_path("/remote/folder-1/file-2")
 
     # local non-empty folder moved back into root - revivify and sync
-    lp.mkdir("/yet-another-folder")
-    lfolder_oid = lp.rename(lfolder_oid, "/yet-another-folder/folder-3")
-    lfolder_oid = lp.rename(lfolder_oid, "/local/folder-4")
-    cs.run_until_clean(timeout=1)
-    log.info("TABLE 4.5\n%s", cs.state.pretty_print())
-    assert lp.info_path("/local/folder-4/file-2")
-    assert rp.info_path("/remote/folder-4")
-    assert rp.info_path("/remote/folder-4/file-2")
+    # (no filtering for oid-is-path providers for now)
+    if not lp.oid_is_path:
+        lp.mkdir("/yet-another-folder")
+        lfolder_oid = lp.rename(lfolder_oid, "/yet-another-folder/folder-3")
+        lfolder_oid = lp.rename(lfolder_oid, "/local/folder-4")
+        cs.run_until_clean(timeout=1)
+        log.info("TABLE 4.5\n%s", cs.state.pretty_print())
+        assert lp.info_path("/local/folder-4/file-2")
+        assert rp.info_path("/remote/folder-4")
+        assert rp.info_path("/remote/folder-4/file-2")
 
     # create outside remote root, rename into root
     rcreated_oid = rp.mkdir("/new-folder")
