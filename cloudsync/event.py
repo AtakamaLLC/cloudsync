@@ -297,32 +297,32 @@ class EventManager(Runnable):
                 event.path = info.path
                 event.otype = info.otype
                 event.hash = info.hash
-    
+
     def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
         # event filtering based on root path and event path
         # return True = ignore event (filter it out), False = process event
+
+        # for now only OneDrive supports event filtering
+        support_filtering = self.provider.name == "onedrive"
+        support_filtering_test = self.provider.name[:4] == "Mock" and not self.provider.oid_is_path
+        if not (support_filtering or support_filtering_test):
+            return False
+
         if not self._root_path:
             return False
 
-        curr_subpath = self.provider.is_subpath_of_root(event.path or event.oid)
-        prior_subpath = None
-        if self.provider.oid_is_path:
-            if not event.prior_oid:
-                # create or delete - ignore if not subpath of root
-                return not curr_subpath
-            prior_subpath = self.provider.is_subpath_of_root(event.prior_oid)
-        else:
-            state_ent = self.state.lookup_oid(self.side, event.oid)
-            if state_ent:
-                prior_subpath = self.provider.is_subpath_of_root(state_ent[self.side].path)
-            if not event.exists:
-                # delete - ignore if not in state, or in state but is not subpath of root
-                return not prior_subpath
+        state = self.state.lookup_oid(self.side, event.oid)
+        state_path = state[self.side].path if state else None
+        prior_subpath = self.provider.is_subpath_of_root(state_path)
+        if not event.exists:
+            # delete - ignore if not in state, or in state but is not subpath of root
+            return not prior_subpath
 
         if not event.path:
             return False
 
         ignore = False
+        curr_subpath = self.provider.is_subpath_of_root(event.path)
         if curr_subpath and not prior_subpath:
             # rename into root
             if event.otype == DIRECTORY and not from_walk:

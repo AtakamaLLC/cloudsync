@@ -203,6 +203,12 @@ def test_event_provider_contract(manager, rootless_manager, mode):
 
 
 def test_event_filter(manager):
+    # no filtering for oid-is-path providers for now
+    if manager.provider.oid_is_path:
+        event = Event(FILE, "", "", "", False)
+        assert not manager._filter_event(event)
+        return
+
     # filter out delete of unknown oid
     event = Event(FILE, "", "", "", False)
     assert manager._filter_event(event)
