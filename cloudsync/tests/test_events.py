@@ -210,11 +210,21 @@ def test_event_filter(manager):
     event = Event(FILE, "oid-1", "/some-random-path/file-1", "hash-1", True)
     assert manager._filter_event(event)
     # rename out of root path - do not filter out
-    in_root_path = f"{manager._root_path}/file-1"
-    event = Event(FILE, "oid-1", in_root_path, "hash-1", True)
+    path = f"{manager._root_path}/file-1"
+    oid = path if manager.provider.oid_is_path else "oid-1"
+    event = Event(FILE, oid, path, "hash-1", True)
     manager._process_event(event)
-    event = Event(FILE, "oid-1", "/some-other-path/file-1", "hash-1", True)
-    event.prior_oid = in_root_path if manager.provider.oid_is_path else None
+    rename_path = "/some-other-path/file-1"
+    rename_oid = rename_path if manager.provider.oid_is_path else oid
+    event = Event(FILE, rename_oid, rename_path, "hash-1", True)
+    event.prior_oid = oid if manager.provider.oid_is_path else None
+    assert not manager._filter_event(event)
+    # delete a file
+    path = f"{manager._root_path}/file-2"
+    oid = path if manager.provider.oid_is_path else "oid-2"
+    event = Event(FILE, oid, path, "hash-1", True)
+    manager._process_event(event)
+    event = Event(FILE, oid, None, None, False)
     assert not manager._filter_event(event)
     # root renamed
     with pytest.raises(CloudRootMissingError):
