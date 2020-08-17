@@ -7,6 +7,7 @@ import os
 import logging
 import random
 import time
+from dataclasses import dataclass
 from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO, NamedTuple
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
@@ -29,10 +30,17 @@ CONNECTION_NOT_NEEDED = "connection-not-needed"
 __all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
 
 
-class Namespace(NamedTuple):
+@dataclass
+class Namespace:
     name: str
     id: str
-    is_parent: bool = False
+
+    @property
+    def is_parent(self) -> bool:
+        return False
+
+    def __str__(self):
+        return self.name
 
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
