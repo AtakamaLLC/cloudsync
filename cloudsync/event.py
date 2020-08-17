@@ -298,28 +298,25 @@ class EventManager(Runnable):
                 event.otype = info.otype
                 event.hash = info.hash
 
-    def _get_state_path(self, oid):
-        state_ent = self.state.lookup_oid(self.side, oid)
-        return  state_ent[self.side].path if state_ent else None
-    
     def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
         # event filtering based on root path and event path
         # return True = ignore event (filter it out), False = process event
+
+        # for now only OneDrive supports event filtering
+        support_filtering = self.provider.name == "onedrive"
+        support_filtering_test = self.provider.name[:4] == "Mock" and not self.provider.oid_is_path
+        if not (support_filtering or support_filtering_test):
+            return False
+
         if not self._root_path:
             return False
 
-        state_path = self._get_state_path(event.oid)
-        if self.provider.oid_is_path:
-            if not event.prior_oid:
-                # create or delete - ignore if not subpath of root
-                return not self.provider.is_subpath_of_root(event.path or state_path)
-            prior_state_path = self._get_state_path(event.prior_oid)
-            prior_subpath = self.provider.is_subpath_of_root(prior_state_path)
-        else:
-            prior_subpath = self.provider.is_subpath_of_root(state_path)
-            if not event.exists:
-                # delete - ignore if not in state, or in state but is not subpath of root
-                return not prior_subpath
+        state = self.state.lookup_oid(self.side, event.oid)
+        state_path = state[self.side].path if state else None
+        prior_subpath = self.provider.is_subpath_of_root(state_path)
+        if not event.exists:
+            # delete - ignore if not in state, or in state but is not subpath of root
+            return not prior_subpath
 
         if not event.path:
             return False
