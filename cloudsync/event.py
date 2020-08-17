@@ -303,7 +303,7 @@ class EventManager(Runnable):
         # return True = ignore event (filter it out), False = process event
 
         # for now only OneDrive supports event filtering
-        support_filtering = self.provider.name in ["onedrive"]
+        support_filtering = self.provider.name == "onedrive"
         support_filtering_test = self.provider.name[:4] == "Mock" and not self.provider.oid_is_path
         if not (support_filtering or support_filtering_test):
             return False
