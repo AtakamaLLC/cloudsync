@@ -633,9 +633,9 @@ def test_namespace(provider):
 
     saved = provider.namespace_id
     assert provider.namespace.id == saved
-    assert not provider.namespace.is_parent
-    assert not provider.namespace.shared_paths
-    assert provider.namespace.is_owner
+    if type(provider.namespace) is Namespace:
+        assert not provider.namespace.is_parent
+        assert not provider.namespace.shared_paths
 
     try:
         provider.namespace_id = ns[0].id
