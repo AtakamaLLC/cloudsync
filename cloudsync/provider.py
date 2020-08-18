@@ -32,12 +32,30 @@ __all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_N
 
 @dataclass
 class Namespace:
+    """
+    Base class representing a single Drive.
+
+    Providers that support this concept should derive from this class as necessary.
+    """
     name: str
     id: str
 
     @property
     def is_parent(self) -> bool:
+        """
+        Some providers support hierarchical Namespaces.
+        """
         return False
+
+    @property
+    def shared_paths(self) -> List[str]:
+        """
+        Should only be populated when access to the Namespace is limited.
+        
+        For example, user A has no access to user B's personal Namespace,
+        unless user B explicitly shared one or more files/folders with user A.
+        """
+        return []
 
     def __str__(self):
         return self.name
