@@ -38,7 +38,7 @@ import cloudsync.providers
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
         CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
-from cloudsync.provider import Namespace
+from cloudsync.provider import NamespaceBase
 from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
@@ -628,12 +628,12 @@ def test_namespace(provider):
         with pytest.raises(CloudNamespaceError):
             provider.namespace_id = "id"
         with pytest.raises(CloudNamespaceError):
-            provider.namespace = Namespace(name="name", id="space")
+            provider.namespace = NamespaceBase("name", "space")
         return
 
     saved = provider.namespace_id
     assert provider.namespace.id == saved
-    if type(provider.namespace) is Namespace:
+    if type(provider.namespace) is NamespaceBase:
         assert not provider.namespace.is_parent
         assert not provider.namespace.shared_paths
 

@@ -9,7 +9,7 @@ from threading import RLock
 import pytest
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider, Namespace
+from cloudsync.provider import Provider, NamespaceBase
 from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
@@ -164,7 +164,7 @@ class MockProvider(Provider):
         self.case_sensitive = case_sensitive
         self._events_have_path = events_have_path
         self._use_ns = use_ns
-        self._namespace: Optional[Namespace] = None
+        self._namespace: Optional[NamespaceBase] = None
         self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
@@ -202,16 +202,16 @@ class MockProvider(Provider):
 
     def list_ns(self, recursive=True, parent=None):
         if self._use_ns:
-            return [Namespace(name="ns1", id="ns1-id"), Namespace(name="ns2", id="ns2-id")]
+            return [NamespaceBase("ns1", "ns1-id"), NamespaceBase("ns2", "ns2-id")]
         else:
             return super().list_ns()
 
     @property
-    def namespace(self) -> Optional[Namespace]:
+    def namespace(self) -> Optional[NamespaceBase]:
         return self._namespace if self._use_ns else super().namespace
 
     @namespace.setter
-    def namespace(self, namespace: Namespace):
+    def namespace(self, namespace: NamespaceBase):
         if self._use_ns:
             self.namespace_id = namespace.id
         else:
