@@ -8,7 +8,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO, NamedTuple
+from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
@@ -51,7 +51,7 @@ class Namespace:
     def shared_paths(self) -> List[str]:
         """
         Should only be populated when access to the Namespace is limited.
-        
+
         For example, user A has no access to user B's personal Namespace,
         unless user B explicitly shared one or more files/folders with user A.
         """
