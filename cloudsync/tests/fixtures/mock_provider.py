@@ -202,7 +202,7 @@ class MockProvider(Provider):
 
     def list_ns(self, recursive=True, parent=None):
         if self._use_ns:
-            return [Namespace(name="ns1", id="ns1-id"), Namespace(name="ns2", id="ns2-id")]
+            return [Namespace("ns1", "ns1-id"), Namespace("ns2", "ns2-id")]
         else:
             return super().list_ns()
 

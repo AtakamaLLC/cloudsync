@@ -7,7 +7,8 @@ import os
 import logging
 import random
 import time
-from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO, NamedTuple
+from dataclasses import dataclass
+from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
@@ -28,11 +29,35 @@ CONNECTION_NOT_NEEDED = "connection-not-needed"
 
 __all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
 
+@dataclass
+class Namespace:
+    """
+    Base class representing a namespace (drive).
 
-class Namespace(NamedTuple):
+    Providers that support this concept should derive from this class as necessary.
+    """
     name: str
     id: str
-    is_parent: bool = False
+
+    @property
+    def is_parent(self) -> bool:
+        """
+        Some providers support hierarchical Namespaces.
+        """
+        return False
+
+    @property
+    def shared_paths(self) -> List[str]:
+        """
+        Should only be populated when access to the namespace is limited.
+
+        For example, user A has no access to user B's personal namespace,
+        unless user B explicitly shared one or more files/folders with user A.
+        """
+        return []
+
+    def __str__(self):
+        return self.name
 
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods

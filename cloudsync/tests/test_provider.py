@@ -628,10 +628,14 @@ def test_namespace(provider):
         with pytest.raises(CloudNamespaceError):
             provider.namespace_id = "id"
         with pytest.raises(CloudNamespaceError):
-            provider.namespace = Namespace(name="name", id="space")
+            provider.namespace = Namespace("name", "space")
         return
 
     saved = provider.namespace_id
+    assert provider.namespace.id == saved
+    if type(provider.namespace) is Namespace:
+        assert not provider.namespace.is_parent
+        assert not provider.namespace.shared_paths
 
     try:
         provider.namespace_id = ns[0].id
