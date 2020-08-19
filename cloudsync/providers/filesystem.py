@@ -20,7 +20,7 @@ from watchdog.observers import Observer as watchdog_observer
 # from watchdog.observers.polling import PollingObserver as watchdog_observer
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider, NamespaceBase
+from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
 from cloudsync.types import OInfo, OType, DirInfo
 import cloudsync.exceptions as ex
@@ -306,7 +306,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
 
     def __init__(self):
         """Constructor for FileSystemProvider."""
-        self._namespace: typing.Optional[NamespaceBase] = None
+        self._namespace: typing.Optional[Namespace] = None
         self._cursor = 0
         self._latest_cursor = 0
         self._events: typing.Deque[Event] = collections.deque([])
@@ -319,11 +319,11 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
         super().__init__()
 
     @property
-    def namespace(self) -> typing.Optional[NamespaceBase]:
+    def namespace(self) -> typing.Optional[Namespace]:
         return self._namespace
 
     @namespace.setter
-    def namespace(self, namespace: NamespaceBase):
+    def namespace(self, namespace: Namespace):
         self.namespace_id = namespace.id
 
     @property
@@ -338,7 +338,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             os.mkdir(path)
         path = self._fpath_to_oid(get_long_path_name(path))
         log.info("set namespace %s", path)
-        self._namespace = NamespaceBase(name=path, id=path)
+        self._namespace = Namespace(name=path, id=path)
         self._connect_observer(path)
 
     def disconnect(self):
@@ -727,7 +727,7 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
     def _test_namespace(self):
         long_path = get_long_path_name(self._test_namespace_path)
         ns = self._fpath_to_oid(long_path) if long_path else self._test_namespace_path
-        return NamespaceBase(name=ns, id=ns)
+        return Namespace(name=ns, id=ns)
 
 
 register_provider(FileSystemProvider)

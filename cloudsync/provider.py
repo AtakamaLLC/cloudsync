@@ -8,7 +8,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO, NamedTuple
+from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
@@ -27,18 +27,10 @@ Creds = Dict[str, Union[str, int]]
 
 CONNECTION_NOT_NEEDED = "connection-not-needed"
 
-__all__ = ["Provider", "Namespace", "NamespaceBase", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
-
-
-# for backward compatibility
-class Namespace(NamedTuple):
-    name: str
-    id: str
-    is_parent: bool = False
-
+__all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
 
 @dataclass
-class NamespaceBase:
+class Namespace:
     """
     Base class representing a namespace (drive).
 
@@ -353,12 +345,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Returns info for an object with specified oid, or None if not found"""
         ...
 
-    def list_ns(self, recursive: bool = True, parent: NamespaceBase = None) -> List[NamespaceBase]:   # pylint: disable=no-self-use,unused-argument
+    def list_ns(self, recursive: bool = True, parent: Namespace = None) -> List[Namespace]:   # pylint: disable=no-self-use,unused-argument
         """Yield one entry for each namespace supported, or None if namespaces are not needed"""
         return None
 
     @property
-    def namespace(self) -> Optional[NamespaceBase]:            # pylint: disable=no-self-use
+    def namespace(self) -> Optional[Namespace]:            # pylint: disable=no-self-use
         """Some providers have multiple 'namespaces', that can be listed and changed.
 
         Cannot be set when not connected.
@@ -366,7 +358,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         return None
 
     @namespace.setter
-    def namespace(self, ns: NamespaceBase):                    # pylint: disable=no-self-use
+    def namespace(self, ns: Namespace):                    # pylint: disable=no-self-use
         raise CloudNamespaceError("This provider does not support namespaces")
 
     @property
