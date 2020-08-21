@@ -5,7 +5,10 @@ cp codecov-integ.yml codecov.yml
 
 git fetch origin master
 git_result=$(git diff origin/master --name-only)
-if [ $? -ne 0 ]; then
+if [ $? -eq 0 ]; then
+    echo "git diff origin/master --name-only"
+    echo "$git_result"
+else
     echo "git diff failed"
     exit 1
 fi
