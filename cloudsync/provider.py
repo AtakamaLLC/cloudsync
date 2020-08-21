@@ -29,6 +29,7 @@ CONNECTION_NOT_NEEDED = "connection-not-needed"
 
 __all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
 
+
 @dataclass
 class Namespace:
     """
