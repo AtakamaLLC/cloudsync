@@ -59,6 +59,7 @@ class EventManager(Runnable):
 
         self._provider_guard.add(provider)
         self.provider = provider
+        self.provider.sync_state = state.get_state_lookup(side)
 
         self.label: str = f"{self.provider.name}:{self.provider.connection_id}:{self.provider.namespace_id}"
         self.state: 'SyncState' = state

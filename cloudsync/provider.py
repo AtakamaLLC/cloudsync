@@ -8,13 +8,16 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
     CloudRootMissingError
 from .oauth import OAuthConfig, OAuthProviderInfo
 from .event import Event
+
+if TYPE_CHECKING:
+    from .sync.state import SyncStateLookup
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +98,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     connection_id: Optional[str] = None       ; """Must remain constant between logins and must be unique to the login"""
     _creds: Optional[Any] = None              ; """Base class helpers to store creds"""
     __connected = False                       ; """Base class helper to fake a connection"""
+
+    sync_state: 'SyncStateLookup' = None      ; """Used for provider-specific event filtering"""
     # pylint: enable=multiple-statements
 
     @abstractmethod
