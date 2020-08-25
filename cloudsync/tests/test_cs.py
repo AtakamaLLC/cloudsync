@@ -60,7 +60,7 @@ def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storag
                 name="cs_root_oid")
 def fixture_cs_root_oid(request, mock_provider_generator, mock_provider_creator):
     p1 = mock_provider_generator()
-    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True, events_have_path=request.param)
+    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True, filter_events=request.param)
     o1 = p1.mkdir(roots[0])
     o2 = p2.mkdir(roots[1])
     cs = CloudSyncMixin((p1, p2), root_oids=(o1, o2), storage=None, sleep=None)
@@ -735,9 +735,9 @@ def test_cs_basic(cs):
 
 def test_cs_move_in_and_out_of_root(cs):
     # TODO: fix this - moving things in/out of root is not fully supported with event filtering turned off
-    cs.providers[0]._events_have_path = True
-    cs.providers[1]._events_have_path = True
-    log.info("set events_have_path=True for all providers")
+    cs.providers[0]._filter_events = True
+    cs.providers[1]._filter_events = True
+    log.info("set _filter_events=True for all providers")
 
     # roots are set when cs is created: /local, /remote
     lp = cs.providers[LOCAL]

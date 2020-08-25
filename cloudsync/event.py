@@ -272,10 +272,6 @@ class EventManager(Runnable):
                         # ignore from_walk events where nothing changed
                         return
 
-            if self._filter_event(event, from_walk):
-                log.debug("filtered out: %s %s %s", event.path, event.oid, event.exists)
-                return
-
             self._fill_event_path(event)
             self._notify_on_root_change_event(event)
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
@@ -291,55 +287,11 @@ class EventManager(Runnable):
         if state:
             event.path = state[self.side].path
         if not event.path and event.exists:
-            # TODO: is this really necessary?
-            # could we let SyncManager handle this (it calls get_latest on every change) instead?
             info = self.provider.info_oid(event.oid)
             if info:
                 event.path = info.path
                 event.otype = info.otype
                 event.hash = info.hash
-
-    def _filter_event(self, event: Event, from_walk: bool = False) -> bool:
-        # event filtering based on root path and event path
-        # return True = ignore event (filter it out), False = process event
-
-        # for now only OneDrive supports event filtering
-        support_filtering = self.provider.name == "onedrive"
-        support_filtering_test = self.provider.name[:4] == "Mock" and not self.provider.oid_is_path
-        if not (support_filtering or support_filtering_test):
-            return False
-
-        if not self._root_path:
-            return False
-
-        state = self.state.lookup_oid(self.side, event.oid)
-        state_path = state[self.side].path if state else None
-        prior_subpath = self.provider.is_subpath_of_root(state_path)
-        if not event.exists:
-            # delete - ignore if not in state, or in state but is not subpath of root
-            return not prior_subpath
-
-        if not event.path:
-            return False
-
-        ignore = False
-        curr_subpath = self.provider.is_subpath_of_root(event.path)
-        if curr_subpath and not prior_subpath:
-            # rename into root
-            if event.otype == DIRECTORY and not from_walk:
-                log.debug("directory renamed into root - walking: %s", event.path)
-                self._process_event(event, from_walk=True)
-                self._do_walk_oid(event.oid)
-                ignore = True
-            log.debug("renamed into root: %s", event.path)
-        elif prior_subpath and not curr_subpath:
-            # rename out of root
-            log.debug("renamed out of root: %s", event.path)
-        else:
-            # both curr and prior are subpaths == rename within root (process event)
-            # neither is subpath == rename outside root (ignore)
-            ignore = not curr_subpath
-        return ignore
 
     def _notify_on_root_change_event(self, event: Event):
         if self._root_path and self._root_oid:
