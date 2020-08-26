@@ -2,8 +2,9 @@ import os
 import time
 import copy
 import logging
+import enum
 from hashlib import md5
-from typing import Dict, List, Any, Optional, Generator, Set
+from typing import List, Any, Optional, Generator, Set
 from threading import RLock
 
 import pytest
@@ -19,6 +20,21 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
+
+
+class EventFilter(enum.Enum):
+    """
+    Event filter result
+    """
+    PROCESS = "process"
+    IGNORE = "ignore"
+    WALK = "walk"
+
+    def __bool__(self):
+        """
+        Protect against bool use
+        """
+        raise ValueError("never bool enums")
 
 
 class MockFS:
@@ -317,39 +333,35 @@ class MockProvider(Provider):
         retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
 
-    def _filter_event(self, event: Event) -> (bool, str):
+    def _filter_event(self, event: Event) -> EventFilter:
         # event filtering based on root path and event path
-        # return True = ignore event (filter it out), False = process event
-        walk_oid = ""
 
-        # TODO: oid is path
+        # Note: no filtering for oid-is-path providers for now
         if not self._root_path or not self._filter_events or self.oid_is_path:
-            return (False, walk_oid)
+            return EventFilter.PROCESS
 
         state_path = self.sync_state.get_path(event.oid)
         prior_subpath = self.is_subpath_of_root(state_path)
         if not event.exists:
             # delete - ignore if not in state, or in state but is not subpath of root
-            return (not prior_subpath, walk_oid)
+            return EventFilter.PROCESS if prior_subpath else EventFilter.IGNORE
 
-        if not event.path:
-            return (False, walk_oid)
+        if event.path:
+            curr_subpath = self.is_subpath_of_root(event.path)
+            if curr_subpath and not prior_subpath:
+                # rename into root
+                log.debug("renamed into root: %s", event.path)
+                if event.otype == DIRECTORY:
+                    return EventFilter.WALK
+            elif prior_subpath and not curr_subpath:
+                # rename out of root
+                log.debug("renamed out of root: %s", event.path)
+            else:
+                # both curr and prior are subpaths == rename within root (process event)
+                # neither is subpath == rename outside root (ignore)
+                return EventFilter.PROCESS if curr_subpath else EventFilter.IGNORE
 
-        ignore = False
-        curr_subpath = self.is_subpath_of_root(event.path)
-        if curr_subpath and not prior_subpath:
-            # rename into root
-            if event.otype == DIRECTORY:
-                walk_oid = event.oid
-            log.debug("renamed into root: %s", event.path)
-        elif prior_subpath and not curr_subpath:
-            # rename out of root
-            log.debug("renamed out of root: %s", event.path)
-        else:
-            # both curr and prior are subpaths == rename within root (process event)
-            # neither is subpath == rename outside root (ignore)
-            ignore = not curr_subpath
-        return (ignore, walk_oid)
+        return EventFilter.PROCESS
 
     def _api(self, *args, **kwargs):
         if not self.connected and not self.__in_connect:
@@ -386,13 +398,13 @@ class MockProvider(Provider):
             pe = self._events[self._cursor]
             event = self._translate_event(pe, self._cursor)
             filter_result = self._filter_event(event)
-            if filter_result[0]:
-                log.info("filtered out: %s %s", event.path, event.oid)
+            if filter_result == EventFilter.IGNORE:
+                log.debug("ignore event: %s %s %s", event.path, event.oid, event.exists)
                 continue
-            if filter_result[1]:
+            if filter_result == EventFilter.WALK:
                 log.debug("directory renamed into root - walking: %s", event.path)
                 try:
-                    yield from self.walk_oid(filter_result[1])
+                    yield from self.walk_oid(event.oid)
                 except CloudFileNotFoundError:
                     pass
             yield event
