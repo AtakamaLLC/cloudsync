@@ -17,7 +17,7 @@ from .oauth import OAuthConfig, OAuthProviderInfo
 from .event import Event
 
 if TYPE_CHECKING:
-    from .sync.state import SyncStateLookup
+    from .sync.state import SyncStateLookup   # pragma: no cover
 
 log = logging.getLogger(__name__)
 
