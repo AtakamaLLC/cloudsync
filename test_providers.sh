@@ -3,10 +3,6 @@
 # allow coverage to include provider dirs when running integration tests
 cp codecov-integ.yml codecov.yml
 
-<<<<<<< HEAD
-
-=======
->>>>>>> a2d507cefb67c0b8ff894d1d4da3ea63bbe604c8
 git_branch=$(git branch --show-current)
 if [ "$git_branch" = "" ]; then
   echo "Detached state, skipping integration tests"
