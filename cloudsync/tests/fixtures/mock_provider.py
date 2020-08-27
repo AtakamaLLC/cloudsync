@@ -349,12 +349,18 @@ class MockProvider(Provider):
         if event.path:
             curr_subpath = self.is_subpath_of_root(event.path)
             if curr_subpath and not prior_subpath:
-                # rename into root
-                log.debug("renamed into root: %s", event.path)
+                # Can't differentiate between creates and renames without watching the entire filesystem:
+                # Event has an oid and a current path, its a rename if the oid was seen before,
+                # but since events outside root are ignored we don't catch the case where an item is created
+                # outside root and renamed into root.
+                # Hence the walk for directories -- a tradeoff for ignoring "outside root" events.
+                log.debug("created in or renamed into root: %s", event.path)
                 if event.otype == DIRECTORY:
                     return EventFilter.WALK
             elif prior_subpath and not curr_subpath:
-                # rename out of root
+                # Rename out of root: process the event.
+                # Treated as a delete by the sync engine, which handles non-empty folders by marking
+                # children "changed" and processing them first.
                 log.debug("renamed out of root: %s", event.path)
             else:
                 # both curr and prior are subpaths == rename within root (process event)
