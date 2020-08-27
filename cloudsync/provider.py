@@ -100,7 +100,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     _creds: Optional[Any] = None              ; """Base class helpers to store creds"""
     __connected = False                       ; """Base class helper to fake a connection"""
 
-    sync_state: 'SyncStateLookup' = None      ; """Used for provider-specific event filtering"""
+    sync_state: 'SyncStateLookup' = None      ; """Access to sync engine state for this provider"""
     # pylint: enable=multiple-statements
 
     @abstractmethod
