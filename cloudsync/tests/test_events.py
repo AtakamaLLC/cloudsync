@@ -202,36 +202,7 @@ def test_event_provider_contract(manager, rootless_manager, mode):
         manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
 
 
-def test_event_filter(manager):
-    # no filtering for oid-is-path providers for now
-    if manager.provider.oid_is_path:
-        event = Event(FILE, "", "", "", False)
-        assert not manager._filter_event(event)
-        return
-
-    # filter out delete of unknown oid
-    event = Event(FILE, "", "", "", False)
-    assert manager._filter_event(event)
-    # filter out create of unknown oid for a path we don't care about
-    event = Event(FILE, "oid-1", "/some-random-path/file-1", "hash-1", True)
-    assert manager._filter_event(event)
-    # rename out of root path - do not filter out
-    path = f"{manager._root_path}/file-1"
-    oid = path if manager.provider.oid_is_path else "oid-1"
-    event = Event(FILE, oid, path, "hash-1", True)
-    manager._process_event(event)
-    rename_path = "/some-other-path/file-1"
-    rename_oid = rename_path if manager.provider.oid_is_path else oid
-    event = Event(FILE, rename_oid, rename_path, "hash-1", True)
-    event.prior_oid = oid if manager.provider.oid_is_path else None
-    assert not manager._filter_event(event)
-    # delete a file
-    path = f"{manager._root_path}/file-2"
-    oid = path if manager.provider.oid_is_path else "oid-2"
-    event = Event(FILE, oid, path, "hash-1", True)
-    manager._process_event(event)
-    event = Event(FILE, oid, None, None, False)
-    assert not manager._filter_event(event)
+def test_event_root_change(manager):
     # root renamed
     with pytest.raises(CloudRootMissingError):
         event = Event(DIRECTORY, manager._root_oid, "/renamed", "hash-1", True)
@@ -244,13 +215,3 @@ def test_event_filter(manager):
     with pytest.raises(CloudRootMissingError):
         event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
         manager._notify_on_root_change_event(event)
-
-
-def test_event_filter_rootless(rootless_manager):
-    # rootless event managers don't filter anything out
-    event = Event(FILE, "", "", "", True)
-    assert not rootless_manager._filter_event(event)
-    event = Event(DIRECTORY, "", "", "", False)
-    assert not rootless_manager._filter_event(event)
-    assert not rootless_manager._filter_event(None)
-    assert not rootless_manager._filter_event("foo-bar")

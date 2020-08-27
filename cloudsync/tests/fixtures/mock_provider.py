@@ -2,8 +2,9 @@ import os
 import time
 import copy
 import logging
+import enum
 from hashlib import md5
-from typing import Dict, List, Any, Optional, Generator, Set
+from typing import List, Any, Optional, Generator, Set
 from threading import RLock
 
 import pytest
@@ -11,7 +12,7 @@ import pytest
 from cloudsync.event import Event
 from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
-from cloudsync.types import OInfo, OType, DirInfo
+from cloudsync.types import OInfo, OType, DirInfo, DIRECTORY
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
     CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError, \
     CloudNamespaceError
@@ -19,6 +20,21 @@ from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, C
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
+
+
+class EventFilter(enum.Enum):
+    """
+    Event filter result
+    """
+    PROCESS = "process"
+    IGNORE = "ignore"
+    WALK = "walk"
+
+    def __bool__(self):
+        """
+        Protect against bool use
+        """
+        raise ValueError("never bool enums")
 
 
 class MockFS:
@@ -152,17 +168,17 @@ class MockProvider(Provider):
 
     def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
             hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = True,
-            events_have_path: bool = False):
+            filter_events: bool = False):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
         :param case_sensitive: Paths are case sensistive
         """
         super().__init__()
-        log.debug("mock mode: o:%s, c:%s, e:%s", oid_is_path, case_sensitive, events_have_path)
+        log.debug("mock mode: o:%s, c:%s, e:%s", oid_is_path, case_sensitive, filter_events)
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
-        self._events_have_path = events_have_path
+        self._filter_events = filter_events
         self._use_ns = use_ns
         self._namespace: Optional[Namespace] = None
         self._lock = RLock()
@@ -307,7 +323,7 @@ class MockProvider(Provider):
         mtime = event.get("mtime", None)
         trashed = event.get("trashed", None)
         prior_oid = event.get("prior_oid", None)
-        path = event.get("path") if self.oid_is_path or self._events_have_path else None
+        path = event.get("path") if self.oid_is_path or self._filter_events else None
         if not self._uses_cursor:
             cursor = None
         if self._oidless_folder_trash_events:
@@ -316,6 +332,42 @@ class MockProvider(Provider):
                 path = event.get("path")
         retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
+
+    def _filter_event(self, event: Event) -> EventFilter:
+        # event filtering based on root path and event path
+
+        # Note: no filtering for oid-is-path providers for now
+        if not self._root_path or not self._filter_events or self.oid_is_path:
+            return EventFilter.PROCESS
+
+        state_path = self.sync_state.get_path(event.oid)
+        prior_subpath = self.is_subpath_of_root(state_path)
+        if not event.exists:
+            # delete - ignore if not in state, or in state but is not subpath of root
+            return EventFilter.PROCESS if prior_subpath else EventFilter.IGNORE
+
+        if event.path:
+            curr_subpath = self.is_subpath_of_root(event.path)
+            if curr_subpath and not prior_subpath:
+                # Can't differentiate between creates and renames without watching the entire filesystem:
+                # Event has an oid and a current path, its a rename if the oid was seen before,
+                # but since events outside root are ignored we don't catch the case where an item is created
+                # outside root and renamed into root.
+                # Hence the walk for directories -- a tradeoff for ignoring "outside root" events.
+                log.debug("created in or renamed into root: %s", event.path)
+                if event.otype == DIRECTORY:
+                    return EventFilter.WALK
+            elif prior_subpath and not curr_subpath:
+                # Rename out of root: process the event.
+                # Treated as a delete by the sync engine, which handles non-empty folders by marking
+                # children "changed" and processing them first.
+                log.debug("renamed out of root: %s", event.path)
+            else:
+                # both curr and prior are subpaths == rename within root (process event)
+                # neither is subpath == rename outside root (ignore)
+                return EventFilter.PROCESS if curr_subpath else EventFilter.IGNORE
+
+        return EventFilter.PROCESS
 
     def _api(self, *args, **kwargs):
         if not self.connected and not self.__in_connect:
@@ -350,7 +402,18 @@ class MockProvider(Provider):
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
-            yield self._translate_event(pe, self._cursor)
+            event = self._translate_event(pe, self._cursor)
+            filter_result = self._filter_event(event)
+            if filter_result == EventFilter.IGNORE:
+                log.debug("ignore event: %s %s %s", event.path, event.oid, event.exists)
+                continue
+            if filter_result == EventFilter.WALK:
+                log.debug("directory renamed into root - walking: %s", event.path)
+                try:
+                    yield from self.walk_oid(event.oid)
+                except CloudFileNotFoundError:
+                    pass
+            yield event
 
     @lock
     def upload(self, oid, file_like, metadata=None) -> OInfo:
@@ -624,14 +687,14 @@ def mock_provider_generator(request):
 
 def mock_provider_tuple_instance(local, remote):
     return (
-        mock_provider_instance(oid_is_path=local[0], case_sensitive=local[1], events_have_path=local[2]),
-        mock_provider_instance(oid_is_path=remote[0], case_sensitive=remote[1], events_have_path=remote[2])
+        mock_provider_instance(oid_is_path=local[0], case_sensitive=local[1], filter_events=local[2]),
+        mock_provider_instance(oid_is_path=remote[0], case_sensitive=remote[1], filter_events=remote[2])
     )
 
 
 # parameterization:
 # - (oid-cs-unfiltered, oid-cs-unfiltered)
-# - (path-cs-filtered, oid-cs-filtered)  Note: oid_is_path implies events_have_path, so local is also filtered
+# - (path-cs-unfiltered, oid-cs-filtered)
 @pytest.fixture(params=[((False, True, False), (False, True, False)), ((True, True, False), (False, True, True))],
                 ids=["mock_oid_cs_unfiltered", "mock_path_cs_filtered"])
 def mock_provider_tuple(request):
@@ -640,7 +703,7 @@ def mock_provider_tuple(request):
 
 # parameterization:
 # - (oid-ci-unfiltered, oid-ci-unfiltered)
-# - (path-ci-filtered, oid-ci-filtered)  Note: oid_is_path implies events_have_path, so local is also filtered
+# - (path-ci-unfiltered, oid-ci-filtered)
 @pytest.fixture(params=[((False, False, False), (False, False, False)), ((True, False, False), (False, False, True))],
                 ids=["mock_oid_cs_unfiltered", "mock_path_cs_filtered"])
 def mock_provider_tuple_ci(request):
