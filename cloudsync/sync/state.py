@@ -1015,7 +1015,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
             if prior_ent and not prior_ent.is_discarded:
                 if not ent or not ent.is_conflicted:
-                    if not ent or prior_ent[side].sync_hash:
+                    if not ent or prior_ent[side].sync_hash or not ent[side].sync_hash:
                         # reuse prior_ent
                         _copy = None
                         if ent:
