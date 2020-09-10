@@ -1015,7 +1015,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
             if prior_ent and not prior_ent.is_discarded:
                 if not ent or (not ent.is_conflicted and (prior_ent[side].sync_hash or not ent[side].sync_hash)):
-                    # reuse prior_ent
+                    # if we don't have an ent, reuse the prior_ent
+                    # otherwise, only consider reusing the prior_ent if it has been synced,
+                    #   or if the ent hasn't been synced. if the prior_ent (in a rename this is the "rename from")
+                    #   is a short-lived temp file, and the ent (the "rename to") is a long-lived file that is being
+                    #   replaced as a result of the rename (as often happens when saving in msoffice), then don't use
+                    #   the prior_ent for this reason: the ent has a hash, and the prior_ent doesn't, which can lead
+                    #   to unexpected conflicts arising when resolvable or merge-able changes exist in the cloud
                     _copy = None
                     if ent:
                         # copy information about the other side
