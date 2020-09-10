@@ -1030,6 +1030,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                             log.debug("ent was abandoned without copy")
                     else:
                         log.debug("skipped using prior ent because no sync hash")
+                        log.debug("      ent=%s", ent)
+                        log.debug("prior ent=%s", prior_ent)
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:
