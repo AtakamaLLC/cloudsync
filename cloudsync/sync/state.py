@@ -1014,7 +1014,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent.ignored = IgnoreReason.NONE
 
             if prior_ent and not prior_ent.is_discarded:
-                if not ent or not ent.is_conflicted:
+                if (not ent or not ent.is_conflicted) and prior_ent[side].sync_hash and not ent[side].sync_hash:
                     # reuse prior_ent
                     _copy = None
                     if ent:
@@ -1023,7 +1023,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                             _copy = ent[1-side]
                     ent = prior_ent
                     if _copy and not ent[1-side].oid:
-                        log.debug("ent was abandoned with copy")
+                        log.debug("ent was abandoned with copy", stack_info=True);
                         ent[1-side] = _copy
                     else:
                         log.debug("ent was abandoned without copy")
