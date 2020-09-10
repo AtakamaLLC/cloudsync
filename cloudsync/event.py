@@ -25,10 +25,11 @@ class Event:
     oid: str                                    # fsobject id
     path: Optional[str]                         # path
     hash: Any                                   # fsobject hash     (better name: ohash)
-    exists: Optional[bool]
+    exists: Optional[bool]                      # True, False or None ... please do not assume None == False!
     mtime: Optional[float] = None
     prior_oid: Optional[str] = None             # path based systems use this on renames
     new_cursor: Optional[str] = None
+    accurate: bool = False                      # has event info been vetted
 
 
 class ProviderGuard(set):
@@ -249,7 +250,7 @@ class EventManager(Runnable):
             event = replace(event)
 
             if event.oid is None:
-                if not event.exists and event.path and event.otype == DIRECTORY:
+                if event.exists is False and event.path and event.otype == DIRECTORY:
                     # allow no oid on deletion of folders
                     # this is because of dropbox
                     known = self.state.lookup_path(self.side, event.path)
@@ -278,6 +279,21 @@ class EventManager(Runnable):
                               exists=event.exists, prior_oid=event.prior_oid)
             self.state.storage_commit()
 
+    def _make_event_accurate(self, event):
+        # events are assumed to be late and innaccurate
+        # but if we ask for current info, we know this event is now accurate
+        # that means the state engine need not query to get latest info
+
+        info = self.provider.info_oid(event.oid)
+        if info:
+            event.path = info.path
+            event.otype = info.otype
+            event.hash = info.hash
+            event.exists = True
+        else:
+            event.exists = False
+        event.accurate = True
+
     def _fill_event_path(self, event: Event):
         if event.path:
             return
@@ -286,17 +302,15 @@ class EventManager(Runnable):
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
             event.path = state[self.side].path
-        if not event.path and event.exists:
-            info = self.provider.info_oid(event.oid)
-            if info:
-                event.path = info.path
-                event.otype = info.otype
-                event.hash = info.hash
+        if not event.path and event.exists is True:
+            self._make_event_accurate(event)
 
     def _notify_on_root_change_event(self, event: Event):
         if self._root_path and self._root_oid:
             if self.provider.root_oid == event.oid:
-                if not event.exists:
+                if not event.accurate:
+                    self._make_event_accurate(event)
+                if event.exists is False:
                     raise CloudRootMissingError(f"root was deleted for provider: {self.provider.name}")
                 if event.path and not self.provider.paths_match(self.provider.root_path, event.path):
                     raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
