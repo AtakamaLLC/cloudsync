@@ -291,7 +291,7 @@ class SyncManager(Runnable):
                 changed = i
                 synced = other_side(i)
                 se = sync[changed]
-                if not se.changed or se.sync_path or not se.oid or se.exists != EXISTS or sync.is_conflicted:
+                if not se.changed or se.sync_path or not se.oid or sync.is_conflicted:
                     continue
                 looked_up_sync = self.state.lookup_oid(changed, sync[changed].oid)
                 if looked_up_sync and looked_up_sync != sync:
@@ -303,7 +303,7 @@ class SyncManager(Runnable):
                 if not provider_path:
                     continue
                 translated_path = self.translate(synced, provider_path)
-                if sync.is_irrelevant and translated_path and not sync[changed].sync_path:  # was irrelevant, but now is relevant
+                if sync.is_irrelevant and translated_path:  # was irrelevant, but now is relevant
                     log.debug(">>>about to embrace %s", sync)
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
@@ -335,10 +335,14 @@ class SyncManager(Runnable):
 
         for side in ordered:
             if not sync[side].needs_sync():
-                if sync[side].changed:
-                    log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
-                sync[side].changed = 0
-                continue
+                # if the changed side's path doesn't translate then ignore 'needs_sync' and process
+                # the change anyway (likely a rename to irrelevant directory)
+                # see test_cs_rename_folder_out_of_root
+                if self.translate(other_side(side), sync[side].path):
+                    if sync[side].changed:
+                        log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
+                    sync[side].changed = 0
+                    continue
 
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
                 log.debug("ignore:%s, side:%s", sync, side)
@@ -957,7 +961,7 @@ class SyncManager(Runnable):
 
             log.info("RESOLVED CONFLICT: %s side: %s", side_states, defer)
 
-    def delete_synced(self, sync, changed, synced):
+    def delete_synced(self, sync, changed, synced, ignore_reason=IgnoreReason.DISCARDED):
         log.debug("try sync deleted %s", sync[changed].path)
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
@@ -966,7 +970,7 @@ class SyncManager(Runnable):
         for ent in ents:
             if ent.is_creation(synced):
                 log.info("discard delete, pending create %s:%s", synced, ent)
-                sync.ignore(IgnoreReason.DISCARDED)
+                sync.ignore(ignore_reason)
                 return FINISHED
 
         # deletions don't always have paths
@@ -979,13 +983,14 @@ class SyncManager(Runnable):
                 for ent in ents:
                     if ent.is_rename(synced):
                         log.info("discard delete, pending rename %s:%s", synced, ent)
-                        sync.ignore(IgnoreReason.DISCARDED)
+                        sync.ignore(ignore_reason)
                         return FINISHED
 
         if sync[synced].oid:
             try:
                 log.debug("deleting %s", debug_sig(sync[synced].oid))
                 self.providers[synced].delete(sync[synced].oid)
+                sync[changed].sync_path = None
             except ex.CloudFileNotFoundError:
                 pass
             except ex.CloudFileExistsError:
@@ -996,7 +1001,7 @@ class SyncManager(Runnable):
         sync[synced].exists = TRASHED
         if not sync.is_conflicted:
             log.debug("mark entry discarded %s", sync)
-            sync.ignore(IgnoreReason.DISCARDED, previous_reasons=IgnoreReason.IRRELEVANT)
+            sync.ignore(ignore_reason, previous_reasons=IgnoreReason.IRRELEVANT)
         return FINISHED
 
     def _handle_dir_delete_not_empty(self, sync, changed, synced):
@@ -1004,7 +1009,7 @@ class SyncManager(Runnable):
         if sync.priority > 0:
             all_synced = True
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
-                if kid.needs_sync():
+                if kid.needs_sync() or not self.translate(synced, sync[changed].path):
                     all_synced = False
                     break
             if all_synced:
@@ -1018,8 +1023,11 @@ class SyncManager(Runnable):
                     self.state.storage_commit()
 
                 if remaining:
-                    log.warning("Children %s exist on side %s. Syncing", remaining, synced)
-                    return PUNT
+                    if sync.priority < 10:
+                        log.warning("Children %s exist on side %s. Syncing", remaining, synced)
+                        return PUNT
+                    else:
+                        log.warning("Children %s exist on side %s. Giving up", remaining, synced)
                 return FINISHED
             else:
                 log.info("all children not fully synced, punt %s", sync[changed].path)
@@ -1320,12 +1328,17 @@ class SyncManager(Runnable):
         return oinfo.oid, new_oid, conflict_path
 
     def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
+        log.debug("embrace %s, side:%s", sync, changed)
+
         if sync[changed].path or (sync[changed].exists == EXISTS):
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
                     log.info(">>>Removing remnants of file moved out of cloud root")
-                    sync[changed].exists = TRASHED  # This will discard the ent later
+                    ret = self.delete_synced(sync, changed, synced, IgnoreReason.IRRELEVANT)
+                    if ret == FINISHED:
+                        self.state.split(sync)
+                    return ret
                 else:  # we don't have a new or old translated path... just irrelevant so discard
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
                     sync.ignore(IgnoreReason.IRRELEVANT)
@@ -1333,8 +1346,6 @@ class SyncManager(Runnable):
         if sync.is_discarded:
             log.log(TRACE, "%s Ignoring entry because %s:%s", debug_sig(id(self)), sync.ignored.value, sync)
             return FINISHED
-
-        log.debug("embrace %s, side:%s", sync, changed)
 
         if sync.is_conflicted:
             log.info("Conflicted file %s is changing", sync[changed].path)

@@ -56,7 +56,7 @@ class Runnable(ABC):
 
     @property
     def stopped(self):
-        """Set when you call stop()m causes the services to drop out."""
+        """Set when you call stop(), causes the services to drop out."""
         return self.__stopped or self.__shutdown
 
     def interruptable_sleep(self, secs):
@@ -204,7 +204,7 @@ class Runnable(ABC):
         """
         Wait for the service to stop.
         """
-        if self.__thread:
+        if self.__thread and threading.current_thread() != self.__thread:
             self.__thread.join(timeout=timeout)
             if self.__thread and self.__thread.is_alive():
                 raise TimeoutError()

@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ['SyncState', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
+__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 # safe ternary, don't allow traditional comparisons
 
@@ -1256,3 +1256,20 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[i].path = info.path
             if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
+
+    def get_state_lookup(self, side: int) -> 'SyncStateLookup':
+        return SyncStateLookup(self, side)
+
+
+class SyncStateLookup:
+    """
+    Limited read-only SyncState interface
+    """
+
+    def __init__(self, state: 'SyncState', side: int):
+        self.__state = state
+        self.__side = side
+
+    def get_path(self, oid: str) -> Optional[str]:
+        state = self.__state.lookup_oid(self.__side, oid)
+        return state[self.__side].path if state else None

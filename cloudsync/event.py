@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass, replace
 from pystrict import strict
 
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, CloudNamespaceError
+from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, \
+    CloudNamespaceError, CloudRootMissingError
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
@@ -58,6 +59,7 @@ class EventManager(Runnable):
 
         self._provider_guard.add(provider)
         self.provider = provider
+        self.provider.sync_state = state.get_state_lookup(side)
 
         self.label: str = f"{self.provider.name}:{self.provider.connection_id}:{self.provider.namespace_id}"
         self.state: 'SyncState' = state
@@ -94,6 +96,7 @@ class EventManager(Runnable):
                 self._cursor_tag = self.label = "_cursor"
                 self.cursor = self.state.storage_get_data(self._cursor_tag)
             self._root_validated = True
+        return self._root_validated
 
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
@@ -132,13 +135,14 @@ class EventManager(Runnable):
             else:
                 log.info("reconnect to %s", self.provider.name)
                 self.provider.reconnect()
-            self._validate_root()
 
     def do(self):
         try:
             self._reconnect_if_needed()
-            self._do_unsafe()
+            if self._validate_root():
+                self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
+            # CloudRootMissingError is a CloudTemporaryError so handled here
             log.warning("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
@@ -159,15 +163,17 @@ class EventManager(Runnable):
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
                       self.provider.name, self._root_path, self._root_oid)
             self._queue = []
-            try:
-                if self._root_oid:
-                    for event in self.provider.walk_oid(self._root_oid):
-                        self._process_event(event, from_walk=True)
-            except CloudFileNotFoundError as e:
-                log.debug('File to walk not found %s', e)
-
+            self._do_walk_oid(self._root_oid)
             self.state.storage_update_data(self._walk_tag, time.time())
             self.need_walk = False
+
+    def _do_walk_oid(self, oid):
+        try:
+            if oid:
+                for event in self.provider.walk_oid(oid):
+                    self._process_event(event, from_walk=True)
+        except CloudFileNotFoundError as e:
+            log.debug('File to walk not found %s', e)
 
     def _do_first_init(self):
         if self._first_do:
@@ -265,12 +271,9 @@ class EventManager(Runnable):
                     if not changed:
                         # ignore from_walk events where nothing changed
                         return
-            else:
-                self._fill_event_path(event)
 
-            if self._filter_event(event):
-                return
-
+            self._fill_event_path(event)
+            self._notify_on_root_change_event(event)
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
                               exists=event.exists, prior_oid=event.prior_oid)
             self.state.storage_commit()
@@ -284,35 +287,21 @@ class EventManager(Runnable):
         if state:
             event.path = state[self.side].path
         if not event.path and event.exists:
-            # TODO: is this really necessary?
-            # could we let SyncManager handle this (it calls get_latest on every change) instead?
             info = self.provider.info_oid(event.oid)
             if info:
                 event.path = info.path
                 event.otype = info.otype
                 event.hash = info.hash
-    
-    def _filter_event(self, event: Event) -> bool:
-        # event filtering based on root path
-        if not self._root_path:
-            return False
-        # path not a subpath of root
-        if event.exists and event.path and not self.provider.is_subpath(self._root_path, event.path):
-            lookup_oid = event.prior_oid or event.oid
-            state = self.state.lookup_oid(self.side, lookup_oid)
-            if state:
-                # found in state, so this was moved out of our root -- delete
-                log.debug("change event to delete - moved from relevance to irrelevance: %s", state[self.side].path)
-                event.exists = False
-                return False
-            # not in the state db, so this is a create or a move outside our root -- irrelelvant
-            log.debug("ignore irrelevant move/create: %s", event.path)
-            return True
-        # delete of an item that was not in our state db -- irrelevant
-        elif not event.exists and not self.state.lookup_oid(self.side, event.oid):
-            log.debug("ignore irrelevant delete: %s", event.oid)
-            return True
-        return False
+
+    def _notify_on_root_change_event(self, event: Event):
+        if self._root_path and self._root_oid:
+            if self.provider.root_oid == event.oid:
+                if not event.exists:
+                    raise CloudRootMissingError(f"root was deleted for provider: {self.provider.name}")
+                if event.path and not self.provider.paths_match(self.provider.root_path, event.path):
+                    raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
+            if self.provider.root_oid == event.prior_oid:
+                raise CloudRootMissingError(f"root was renamed for provider: {self.provider.name}")
 
     def done(self):
         self._provider_guard.remove(self.provider)
