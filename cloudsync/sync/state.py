@@ -1034,6 +1034,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                                   prior_ent[side].hash, prior_ent[side].sync_hash, ent[side].hash, ent[side].sync_hash)
                         log.debug("      ent=%s", ent)
                         log.debug("prior ent=%s", prior_ent)
+                        log.debug("ent=%s, pes.sh=%s, es.sh=%s", bool(ent), bool(prior_ent[side].sync_hash),
+                                  bool(ent[side].sync_hash))
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:
