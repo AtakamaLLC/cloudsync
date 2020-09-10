@@ -1029,7 +1029,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                         else:
                             log.debug("ent was abandoned without copy")
                     else:
-                        log.debug("skipped using prior ent because no sync hash")
+                        log.debug("skipped using prior ent because no sync hash side=%s", side)
+                        log.debug("prior ent hash=%s/%s ent hash=%s/%s",
+                                  prior_ent[side].hash, prior_ent[side].sync_hash, ent[side].hash, ent[side].sync_hash)
                         log.debug("      ent=%s", ent)
                         log.debug("prior ent=%s", prior_ent)
             elif not ent:
