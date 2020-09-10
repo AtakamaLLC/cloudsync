@@ -1014,28 +1014,20 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent.ignored = IgnoreReason.NONE
 
             if prior_ent and not prior_ent.is_discarded:
-                if not ent or not ent.is_conflicted:
-                    if not ent or prior_ent[side].sync_hash or not ent[side].sync_hash:
-                        # reuse prior_ent
-                        _copy = None
-                        if ent:
-                            # copy information about the other side
-                            if ent[1-side].oid:
-                                _copy = ent[1-side]
-                        ent = prior_ent
-                        if _copy and not ent[1-side].oid:
-                            log.debug("ent was abandoned with copy")
-                            ent[1-side] = _copy
-                        else:
-                            log.debug("ent was abandoned without copy")
+                if not ent or not ent.is_conflicted \
+                        and (not ent or prior_ent[side].sync_hash or not ent[side].sync_hash):
+                    # reuse prior_ent
+                    _copy = None
+                    if ent:
+                        # copy information about the other side
+                        if ent[1-side].oid:
+                            _copy = ent[1-side]
+                    ent = prior_ent
+                    if _copy and not ent[1-side].oid:
+                        log.debug("ent was abandoned with copy")
+                        ent[1-side] = _copy
                     else:
-                        log.debug("skipped using prior ent because no sync hash side=%s", side)
-                        log.debug("prior ent hash=%s/%s ent hash=%s/%s",
-                                  prior_ent[side].hash, prior_ent[side].sync_hash, ent[side].hash, ent[side].sync_hash)
-                        log.debug("      ent=%s", ent)
-                        log.debug("prior ent=%s", prior_ent)
-                        log.debug("ent=%s, pes.sh=%s, es.sh=%s", bool(ent), bool(prior_ent[side].sync_hash),
-                                  bool(ent[side].sync_hash))
+                        log.debug("ent was abandoned without copy")
             elif not ent:
                 path_ents = self.lookup_path(side, path, stale=True)
                 for path_ent in path_ents:
