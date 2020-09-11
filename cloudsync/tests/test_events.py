@@ -214,4 +214,5 @@ def test_event_root_change(manager):
     # root deleted
     with pytest.raises(CloudRootMissingError):
         event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
+        event.accurate = True
         manager._notify_on_root_change_event(event)
