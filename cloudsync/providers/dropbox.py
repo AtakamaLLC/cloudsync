@@ -153,8 +153,6 @@ class DropboxProvider(Provider):
         self._flow = None
 
     def _on_oauth_success(self, auth_dict):
-        # dropbox doesn't support this
-        auth_dict.pop("expires_in", None)
         if auth_dict and 'state' in auth_dict and isinstance(auth_dict['state'], list):
             auth_dict['state'] = auth_dict['state'][0]
         try:

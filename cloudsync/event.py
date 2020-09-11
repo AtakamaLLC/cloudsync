@@ -276,7 +276,7 @@ class EventManager(Runnable):
             self._fill_event_path(event)
             self._notify_on_root_change_event(event)
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
-                              exists=event.exists, prior_oid=event.prior_oid)
+                              exists=event.exists, prior_oid=event.prior_oid, accurate=event.accurate)
             self.state.storage_commit()
 
     def _make_event_accurate(self, event):
@@ -302,13 +302,14 @@ class EventManager(Runnable):
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
             event.path = state[self.side].path
-        if not event.path and event.exists is True:
+        if not event.path and event.exists in (True, None):
             self._make_event_accurate(event)
 
     def _notify_on_root_change_event(self, event: Event):
         if self._root_path and self._root_oid:
             if self.provider.root_oid == event.oid:
-                if not event.accurate:
+                # none and false events for root ==== check it
+                if not event.accurate and event.exists is not True:
                     self._make_event_accurate(event)
                 if event.exists is False:
                     raise CloudRootMissingError(f"root was deleted for provider: {self.provider.name}")
