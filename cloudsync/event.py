@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class Event:
+    """Information on stuff that happens in a provider, returned from the events() function."""
+
     otype: OType                                # fsobject type     (DIRECTORY or FILE)
     oid: str                                    # fsobject id
     path: Optional[str]                         # path
@@ -28,7 +30,7 @@ class Event:
     exists: Optional[bool]                      # True, False or None ... please do not assume None == False!
     mtime: Optional[float] = None
     prior_oid: Optional[str] = None             # path based systems use this on renames
-    new_cursor: Optional[str] = None
+    new_cursor: Optional[str] = None            # todo: this should not be in the base class here, not supported
     accurate: bool = False                      # has event info been vetted
 
 
