@@ -216,3 +216,9 @@ def test_event_root_change(manager):
         event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
         event.accurate = True
         manager._notify_on_root_change_event(event)
+
+    # root still present ... but inaccurate event arrives
+    event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
+    event.accurate = False
+    # no error
+    manager._notify_on_root_change_event(event)
