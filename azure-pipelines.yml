@@ -10,11 +10,19 @@ strategy:
   matrix:
     windows:
       imageName: 'windows-latest'
+    Python36:
+      python.version: '3.6'
+    Python37:
+      python.version: '3.7'
 
 pool:
   vmImage: $(imageName)
   
 steps:
+- task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(python.version)'
+
 - script: |
     python -m pip install --upgrade pip
     pip install -r requirements.txt
