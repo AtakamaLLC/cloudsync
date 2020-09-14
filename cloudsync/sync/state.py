@@ -862,7 +862,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin, too-many-arguments
+    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments
         assert ent
 
         if oid is not None:
@@ -898,6 +898,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
             self._mark_changed(side, ent)
+
+            if accurate:
+                ent[side]._last_gotten = changed
+
 
         log.log(TRACE, "updated %s", ent)
 
@@ -994,7 +998,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def __len__(self):
         return len(self.get_all())
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
+    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None, accurate=False):   # pylint: disable=redefined-builtin, too-many-arguments
         """Called by the event manager when an event happens."""
 
         log.log(TRACE, "lookup oid %s, sig %s", oid, debug_sig(oid))
@@ -1046,7 +1050,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if exists is None:
             exists = Exists.UNKNOWN
-        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype)
+        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
+
 
     def change(self, age):
         if not self._changeset:
