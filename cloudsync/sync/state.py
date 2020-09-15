@@ -886,12 +886,12 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if hash is not None and hash != ent[side].hash:
             ent[side].hash = hash
 
-        if exists is not None and exists is not ent[side].exists:
-            if ent[side].exists is TRASHED and exists:
-                # oid was deleted, and then re-created, this can only happen for oid-is-path providers
-                # we mark it as LIKELY_TRASHED, to protect against out-of-order events
-                # see: https://vidaid.atlassian.net/browse/VFM-7246
-                exists = LIKELY_TRASHED
+        if ent[side].exists is TRASHED and exists is True:
+            # oid was deleted, and then re-created, this can only happen for oid-is-path providers
+            # we mark it as LIKELY_TRASHED, to protect against out-of-order events
+            # see: https://vidaid.atlassian.net/browse/VFM-7246
+            ent[side].exists = LIKELY_TRASHED
+        else:
             ent[side].exists = exists
 
         if changed:
@@ -1048,8 +1048,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        if exists is None:
-            exists = Exists.UNKNOWN
         self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
 
 
