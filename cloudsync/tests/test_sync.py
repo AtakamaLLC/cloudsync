@@ -1616,5 +1616,24 @@ def test_hash_diff_file_name_error(sync):
     assert check.getvalue() == b"hello"
     assert sync.state.lookup_oid(LOCAL, info2.oid).ignored == IgnoreReason.IRRELEVANT
 
+def test_exists_none(sync):
+    (local, remote) = sync.providers
+
+    local_parent = "/local"
+    local_file = "/local/file"
+    local_dir = "/local/dir"
+    remote_file = "/remote/file"
+    remote_dir = "/remote/dir"
+
+    local.mkdir(local_parent)
+    info = local.create(local_file, BytesIO(b"hello"))
+
+    sync.create_event(LOCAL, FILE, path=local_file, oid=info.oid, hash=info.hash, exists=None)
+    sync.run(until=lambda: remote.exists_path(remote_file), timeout=2)
+
+    dir_oid = local.mkdir(local_dir)
+
+    sync.create_event(LOCAL, DIRECTORY, path=local_dir, oid=dir_oid, exists=None)
+    sync.run(until=lambda: remote.exists_path(remote_dir), timeout=2)
 
 # TODO: test to confirm that a sync with an updated path name that is different but matches the old name will be ignored (eg: a/b -> a\b)
