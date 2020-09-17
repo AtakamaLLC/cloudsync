@@ -344,7 +344,6 @@ class ProviderTestMixin(ProviderBase):
 
         if not self.prov.connected:
             self.prov.connect(self._test_creds)
-        self.prime_events()
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
