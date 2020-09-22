@@ -364,7 +364,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @namespace.setter
     def namespace(self, ns: Namespace):                    # pylint: disable=no-self-use
-        pass
+        pass   # pragma: no cover
 
     @property
     def namespace_id(self) -> Optional[str]:               # pylint: disable=no-self-use
@@ -376,7 +376,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
-        pass
+        pass   # pragma: no cover
+
 
     @classmethod
     def uses_oauth(cls):
