@@ -11,8 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
-from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
-    CloudRootMissingError
+from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudRootMissingError
 from .oauth import OAuthConfig, OAuthProviderInfo
 from .event import Event
 
@@ -365,7 +364,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @namespace.setter
     def namespace(self, ns: Namespace):                    # pylint: disable=no-self-use
-        raise CloudNamespaceError("This provider does not support namespaces")
+        pass
 
     @property
     def namespace_id(self) -> Optional[str]:               # pylint: disable=no-self-use
@@ -377,7 +376,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
-        raise CloudNamespaceError("This provider does not support namespaces")
+        pass
 
     @classmethod
     def uses_oauth(cls):
