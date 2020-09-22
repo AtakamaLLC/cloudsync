@@ -624,6 +624,8 @@ def test_namespace(provider):
     if not ns:
         assert not provider.namespace_id
         assert not provider.namespace
+        provider.namespace_id = "id"
+        provider.namespace = Namespace("name", "space")
         return
 
     saved = provider.namespace_id
