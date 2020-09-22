@@ -37,7 +37,7 @@ import cloudsync
 import cloudsync.providers
 
 from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
-        CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
+        CloudOutOfSpaceError, CloudCursorError, CloudTokenError
 from cloudsync.provider import Namespace
 from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
@@ -624,10 +624,6 @@ def test_namespace(provider):
     if not ns:
         assert not provider.namespace_id
         assert not provider.namespace
-        with pytest.raises(CloudNamespaceError):
-            provider.namespace_id = "id"
-        with pytest.raises(CloudNamespaceError):
-            provider.namespace = Namespace("name", "space")
         return
 
     saved = provider.namespace_id
@@ -2034,12 +2030,7 @@ def test_set_ns_offline(unwrapped_provider):
 
     provider.namespace_id = 'bad-namespace-is-ok-at-least-when-offline'
     log.info("ns id %s", provider.namespace_id)
-    with pytest.raises(CloudNamespaceError):
-        provider.connect(provider._test_creds)
     assert provider.namespace is None  # setting a bad ns id makes this None
-    with pytest.raises(CloudNamespaceError):
-        provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
-
 
 @pytest.mark.manual
 def test_authenticate(unwrapped_provider):
