@@ -22,8 +22,8 @@ box = [ "boxsdk>=2.9.0", ]
 dropbox = [ "dropbox>=10.3.0", "six>=1.14.0"]
 boxcom = [ "boxsdk[jwt]", ]
 onedrive = [ "cloudsync-onedrive>=2.1.0", ]
-gdrive = [ "cloudsync-gdrive>=1.0.7", ]
-all = [ "cloudsync-gdrive>=1.0.7", "cloudsync-onedrive>=2.1.0", "boxsdk[jwt]", "dropbox>=10.3.0", "six>=1.14.0", "boxsdk>=2.9.0" ]
+gdrive = [ "cloudsync-gdrive>=1.0.8", ]
+all = [ "cloudsync-gdrive>=1.0.8", "cloudsync-onedrive>=2.1.0", "boxsdk[jwt]", "dropbox>=10.3.0", "six>=1.14.0", "boxsdk>=2.9.0" ]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
