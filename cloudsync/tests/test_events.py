@@ -1,21 +1,41 @@
+# pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
+
 import time
 from io import BytesIO
 
 import pytest
 
-from cloudsync import EventManager, SyncState, LOCAL, CloudTokenError
+from cloudsync import exceptions, EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudRootMissingError
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
 
 
+def create_event_manager(provider_generator, root_path):
+    provider = provider_generator()
+    if root_path:
+        provider.mkdir(root_path)
+    state = SyncState((provider, provider), shuffle=True)
+    if provider.oid_is_path:
+        event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_path)
+    else:
+        event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
+    event_manager._drain()
+    return event_manager
+
+
 @pytest.fixture(name="manager")
 def fixture_manager(mock_provider_generator):
     # TODO extend this to take any provider
-    provider = mock_provider_generator()
-    state = SyncState((provider, provider), shuffle=True)
+    ret = create_event_manager(mock_provider_generator, "/root")
+    yield ret
+    ret.stop()
 
-    ret = EventManager(provider, state, LOCAL, reauth=MagicMock())
+
+@pytest.fixture(name="rootless_manager")
+def fixture_rootless_manager(mock_provider_generator):
+    # TODO extend this to take any provider
+    ret = create_event_manager(mock_provider_generator, None)
     yield ret
     ret.stop()
 
@@ -23,9 +43,10 @@ def fixture_manager(mock_provider_generator):
 def test_event_basic(manager):
     provider = manager.provider
     state = manager.state
-    info = provider.create("/dest", BytesIO(b'hello'))
+    create_path = provider.join(provider._root_path, "dest")
+    info = provider.create(create_path, BytesIO(b'hello'))
 
-    assert not state.lookup_path(LOCAL, "/dest")
+    assert not state.lookup_path(LOCAL, create_path)
 
     oid = None
 
@@ -45,7 +66,7 @@ def test_event_basic(manager):
 
     info = provider.info_oid(oid)
 
-    assert info.path == "/dest"
+    assert info.path == create_path
 
 
 def test_events_shutdown_event_shouldnt_process(manager):
@@ -57,13 +78,8 @@ def test_events_shutdown_event_shouldnt_process(manager):
         manager.stop()
         time.sleep(.4)
         try:
-            manager.events.__next__()
-        except StopIteration:
-            assert False
-        try:
-            manager.events.__next__()
-            assert False
-        except StopIteration:
+            manager.provider.events().__next__()
+        except exceptions.CloudDisconnectedError:
             pass
     finally:
         manager.stop()
@@ -80,7 +96,7 @@ def test_events_shutdown_force_process_event(manager):
         assert provider.latest_cursor > provider.current_cursor
         manager.do()
         try:
-            manager.events.__next__()
+            manager.provider.events().__next__()
             assert False
         except StopIteration:
             pass
@@ -120,3 +136,89 @@ def test_backoff(manager):
         manager.wait()
     finally:
         manager.stop()
+
+@pytest.mark.parametrize("mode", ["root", "no-root"])
+def test_event_provider_contract(manager, rootless_manager, mode):
+    if mode == "no-root":
+        manager.done()
+        manager = rootless_manager
+
+    prov = manager.provider
+
+    with pytest.raises(ValueError):
+        # do not reuse provider while another EventManager is actively using it
+        manager = EventManager(prov, MagicMock(), LOCAL)
+
+    # ok to reuse provider once the other EventManager is done with it
+    manager.done()
+    manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+
+    manager.done()
+    if mode == "root":
+        with pytest.raises(ValueError):
+            manager = EventManager(prov, MagicMock(), LOCAL, root_path="/cannot-change-after-set")
+    else:
+        foo = prov.create("/foo", BytesIO(b"oo"))
+        prov.mkdir("/bar")
+        bar = prov.info_path("/bar")
+        with pytest.raises(CloudRootMissingError):
+            prov.set_root(root_oid="does-not-exist")
+        with pytest.raises(CloudRootMissingError):
+            # not a directory oid
+            prov.set_root(root_oid=foo.oid)
+        with pytest.raises(CloudRootMissingError):
+            # oid/path mismatch
+            prov.set_root(root_path="/not-bar", root_oid=bar.oid)
+        with pytest.raises(CloudRootMissingError):
+            # not a directory path
+            prov.set_root(root_path="/foo")
+        # provider creates folder if it does not already exist
+        prov.set_root(root_path="/new-folder")
+        assert prov.info_path("/new-folder")
+        manager._drain()
+
+    manager.done()
+    manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+    assert not manager.busy
+    prov.mkdir("/busy-test")
+    assert manager.busy
+    manager.done()
+
+    def raise_root_missing_error():
+        raise CloudRootMissingError("unrooted")
+
+    notify = MagicMock()
+    manager = EventManager(prov, MagicMock(), LOCAL, notify, root_path=prov._root_path, root_oid=prov._root_oid)
+    with patch.object(manager, "_reconnect_if_needed", raise_root_missing_error):
+        with pytest.raises(Exception):
+            # _BackoffError
+            manager.do()
+            notify.notify_from_exception.assert_called_once()
+            assert not manager._root_validated
+
+    prov.connection_id = None
+    with pytest.raises(ValueError):
+        # connection id is required
+        manager = EventManager(prov, MagicMock(), LOCAL, root_path=prov._root_path, root_oid=prov._root_oid)
+
+
+def test_event_root_change(manager):
+    # root renamed
+    with pytest.raises(CloudRootMissingError):
+        event = Event(DIRECTORY, manager._root_oid, "/renamed", "hash-1", True)
+        manager._notify_on_root_change_event(event)
+    if manager.provider.oid_is_path:
+        with pytest.raises(CloudRootMissingError):
+            event = Event(DIRECTORY, "/renamed", "", "hash-1", True, prior_oid=f"{manager._root_path}")
+            manager._notify_on_root_change_event(event)
+    # root deleted
+    with pytest.raises(CloudRootMissingError):
+        event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
+        event.accurate = True
+        manager._notify_on_root_change_event(event)
+
+    # root still present ... but inaccurate event arrives
+    event = Event(DIRECTORY, manager._root_oid, "", "hash-1", False)
+    event.accurate = False
+    # no error
+    manager._notify_on_root_change_event(event)

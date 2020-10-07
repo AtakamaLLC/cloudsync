@@ -2,25 +2,85 @@ import os
 import time
 import copy
 import logging
+import enum
 from hashlib import md5
-from typing import Dict, List, Any, Optional, Generator, Set
+from typing import List, Any, Optional, Generator, Set
 from threading import RLock
 
 import pytest
 
 from cloudsync.event import Event
-from cloudsync.provider import Provider
+from cloudsync.provider import Provider, Namespace
 from cloudsync.registry import register_provider
-from cloudsync.types import OInfo, OType, DirInfo
+from cloudsync.types import OInfo, OType, DirInfo, DIRECTORY
 from cloudsync.exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, \
-    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError
+    CloudDisconnectedError, CloudCursorError, CloudOutOfSpaceError, CloudTemporaryError, CloudFileNameError, \
+    CloudNamespaceError
 
 from cloudsync.utils import debug_sig
 
 log = logging.getLogger(__name__)
 
 
+class EventFilter(enum.Enum):
+    """
+    Event filter result
+    """
+    PROCESS = "process"
+    IGNORE = "ignore"
+    WALK = "walk"
+
+    def __bool__(self):
+        """
+        Protect against bool use
+        """
+        raise ValueError("never bool enums")
+
+
+class MockFS:
+    '''Mock file system'''
+    def __init__(self):
+        self._objects = {}
+        self._listeners = set()
+
+    def add_listener(self, provider):
+        self._listeners.add(provider)
+
+    def remove_listener(self, provider):
+        if provider in self._listeners:
+            self._listeners.remove(provider)
+
+    def store(self, prov, fso):
+        self._objects[prov.normalize_path(fso.path)] = fso
+        if fso.oid not in self._objects:
+            self._objects[fso.oid] = fso
+
+    def unstore(self, prov, fso):
+        del self._objects[prov.normalize_path(fso.path)]
+        if fso.oid in self._objects:
+            del self._objects[fso.oid]
+
+    def unfile(self, prov, path):
+        del self._objects[prov.normalize_path(path)]
+
+    def get(self, oid_or_path):
+        return self._objects.get(oid_or_path, None)
+
+    def fs_objects(self):
+        for key, value in self._objects.items():
+            if key.startswith('/'):
+                yield value
+
+    def register_event(self, action, target_object, prior_oid=None):    # pylint: disable=protected-access
+        event = MockEvent(action, target_object, prior_oid)
+        target_object.update()
+        for prov in self._listeners:
+            prov._events.append(event)
+            prov._latest_cursor = len(prov._events) - 1
+
+
 class MockFSObject:         # pylint: disable=too-few-public-methods
+    """Mock fs entry, either file or folder."""
     FILE = 'mock file'
     DIR = 'mock dir'
 
@@ -76,6 +136,7 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
 
 class MockEvent:  # pylint: disable=too-few-public-methods
+    """Mock fs event."""
     ACTION_CREATE = "provider create"
     ACTION_RENAME = "provider rename"
     ACTION_UPDATE = "provider modify"
@@ -101,34 +162,35 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 def lock(func):
     def wrap(self, *args, **kw):
-        if True:
-            with self._lock:
-                return func(self, *args, **kw)
-        else:
+        with self._lock:
             return func(self, *args, **kw)
     return wrap
 
 
 class MockProvider(Provider):
+    """In-memory provider with lots of options for testing."""
     default_sleep = 0.01
     name = "Mock"
     # TODO: normalize names to get rid of trailing slashes, etc.
 
-    def __init__(self, oid_is_path: bool, case_sensitive: bool, quota: int = None, hash_func=None, oidless_folder_trash_events: bool = False):
+    def __init__(self, oid_is_path: bool, case_sensitive: bool, *, quota: int = None,
+            hash_func=None, oidless_folder_trash_events: bool = False, use_ns: bool = True,
+            filter_events: bool = False):
         """Constructor for MockProvider
 
         :param oid_is_path: Act as a filesystem or other oid-is-path provider
         :param case_sensitive: Paths are case sensistive
         """
         super().__init__()
-        log.debug("mock mode: o:%s, c:%s", oid_is_path, case_sensitive)
+        log.debug("mock mode: o:%s, c:%s, e:%s", oid_is_path, case_sensitive, filter_events)
         self.oid_is_path = oid_is_path
         self.case_sensitive = case_sensitive
+        self._filter_events = filter_events
+        self._use_ns = use_ns
+        self._namespace: Optional[Namespace] = None
         self._lock = RLock()
         # this horrid setting is because dropbox won't give you an oid when folders are trashed
         self._oidless_folder_trash_events = oidless_folder_trash_events
-        self._fs_by_path: Dict[str, MockFSObject] = {}
-        self._fs_by_oid: Dict[str, MockFSObject] = {}
         self._events: List[MockEvent] = []
         self._latest_cursor = -1
         self._cursor = -1
@@ -142,15 +204,54 @@ class MockProvider(Provider):
         self._test_event_timeout = 1
         self._test_event_sleep = 0.001
         self._test_creds = {"key": "val"}
-        # self.connect(self._test_creds)
+        if use_ns:
+            self._test_namespace = self.list_ns()[0]
         self._hash_func = hash_func
         if hash_func is None:
             self._hash_func = lambda a: md5(a).digest()
         self._uses_cursor = True
         self._forbidden_chars: list = []
         self.__in_connect = False
+        self._mock_fs: MockFS = MockFS()
+        self._mock_fs.add_listener(self)
         new_fs_object = MockFSObject("/", MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
+
+    def _set_mock_fs(self, mock_fs):
+        self._mock_fs.remove_listener(self)
+        self._events.clear()
+        self._mock_fs = mock_fs
+        self._mock_fs.add_listener(self)
+
+    def list_ns(self, recursive=True, parent=None):
+        if self._use_ns:
+            return [Namespace("ns1", "ns1-id"), Namespace("ns2", "ns2-id")]
+        else:
+            return super().list_ns()
+
+    @property
+    def namespace(self) -> Optional[Namespace]:
+        return self._namespace if self._use_ns else super().namespace
+
+    @namespace.setter
+    def namespace(self, namespace: Namespace):
+        if self._use_ns:
+            self.namespace_id = namespace.id
+        else:
+            Provider.namespace.fset(self, namespace)    # type: ignore
+
+    @property
+    def namespace_id(self) -> Optional[str]:
+        return self._namespace.id if self._use_ns and self._namespace else super().namespace_id
+
+    @namespace_id.setter
+    def namespace_id(self, namespace_id: str):
+        if self._use_ns:
+            self._namespace = next((ns for ns in self.list_ns() if ns.id == namespace_id), None)
+            if not self._namespace:
+                raise CloudNamespaceError("invalid namespace")
+        else:
+            Provider.namespace_id.fset(self, namespace_id)  # type: ignore
 
     @lock
     def connect_impl(self, creds):
@@ -169,20 +270,16 @@ class MockProvider(Provider):
         return self.connection_id
 
     def _register_event(self, action, target_object, prior_oid=None):
-        event = MockEvent(action, target_object, prior_oid)
-        self._events.append(event)
-        target_object.update()
-        self._latest_cursor = len(self._events) - 1
+        self._mock_fs.register_event(action, target_object, prior_oid)
 
     def _get_by_oid(self, oid):
         self._api("_get_by_oid", oid)
-        return self._fs_by_oid.get(oid, None)
+        return self._mock_fs.get(oid)
 
     def _get_by_path(self, path):
-        path = self.normalize_path(path)
-        # TODO: normalize the path, support case insensitive lookups, etc
         self._api("_get_by_path", path)
-        return self._fs_by_path.get(path, None)
+        path = self.normalize_path(path)
+        return self._mock_fs.get(path)
 
     def _store_object(self, fo: MockFSObject):
         # TODO: support case insensitive storage
@@ -192,14 +289,14 @@ class MockProvider(Provider):
         if fo.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (fo.path))
 
-        if fo.oid in self._fs_by_oid and self._fs_by_oid[fo.oid].contents:
-            self._total_size -= self._fs_by_oid[fo.oid].size
+        already_stored: MockFSObject = self._mock_fs.get(fo.oid)
+        if already_stored and already_stored.contents:
+            self._total_size -= already_stored.size
 
         if fo.contents and self._quota is not None and self._total_size + len(fo.contents) > self._quota:
             raise CloudOutOfSpaceError("out of space in mock")
 
-        self._fs_by_path[self.normalize_path(fo.path)] = fo
-        self._fs_by_oid[fo.oid] = fo
+        self._mock_fs.store(self, fo)
         if fo.contents:
             self._total_size += fo.size
 
@@ -218,8 +315,7 @@ class MockProvider(Provider):
 
     def _unstore_object(self, fo: MockFSObject):
         try:
-            del self._fs_by_path[self.normalize_path(fo.path)]
-            del self._fs_by_oid[fo.oid]
+            self._mock_fs.unstore(self, fo)
             if fo.contents:
                 self._total_size -= fo.size
         except KeyError:
@@ -234,9 +330,7 @@ class MockProvider(Provider):
         mtime = event.get("mtime", None)
         trashed = event.get("trashed", None)
         prior_oid = event.get("prior_oid", None)
-        path = None
-        if self.oid_is_path:
-            path = event.get("path")
+        path = event.get("path") if self.oid_is_path or self._filter_events else None
         if not self._uses_cursor:
             cursor = None
         if self._oidless_folder_trash_events:
@@ -245,6 +339,42 @@ class MockProvider(Provider):
                 path = event.get("path")
         retval = Event(standard_type, oid, path, None, not trashed, mtime, prior_oid, new_cursor=cursor)
         return retval
+
+    def _filter_event(self, event: Event) -> EventFilter:
+        # event filtering based on root path and event path
+
+        # Note: no filtering for oid-is-path providers for now
+        if not self._root_path or not self._filter_events or self.oid_is_path:
+            return EventFilter.PROCESS
+
+        state_path = self.sync_state.get_path(event.oid)
+        prior_subpath = self.is_subpath_of_root(state_path)
+        if not event.exists:
+            # delete - ignore if not in state, or in state but is not subpath of root
+            return EventFilter.PROCESS if prior_subpath else EventFilter.IGNORE
+
+        if event.path:
+            curr_subpath = self.is_subpath_of_root(event.path)
+            if curr_subpath and not prior_subpath:
+                # Can't differentiate between creates and renames without watching the entire filesystem:
+                # Event has an oid and a current path, its a rename if the oid was seen before,
+                # but since events outside root are ignored we don't catch the case where an item is created
+                # outside root and renamed into root.
+                # Hence the walk for directories -- a tradeoff for ignoring "outside root" events.
+                log.debug("created in or renamed into root: %s", event.path)
+                if event.otype == DIRECTORY:
+                    return EventFilter.WALK
+            elif prior_subpath and not curr_subpath:
+                # Rename out of root: process the event.
+                # Treated as a delete by the sync engine, which handles non-empty folders by marking
+                # children "changed" and processing them first.
+                log.debug("renamed out of root: %s", event.path)
+            else:
+                # both curr and prior are subpaths == rename within root (process event)
+                # neither is subpath == rename outside root (ignore)
+                return EventFilter.PROCESS if curr_subpath else EventFilter.IGNORE
+
+        return EventFilter.PROCESS
 
     def _api(self, *args, **kwargs):
         if not self.connected and not self.__in_connect:
@@ -279,12 +409,23 @@ class MockProvider(Provider):
         while self._cursor < self._latest_cursor:
             self._cursor += 1
             pe = self._events[self._cursor]
-            yield self._translate_event(pe, self._cursor)
+            event = self._translate_event(pe, self._cursor)
+            filter_result = self._filter_event(event)
+            if filter_result == EventFilter.IGNORE:
+                log.debug("ignore event: %s %s %s", event.path, event.oid, event.exists)
+                continue
+            if filter_result == EventFilter.WALK:
+                log.debug("directory renamed into root - walking: %s", event.path)
+                try:
+                    yield from self.walk_oid(event.oid)
+                except CloudFileNotFoundError:
+                    pass
+            yield event
 
     @lock
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         self._api("upload", oid)
-        file = self._fs_by_oid.get(oid, None)
+        file = self._mock_fs.get(oid)
         if file is None or not file.exists:
             raise CloudFileNotFoundError(oid)
         if file.type != MockFSObject.FILE:
@@ -302,7 +443,7 @@ class MockProvider(Provider):
         if not (folder_obj and folder_obj.exists and folder_obj.type == MockFSObject.DIR):
             raise CloudFileNotFoundError(oid)
         path = folder_obj.path
-        for obj in self._fs_by_oid.values():
+        for obj in self._mock_fs.fs_objects():
             if obj.exists:
                 relative = self.is_subpath(path, obj.path, strict=True)
                 if relative:
@@ -334,7 +475,7 @@ class MockProvider(Provider):
     @lock
     def download(self, oid, file_like):
         self._api("download", oid)
-        file = self._fs_by_oid.get(oid, None)
+        file = self._mock_fs.get(oid)
         if file is None or file.exists is False:
             raise CloudFileNotFoundError(oid)
         if file.type == MockFSObject.DIR:
@@ -347,7 +488,7 @@ class MockProvider(Provider):
         self._api("rename", oid, path)
         # TODO: folders are implied by the path of the file...
         #  actually check to make sure the folder exists and raise a FileNotFound if not
-        object_to_rename = self._fs_by_oid.get(oid, None)
+        object_to_rename = self._mock_fs.get(oid)
 
         if not (object_to_rename and object_to_rename.exists):
             raise CloudFileNotFoundError(oid)
@@ -382,15 +523,15 @@ class MockProvider(Provider):
             prior_oid = object_to_rename.oid
 
         if object_to_rename.type == MockFSObject.FILE:
-            self._rename_single_object(object_to_rename, path, event=True)
+            self._rename_single_object(object_to_rename, path)
         else:  # object to rename is a directory
             old_path = object_to_rename.path
-            for obj in set(self._fs_by_oid.values()):
+            for obj in set(self._mock_fs.fs_objects()):
                 if self.is_subpath(old_path, obj.path, strict=True):
                     new_obj_path = self.replace_path(obj.path, old_path, path)
                     self._rename_single_object(obj, new_obj_path, event=False)
             # only parent generates event
-            self._rename_single_object(object_to_rename, path, event=True)
+            self._rename_single_object(object_to_rename, path)
 
         if self.oid_is_path:
             log.debug("new oid %s", debug_sig(object_to_rename.oid))
@@ -400,7 +541,7 @@ class MockProvider(Provider):
 
         return object_to_rename.oid
 
-    def _rename_single_object(self, source_object: MockFSObject, destination_path, *, event):
+    def _rename_single_object(self, source_object: MockFSObject, destination_path: str, *, event: bool = True):
         destination_path = destination_path.rstrip("/")
         # This will assume all validation has already been done, and just rename the thing
         # without trying to rename contents of folders, just rename the object itself
@@ -411,7 +552,8 @@ class MockProvider(Provider):
         if self.oid_is_path:
             source_object.oid = destination_path
         self._store_object(source_object)
-        self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
+        if event:
+            self._register_event(MockEvent.ACTION_RENAME, source_object, prior_oid)
         log.debug("rename complete %s", source_object.path)
         self._log_debug_state("_rename_single_object")
 
@@ -438,11 +580,11 @@ class MockProvider(Provider):
         return self._delete(oid)
 
     def _unfile(self, oid):
-        file = self._fs_by_oid.get(oid, None)
+        file = self._mock_fs.get(oid)
         if file is None or not file.exists:
             raise CloudFileNotFoundError(oid)
         prior_oid = file.oid if self.oid_is_path else None
-        del self._fs_by_path[self.normalize_path(file.path)]
+        self._mock_fs.unfile(self, file.path)
         file.path = None
         self._register_event(MockEvent.ACTION_RENAME, file, prior_oid)
         return None
@@ -450,7 +592,7 @@ class MockProvider(Provider):
     def _delete(self, oid, without_event=False):
         log.debug("delete %s", debug_sig(oid))
         self._api("delete", oid)
-        file = self._fs_by_oid.get(oid, None)
+        file = self._mock_fs.get(oid)
         if file and file.path in self._locked_for_test:
             raise CloudTemporaryError("path %s is locked for test" % (file.path))
         log.debug("got %s", file)
@@ -475,7 +617,7 @@ class MockProvider(Provider):
     @lock
     def exists_oid(self, oid):
         self._api("exists_oid", oid)
-        file = self._fs_by_oid.get(oid, None)
+        file = self._mock_fs.get(oid)
         return file is not None and file.exists
 
     @lock
@@ -485,7 +627,7 @@ class MockProvider(Provider):
 
     @lock
     def hash_oid(self, oid) -> Any:
-        file = self._fs_by_oid.get(oid, None)
+        file = self._mock_fs.get(oid)
         if file and file.exists:
             return file.hash()
         else:
@@ -505,7 +647,7 @@ class MockProvider(Provider):
     @lock
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         self._api("info_oid", oid)
-        file: MockFSObject = self._fs_by_oid.get(oid, None)
+        file: MockFSObject = self._mock_fs.get(oid)
         if not (file and file.exists):
             return None
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
@@ -550,11 +692,36 @@ def mock_provider_generator(request):
             request.param[1] if case_sensitive is None else case_sensitive)
 
 
+def mock_provider_tuple_instance(local, remote):
+    return (
+        mock_provider_instance(oid_is_path=local[0], case_sensitive=local[1], filter_events=local[2]),
+        mock_provider_instance(oid_is_path=remote[0], case_sensitive=remote[1], filter_events=remote[2])
+    )
+
+
+# parameterization:
+# - (oid-cs-unfiltered, oid-cs-unfiltered)
+# - (path-cs-unfiltered, oid-cs-filtered)
+@pytest.fixture(params=[((False, True, False), (False, True, False)), ((True, True, False), (False, True, True))],
+                ids=["mock_oid_cs_unfiltered", "mock_path_cs_filtered"])
+def mock_provider_tuple(request):
+    return mock_provider_tuple_instance(request.param[0], request.param[1])
+
+
+# parameterization:
+# - (oid-ci-unfiltered, oid-ci-unfiltered)
+# - (path-ci-unfiltered, oid-ci-filtered)
+@pytest.fixture(params=[((False, False, False), (False, False, False)), ((True, False, False), (False, False, True))],
+                ids=["mock_oid_cs_unfiltered", "mock_path_cs_filtered"])
+def mock_provider_tuple_ci(request):
+    return mock_provider_tuple_instance(request.param[0], request.param[1])
+
+
 @pytest.fixture
 def mock_provider_creator():
     return mock_provider_instance
 
-
+# one of two default providers for test_provider.py tests
 class MockPathCs(MockProvider):
     name = "mock_path_cs"
 
@@ -575,14 +742,23 @@ class MockOidCs(MockProvider):
     def __init__(self):
         super().__init__(oid_is_path=False, case_sensitive=True)
 
+# one of two default providers for test_provider.py tests
 class MockOidCi(MockProvider):
     name = "mock_oid_ci"
 
     def __init__(self):
-        super().__init__(oid_is_path=False, case_sensitive=False)
+        super().__init__(oid_is_path=False, case_sensitive=False, use_ns=False)
+
+class MockOidCiNs(MockProvider):
+    name = "mock_oid_ci_ns"
+
+    def __init__(self):
+        super().__init__(oid_is_path=False, case_sensitive=False, use_ns=True)
+
 
 
 register_provider(MockPathCs)
 register_provider(MockPathCi)
 register_provider(MockOidCs)
 register_provider(MockOidCi)
+register_provider(MockOidCiNs)

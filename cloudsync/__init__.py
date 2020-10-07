@@ -48,3 +48,4 @@ from .registry import *
 from .notification import *
 from .oauth import OAuthConfig
 from .providers import *
+from .command import *

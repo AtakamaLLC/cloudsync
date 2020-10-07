@@ -29,44 +29,96 @@ cloudsync sync file:c:/users/me/documents gdrive:/mydocs
 
 # on linux you can pass -D for 'daemon mode', which will detatch and run in the background
 ```
-
-## Code Example
+## Example of a single cloud provider integration
 
 ```python
 import cloudsync
 
-# local file provide + gdrive provider
-local = cloudsync.get_provider("filesystem")
-remote = cloudsync.get_provider("gdrive")
+# Get a generic client_id and client_secret. Do not use this in production code.
+# For more information on getting your own client_id and client_secret, see README_OAUTH.md
+oauth_config = cloudsync.command.utils.generic_oauth_config('gdrive')
 
-# oauth
-creds = remote.authorize()
+# get an instance of the gdrive provider class
+provider = cloudsync.create_provider('gdrive', oauth_config=oauth_config)
 
-# connect with creds
+# Start the oauth process to login in to the cloud provider
+creds = provider.authenticate()
+
+# Use the credentials to connect to the cloud provider
+provider.connect(creds)
+
+# Perform cloud operations
+for entry in provider.listdir_path("/"):
+    print(entry.path)
+```
+## Example of a syncronization between two cloud providers
+
+```python
+import cloudsync
+import tempfile
+import time
+
+# a little setup
+local_root = tempfile.mkdtemp()
+remote_root = "/cloudsync_test/" + time.strftime("%Y%m%d%H%M")
+provider_name = 'gdrive'
+print("syncronizing between %s locally and %s on %s" % (local_root, remote_root, provider_name))
+
+# Get a generic client_id and client_secret. Do not use this in production code.
+# For more information on getting your own client_id and client_secret, see README_OAUTH.md
+cloud_oauth_config = cloudsync.command.utils.generic_oauth_config(provider_name)
+
+# get instances of the local file provider and cloud provider from the provider factory
+local = cloudsync.create_provider("filesystem")
+remote = cloudsync.create_provider(provider_name, oauth_config=cloud_oauth_config)
+
+# Authenticate with the remote provider using OAuth
+creds = remote.authenticate()
+
+# Connect with the credentials acquired by authenticating with the provider
+local.namespace = local_root  # filesystem provider wants to know the root namespace before connecting
+local.connect(None)
 remote.connect(creds)
 
-# root for sync
-roots = ("/home/me/gd", "/")
+# Create the folder on google drive to syncronize locally
+print("Creating folder %s on %s" % (remote_root, provider_name))
+remote.mkdirs(remote_root)  # provider.mkdirs() will automatically create any necessary parent folders
 
-# new sync engine
-sync = cloudsync.CloudSync((local, remote), roots)
+# Specify which folders to syncronize
+sync_roots = (local_root, remote_root)
 
+# instantiate a new sync engine and start syncing
+sync = cloudsync.CloudSync((local, remote), roots=sync_roots)
 sync.start()
 
 # should sync this file as soon as it's noticed by watchdog
-with open("/home/me/gd/hello.txt", "w") as f:
+local_hello_path = local.join(local_root, "hello.txt")
+print("Creating local file %s" % local_hello_path)
+with open(local_hello_path, "w") as f:
     f.write("hello")
 
-# wait for sync
-while not remote.exists_path("/home/alice/hello.txt"):
+# note remote.join, NOT os.path.join... Gets the path separator correct
+remote_hello_path = remote.join(remote_root, "hello.txt")
+
+# wait for sync to upload the new file to the cloud
+while not remote.exists_path(remote_hello_path):
     time.sleep(1)
 
-# rename in the cloud
-remote.rename("/hello.txt", "/goodbye.txt")
+remote_hello_info = remote.info_path(remote_hello_path)
 
-# wait for sync
-while not local.exists_path("/home/alice/goodbye.txt"):
+# rename in the cloud
+local_goodbye_path = local.join(local_root, "goodbye.txt")
+remote_goodbye_path = remote.join(remote_root, "goodbye.txt")
+print("renaming %s to %s on %s" % (remote_hello_path, remote_goodbye_path, provider_name))
+remote.rename(remote_hello_info.oid, remote_goodbye_path)  # rename refers to the file to rename by oid
+
+# wait for sync to cause the file to get renamed locally
+while not local.exists_path(local_goodbye_path):
     time.sleep(1)
 
 print("synced")
+
+sync.stop(forever=True)
+local.disconnect()
+remote.disconnect()
 ```

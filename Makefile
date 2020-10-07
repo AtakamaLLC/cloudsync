@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+PYTEST = pytest -rfE --cov=cloudsync --durations=1 -n=4 cloudsync/tests --tb=short --timeout=20
 
 ifeq ($(OS),Windows_NT)
 	ENVBIN="scripts"
@@ -15,7 +16,7 @@ requirements: env
 	. env/$(ENVBIN)/activate && pip install -r requirements-dev.txt
 	. env/$(ENVBIN)/activate && pip install -r requirements.txt
 
-lint: lint-pylint lint-mypy lint-md
+lint: lint-pylint lint-mypy lint-md lint-deps
 
 lint-pylint:
 	pylint cloudsync --enable=duplicate-code --ignore tests
@@ -26,15 +27,19 @@ lint-mypy:
 lint-md: ./node_modules/.bin/remark
 	./node_modules/.bin/remark -f docs/*.md *.md
 
+lint-deps:
+	python check-deps.py
+
 test: test-py test-doc
 
-test-py:
-	pytest -rfE --cov=cloudsync --durations=1 -n=8 cloudsync/tests --tb=short --timeout=10
+.coverage: $(shell find cloudsync -type f -name '*.py')
+	$(PYTEST)
 
 test-doc:
 	docs/test.sh
 
-.coverage: test-py
+test-py:
+	$(PYTEST)
 
 coverage.xml: .coverage
 	coverage xml
@@ -51,4 +56,4 @@ bumpver:
 ./node_modules/.bin/remark:
 	npm install
 
-.PHONY: test test-py test-doc lint format bumpver env requirements coverage lint-md
+.PHONY: test test-py test-doc lint format bumpver env requirements coverage lint-md lint-deps

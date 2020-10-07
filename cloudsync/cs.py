@@ -80,14 +80,14 @@ class CloudSync(Runnable):
         self.smgr: SyncManager = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
-        self.__roots: Tuple[Optional[str], Optional[str]] = roots if roots else (None, None)
-        self.__root_oids: Tuple[Optional[str], Optional[str]] = root_oids if root_oids else (None, None)
+        event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)
+        event_root_oids: Tuple[Optional[str], Optional[str]] = root_oids or (None, None)
 
         self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, walk_root=self.__roots[0],
-                         reauth=lambda: self.authenticate(0), walk_oid=self.__root_oids[0]),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, walk_root=self.__roots[1],
-                         reauth=lambda: self.authenticate(1), walk_oid=self.__root_oids[1])
+            EventManager(smgr.providers[0], state, 0, self.nmgr, root_path=event_root_paths[0],
+                         reauth=lambda: self.authenticate(0), root_oid=event_root_oids[0]),
+            EventManager(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
+                         reauth=lambda: self.authenticate(1), root_oid=event_root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
@@ -95,10 +95,6 @@ class CloudSync(Runnable):
         self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
-
-    def set_root_oid(self, side, val):
-        self.smgr.set_root_oid(side, val)
-        self.emgrs[side].walk_oid = val
 
     def forget(self):
         """
@@ -258,7 +254,7 @@ class CloudSync(Runnable):
         self.nmgr.notify(Notification(SourceEnum.SYNC, NotificationType.STARTED, None))
         self.nmgr.start(**kwargs)
 
-    def stop(self, forever=True):
+    def stop(self, forever=True, wait=True):
         """
         Stops the cloudsync service.
 
@@ -266,10 +262,10 @@ class CloudSync(Runnable):
             forever: If false is passed, then handles are left open for a future start.  Generally used for tests only.
         """
         log.info("stopping sync: %s", self.storage_label())
-        self.smgr.stop(forever=forever)
-        self.emgrs[0].stop(forever=forever)
-        self.emgrs[1].stop(forever=forever)
-        self.nmgr.stop(forever=forever)
+        self.smgr.stop(forever=forever, wait=wait)
+        self.emgrs[0].stop(forever=forever, wait=wait)
+        self.emgrs[1].stop(forever=forever, wait=wait)
+        self.nmgr.stop(forever=forever, wait=wait)
         if self.sthread:
             self.sthread.join()
             self.ethreads[0].join()

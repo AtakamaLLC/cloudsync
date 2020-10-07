@@ -1,6 +1,7 @@
 # pylint: disable=protected-access
 
 import os
+import logging
 import shutil
 import time
 from unittest.mock import patch
@@ -11,13 +12,14 @@ from cloudsync.providers import FileSystemProvider
 from cloudsync.providers.filesystem import get_hash
 from watchdog import events as watchdog_events
 
+log = logging.getLogger(__name__)
+
 @pytest.fixture
 def fsp():
     fsp = FileSystemProvider()
-    ns = fsp._test_namespace
-    fsp.namespace = ns
+    fsp.namespace = fsp._test_namespace
     yield fsp
-    shutil.rmtree(ns)
+    shutil.rmtree(fsp.namespace_id)
 
 
 def test_fast_hash(fsp: FileSystemProvider, tmpdir):

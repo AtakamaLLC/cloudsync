@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ['SyncState', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
+__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
 
 # safe ternary, don't allow traditional comparisons
 
@@ -140,8 +140,8 @@ class SideState():
     def needs_sync(self):
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
-               self.path != self.sync_path or
-               self.exists in (TRASHED, LIKELY_TRASHED))
+               self.parent.paths_differ(self.side) or
+               self.exists in (TRASHED, LIKELY_TRASHED, MISSING))
 
     def clean_temp(self):
         if self.temp_file:
@@ -351,21 +351,27 @@ class SyncEntry:
         return False
 
     def is_path_change(self, changed):
-        return self[changed].sync_path is not None and self[changed].path != self[changed].sync_path
+        return self[changed].sync_path and self.paths_differ(changed)
 
     def is_creation(self, changed):
         return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
                 and self[changed].path and self[changed].exists == EXISTS
 
     def is_rename(self, changed):
-        return (self[changed].sync_path and self[changed].path
-                and self[changed].sync_path != self[changed].path)
+        return self[changed].sync_path and self[changed].path and self.paths_differ(changed)
+
+    def paths_match(self, side):
+        prov = self.parent.providers[side]
+        return prov.paths_match(self[side].sync_path, self[side].path, for_display=True)
+
+    def paths_differ(self, side):
+        return not self.paths_match(side)
 
     def needs_sync(self):
         for i in (LOCAL, REMOTE):
             if not self[i].changed:
                 continue
-            if self[i].path != self[i].sync_path and self[i].oid:
+            if self.paths_differ(i) and self[i].oid:
                 return True
             if self[i].hash != self[i].sync_hash and self[i].oid:
                 return True
@@ -864,7 +870,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin, too-many-arguments
+    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments
         assert ent
 
         if oid is not None:
@@ -888,18 +894,22 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if hash is not None and hash != ent[side].hash:
             ent[side].hash = hash
 
-        if exists is not None and exists is not ent[side].exists:
-            if ent[side].exists is TRASHED and exists:
-                # oid was deleted, and then re-created, this can only happen for oid-is-path providers
-                # we mark it as LIKELY_TRASHED, to protect against out-of-order events
-                # see: https://vidaid.atlassian.net/browse/VFM-7246
-                exists = LIKELY_TRASHED
+        if ent[side].exists is TRASHED and exists is True:
+            # oid was deleted, and then re-created, this can only happen for oid-is-path providers
+            # we mark it as LIKELY_TRASHED, to protect against out-of-order events
+            # see: https://vidaid.atlassian.net/browse/VFM-7246
+            ent[side].exists = LIKELY_TRASHED
+        else:
             ent[side].exists = exists
 
         if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
             self._mark_changed(side, ent)
+
+            if accurate:
+                ent[side]._last_gotten = changed
+
 
         log.log(TRACE, "updated %s", ent)
 
@@ -996,7 +1006,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def __len__(self):
         return len(self.get_all())
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None):   # pylint: disable=redefined-builtin, too-many-arguments
+    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None, accurate=False):   # pylint: disable=redefined-builtin, too-many-arguments
         """Called by the event manager when an event happens."""
 
         log.log(TRACE, "lookup oid %s, sig %s", oid, debug_sig(oid))
@@ -1016,8 +1026,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent.ignored = IgnoreReason.NONE
 
             if prior_ent and not prior_ent.is_discarded:
-                if not ent or not ent.is_conflicted:
-                    # reuse prior_ent
+                if not ent or (not ent.is_conflicted and (prior_ent[side].sync_hash or not ent[side].sync_hash)):
+                    # if we don't have an ent, reuse the prior_ent
+                    # otherwise, only consider reusing the prior_ent if it has been synced,
+                    #   or if the ent hasn't been synced. if the prior_ent (in a rename this is the "rename from")
+                    #   is a short-lived temp file, and the ent (the "rename to") is a long-lived file that is being
+                    #   replaced as a result of the rename (as often happens when saving in msoffice), then don't use
+                    #   the prior_ent for this reason: the ent has a hash, and the prior_ent doesn't, which can lead
+                    #   to unexpected conflicts arising when resolvable or merge-able changes exist in the cloud
                     _copy = None
                     if ent:
                         # copy information about the other side
@@ -1040,9 +1056,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        if exists is None:
-            exists = Exists.UNKNOWN
-        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype)
+        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
+
 
     def change(self, age):
         if not self._changeset:
@@ -1223,7 +1238,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[i].exists != TRASHED:
             # we haven't gotten a trashed event yet
-            ent[i].exists = MISSING
+            ent[i].exists = MISSING if self.providers[i].oid_is_path else TRASHED
 
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
@@ -1258,3 +1273,20 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[i].path = info.path
             if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
+
+    def get_state_lookup(self, side: int) -> 'SyncStateLookup':
+        return SyncStateLookup(self, side)
+
+
+class SyncStateLookup:
+    """
+    Limited read-only SyncState interface
+    """
+
+    def __init__(self, state: 'SyncState', side: int):
+        self.__state = state
+        self.__side = side
+
+    def get_path(self, oid: str) -> Optional[str]:
+        state = self.__state.lookup_oid(self.__side, oid)
+        return state[self.__side].path if state else None

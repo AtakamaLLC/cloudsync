@@ -6,7 +6,7 @@ import argparse
 import abc
 from typing import Optional
 
-from cloudsync import get_provider, known_providers, OAuthConfig, Provider, Creds
+from cloudsync import get_provider, known_providers, OAuthConfig, Provider, Creds, CloudNamespaceError
 
 log = logging.getLogger()
 
@@ -67,14 +67,34 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
     Represents a faux-cloud-URI passed on the command line.
 
     For example: gdrive:/path/to/file
+                 onedrive@team/namespace:path/to/file
     """
     def __init__(self, uri):
         super().__init__(uri)
+
+        self.namespace = ""
+        namespace = re.match(r"(.*)@(.*)", self.method)
+        if namespace:
+            (self.method, self.namespace) = namespace.groups()
+
         if self.method in PROVIDER_ALIASES:
             self.method = PROVIDER_ALIASES[self.method]
         if self.method not in known_providers():
             raise ValueError("Unknown provider %s, try pip install cloudsync[%s] or pip install cloudsync-%s" % (self.method, self.method, self.method))
         self.provider_type = get_provider(self.method)
+
+    def _set_namespace(self, provider: Provider):
+        if provider.name == "filesystem":
+            # todo: this is a crappy hack because we don't initialze providers with the root oid or path
+            # once that's done, this can go away
+            provider.namespace_id = self.path
+            self.path = "/"
+        elif self.namespace:
+            # lookup namespace by name
+            namespace = next((ns for ns in provider.list_ns() if ns.name == self.namespace), None)
+            if not namespace:
+                raise CloudNamespaceError(f"unknown namespace: {self.namespace}")
+            provider.namespace = namespace
 
     def provider_instance(self, args, *, connect=True) -> Provider:
         """Given command-line args, construct a provider object, and connect it."""
@@ -97,18 +117,12 @@ class CloudURI(FauxURI):     # pylint: disable=too-few-public-methods
             if connect:
                 prov.connect(creds)
         else:
-            if cls.name == "filesystem":
-                # todo: this is a crappy hack because we don't initialze providers with the root oid or path
-                # once that's done, this can go away
-                ns = self.path
-                self.path = "/"
-                prov = cls(namespace=ns)
-            else:
-                prov = cls()
+            prov = cls()
             if cls.name.startswith("mock_"):
                 prov.set_creds({"fake" : "creds"})
             prov.reconnect()
 
+        self._set_namespace(prov)
         return prov
 
 
@@ -118,12 +132,11 @@ OAUTH_CONFIG = {
         "id": "918922786103-f842erh49vb7jecl9oo4b5g4gm1eka6v.apps.googleusercontent.com",
         "secret": "F2CdO5YTzX6TfKGlOMDbV1WS",
     },
-    "onedrive" : {
+    "onedrive": {
         "id": "797a365f-772d-421f-a3fe-7b55ab6defa4",
         "secret": "",
     }
 }
-
 
 _config = None
 
@@ -181,10 +194,18 @@ class CliOAuthConfig(OAuthConfig):
         finally:
             os.umask(was)
 
+
+def generic_oauth_config(name):
+    return get_oauth_config(None, name, None)
+
+
 def get_oauth_config(args, name, save_uri):
     """Reads oauth config from the global config singleton, or uses the defaults"""
-    top = config(args).get("oauth", {})
-    oauth = top.get(name, {})
+    if args:
+        top = config(args).get("oauth", {})
+        oauth = top.get(name, {})
+    else:
+        oauth = {}
     default = OAUTH_CONFIG.get(name, {})
 
     for k in ["id", "secret", "host", "ports"]:

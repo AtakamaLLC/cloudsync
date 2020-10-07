@@ -48,9 +48,9 @@ class OAuthConfig:
         port_range: the range of valid ports for your registered app (some providers burden you with this)
         host_name: defaults to 127.0.0.1
     """
-    def __init__(self, *, app_id: str, app_secret: str, 
-                 manual_mode: bool = False, 
-                 redirect_server: Optional[OAuthRedirServer] = None, 
+    def __init__(self, *, app_id: str, app_secret: str,
+                 manual_mode: bool = False,
+                 redirect_server: Optional[OAuthRedirServer] = None,
                  port_range: Tuple[int, int] = None,
                  host_name: str = None):
         """
@@ -84,7 +84,7 @@ class OAuthConfig:
             raise ValueError('If providing a server, no need to set port range')
 
         if not self.manual_mode and not self._redirect_server:
-            self._redirect_server = OAuthRedirServer(html_generator=self._gen_html_response, 
+            self._redirect_server = OAuthRedirServer(html_generator=self._gen_html_response,
                                                      port_range=port_range, host_name=host_name)
 
     def start_auth(self, auth_url, scope=None, **kwargs):
@@ -109,7 +109,7 @@ class OAuthConfig:
 
     def wait_auth(self, token_url, timeout=None, **kwargs):
         """
-        Returns an OAuthToken object, or raises a OAuthError 
+        Returns an OAuthToken object, or raises a OAuthError
         """
         assert self._session
         try:
@@ -122,6 +122,7 @@ class OAuthConfig:
                                      include_client_id=True,
                                      client_secret=self.app_secret,
                                      code=self.success_code,
+                                     timeout=60,
                                      **kwargs))
             self._token_changed()
             return self._token

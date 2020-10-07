@@ -8,14 +8,15 @@ from unittest.mock import patch, Mock
 import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
-from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, CloudFileExistsError, CloudTemporaryError
+from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, \
+    CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
 from cloudsync.smartsync import SmartCloudSync
 import time
 
-from .fixtures import MockProvider, MockStorage, mock_provider_instance
+from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
 
 log = logging.getLogger(__name__)
@@ -38,10 +39,10 @@ class CloudSyncMixin(CloudSync, RunUntilHelper):
 
 
 @pytest.fixture(name="cs_storage")
-def fixture_cs_storage(mock_provider_generator, mock_provider_creator):
+def fixture_cs_storage(mock_provider_tuple):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
-    for cs in _fixture_cs(mock_provider_generator, mock_provider_creator, storage):
+    for cs in _fixture_cs(mock_provider_tuple, storage):
         yield cs, storage
 
 
@@ -62,18 +63,15 @@ def _fixture_scs(mock_provider_generator, mock_provider_creator, storage=None):
 
 
 @pytest.fixture(name="cs")
-def fixture_cs(mock_provider_generator, mock_provider_creator):
-    yield from _fixture_cs(mock_provider_generator, mock_provider_creator)
+def fixture_cs(mock_provider_tuple):
+    yield from _fixture_cs(mock_provider_tuple)
 
 
-def _fixture_cs(mock_provider_generator, mock_provider_creator, storage=None):
-    cs = CloudSyncMixin((mock_provider_generator(), mock_provider_creator(oid_is_path=False, case_sensitive=True)), roots, storage=storage, sleep=None)
-
+def _fixture_cs(providers, storage=None):
+    cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
     cs.providers[LOCAL].name += '-l'
     cs.providers[REMOTE].name += '-r'
-
     yield cs
-
     cs.done()
 
 
@@ -81,10 +79,12 @@ def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storag
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
 
-@pytest.fixture(name="cs_root_oid")
-def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
+@pytest.fixture(params=[False, True],
+                ids=["unfiltered", "filtered"],
+                name="cs_root_oid")
+def fixture_cs_root_oid(request, mock_provider_generator, mock_provider_creator):
     p1 = mock_provider_generator()
-    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True)
+    p2 = mock_provider_creator(oid_is_path=False, case_sensitive=True, filter_events=request.param)
     o1 = p1.mkdir(roots[0])
     o2 = p2.mkdir(roots[1])
     cs = CloudSyncMixin((p1, p2), root_oids=(o1, o2), storage=None, sleep=None)
@@ -95,13 +95,14 @@ def fixture_cs_root_oid(mock_provider_generator, mock_provider_creator):
 # given a provider_generator, creates as many cs's as you want, all of which share a single remote bed
 def multi_local_cs_generator(how_many_cs: int, provider_generator):
     storage_dict: Dict[Any, Any] = dict()
-    local_ps = []
     css = []
     storage = MockStorage(storage_dict)
-    remote_p = mock_provider_instance(oid_is_path=False, case_sensitive=True)  # remote (cloud) storage
+    remote_mock_fs = MockFS()
     for i in range(0, how_many_cs):
-        local_ps.append(provider_generator())
-        css.append(CloudSyncMixin((local_ps[i], remote_p), roots, storage, sleep=None))
+        local_provider = provider_generator()
+        remote_provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
+        remote_provider._set_mock_fs(remote_mock_fs)
+        css.append(CloudSyncMixin((local_provider, remote_provider), roots, storage, sleep=None))
 
     yield css
 
@@ -123,22 +124,24 @@ def fixture_multi_local_cs(mock_provider_generator):
     yield from multi_local_cs_generator(2, mock_provider_generator)
 
 
-# multi remote test has one local provider with two folders, and each of those folders
+# multi remote test has a local provider for each of two folders on a shared MockFS, and each of those folders
 # syncs up with a folder on one of two remote providers.
 @pytest.fixture(name="multi_remote_cs")
 def fixture_multi_remote_cs(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
 
-    p1 = mock_provider_generator()
+    p1a = mock_provider_generator()
+    p1b = mock_provider_generator()
+    p1b._set_mock_fs(p1a._mock_fs)
     p2 = mock_provider_generator()
     p3 = mock_provider_generator()
 
     roots1 = ("/local1", "/remote")
     roots2 = ("/local2", "/remote")
 
-    cs1 = CloudSyncMixin((p1, p2), roots1, storage, sleep=None)
-    cs2 = CloudSyncMixin((p1, p3), roots2, storage, sleep=None)
+    cs1 = CloudSyncMixin((p1a, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1b, p3), roots2, storage, sleep=None)
 
     yield cs1, cs2
 
@@ -256,7 +259,7 @@ def multi_local_cs_setup(css: Tuple[CloudSyncMixin], local_objects, local_parent
     counter = 1
     for cs in css:
         log.info("SETUP TABLE 1 cs%s\n%s", counter, cs.state.pretty_print())
-        cs.run_until_clean(timeout=3)
+        cs.run_until_clean(timeout=10)
         log.info("SETUP TABLE 2 cs%s\n%s", counter, cs.state.pretty_print())
         counter += 1
 
@@ -327,6 +330,8 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
             raise TimeoutError()
         return cs.state.changeset_len == 0
 
+    log.info("TABLE %s\n%s", i, cs1.state.pretty_print())
+
     try:
         for i in range(0, 4):
             four_local_cs[i].start(sleep=0.01)  # Start the sync
@@ -334,13 +339,11 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
         for i in range(0, 4):
             start = time.monotonic()
-            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=10)
+            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=30)
     finally:
         for i in range(0, 4):
             four_local_cs[i].stop()  # Stop the sync
             log.debug("Provider %s", i)
-            four_local_cs[i].providers[LOCAL]._log_debug_state()
-        four_local_cs[0].providers[REMOTE]._log_debug_state()
 
 
 def test_cs_rename_file_and_folder_conflicts_with_delete(cs):
@@ -366,9 +369,6 @@ def test_cs_rename_file_and_folder_conflicts_with_delete(cs):
     cs.emgrs[LOCAL].do()
     cs.emgrs[REMOTE].do()
     cs.run_until_clean(timeout=3)
-
-
-
 
 def test_sync_multi_local_rename_conflict(multi_local_cs):
     cs1, cs2 = multi_local_cs
@@ -683,6 +683,29 @@ def test_rename_conflict_and_irrelevant(cs, irrelevant_side):
         assert xl1 is not None, "xl1 should exist"
         assert xr1 is not None, "xr1 should exist"
 
+def test_shutdown_mid_download(cs):
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_path1 = "/local/stuff1"
+
+    cs.providers[LOCAL].mkdir(local_parent)
+    cs.providers[REMOTE].mkdir(remote_parent)
+    cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    from threading import Event
+    evt = Event()
+    # Download call takes 2 seconds, event will cause cs.stop to be called within this 2 second window
+    def mock_download(*args, **kwargs):
+        nonlocal evt
+        log.debug("Mock download")
+        evt.set()
+        time.sleep(2)
+
+    cs.providers[LOCAL].download = mock_download
+    cs.start()
+    evt.wait(timeout=2)
+    # Previously, this would throw an exception as stop would try to remove the temp file that download was holding open
+    cs.stop()
 
 def test_cs_basic(cs):
     local_parent = "/local"
@@ -732,6 +755,112 @@ def test_cs_basic(cs):
 
     assert len(cs.state) == 3
     assert not cs.state.changeset_len
+
+
+def test_cs_move_in_and_out_of_root(cs):
+    # TODO: fix this - moving things in/out of root is not fully supported with event filtering turned off
+    cs.providers[0]._filter_events = True
+    cs.providers[1]._filter_events = True
+    log.info("set _filter_events=True for all providers")
+
+    # roots are set when cs is created: /local, /remote
+    lp = cs.providers[LOCAL]
+    rp = cs.providers[REMOTE]
+
+    lfile_info = lp.create("/local/file-1", BytesIO(b"hello"))
+    lfolder_oid = lp.mkdir("/local/folder-1")
+    lp.create("/local/folder-1/file-2", BytesIO(b"hello"))
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    # remote file moved out of root - delete and sync
+    rfile_info = rp.info_path("/remote/file-1")
+    rp.rename(rfile_info.oid, "/file-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 2.0\n%s", cs.state.pretty_print())
+    assert not lp.info_oid(lfile_info.oid)
+
+    # remote file moved back into root - revivify and sync
+    rfile_info = rp.info_path("/file-1")
+    rp.rename(rfile_info.oid, "/remote/file-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 2.5\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/file-1")
+
+    # remote folder moved out of root - delete and sync
+    rfolder_info = rp.info_path("/remote/folder-1")
+    rfolder_oid = rp.rename(rfolder_info.oid, "/new-folder-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 3.0\n%s", cs.state.pretty_print())
+    assert not lp.info_oid(lfolder_oid)
+
+    # remote folder moved back into root - revivify and sync
+    rp.rename(rfolder_oid, "/remote/folder-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 3.5\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/folder-1/file-2")
+    lfolder_oid = lp.info_path("/local/folder-1").oid
+
+    # local non-empty folder moved out of root - delete and sync
+    lp.mkdir("/some-other-folder")
+    lfolder_oid = lp.rename(lfolder_oid, "/some-other-folder/folder-1")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 4\n%s", cs.state.pretty_print())
+    assert not rp.info_path("/remote/folder-1")
+    assert not rp.info_path("/remote/folder-1/file-2")
+
+    # local non-empty folder moved back into root - revivify and sync
+    # (no filtering for oid-is-path providers for now)
+    if not lp.oid_is_path:
+        lp.mkdir("/yet-another-folder")
+        lfolder_oid = lp.rename(lfolder_oid, "/yet-another-folder/folder-3")
+        lfolder_oid = lp.rename(lfolder_oid, "/local/folder-4")
+        cs.run_until_clean(timeout=1)
+        log.info("TABLE 4.5\n%s", cs.state.pretty_print())
+        assert lp.info_path("/local/folder-4/file-2")
+        assert rp.info_path("/remote/folder-4")
+        assert rp.info_path("/remote/folder-4/file-2")
+
+    # create outside remote root, rename into root
+    rcreated_oid = rp.mkdir("/new-folder")
+    rp.create("/new-folder/file-3", BytesIO(b"hello"))
+    rp.rename(rcreated_oid, "/remote/folder-2")
+    cs.run_until_clean(timeout=1)
+    log.info("TABLE 5\n%s", cs.state.pretty_print())
+    assert lp.info_path("/local/folder-2/file-3")
+
+
+def test_cs_rename_folder_out_of_root(cs):
+    cs.state.shuffle = True
+    lp = cs.providers[LOCAL]
+    rp = cs.providers[REMOTE]
+
+    # roots are /local, /remote
+    rp.mkdir("/remote")
+    rp.mkdir("/outside-root")
+    lp.mkdir("/local")
+    lp.mkdir("/local/stuff1")
+    lp.create("/local/stuff1/file1", BytesIO(b"file1"))
+    lp.mkdir("/local/stuff1/sub1")
+    lp.create("/local/stuff1/sub1/file2", BytesIO(b"file2"))
+    lp.mkdir("/local/stuff1/sub1/sub2")
+    lp.create("/local/stuff1/sub1/sub2/file3", BytesIO(b"file3"))
+    lp.mkdir("/local/stuff1/sub1/sub2/sub3")
+    lp.create("/local/stuff1/sub1/sub2/sub3/file4", BytesIO(b"file4"))
+    lp.create("/local/stuff1/sub1/sub2/sub3/file4.5", BytesIO(b"file4"))
+    lp.mkdir("/local/stuff1/sub1/sub4")
+    lp.create("/local/stuff1/sub1/sub4/file5", BytesIO(b"file5"))
+    lp.create("/local/stuff1/sub1/sub4/file6", BytesIO(b"file6"))
+
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    rinfo_stuff1 = rp.info_path("/remote/stuff1")
+    assert rinfo_stuff1
+
+    rp.rename(rinfo_stuff1.oid, "/outside-root/stuff2")
+    cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    assert not lp.info_path("/local/stuff1")
 
 
 def setup_remote_local(cs, *names, content=b'hello'):
@@ -1198,7 +1327,7 @@ def test_cs_folder_conflicts_file(cs, use_prio):
 
     log.info("TABLE 3\n%s", cs.state.pretty_print())
     try:
-        cs.run(until=lambda: not cs.state.changeset_len, timeout=1)
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=2)
     finally:
         log.info("TABLE 4\n%s", cs.state.pretty_print())
 
@@ -1229,9 +1358,6 @@ def test_storage(storage):
     storage_class = storage[0]
     storage_mechanism = storage[1]
 
-    class CloudSyncMixin(CloudSync, RunUntilHelper):
-        pass
-
     p1 = MockProvider(oid_is_path=False, case_sensitive=True)
     p2 = MockProvider(oid_is_path=False, case_sensitive=True)
     p1.connect("creds")
@@ -1245,15 +1371,13 @@ def test_storage(storage):
     log.debug("cursor=%s", old_cursor)
 
     test_cs_basic(cs1)  # do some syncing, to get some entries into the state table
+    cs1.done()
 
     storage2 = storage_class(storage_mechanism)
     cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
 
     log.debug(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
-
-    def not_dirty(s: SyncState):
-        return not s._dirtyset
 
     def compare_states(s1: SyncState, s2: SyncState) -> List[SyncEntry]:
         ret = []
@@ -1267,8 +1391,6 @@ def test_storage(storage):
             if not found:
                 ret.append(e1)
         return ret
-
-    not_dirty(cs1.state)
 
     missing1 = compare_states(cs1.state, cs2.state)
     missing2 = compare_states(cs2.state, cs1.state)
@@ -1684,6 +1806,7 @@ def test_cursor(cs_storage):
     p2.current_cursor = None
     roots = cs.roots
 
+    cs.done()
     cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
     cs2.run_until_found(
         (LOCAL, local_path2),
@@ -1794,8 +1917,8 @@ def test_many_small_files_mkdir_perf(cs):
         make_files("_clear", clear_before=True)
 
     # Check that the two are approximately the same
-    assert abs(local_no_clear.call_count - local_clear.call_count) < 3
-    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 3
+    assert abs(local_no_clear.call_count - local_clear.call_count) < 23
+    assert abs(remote_no_clear.call_count - remote_clear.call_count) < 23
 
 
 @pytest.mark.parametrize("shuffle", range(5), ids=list("shuff%s" % i if i else "ordered" for i in range(5)))
@@ -2029,6 +2152,21 @@ def test_out_of_space(cs):
     assert cs.state.changeset_len
 
 
+def test_cs_give_up_on_fnf(cs):
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    def create_always_fails(path, file_like):
+        raise CloudFileNotFoundError("never")
+
+    with patch.object(remote, "create", create_always_fails):
+        local.create("/local/file", BytesIO(b"create-me"))
+        # should give up on creating the remote file after a few attempts -- otherwise this times out
+        cs.run_until_clean(timeout=2)
+
+
 def test_provider_negative_caches(cs):
     (lbase, rbase) = ("/local", "/remote")
     (parent, child) = ("/parent", "/child")
@@ -2042,7 +2180,7 @@ def test_provider_negative_caches(cs):
     old_info_path = remote.info_path
     mkdir_count = 0
     info_path_lie_count = 0
-    info_path_lie_max = 10
+    info_path_lie_max = 8
 
     def new_mkdir(path) -> str:
         """counts how many times rparent is made, while also making all the folders"""
@@ -2467,6 +2605,7 @@ def test_walk_carefully1(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
+    cs.done()
     cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
     cs.emgrs[LOCAL].cursor = None
 
@@ -2493,6 +2632,7 @@ def test_walk_carefully2(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
+    cs.done()
     cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
     cs.emgrs[LOCAL].cursor = None
 
@@ -2513,6 +2653,7 @@ def test_walk_carefully3(setup_offline_state):
 
     log.info("TABLE 1\n%s", cs.state.pretty_print())
 
+    cs.done()
     cs = CloudSyncMixin(cs.providers, cs.roots, storage=storage, sleep=None)
     cs.emgrs[LOCAL].cursor = None
 
@@ -2531,7 +2672,8 @@ def test_walk_carefully3(setup_offline_state):
     assert b.getvalue() == b"changed-while-stopped"
 
 
-def test_notify_bad_name(cs):
+@pytest.mark.parametrize("method", ["create", "mkdir", "rename"])
+def test_notify_bad_name(cs, method):
     setup_remote_local(cs)
     called = False
 
@@ -2543,7 +2685,13 @@ def test_notify_bad_name(cs):
 
     local, remote = cs.providers
     remote._forbidden_chars = ['`']
-    local.create('/local/bad`.txt', BytesIO(b'data'))
+    if method == "create":
+        local.create('/local/bad`.txt', BytesIO(b'data'))
+    elif method == "rename":
+        info = local.create('/local/ok.txt', BytesIO(b'data'))
+        local.rename(info.oid, '/local/bad`.txt')
+    else:
+        local.mkdir('/local/bad`.txt')
     cs.start(until=lambda: called, timeout=2)  # Need to use start() because the notification manager do() blocks
     log.debug("Now waiting")
     cs.wait()
@@ -2738,7 +2886,6 @@ def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
 
-
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
@@ -2750,14 +2897,19 @@ def test_root_needed(cs, cs_root_oid, mode):
         assert cs.providers[1].info_path("/remote")
 
     (local, remote) = cs.providers
+    remote.delete(remote.info_path("/remote").oid)
+    cs.emgrs[REMOTE]._drain()
+    assert remote.info_path("/remote") is None
 
-    if preroot:
-        remote.delete(remote.info_path("/remote").oid)
-        assert remote.info_path("/remote") is None
+    def set_root(cs, side, oid, path):
+        cs.smgr._root_oids[side] = oid
+        cs.smgr._root_paths[side] = path
+        cs.emgrs[side]._root_oid = oid
+        cs.emgrs[side]._root_path = path
 
     if not create:
         # set root oid to random stuff that will break any checks
-        cs.set_root_oid(REMOTE, 'xxxx')
+        set_root(cs, REMOTE, 'xxxx', None)
 
     def translate(side, path):
         relative = cs.providers[1-side].is_subpath(roots[1-side], path)
@@ -2778,12 +2930,16 @@ def test_root_needed(cs, cs_root_oid, mode):
         pass
 
     oid = local.mkdir("/local")
-    cs.set_root_oid(LOCAL, oid)
+    set_root(cs, LOCAL, oid, "/local")
     local.mkdir("/local/a")
     local.mkdir("/local/a/b")
 
     cs.emgrs[LOCAL]._drain()            # mkdir stuff never gets events
 
+    remote_info = remote.info_path("/remote")
+    if remote_info:
+        remote.delete(remote_info.oid)
+        cs.emgrs[REMOTE]._drain()
     assert remote.info_path("/remote") is None
 
     log.info("=== CREATE SUBDIR WITH NO ROOT OR PARENTS ===")
@@ -2800,26 +2956,25 @@ def test_root_needed(cs, cs_root_oid, mode):
             nonlocal called
             if e.ntype == NotificationType.ROOT_MISSING_ERROR:
                 called = True
-        cs.handle_notification = _handle
 
-        # to test failure modes, you need to use start(), not run_until, or do()
-        # we keep backing off because the root isn't there
-        until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 2
-        cs.start(until=until)
-        cs.wait(timeout=2)
-        assert until()
+        with patch.object(cs, "handle_notification", _handle):
+            # to test failure modes, you need to use start(), not run_until, or do()
+            # we keep backing off because the root isn't there
+            until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 50
+            cs.start(until=until)
+            cs.wait(timeout=2)
+            assert until()
+            assert called
 
-        assert called
+            # then we create the root:
+            oid = remote.mkdir("/remote")
+            set_root(cs, REMOTE, oid, "/remote")
 
-        # then we create the root:
-        oid = remote.mkdir("/remote")
-        cs.set_root_oid(REMOTE, oid)
-
-        # and everything syncs up
-        until = lambda: remote.info_path("/remote/a/b/c")
-        cs.start(until=until)
-        cs.wait(timeout=2)
-        assert until()
+            # and everything syncs up
+            until = lambda: remote.info_path("/remote/a/b/c")
+            cs.start(until=until)
+            cs.wait(timeout=2)
+            assert until()
 
 
 def test_smartsync(scs):
@@ -2886,3 +3041,89 @@ def test_smartsync(scs):
             assert file.mtime >= time.time() - 5
             local_oid1 = file.oid
     assert local_oid1
+
+
+def test_cursor_tag_delete(mock_provider_generator):
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+
+    mock_remote_connection_id = "sharedConn"
+    mock_cursor_1 = 1
+    mock_cursor_2 = 2
+
+    p1a = mock_provider_generator()
+    p1b = mock_provider_generator()
+    p1b._set_mock_fs(p1a._mock_fs)
+    p2 = mock_provider_generator()
+    p3 = mock_provider_generator()
+
+    # The two remote providers share a connection id
+    p2.connection_id = mock_remote_connection_id
+    p2.current_cursor = mock_cursor_1
+    p3.connection_id = mock_remote_connection_id
+    p3.current_cursor = mock_cursor_2
+
+    roots1 = ("/local1", "/remote1")
+    roots2 = ("/local2", "/remote2")
+
+    cs1 = CloudSyncMixin((p1a, p2), roots1, storage, sleep=None)
+    cs2 = CloudSyncMixin((p1b, p3), roots2, storage, sleep=None)
+
+    cs1.done()
+    cs2.done()
+
+    cs1.do()
+    cs2.do()
+
+    assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) == mock_cursor_1
+    assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
+
+    # Delete cs1 cursor, leave cs2 cursor unchanged
+    cs1.forget()
+    assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) is None
+    assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
+
+def test_cs_event_filter(cs):
+    log.debug("local root: %s", cs.providers[LOCAL]._root_path)     # /local
+    log.debug("remote root: %s", cs.providers[REMOTE]._root_path)   # /remote
+
+    assert len(cs.state) == 0
+
+    foo = cs.providers[LOCAL].create("/local/foo", BytesIO(b"oo"))
+    bar = cs.providers[REMOTE].create("/remote/bar", BytesIO(b"ar"))
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 0\n%s", cs.state.pretty_print())
+    # should now have entries for root, foo, bar
+    assert len(cs.state) == 3
+
+    cs.providers[LOCAL].mkdir("/local-2")
+    cs.providers[REMOTE].mkdir("/remote-2")
+    baz = cs.providers[LOCAL].create("/local-2/baz", BytesIO(b"az"))
+    qux = cs.providers[REMOTE].create("/remote-2/qux", BytesIO(b"ux"))
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    # added new files/folders outside the root, these events should be ignored
+    assert len(cs.state) == 3
+
+    cs.providers[LOCAL].rename(foo.oid, "/local-2/foo")
+    foo = cs.providers[LOCAL].info_path("/local-2/foo")
+    cs.providers[REMOTE].rename(bar.oid, "/remote-2/bar")
+    bar = cs.providers[REMOTE].info_path("/remote-2/bar")
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+    # renamed 2 files out of root, these events should be converted to delete
+    assert len(cs.state) == 1
+
+    cs.providers[LOCAL].rename(foo.oid, "/local-2/foo-2")
+    cs.providers[REMOTE].rename(bar.oid, "/remote-2/bar-2")
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+    # renamed 2 irrelevent files, these events should be ignored
+    assert len(cs.state) == 1
+
+    cs.providers[LOCAL].rename(baz.oid, "/local/baz")
+    cs.providers[REMOTE].rename(qux.oid, "/remote/qux")
+    cs.run_until_clean(timeout=2)
+    log.info("TABLE 4\n%s", cs.state.pretty_print())
+    # moved 2 files into root, these events should be processed, state entries addded, etc.
+    assert len(cs.state) == 3

@@ -7,12 +7,17 @@ import os
 import logging
 import random
 import time
-from typing import Generator, Optional, List, Union, Tuple, Dict, BinaryIO
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
-from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError
+from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
+    CloudRootMissingError
 from .oauth import OAuthConfig, OAuthProviderInfo
 from .event import Event
+
+if TYPE_CHECKING:
+    from .sync.state import SyncStateLookup   # pragma: no cover
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +30,39 @@ Creds = Dict[str, Union[str, int]]
 
 CONNECTION_NOT_NEEDED = "connection-not-needed"
 
-__all__ = ["Provider", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
+__all__ = ["Provider", "Namespace", "Creds", "Hash", "Cursor", "CONNECTION_NOT_NEEDED"]
+
+
+@dataclass
+class Namespace:
+    """
+    Base class representing a namespace (drive).
+
+    Providers that support this concept should derive from this class as necessary.
+    """
+    name: str
+    id: str
+
+    @property
+    def is_parent(self) -> bool:
+        """
+        Some providers support hierarchical Namespaces.
+        """
+        return False
+
+    @property
+    def shared_paths(self) -> List[str]:
+        """
+        Should only be populated when access to the namespace is limited.
+
+        For example, user A has no access to user B's personal namespace,
+        unless user B explicitly shared one or more files/folders with user A.
+        """
+        return []
+
+    def __str__(self):
+        return self.name
+
 
 class Provider(ABC):                    # pylint: disable=too-many-public-methods
     """
@@ -47,8 +84,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
     test_root: str = '/'                      ; """Root folder to use during provider tests"""
-    _namespace: str = None                    ; """current namespace, if needed """
-    _namespace_id: str = None                 ; """current namespace id, if needed """
+    _root_path: Optional[str] = None          ; """Root path to use for syncing, event filtering, etc."""
+    _root_oid: Optional[str] = None           ; """Root oid to use for syncing, event filtering, etc."""
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
     _oauth_config: OAuthConfig = None         ; """OAuth providers can set this in init"""
     _listdir_page_size: Optional[int] = None  ; """Used for testing listdir"""
@@ -62,6 +99,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     connection_id: Optional[str] = None       ; """Must remain constant between logins and must be unique to the login"""
     _creds: Optional[Any] = None              ; """Base class helpers to store creds"""
     __connected = False                       ; """Base class helper to fake a connection"""
+
+    sync_state: 'SyncStateLookup' = None      ; """Access to sync engine state for this provider"""
     # pylint: enable=multiple-statements
 
     @abstractmethod
@@ -115,6 +154,48 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             self.connection_id = new_id
         self.__connected = True
         assert self.connected
+        self._validate_root(self._root_path, self._root_oid)
+
+    def set_root(self, root_path=None, root_oid=None):
+        """Set sync root path and oid. Once set, these values cannot be changed."""
+        log.debug("set_root for %s - %s - %s", self.name, root_path, root_oid)
+        if self._root_path and self._root_oid:
+            if self.paths_match(self._root_path, root_path) or self._root_oid == root_oid:
+                return (self._root_path, self._root_oid)
+            raise ValueError("Sync root already set and cannot be changed")
+        if not root_path and not root_oid:
+            return (None, None)
+        (self._root_path, self._root_oid) = self._validate_root(root_path, root_oid)
+        return (self._root_path, self._root_oid)
+
+    def _validate_root(self, root_path, root_oid):
+        if root_oid:
+            # prefer root_oid
+            info = self.info_oid(root_oid)
+            if not info:
+                raise CloudRootMissingError(f"Failed to get info for root oid: {root_oid}")
+            if info.otype != DIRECTORY:
+                raise CloudRootMissingError(f"Root oid is not a directory: {root_oid} => {info.path}")
+            if root_path and not self.paths_match(root_path, info.path):
+                raise CloudRootMissingError(f"Root oid/path mismatch: {root_path} - {info.path}")
+            root_path = info.path
+        elif root_path:
+            # got root_path only
+            info = self.info_path(root_path)
+            if info and info.otype != DIRECTORY:
+                raise CloudRootMissingError(f"Root path is not a directory: {root_path}")
+            root_oid = info.oid if info else self.mkdir(root_path)
+        return (root_path, root_oid)
+
+    @property
+    def root_path(self) -> Optional[str]:
+        """The root path, if any"""
+        return self._root_path
+
+    @property
+    def root_oid(self) -> Optional[str]:
+        """The root oid, if any"""
+        return self._root_oid
 
     def set_creds(self, creds):
         """Set credentials without connecting."""
@@ -270,29 +351,29 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Returns info for an object with specified oid, or None if not found"""
         ...
 
-    def list_ns(self) -> List[str]:                        # pylint: disable=no-self-use
+    def list_ns(self, recursive: bool = True, parent: Namespace = None) -> List[Namespace]:   # pylint: disable=no-self-use,unused-argument
         """Yield one entry for each namespace supported, or None if namespaces are not needed"""
         return None
 
     @property
-    def namespace(self) -> Optional[str]:
+    def namespace(self) -> Optional[Namespace]:            # pylint: disable=no-self-use
         """Some providers have multiple 'namespaces', that can be listed and changed.
 
         Cannot be set when not connected.
         """
-        return self._namespace
+        return None
 
     @namespace.setter
-    def namespace(self, ns: str):                          # pylint: disable=no-self-use
+    def namespace(self, ns: Namespace):                    # pylint: disable=no-self-use
         raise CloudNamespaceError("This provider does not support namespaces")
 
     @property
-    def namespace_id(self) -> Optional[str]:
+    def namespace_id(self) -> Optional[str]:               # pylint: disable=no-self-use
         """Unique id corresponding to a namespace name.
 
         Can be set when not connected.
         """
-        return self._namespace_id
+        return None
 
     @namespace_id.setter
     def namespace_id(self, ns_id: str):                    # pylint: disable=no-self-use
@@ -374,20 +455,21 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Args:
             paths: zero or more paths
         """
-        res = ""
         rl: List[str] = []
         for path in paths:
-            if not path or path == cls.sep:
+            if not path:
                 continue
 
             if isinstance(path, str):
-                rl = rl + [path.strip(cls.sep).strip(cls.alt_sep)]
+                path = cls.normalize_path_separators(path)
+                if path and path != cls.sep:
+                    rl += [path.strip(cls.sep)]
                 continue
 
             for sub_path in path:
-                if sub_path is None or sub_path == cls.sep or sub_path == cls.alt_sep:
-                    continue
-                rl = rl + [sub_path.strip(cls.sep)]
+                sub_path = cls.normalize_path_separators(sub_path)
+                if sub_path and sub_path != cls.sep:
+                    rl += [sub_path.strip(cls.sep)]
 
         if not rl:
             return cls.sep
@@ -401,16 +483,24 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
     def split(self, path):
         """Splits a path into a dirname, filename, just like 1os.path.split()1"""
-        # todo cache regex
+        path = self.normalize_path_separators(path)
         index = path.rfind(self.sep)
-        if self.alt_sep:
-            index = max(index, path.rfind(self.alt_sep))
-
         if index == -1:
             return "", path
         if index == 0:
             return self.sep, path[index + 1:]
         return path[:index], path[index+1:]
+
+    @classmethod
+    def normalize_path_separators(cls, path: str):
+        """Normalizes path separators only.
+
+        Replaces alternate separators with primary, strips separators from end of path string.
+        """
+        if path:
+            path = path.replace(cls.alt_sep, cls.sep) if cls.alt_sep else path
+            path = path.rstrip(cls.sep) if path != cls.sep else path
+        return path
 
     def normalize_path(self, path: str, for_display: bool = False):
         """Used internally for comparing paths in a case and sep insensitive manner, as appropriate.
@@ -419,9 +509,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             path: the path to normalize
             for_display: when true, preserve case of path's leaf node
         """
-        if self.alt_sep:
-            path = path.replace(self.alt_sep, self.sep)
-        parts = re.split(f"[{re.escape(self.sep)}]+", path.rstrip(self.sep))
+        path = self.normalize_path_separators(path)
+        parts = re.split(f"[{re.escape(self.sep)}]+", path)
         norm_path = self.join(*parts)
 
         if self.case_sensitive:
@@ -438,17 +527,12 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             target: the potential sub-file or folder
             strict: whether to return True if folder==target
         """
-        sep = self.sep
-        alt_sep = self.alt_sep
-        if alt_sep:
-            folder = folder.replace(alt_sep, sep)
-            target = target.replace(alt_sep, sep)
+        if not folder or not target:
+            return False
 
-        # Will return True for is-same-path in addition to target
-        folder_full = str(folder)
-        folder_full = folder_full.rstrip(sep)
-        target_full = str(target)
-        target_full = target_full.rstrip(sep)
+        folder_full = self.normalize_path_separators(folder)
+        target_full = self.normalize_path_separators(target)
+
         # .lower() instead of normcase because normcase will also mess with separators
         if not self.case_sensitive:
             folder_full_case = folder_full.lower()
@@ -459,20 +543,31 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
         # target is same as folder, or target is a subpath (ensuring separator is there for base)
         if folder_full_case == target_full_case:
-            return False if strict else sep
-        elif len(target_full) > len(folder_full) and target_full[len(folder_full)] == sep:
+            return False if strict else self.sep
+        if folder_full_case == self.sep and target_full_case[0] == self.sep:
+            return target_full
+        elif len(target_full) > len(folder_full) and target_full[len(folder_full)] == self.sep:
             if target_full_case.startswith(folder_full_case):
                 return target_full[len(folder_full):]
             else:
                 return False
         return False
 
+    def is_subpath_of_root(self, target, strict=False):
+        """True if the target is within the root folder.
+
+        Args:
+            folder: the directory
+            target: the potential sub-file or folder
+            strict: whether to return True if folder==root
+        """
+        return self.is_subpath(self._root_path, target, strict)
+
     def replace_path(self, path, from_dir, to_dir):
         """Replaces from_dir with to_dir in path, but only if from_dir `is_subpath` of path."""
         relative = self.is_subpath(from_dir, path)
         if relative:
-            retval = to_dir + (relative if relative != self.sep else "")
-            return retval if relative != "" else self.sep
+            return self.normalize_path_separators(to_dir) + (relative if relative != self.sep else "")
         raise ValueError("replace_path used without subpath")
 
     def paths_match(self, patha, pathb, for_display=False):
@@ -574,7 +669,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """Helper function for oauth providers.
 
         Args:
-            prefix: environment varible prefix
+            prefix: environment variable prefix
             token_key: creds dict key
             token_sep: multi-env var token separator
             port_range: if any, specify tuple

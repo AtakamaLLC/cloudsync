@@ -84,6 +84,9 @@ docs/_build/
 # PyBuilder
 target/
 
+# Node
+node_modules/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -123,3 +126,6 @@ venv.bak/
 
 # PyCharm
 .idea
+
+# Visual Studio Code
+.vscode/

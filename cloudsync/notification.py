@@ -23,6 +23,7 @@ class NotificationType(enum.Enum):
     DISCONNECTED_ERROR = 'disconnected_error'       ; """Provider was disconnected"""
     NAMESPACE_ERROR = 'namespace_error'             ; """Specified namespace is invalid/unavailable (could be auth issue)"""
     ROOT_MISSING_ERROR = 'root_missing_error'       ; """Root of cloud sync is missing, and will not be created"""
+    TEMPORARY_ERROR = 'temporary_error'             ; """Upload failure, or other temp error that will be retried."""
 
 
 class SourceEnum(enum.Enum):
@@ -56,9 +57,8 @@ class NotificationManager(Runnable):
                 self.__handler(e)
             else:
                 # None event == stop
-                self.stop()
-        except queue.Empty:
-            pass
+                if not self.stopped:
+                    super().stop(forever=False)
         except Exception:
             log.exception("Error while handling a notification: %s", e)
 
@@ -77,6 +77,8 @@ class NotificationManager(Runnable):
             self.notify(Notification(source, NotificationType.NAMESPACE_ERROR, path))
         elif isinstance(e, ex.CloudRootMissingError):
             self.notify(Notification(source, NotificationType.ROOT_MISSING_ERROR, path))
+        elif isinstance(e, ex.CloudTemporaryError):
+            self.notify(Notification(source, NotificationType.TEMPORARY_ERROR, path))
         else:
             log.debug("Encountered a cloud exception: %s (type %s)", e, type(e))
 
@@ -84,7 +86,7 @@ class NotificationManager(Runnable):
         """Add notification to the queue"""
         self.__queue.put(e)
 
-    def stop(self, forever=True):
+    def stop(self, forever=True, wait=True):
         """Stop the server"""
         self.__queue.put(None)
-        super().stop(forever=forever)
+        super().stop(forever=forever, wait=wait)
