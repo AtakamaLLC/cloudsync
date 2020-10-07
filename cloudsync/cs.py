@@ -21,7 +21,7 @@ class CloudSync(Runnable):
     """
     The main synchronization class used.
     """
-    def __init__(self,
+    def __init__(self,  # pylint: disable=too-many-arguments
                  providers: Tuple[Provider, Provider],
                  roots: Optional[Tuple[str, str]] = None,
                  storage: Optional[Storage] = None,

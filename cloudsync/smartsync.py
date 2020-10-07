@@ -1,6 +1,6 @@
+from typing import Optional, Tuple, TYPE_CHECKING, Callable, List
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, DirInfo
-from typing import Optional, Tuple, TYPE_CHECKING, Callable, List
 
 if TYPE_CHECKING:
     from .provider import Provider
@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     
 
 class SmartSyncManager(SyncManager):
+    """Class to allow for syncing files only on demand."""
     @property
     def changeset_len(self):
         return self.state.changeset_len
@@ -23,6 +24,7 @@ class SmartSyncManager(SyncManager):
         return finished
 
     def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
+        """Returns list of parent conflicts."""
         done = False
         pcs = []
         new_pc = sync
@@ -38,6 +40,7 @@ class SmartSyncManager(SyncManager):
 
 
 class SmartSyncState(SyncState):
+    """Enhances the syncstate to support smart syncing."""
     def __init__(self,
                  providers: Tuple['Provider', 'Provider'],
                  storage: Optional['Storage'] = None,
@@ -74,6 +77,7 @@ class SmartSyncState(SyncState):
                 break
 
     def smart_listdir(self, local_path, remote_path):
+        """Lists all files in a remote folder by looking in the state db, and doesn't hit the provider api."""
         prov = self.providers[REMOTE]
         for ent, _ignored_rel_path in self.get_kids(remote_path, REMOTE):
             remote_ent_path = ent[REMOTE].path
@@ -103,7 +107,7 @@ class SmartSyncState(SyncState):
     @property
     def _changeset(self):
         folders = [ent for ent in self._changeset_storage if ent[REMOTE].otype == DIRECTORY or 
-                   ent[REMOTE].changed > ent[REMOTE]._last_gotten]
+                   ent[REMOTE].changed > ent[REMOTE]._last_gotten]  # pylint: disable=protected-access
         retval = self.requestset.intersection(self._changeset_storage).union(folders).difference(self.excludeset)
         return retval
 
@@ -112,13 +116,13 @@ class SmartSyncState(SyncState):
     #     requested_changes = self.requestset.intersection(self._changeset):
     #     if requested_changes:
 
-    def unconditionally_get_latest(self, ent, i):
-        # TODO: get enhanced data (mtime, size, etc)
-        retval = super().unconditionally_get_latest(ent, i)
-        return retval
+    # def unconditionally_get_latest(self, ent, i):
+    #     # TODO: get enhanced data (mtime, size, etc)
+    #     super().unconditionally_get_latest(ent, i)
 
 
 class SmartCloudSync(CloudSync):
+    """Class to add smart sync functionality to the CloudSync class"""
     def __init__(self,
                  providers: Tuple['Provider', 'Provider'],
                  roots: Optional[Tuple[str, str]] = None,
@@ -148,6 +152,7 @@ class SmartCloudSync(CloudSync):
             self.smart_unsync_ent(ent)
 
     def smart_sync_ent(self, ent):
+        """Request to sync down a file from the cloud, and mark the entry to maintain synchronization."""
         # if the local file is missing,
         #   clear the local side of the ent and
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
