@@ -153,7 +153,7 @@ class SmartCloudSync(CloudSync):
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
         #   this should override the local deletion event from before
         # TODO: is there a race condition based on the local deletion event coming later? This might wrongly delete!
-        if not self.providers[LOCAL].exists_path(ent[LOCAL].path):
+        if ent[LOCAL].path and not self.providers[LOCAL].exists_path(ent[LOCAL].path):
             ent[LOCAL].clear()
             ent[REMOTE].sync_path = None
             ent[REMOTE].sync_hash = None
