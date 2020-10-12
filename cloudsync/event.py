@@ -104,21 +104,20 @@ class EventManager(Runnable):
     def __reauth(self):
         self.provider.connect(self.provider.authenticate())
 
-    def forget(self, root_path: Optional[str] = None):
+    def forget(self):
         self._first_do = True
         self.need_walk = True
 
-        
         if self._walk_tag is not None:
             self.state.storage_delete_tag(self._walk_tag)
-        elif root_path is not None:
+        elif self._root_path is not None:
             self.state.storage_delete_tag(self.label + "_walked_" + root_path)
         else:
             log.warning("Not deleting walk tag for %s", self.label)
 
         if self._cursor_tag is not None:
             self.state.storage_delete_tag(self._cursor_tag)
-        elif root_path is not None:
+        elif self._root_path is not None:
             self.state.storage_delete_tag(self.label + "_cursor_" + root_path)
         else:
             log.warning("Not deleting cursor tag for %s", self.label)
