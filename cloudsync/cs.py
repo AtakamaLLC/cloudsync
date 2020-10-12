@@ -94,13 +94,16 @@ class CloudSync(Runnable):
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
 
-    def forget(self):
+    def forget(self, roots: Optional[Tuple[str, str]] = None):
         """
-        Forget and discard state information, and drop any events in the queue.  This will trigger a walk.
+        Forget and discard state information, and drop any events in the queue.  
+        This will trigger a walk if root_path is not None or the emgr root is set.
         """
+        event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)
+
         self.state.forget()
-        self.emgrs[0].forget()
-        self.emgrs[1].forget()
+        self.emgrs[0].forget(event_root_paths[0])
+        self.emgrs[1].forget(event_root_paths[1])
 
     @property
     def aging(self) -> float:
