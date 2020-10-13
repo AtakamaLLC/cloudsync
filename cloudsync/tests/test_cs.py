@@ -2992,6 +2992,50 @@ def test_cursor_tag_delete(mock_provider_generator):
     assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) is None
     assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
 
+def test_walk_tag_delete(mock_provider_generator):
+    storage_dict: Dict[Any, Any] = dict()
+    storage = MockStorage(storage_dict)
+    mock_remote_connection_id = "sharedConn"
+
+    p1 = mock_provider_generator()
+    p2 = mock_provider_generator()
+    p2.connection_id = mock_remote_connection_id
+
+    roots = ("/local", "/remote")
+
+    cs = CloudSyncMixin((p1, p2), roots, storage, sleep=None)
+    cs.do()
+
+    assert cs.state.storage_get_data(cs.emgrs[LOCAL]._walk_tag) is not None
+    assert cs.state.storage_get_data(cs.emgrs[REMOTE]._walk_tag) is not None
+
+    remote_walk_tag = cs.emgrs[REMOTE]._walk_tag
+    remote_cursor_tag = cs.emgrs[REMOTE]._cursor_tag
+
+    cs.stop()
+
+    p1 = mock_provider_generator()
+    p2 = mock_provider_generator()
+    p2.connection_id = mock_remote_connection_id
+
+    p2.disconnect()
+
+    cs1 = CloudSyncMixin((p1, p2), roots, storage, sleep=None)
+    
+    # Disconnected remote provider -> can't validate root -> no walk tag
+    assert cs1.emgrs[LOCAL]._walk_tag is not None
+    assert cs1.emgrs[REMOTE]._walk_tag is None
+
+    cs1.forget()
+
+    # Should delete walk tag in db whether provider was connected or disconnected
+    assert cs1.state.storage_get_data(cs1.emgrs[LOCAL]._walk_tag) is None
+    assert cs1.state.storage_get_data(remote_walk_tag) is None
+
+    # Check cursor tag is cleaned up for good measure
+    assert cs1.state.storage_get_data(cs1.emgrs[LOCAL]._walk_tag) is None
+    assert cs1.state.storage_get_data(remote_cursor_tag) is None
+
 def test_cs_event_filter(cs):
     log.debug("local root: %s", cs.providers[LOCAL]._root_path)     # /local
     log.debug("remote root: %s", cs.providers[REMOTE]._root_path)   # /remote
