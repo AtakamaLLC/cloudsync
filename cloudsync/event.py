@@ -111,14 +111,14 @@ class EventManager(Runnable):
         if self._walk_tag is not None:
             self.state.storage_delete_tag(self._walk_tag)
         elif self._root_path is not None:
-            self.state.storage_delete_tag(self.label + "_walked_" + self.root_path)
+            self.state.storage_delete_tag(self.label + "_walked_" + self._root_path)
         else:
             log.warning("Not deleting walk tag for %s", self.label)
 
         if self._cursor_tag is not None:
             self.state.storage_delete_tag(self._cursor_tag)
         elif self._root_path is not None:
-            self.state.storage_delete_tag(self.label + "_cursor_" + self.root_path)
+            self.state.storage_delete_tag(self.label + "_cursor_" + self._root_path)
         else:
             log.warning("Not deleting cursor tag for %s", self.label)
 
