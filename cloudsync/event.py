@@ -105,6 +105,7 @@ class EventManager(Runnable):
         self.provider.connect(self.provider.authenticate())
 
     def forget(self):
+        """Clean up db state. If tags are not populated, build tag with root_path"""
         self._first_do = True
         self.need_walk = True
 

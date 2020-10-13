@@ -3021,7 +3021,7 @@ def test_walk_tag_delete(mock_provider_generator):
     p2.disconnect()
 
     cs1 = CloudSyncMixin((p1, p2), roots, storage, sleep=None)
-    
+
     # Disconnected remote provider -> can't validate root -> no walk tag
     assert cs1.emgrs[LOCAL]._walk_tag is not None
     assert cs1.emgrs[REMOTE]._walk_tag is None
