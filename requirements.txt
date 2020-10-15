@@ -20,7 +20,7 @@ boxsdk[jwt]>=2.9.0
 
 # other providers we run tests for
 cloudsync-onedrive>=2.1.0
-cloudsync-gdrive>=1.0.7
+cloudsync-gdrive>=1.0.9
 
 # command line 
 python-daemon

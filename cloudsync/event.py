@@ -105,13 +105,23 @@ class EventManager(Runnable):
         self.provider.connect(self.provider.authenticate())
 
     def forget(self):
+        """Clean up db state. If tags are not populated, build tag with root_path"""
         self._first_do = True
         self.need_walk = True
 
         if self._walk_tag is not None:
             self.state.storage_delete_tag(self._walk_tag)
+        elif self._root_path is not None:
+            self.state.storage_delete_tag(self.label + "_walked_" + self._root_path)
+        else:
+            log.warning("Not deleting walk tag for %s", self.label)  # pragma: no cover
+
         if self._cursor_tag is not None:
             self.state.storage_delete_tag(self._cursor_tag)
+        elif self._root_path is not None:
+            self.state.storage_delete_tag(self.label + "_cursor_" + self._root_path)
+        else:
+            log.warning("Not deleting cursor tag for %s", self.label)  # pragma: no cover
 
     @property
     def busy(self):
