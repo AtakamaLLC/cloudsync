@@ -33,6 +33,7 @@ NOTKNOWN = OType.NOTKNOWN                  # only allowed for deleted files!
 
 @dataclass
 class OInfo:
+    """Base class for object returned by info_oid, info_path, create and listdir"""
     otype: OType                           # fsobject type     (DIRECTORY or FILE)
     oid: str                               # fsobject id
     hash: Any                              # fsobject hash     (better name: ohash)
