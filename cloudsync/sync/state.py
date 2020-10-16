@@ -21,7 +21,7 @@ from typing import Union, Sequence
 import msgpack
 from pystrict import strict
 
-from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMOTE
+from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMOTE, OInfo
 from cloudsync.types import OType
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
@@ -61,7 +61,7 @@ MISSING = Exists.MISSING
 
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
-class SideState():
+class SideState:
     """
     One half of a sync
     """
@@ -83,6 +83,8 @@ class SideState():
         self._exists: Exists = UNKNOWN               # exists at provider
         self._temp_file: Optional[str] = None
         self.temp_file: str
+        self._size: Optional[int] = None
+        self._mtime: Optional[float] = None
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -258,6 +260,8 @@ class SyncEntry:
             ret['oid'] = side_state.oid
             ret['exists'] = side_state.exists.value
             ret['temp_file'] = side_state.temp_file
+            ret['size'] = side_state.size
+            ret['mtime'] = side_state.mtime
             # storage_id does not get serialized, it always comes WITH a serialization when deserializing
             return ret
 
@@ -278,8 +282,8 @@ class SyncEntry:
             side_state.changed = side_dict['changed']
             side_state.sync_hash = side_dict['sync_hash']
             side_state.sync_path = side_dict['sync_path']
-            side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
+            side_state.path = side_dict['path']
             # back compat: 10/21/19
             if side_dict['exists'] is None:
                 side_state.exists = UNKNOWN
@@ -289,6 +293,9 @@ class SyncEntry:
                 side_state.exists = TRASHED
             side_state.exists = side_dict['exists']
             side_state.temp_file = side_dict['temp_file']
+            side_state.size = side_dict.get('size')
+            side_state.mtime = side_dict.get('mtime')
+
             return side_state
 
         self.storage_id = storage_init[0]
@@ -870,7 +877,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments
+    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None, size=None,
+                     mtime=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments
         assert ent
 
         if oid is not None:
@@ -885,6 +893,12 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if otype is not None and otype != ent[side].otype:
             ent[side].otype = otype
+
+        if size is not None:
+            ent[side].size = size
+
+        if mtime is not None:
+            ent[side].mtime = mtime
 
         assert otype is not NOTKNOWN or not exists
 
@@ -1246,7 +1260,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[i].exists = UNKNOWN
             return
 
-        info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
+        info: OInfo = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
             self.unconditionally_get_no_info(ent, i)
@@ -1273,6 +1287,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[i].path = info.path
             if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
+
+        ent[i].size = info.size
+        ent[i].mtime = info.mtime
 
     def get_state_lookup(self, side: int) -> 'SyncStateLookup':
         return SyncStateLookup(self, side)

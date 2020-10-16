@@ -3035,12 +3035,22 @@ def test_smartsync(scs):
     local_parent_info = scs.providers[LOCAL].info_path(local_parent)
     files = list(scs.smart_listdir_path(local_parent))
     assert local_path1 in [x.path for x in files]
+    check_time = time.time() - 5
     for file in files:
         if file.path == local_path1:
             assert file.size == len(contents1a)
-            assert file.mtime >= time.time() - 5
+            assert file.mtime >= check_time
             local_oid1 = file.oid
     assert local_oid1
+
+    # confirm that the size and mtime are serialized and deserialized
+    entries = scs.state.get_all()
+    for entry in entries:
+        ent_ser = entry.serialize()
+        for side in range(1):
+            new_ent = SyncEntry(parent=scs.state, otype=None, storage_init=(entry.storage_id, ent_ser))
+            assert new_ent[side].size == entry[side].size
+            assert new_ent[side].mtime == entry[side].mtime
 
 
 def test_cursor_tag_delete(mock_provider_generator):

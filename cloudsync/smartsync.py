@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
-from cloudsync.types import LOCAL, REMOTE, DIRECTORY, DirInfo
+from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo
 
 if TYPE_CHECKING:
     from .provider import Provider
@@ -83,14 +83,14 @@ class SmartSyncState(SyncState):
             remote_ent_path = ent[REMOTE].path
             _ignored_remote_ent_parent, remote_ent_name = self.providers[REMOTE].split(ent[REMOTE].path)
             if prov.paths_match(prov.dirname(remote_ent_path), remote_path):
-                ent_info = prov.info_oid(ent[REMOTE].oid)
-                retval = DirInfo(otype=ent[REMOTE].otype,
-                                 oid=ent_info.oid,
+                entry = ent[REMOTE]
+                retval = OInfo(otype=entry.otype,
+                                 oid=entry.oid,
                                  hash=None,
                                  path=self.providers[LOCAL].join(local_path, remote_ent_name),
-                                 size=ent_info.size,  # TODO: ent[REMOTE].size,
+                                 size=entry.size,
                                  name=remote_ent_name,
-                                 mtime=ent_info.mtime,  # TODO: ent[REMOTE].mtime,
+                                 mtime=entry.mtime,
                                  shared=False,  # TODO: ent[REMOTE].shared,
                                  readonly=False,  # TODO: ent[REMOTE].readonly
                                  )
