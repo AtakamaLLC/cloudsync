@@ -1815,6 +1815,13 @@ def test_exists_oid(provider):
     provider.delete(file_info.oid)
     assert(not provider.exists_oid(file_info.oid))
 
+def test_info_oid(provider):
+    file_name = provider.temp_name()
+    file_info = provider.create(file_name, BytesIO(os.urandom(32)))
+    provider._clear_cache()
+    oid_info = provider.info_oid(file_info.oid)
+
+
 
 @pytest.mark.parametrize("otype", ["file", "folder"])
 def test_rename_case_change(provider, otype):

@@ -3037,7 +3037,7 @@ def test_smartsync(scs):
     assert local_path1 in [x.path for x in files]
     for file in files:
         if file.path == local_path1:
-            assert file.size == len(contents1)
+            assert file.size == len(contents1a)
             assert file.mtime >= time.time() - 5
             local_oid1 = file.oid
     assert local_oid1

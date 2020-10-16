@@ -425,7 +425,7 @@ class MockProvider(Provider):
     @lock
     def upload(self, oid, file_like, metadata=None) -> OInfo:
         self._api("upload", oid)
-        file = self._mock_fs.get(oid)
+        file: MockFSObject = self._mock_fs.get(oid)
         if file is None or not file.exists:
             raise CloudFileNotFoundError(oid)
         if file.type != MockFSObject.FILE:
@@ -435,7 +435,10 @@ class MockProvider(Provider):
         contents = file_like.read()
         file.contents = contents
         self._register_event(MockEvent.ACTION_UPDATE, file)
-        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
+        file.update()
+        _, basename = self.split(file.path)
+        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path, size=file.size, name=basename,
+                     mtime=file.mtime, shared=False, readonly=False)
 
     @lock
     def listdir(self, oid) -> Generator[DirInfo, None, None]:
@@ -468,7 +471,10 @@ class MockProvider(Provider):
             self._store_object(file)
             log.debug("created %s %s", debug_sig(file.oid), file.type)
             self._register_event(MockEvent.ACTION_CREATE, file)
-            return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
+            file.update()
+            _, basename = self.split(file.path)
+            return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path, size=file.size, name=basename,
+                         mtime=file.mtime, shared=False, readonly=False)
         except OSError as e:
             raise CloudTemporaryError("error %s" % repr(e))
 
@@ -642,7 +648,9 @@ class MockProvider(Provider):
         file: MockFSObject = self._get_by_path(path)
         if not (file and file.exists):
             return None
-        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
+        _, basename = self.split(file.path)
+        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path, size=file.size, name=basename, mtime=file.mtime,
+                     shared=False, readonly=False)
 
     @lock
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
@@ -650,17 +658,9 @@ class MockProvider(Provider):
         file: MockFSObject = self._mock_fs.get(oid)
         if not (file and file.exists):
             return None
-        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path)
-
-    # @staticmethod
-    # def _slurp(path):
-    #     with open(path, "rb") as x:
-    #         return x.read()
-    #
-    # @staticmethod
-    # def _burp(path, contents):
-    #     with open(path, "wb") as x:
-    #         x.write(contents)
+        _, basename = self.split(file.path)
+        return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path, size=file.size, name=basename, mtime=file.mtime,
+                     shared=False, readonly=False)
 
     def _log_debug_state(self, msg="", log_level=logging.DEBUG):
         try:

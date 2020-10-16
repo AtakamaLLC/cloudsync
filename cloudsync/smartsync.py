@@ -85,12 +85,12 @@ class SmartSyncState(SyncState):
             if prov.paths_match(prov.dirname(remote_ent_path), remote_path):
                 ent_info = prov.info_oid(ent[REMOTE].oid)
                 retval = DirInfo(otype=ent[REMOTE].otype,
-                                 oid='',
+                                 oid=ent_info.oid,
                                  hash=None,
                                  path=self.providers[LOCAL].join(local_path, remote_ent_name),
                                  size=ent_info.size,  # TODO: ent[REMOTE].size,
                                  name=remote_ent_name,
-                                 mtime=0,  # TODO: ent[REMOTE].mtime,
+                                 mtime=ent_info.mtime,  # TODO: ent[REMOTE].mtime,
                                  shared=False,  # TODO: ent[REMOTE].shared,
                                  readonly=False,  # TODO: ent[REMOTE].readonly
                                  )
@@ -179,6 +179,7 @@ class SmartCloudSync(CloudSync):
 
     def smart_listdir_path(self, local_path):
         # TODO: should this take an oid? we don't have a local oid, so it would have to be a remote oid always...
+        self.state: SmartSyncState
         remote_path = self._make_path_remote(local_path, LOCAL)
         listdir = self.state.smart_listdir(local_path, remote_path)
         return listdir
