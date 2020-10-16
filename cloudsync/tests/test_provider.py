@@ -1820,6 +1820,7 @@ def test_info_oid(provider):
     file_info = provider.create(file_name, BytesIO(os.urandom(32)))
     provider._clear_cache()
     oid_info = provider.info_oid(file_info.oid)
+    assert False  # TODO: finish this test
 
 
 
