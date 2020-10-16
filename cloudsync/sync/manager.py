@@ -693,7 +693,7 @@ class SyncManager(Runnable):
     def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin
         # updates entry without marking as changed unless explicit
         # used internally
-        self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype)
+        self.state.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=changed, otype=otype)
 
     def create_event(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event

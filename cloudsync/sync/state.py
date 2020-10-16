@@ -877,8 +877,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None, size=None,
-                     mtime=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments
+    def update_entry(self, ent, side, oid, *, path=None, file_hash=None, exists=True, changed=False, otype=None, size=None, mtime=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments, too-many-branches
         assert ent
 
         if oid is not None:
@@ -905,8 +904,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if path is not None and path != ent[side].path:
             ent[side].path = path
 
-        if hash is not None and hash != ent[side].hash:
-            ent[side].hash = hash
+        if file_hash is not None and file_hash != ent[side].hash:
+            ent[side].hash = file_hash
 
         if ent[side].exists is TRASHED and exists is True:
             # oid was deleted, and then re-created, this can only happen for oid-is-path providers
@@ -1070,7 +1069,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
+        self.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
 
 
     def change(self, age):
