@@ -173,7 +173,7 @@ class SyncManager(Runnable):
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
 
-    def sync_one_entry(self, sync: SyncEntry):
+    def _sync_one_entry(self, sync: SyncEntry):
         something_got_done = False
         try:
             something_got_done = self.pre_sync(sync)
@@ -182,13 +182,12 @@ class SyncManager(Runnable):
             self.state.storage_commit()
         except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError,
                 ex.CloudNamespaceError) as e:
-            if self.__nmgr:
-                self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
             log.warning(
                 "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
             sync.punt()
             # do we want to self.state.storage_commit() here?
             self.backoff()
+            raise
         except Exception as e:
             # TODO: notify_from_exception
             log.exception(
@@ -196,6 +195,7 @@ class SyncManager(Runnable):
             sync.punt()
             self.state.storage_commit()
             self.backoff()
+            raise
         return something_got_done
 
     def do(self):
@@ -205,7 +205,7 @@ class SyncManager(Runnable):
             sync: SyncEntry = self.state.change(self.aging)
             if sync:
                 need_to_sleep = False
-                something_got_done = self.sync_one_entry(sync)
+                something_got_done = self._sync_one_entry(sync)
 
         if need_to_sleep:
             time.sleep(self.aging)

@@ -51,7 +51,7 @@ class SmartSyncState(SyncState):
         self.excludeset = set()
         super().__init__(providers, storage, tag, shuffle, prioritize)
 
-    def smart_sync_ent(self, ent):
+    def _smart_sync_ent(self, ent):
         self.requestset.add(ent)
         self.excludeset.discard(ent)
 
@@ -66,18 +66,19 @@ class SmartSyncState(SyncState):
             self.requestset.add(ent)
         return ents
 
-    def smart_unsync_ent(self, ent):
+    def _smart_unsync_ent(self, ent):
         self.requestset.discard(ent)
         self.excludeset.add(ent)
 
     def smart_unsync_path(self, remote_path):
         for ent in tuple(self.requestset):
             if ent[REMOTE].path == remote_path:
-                self.state.smart_unsync_ent(ent)
+                self.state._smart_unsync_ent(ent)
                 break
 
     def smart_listdir(self, local_path, remote_path):
         """Lists all files in a remote folder by looking in the state db, and doesn't hit the provider api."""
+        # TODO exclude files that are marked deleted but unsynced
         prov = self.providers[REMOTE]
         for ent, _ignored_rel_path in self.get_kids(remote_path, REMOTE):
             remote_ent_path = ent[REMOTE].path
@@ -133,10 +134,10 @@ class SmartCloudSync(CloudSync):
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
 
-    def smart_unsync_ent(self, ent: SyncEntry):
+    def _smart_unsync_ent(self, ent: SyncEntry):
         # remove ent from requestset
         # delete file, if it exists at path
-        self.state.smart_unsync_ent(ent)
+        self.state._smart_unsync_ent(ent)
         if ent[LOCAL].sync_path:
             ent_info = self.providers[LOCAL].info_path(ent[LOCAL].path)
             if ent_info:
@@ -149,9 +150,9 @@ class SmartCloudSync(CloudSync):
         if not ents:
             raise FileNotFoundError(path)
         for ent in ents:
-            self.smart_unsync_ent(ent)
+            self._smart_unsync_ent(ent)
 
-    def smart_sync_ent(self, ent):
+    def _smart_sync_ent(self, ent):
         """Request to sync down a file from the cloud, and mark the entry to maintain synchronization."""
         # if the local file is missing,
         #   clear the local side of the ent and
@@ -163,10 +164,10 @@ class SmartCloudSync(CloudSync):
             ent[REMOTE].sync_path = None
             ent[REMOTE].sync_hash = None
             self.state.update_entry(ent, REMOTE, None, changed=True)
-        self.state.smart_sync_ent(ent)
+        self.state._smart_sync_ent(ent)
         for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
-            self.smgr.sync_one_entry(parent_conflict)
-        self.smgr.sync_one_entry(ent)
+            self.smgr._sync_one_entry(parent_conflict)
+        return self.smgr._sync_one_entry(ent)
 
     def smart_sync_path(self, path, side):
         # TODO: should this take an oid? we don't have a local oid, so it would have to be a remote oid always...
@@ -175,7 +176,7 @@ class SmartCloudSync(CloudSync):
         if not ents:
             raise FileNotFoundError(path)
         for ent in ents:
-            self.smart_sync_ent(ent)
+            self._smart_sync_ent(ent)
 
     def smart_listdir_path(self, local_path):
         # TODO: should this take an oid? we don't have a local oid, so it would have to be a remote oid always...
