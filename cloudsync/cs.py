@@ -73,11 +73,11 @@ class CloudSync(Runnable):
                             prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = smgr_class(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                          self.resolve_conflict, self.nmgr, sleep=sleep)
+                          self.resolve_conflict, self.nmgr, sleep=sleep, state_class=state_class)
 
         # for tests, make these accessible
-        self.state: SyncState = state
-        self.smgr: SyncManager = smgr
+        self.state: state_class = state
+        self.smgr: smgr_class = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)

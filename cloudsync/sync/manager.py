@@ -146,8 +146,9 @@ class SyncManager(Runnable):
                  notification_manager: Optional['NotificationManager'] = None,
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
-                 root_oids: Optional[Tuple[str, str]] = None):
-        self.state: SyncState = state
+                 root_oids: Optional[Tuple[str, str]] = None,
+                 state_class: type = SyncState):
+        self.state: state_class = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
         self._resolve_conflict = resolve_conflict

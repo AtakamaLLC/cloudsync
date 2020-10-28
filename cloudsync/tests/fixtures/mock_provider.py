@@ -452,7 +452,7 @@ class MockProvider(Provider):
                 if relative:
                     relative = relative.lstrip("/")
                     if "/" not in relative:
-                        yield DirInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative, size=obj.size)
+                        yield DirInfo(otype=obj.otype, oid=obj.oid, hash=obj.hash(), path=obj.path, name=relative, size=obj.size, mtime=obj.mtime)
 
     @lock
     def create(self, path, file_like, metadata=None) -> OInfo:
