@@ -2978,9 +2978,6 @@ def test_root_needed(cs, cs_root_oid, mode):
 
 
 def test_smartsync(scs):
-    # TODO: get listdir to produce mtime's and sizes.
-    # TODO: test local files always sync even when smartsync is enabled
-    # TODO: test sync, then unsync, then sync again, to confirm remote file doesn't get deleted or something stupid
     timeout = 1
     local_parent = "/local"
     remote_parent = "/remote"
@@ -2991,12 +2988,23 @@ def test_smartsync(scs):
     local_path1 = "/local/testfolder/stuff1"
     remote_path2 = "/remote/testfolder/stuff2"
     local_path2 = "/local/testfolder/stuff2"
+    r_autosync_path = "/remote/testfolder/stuff.autosync"
+    l_autosync_path = "/local/testfolder/stuff.autosync"
     contents1 = b"hello1"
     contents1a = b"hello1a"
     contents1b = b"hello1bb"
     contents1c = b"hello1ccc"
+    contents1d = b"hello1dddd"
     local_oid1 = None
     (local, remote) = scs.providers
+
+    def autosync(path):
+        return_value = "autosync" in path
+        if return_value:
+            log.debug("autosync:%s", path)
+        return return_value
+
+    scs.state.register_auto_sync_callback(autosync)
 
     scs.run_until_clean(timeout)
     rfolder_oid = scs.providers[REMOTE].mkdir(remote_parent)
@@ -3008,9 +3016,11 @@ def test_smartsync(scs):
 
     rinfo1 = scs.providers[REMOTE].create(remote_path1, BytesIO(contents1))
     rinfo2 = scs.providers[REMOTE].create(remote_path2, BytesIO(contents1))
+    asinfo = scs.providers[REMOTE].create(r_autosync_path, BytesIO(contents1))
     scs.run_until_clean(timeout)
     assert not local.exists_path(local_path1)
     assert not local.exists_path(local_path2)
+    assert local.exists_path(l_autosync_path)  # should have automatically synced down
     local_info_path = scs.smart_info_path(local_path1)
     assert local_info_path
     assert local_info_path.path == local_path1
@@ -3061,30 +3071,44 @@ def test_smartsync(scs):
     assert curr_contents.getvalue() == contents1a
 
     assert local.exists_path(local_path1)
-    # desync the file
-    scs.smart_unsync_path(local_path1, LOCAL)
+
+    local.upload(local_info1.oid, BytesIO(contents1b))
+
+    # unsync the file, should upload the new contents when unsyncing
+    scs.smart_unsync_oid(rinfo1.oid)
+    rinfo_unsynced = remote.info_oid(rinfo1.oid)
+    assert rinfo_unsynced.size == len(contents1b)
+
     # confirm it no longer exists
     assert not local.exists_path(local_path1)
     # update the file remotely, and confirm it didn't sync
-    remote.upload(rinfo1.oid, BytesIO(contents1b))
+    remote.upload(rinfo1.oid, BytesIO(contents1c))
     scs.run_until_clean(5)
     assert not local.exists_path(local_path1)
 
     assert local.exists_path(local_path2)
     # desync the file
-    scs.smart_unsync_oid(rinfo2.oid)
+    scs.smart_unsync_path(local_path2, LOCAL)
     # confirm it no longer exists
     assert not local.exists_path(local_path2)
+
+    ent2: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
+    ent2.get_latest(force=True)
+    assert not ent1[LOCAL].size
+    assert ent1[REMOTE].size == len(contents1c)
 
     files = list(scs.smart_listdir_path(local_test_folder))
     assert local_path1 in [x.path for x in files]
     check_time = time.time() - 5
     for file in files:
         if file.path == local_path1:
-            assert file.size == len(contents1a)
+            assert file.size == len(contents1c)
             assert file.mtime >= check_time
             local_oid1 = file.oid
-    assert local_oid1
+            remote_oid1 = file.remote_oid
+            break
+    assert not local_oid1
+    assert remote_oid1
 
     with pytest.raises(FileNotFoundError):
         scs.smart_sync_path('/noexist', LOCAL)
@@ -3097,7 +3121,7 @@ def test_smartsync(scs):
     remote.rename(rfolder_info.oid, remote_test_folder2)  # create a parent conflict
     assert remote.exists_path(remote_test_folder2)
     assert local.exists_path(local_test_folder)
-    remote.upload(rinfo1.oid, BytesIO(contents1c))
+    remote.upload(rinfo1.oid, BytesIO(contents1d))
     scs.emgrs[0].do()
     scs.emgrs[1].do()
 

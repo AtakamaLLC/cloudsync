@@ -133,6 +133,8 @@ class SideState:
         self.sync_path = None
         self.path = None
         self.oid = None
+        self.size = None
+        self.mtime = None
 
     def __repr__(self):
         d = self.__dict__.copy()
@@ -1071,16 +1073,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         self.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
 
-
     def change(self, age):
-        if not self._changeset:
+        change_set = self._changeset
+        if not change_set:  # todo: cache the changeset
             return None
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
             sort_key = lambda a: (a.priority, random.random())
 
-        changes = sorted(self._changeset, key=sort_key)
+        changes = sorted(change_set, key=sort_key)
 
         now = time.time()
         earlier_than = now - age
@@ -1252,6 +1254,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if ent[i].exists != TRASHED:
             # we haven't gotten a trashed event yet
             ent[i].exists = MISSING if self.providers[i].oid_is_path else TRASHED
+
+        if ent[i].exists == TRASHED:
+            ent[i].size = None
+            ent[i].mtime = None
 
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:

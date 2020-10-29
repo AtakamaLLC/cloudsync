@@ -1,7 +1,10 @@
+import time
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 from dataclasses import dataclass
+import logging
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from .provider import Provider
@@ -43,7 +46,11 @@ class SmartSyncState(SyncState):
                  prioritize: Callable[[int, str], int] = None):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
+        self._callbacks: List[callable] = list()
         super().__init__(providers, storage, tag, shuffle, prioritize)
+
+    def register_auto_sync_callback(self, callback):
+        self._callbacks.append(callback)
 
     def smart_sync_ent(self, ent):
         if ent[LOCAL].path and not self.providers[LOCAL].exists_path(ent[LOCAL].path):
@@ -71,6 +78,13 @@ class SmartSyncState(SyncState):
         return ent
 
     def _smart_unsync_ent(self, ent):
+        if ent[LOCAL].path:
+            ent_info = self.providers[LOCAL].info_path(ent[LOCAL].path)
+            if ent_info:
+                self.providers[LOCAL].delete(ent_info.oid)
+            ent[LOCAL].clear()
+            ent[REMOTE].sync_path = None
+            ent[REMOTE].sync_hash = None
         self.requestset.discard(ent)
         self.excludeset.add(ent)
 
@@ -82,6 +96,9 @@ class SmartSyncState(SyncState):
                 self._smart_unsync_ent(ent)
                 return ent
         return None
+
+    def smart_unsync_ent(self, ent) -> Optional[SyncEntry]:
+        return self._smart_unsync([ent], ent)
 
     def smart_unsync_path(self, remote_path) -> Optional[SyncEntry]:
         ents = self.lookup_path(REMOTE, remote_path)
@@ -109,10 +126,34 @@ class SmartSyncState(SyncState):
 
     @property
     def _changeset(self):
-        folders = [ent for ent in self._changeset_storage if ent[REMOTE].otype == DIRECTORY or 
-                   (ent[REMOTE].changed and ent[REMOTE].changed > ent[REMOTE]._last_gotten)]  # pylint: disable=protected-access
-        retval = self.requestset.intersection(self._changeset_storage).union(folders).difference(self.excludeset)
-        return retval
+        # this implies a remote walk on startup, otherwise autosynced items won't autosync until an event shows up
+        # do we want to do the autosync calculation on every do()? Or perhaps flag each entry that the
+        #     autosync calculation has been done, and no need to do it again... if so, don't persist that flag
+        changes = set()
+        for ent in self._changeset_storage:
+            if ent in self.excludeset and not ent[LOCAL].changed:
+                continue
+
+            included = False
+            if ent in self.requestset:
+                included = True
+            elif ent[REMOTE].otype == DIRECTORY:
+                included = True  # simplifies syncing files, avoids needing to sync the parent(s) later
+            elif ent[REMOTE].changed and ent[REMOTE].changed > ent[REMOTE]._last_gotten:
+                included = True  # needs a get_latest() at least
+            elif ent[LOCAL].changed and ent[LOCAL].changed > ent[LOCAL]._last_gotten:
+                included = True  # needs a get_latest() at least
+            elif not ent[LOCAL].oid:  # this means the entry is not currently synced locally
+                for callback in self._callbacks:
+                    if callback(ent[REMOTE].path):
+                        self.smart_sync_ent(ent)
+                        included = True
+                        break
+
+            if included:
+                changes.add(ent)
+
+        return changes
 
     @_changeset.setter
     def _changeset(self, value):
@@ -134,7 +175,6 @@ class SmartCloudSync(CloudSync):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None
                  ):
-        self._callbacks: List[callable] = list()
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
 
@@ -180,20 +220,27 @@ class SmartCloudSync(CloudSync):
         return retval
 
     def _smart_unsync_ent(self, ent):
-        if ent[LOCAL].sync_path:
-            ent_info = self.providers[LOCAL].info_path(ent[LOCAL].path)
-            if ent_info:
-                self.providers[LOCAL].delete(ent_info.oid)
+        if ent:
+            self.state.unconditionally_get_latest(ent, LOCAL)
+            if ent[LOCAL].hash != ent[LOCAL].sync_hash or ent[LOCAL].parent.paths_differ(LOCAL):
+                ent[LOCAL].changed = ent[LOCAL].changed or time.time()
+                self.smgr._sync_one_entry(ent)
+
+            found = self.state.smart_unsync_ent(ent)
+            if found:
+                self._smart_unsync_ent(ent)
 
     def smart_unsync_oid(self, remote_oid):
-        ent = self.state.smart_unsync_oid(remote_oid)
-        if ent:
-            self._smart_unsync_ent(ent)
+        ent = self.state.lookup_oid(REMOTE, remote_oid)
+        self._smart_unsync_ent(ent)
 
     def smart_unsync_path(self, path, side):
         path = self._ensure_path_remote(path, side)
-        ent = self.state.smart_unsync_path(path)
-        if ent:
+        ents = self.state.lookup_path(REMOTE, path)
+        ents: set = self.state.requestset.intersection(ents)
+        if not ents:
+            return
+        for ent in ents:
             self._smart_unsync_ent(ent)
 
     def _smart_sync_ent(self, ent: SyncEntry) -> bool:
@@ -237,9 +284,6 @@ class SmartCloudSync(CloudSync):
         if side == LOCAL:
             path = self.translate(REMOTE, path)  # TODO translate the path to remote
         return path
-
-    def register_auto_sync_callback(self, callback):
-        self._callbacks.append(callback)
 
     def smart_info_path(self, local_path) -> Optional[SmartInfo]:
         remote_path = self.translate(REMOTE, local_path)
