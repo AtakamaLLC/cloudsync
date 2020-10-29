@@ -1,9 +1,9 @@
 import time
+import logging
+from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
-from dataclasses import dataclass
-import logging
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -18,7 +18,7 @@ class SmartSyncManager(SyncManager):
             finished = not (sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
         return finished
 
-    def _get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
+    def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
         """Returns list of parent conflicts."""
         done = False
         pcs = []
@@ -139,9 +139,7 @@ class SmartSyncState(SyncState):
                 included = True
             elif ent[REMOTE].otype == DIRECTORY:
                 included = True  # simplifies syncing files, avoids needing to sync the parent(s) later
-            elif ent[REMOTE].changed and ent[REMOTE].changed > ent[REMOTE]._last_gotten:
-                included = True  # needs a get_latest() at least
-            elif ent[LOCAL].changed and ent[LOCAL].changed > ent[LOCAL]._last_gotten:
+            elif (ent[REMOTE].changed or ent[LOCAL].changed) and not ent.is_latest():
                 included = True  # needs a get_latest() at least
             elif not ent[LOCAL].oid:  # this means the entry is not currently synced locally
                 for callback in self._callbacks:
@@ -178,7 +176,7 @@ class SmartCloudSync(CloudSync):
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
 
-    def _ent_to_smartinfo(self, ent: SyncEntry, local_dir_info: Optional[DirInfo]) -> SmartInfo:
+    def _ent_to_smartinfo(self, ent: SyncEntry, local_dir_info: Optional[DirInfo]) -> SmartInfo:  # pylint: disable=too-many-locals
         _ignored_remote_ent_parent, remote_ent_name = self.providers[REMOTE].split(ent[REMOTE].path)
         local_path = self.translate(LOCAL, ent[REMOTE].path)
         if not local_dir_info:
@@ -187,7 +185,7 @@ class SmartCloudSync(CloudSync):
             otype = local_dir_info.otype
             oid = local_dir_info.oid
             remote_oid = ent[REMOTE].oid
-            hash = local_dir_info.hash
+            obj_hash = local_dir_info.hash
             path = local_dir_info.path or ent[LOCAL].path
             size = local_dir_info.size
             name = local_dir_info.name or remote_ent_name
@@ -197,7 +195,7 @@ class SmartCloudSync(CloudSync):
             otype = ent[REMOTE].otype
             oid = ent[LOCAL].oid
             remote_oid = ent[REMOTE].oid
-            hash = None
+            obj_hash = None
             path = local_path
             size = ent[REMOTE].size
             name = remote_ent_name
@@ -208,7 +206,7 @@ class SmartCloudSync(CloudSync):
         retval = SmartInfo(otype=otype,
                            oid=oid,
                            remote_oid=remote_oid,
-                           hash=hash,
+                           hash=obj_hash,
                            path=path,
                            size=size,
                            name=name,
@@ -219,12 +217,19 @@ class SmartCloudSync(CloudSync):
                            )
         return retval
 
+    def _sync_one_entry(self, sync: SyncEntry):
+        something_got_done = self.smgr.pre_sync(sync)
+        if not something_got_done:
+            something_got_done = self.smgr.sync(sync)
+        self.state.storage_commit()
+        return something_got_done
+
     def _smart_unsync_ent(self, ent):
         if ent:
             self.state.unconditionally_get_latest(ent, LOCAL)
             if ent[LOCAL].hash != ent[LOCAL].sync_hash or ent[LOCAL].parent.paths_differ(LOCAL):
                 ent[LOCAL].changed = ent[LOCAL].changed or time.time()
-                self.smgr._sync_one_entry(ent)
+                self._sync_one_entry(ent)
 
             found = self.state.smart_unsync_ent(ent)
             if found:
@@ -250,9 +255,9 @@ class SmartCloudSync(CloudSync):
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
         #   this should override the local deletion event from before
         # TODO: is there a race condition based on the local deletion event coming later? This might wrongly delete!
-        for parent_conflict in self.smgr._get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
-            self.smgr._sync_one_entry(parent_conflict)
-        return self.smgr._sync_one_entry(ent)
+        for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
+            self._sync_one_entry(parent_conflict)
+        return self._sync_one_entry(ent)
 
     def smart_sync_oid(self, remote_oid):
         ent = self.state.smart_sync_oid(remote_oid)
@@ -269,6 +274,10 @@ class SmartCloudSync(CloudSync):
             self._smart_sync_ent(ent)
 
     def smart_listdir_path(self, local_path):
+        """
+        Returns the listdir calculated by the local listdir mixed with the remote sync state, when a file does
+        not exist locally
+        """
         # assumes that local is efficient and remote is inefficient
         # read from cache as much as possible remotely, read from disk as much as possible locally
         # calls local listdir, local listdir overrides cached info, and also update the state with this info too
