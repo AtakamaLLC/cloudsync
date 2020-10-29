@@ -260,10 +260,11 @@ class SmartCloudSync(CloudSync):
         return self._sync_one_entry(ent)
 
     def smart_sync_oid(self, remote_oid):
-        ent = self.state.smart_sync_oid(remote_oid)
+        ent: SyncEntry = self.state.smart_sync_oid(remote_oid)
         if not ent:
             raise FileNotFoundError(remote_oid)
         self._smart_sync_ent(ent)
+        return ent[LOCAL].path
 
     def smart_sync_path(self, path, side):
         remote_path = self._ensure_path_remote(path, side)
