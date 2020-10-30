@@ -2988,6 +2988,7 @@ def test_smartsync(scs):
     local_path1 = "/local/testfolder/stuff1"
     remote_path2 = "/remote/testfolder/stuff2"
     local_path2 = "/local/testfolder/stuff2"
+    local_only_path = "/local/testfolder/started_out_local"
     r_autosync_path = "/remote/testfolder/stuff.autosync"
     l_autosync_path = "/local/testfolder/stuff.autosync"
     contents1 = b"hello1"
@@ -2996,7 +2997,7 @@ def test_smartsync(scs):
     contents1c = b"hello1ccc"
     contents1d = b"hello1dddd"
     local_oid1 = None
-    (local, remote) = scs.providers
+    local, remote = scs.providers
 
     def autosync(path):
         return_value = "autosync" in path
@@ -3007,17 +3008,38 @@ def test_smartsync(scs):
     scs.state.register_auto_sync_callback(autosync)
 
     scs.run_until_clean(timeout)
-    rfolder_oid = scs.providers[REMOTE].mkdir(remote_parent)
+    rfolder_oid = remote.mkdir(remote_parent)
 
     # confirm that folders always sync down
-    scs.providers[REMOTE].mkdir(remote_test_folder)
+    remote.mkdir(remote_test_folder)
     scs.run_until_clean(timeout)
     assert local.exists_path(local_test_folder)
 
-    rinfo1 = scs.providers[REMOTE].create(remote_path1, BytesIO(contents1))
-    rinfo2 = scs.providers[REMOTE].create(remote_path2, BytesIO(contents1))
-    asinfo = scs.providers[REMOTE].create(r_autosync_path, BytesIO(contents1))
+    rinfo1 = remote.create(remote_path1, BytesIO(contents1))
+    rinfo2 = remote.create(remote_path2, BytesIO(contents1))
+    asinfo = remote.create(r_autosync_path, BytesIO(contents1a))
     scs.run_until_clean(timeout)
+    local_only_info = local.create(local_only_path, BytesIO(contents1a))
+
+    files = list(scs.smart_listdir_path(local_test_folder))
+    assert len(files) == 4
+    for file in files:
+        assert file.mtime
+        assert local.dirname(file.path) == local_test_folder
+        if file.name in ('stuff1', 'stuff2'):
+            assert file.size == len(contents1)
+            assert file.oid is None
+            assert file.hash is None
+            assert file.remote_oid
+            assert not file.is_synced
+        elif file.name in ('stuff.autosync', 'started_out_local'):
+            assert file.size == len(contents1a)
+            assert file.oid is not None
+            assert file.hash is not None
+            assert file.is_synced
+        else:
+            raise ValueError("unexpected file in listdir: %s", file)
+
     assert not local.exists_path(local_path1)
     assert not local.exists_path(local_path2)
     assert local.exists_path(l_autosync_path)  # should have automatically synced down
@@ -3062,7 +3084,7 @@ def test_smartsync(scs):
     scs.emgrs[0].do()
     scs.emgrs[1].do()
     change_count = scs.smgr.change_count(unverified=True)
-    assert change_count == 2  # local paths 1 and 2
+    assert change_count == 3  # local paths 1 and 2 and started_out_local
     scs.run_until_clean(timeout)
     curr_contents = BytesIO()
     local_info1 = local.info_path(local_path1)

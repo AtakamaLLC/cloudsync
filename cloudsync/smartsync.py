@@ -176,19 +176,18 @@ class SmartCloudSync(CloudSync):
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
 
-    def _ent_to_smartinfo(self, ent: SyncEntry, local_dir_info: Optional[DirInfo]) -> SmartInfo:  # pylint: disable=too-many-locals
-        _ignored_remote_ent_parent, remote_ent_name = self.providers[REMOTE].split(ent[REMOTE].path)
-        local_path = self.translate(LOCAL, ent[REMOTE].path)
-        if not local_dir_info:
-            local_dir_info = self.providers[LOCAL].info_path(local_path)
-        if local_dir_info and ent[LOCAL].oid == local_dir_info.oid:  # file is synced, use the local info
+    def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
+        local, remote = self.providers
+        assert ent or local_dir_info, "must provide one of ent or local_dir_info"
+
+        if local_dir_info:  # file is synced, use the local info
             otype = local_dir_info.otype
             oid = local_dir_info.oid
-            remote_oid = ent[REMOTE].oid
+            remote_oid = ent[REMOTE].oid if ent else None
             obj_hash = local_dir_info.hash
             path = local_dir_info.path or ent[LOCAL].path
             size = local_dir_info.size
-            name = local_dir_info.name or remote_ent_name
+            name = local_dir_info.name
             mtime = local_dir_info.mtime
             is_synced = True
         else:
@@ -198,7 +197,7 @@ class SmartCloudSync(CloudSync):
             obj_hash = None
             path = local_path
             size = ent[REMOTE].size
-            name = remote_ent_name
+            name = remote.basename(ent[REMOTE].path)
             mtime = ent[REMOTE].mtime
             is_synced = False
         shared = False  # TODO: ent[REMOTE].shared,
@@ -283,12 +282,20 @@ class SmartCloudSync(CloudSync):
         # read from cache as much as possible remotely, read from disk as much as possible locally
         # calls local listdir, local listdir overrides cached info, and also update the state with this info too
         #   remote_oid and is_synced
+        local, remote = self.providers
         remote_path = self.translate(REMOTE, local_path)
-        dirents = dict()
-        for dirent in self.providers[LOCAL].listdir_path(local_path):
-            dirents[dirent.oid] = dirent
+        local_ents = dict()
+        remote_ents = dict()
+        for dirent in local.listdir_path(local_path):
+            local_ents[dirent.name] = dirent
         for ent in self.state.smart_listdir_path(remote_path):
-            yield self._ent_to_smartinfo(ent, dirents.get(ent[LOCAL].oid))
+            remote_ents[remote.basename(ent[REMOTE].path)] = ent
+        names = set(local_ents.keys()).union(remote_ents.keys())
+        for name in names:
+            rent = remote_ents.get(name)
+            lent = local_ents.get(name)
+            yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
+            yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:
         if side == LOCAL:
@@ -299,11 +306,12 @@ class SmartCloudSync(CloudSync):
         remote_path = self.translate(REMOTE, local_path)
         ents = self.state.lookup_path(REMOTE, remote_path)
         if ents:
-            return self._ent_to_smartinfo(ents[0], None)
+            return self._ent_to_smartinfo(ents[0], None, local_path)
         return None
 
     def smart_info_oid(self, remote_oid) -> Optional[SmartInfo]:
         ent = self.state.lookup_oid(REMOTE, remote_oid)
         if ent:
-            return self._ent_to_smartinfo(ent, None)
+            local_path = self.translate(LOCAL, ent[REMOTE].path)
+            return self._ent_to_smartinfo(ent, None, local_path)
         return None
