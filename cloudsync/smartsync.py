@@ -177,7 +177,6 @@ class SmartCloudSync(CloudSync):
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
 
     def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
-        local, remote = self.providers
         assert ent or local_dir_info, "must provide one of ent or local_dir_info"
 
         if local_dir_info:  # file is synced, use the local info
@@ -197,7 +196,7 @@ class SmartCloudSync(CloudSync):
             obj_hash = None
             path = local_path
             size = ent[REMOTE].size
-            name = remote.basename(ent[REMOTE].path)
+            name = self.providers[REMOTE].basename(ent[REMOTE].path)
             mtime = ent[REMOTE].mtime
             is_synced = False
         shared = False  # TODO: ent[REMOTE].shared,
