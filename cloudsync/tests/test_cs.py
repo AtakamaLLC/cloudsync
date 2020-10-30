@@ -2988,7 +2988,8 @@ def test_smartsync(scs):
     local_path1 = "/local/testfolder/stuff1"
     remote_path2 = "/remote/testfolder/stuff2"
     local_path2 = "/local/testfolder/stuff2"
-    local_only_path = "/local/testfolder/started_out_local"
+    local_path_local_first = "/local/testfolder/started_out_local"
+    remote_path_local_first = "/remote/testfolder/started_out_local"
     r_autosync_path = "/remote/testfolder/stuff.autosync"
     l_autosync_path = "/local/testfolder/stuff.autosync"
     contents1 = b"hello1"
@@ -3019,7 +3020,7 @@ def test_smartsync(scs):
     rinfo2 = remote.create(remote_path2, BytesIO(contents1))
     asinfo = remote.create(r_autosync_path, BytesIO(contents1a))
     scs.run_until_clean(timeout)
-    local_only_info = local.create(local_only_path, BytesIO(contents1a))
+    local_first_info = local.create(local_path_local_first, BytesIO(contents1a))
 
     files = list(scs.smart_listdir_path(local_test_folder))
     assert len(files) == 4
@@ -3086,6 +3087,7 @@ def test_smartsync(scs):
     change_count = scs.smgr.change_count(unverified=True)
     assert change_count == 3  # local paths 1 and 2 and started_out_local
     scs.run_until_clean(timeout)
+    assert remote.exists_path(remote_path_local_first)
     curr_contents = BytesIO()
     local_info1 = local.info_path(local_path1)
     local_oid1 = local_info1.oid

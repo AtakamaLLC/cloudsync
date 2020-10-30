@@ -14,8 +14,9 @@ class SmartSyncManager(SyncManager):
     """Class to allow for syncing files only on demand."""
     def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         finished = super().pre_sync(sync)
+        local_file = sync[LOCAL].oid and self.providers[LOCAL].exists_oid(sync[LOCAL].oid)
         if not finished:
-            finished = not (sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
+            finished = not (local_file or sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
         return finished
 
     def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
