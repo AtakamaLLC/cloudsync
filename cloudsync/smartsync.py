@@ -1,11 +1,11 @@
 import time
 import logging
+from threading import RLock
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 log = logging.getLogger(__name__)
-from threading import RLock
 
 if TYPE_CHECKING:  # pragma: no cover
     from .provider import Provider
