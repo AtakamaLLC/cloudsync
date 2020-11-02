@@ -5,6 +5,7 @@ from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 log = logging.getLogger(__name__)
+from threading import RLock
 
 if TYPE_CHECKING:  # pragma: no cover
     from .provider import Provider
@@ -98,6 +99,14 @@ class SmartSyncState(SyncState):
                 return ent
         return None
 
+    def smart_delete_path(self, remote_path):
+        remote_info = self.providers[REMOTE].info_path(remote_path)
+        if remote_info:
+            self.providers[REMOTE].delete(remote_info.oid)  # TODO: explore if this is enough...
+
+    def smart_delete_oid(self, remote_oid):
+        self.providers[REMOTE].delete(remote_oid)  # TODO: explore if this is enough...
+
     def smart_unsync_ent(self, ent) -> Optional[SyncEntry]:
         return self._smart_unsync([ent], ent)
 
@@ -174,8 +183,14 @@ class SmartCloudSync(CloudSync):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None
                  ):
+        self._mutex = RLock()
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
+
+    def do(self):
+        time.sleep(.01)  # give smartsync a chance to preempt
+        with self._mutex:
+            super().do()
 
     def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
         assert ent or local_dir_info, "must provide one of ent or local_dir_info"
@@ -252,11 +267,10 @@ class SmartCloudSync(CloudSync):
         # if the local file is missing,
         #   clear the local side of the ent and
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
-        #   this should override the local deletion event from before
-        # TODO: is there a race condition based on the local deletion event coming later? This might wrongly delete!
-        for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
-            self._sync_one_entry(parent_conflict)
-        return self._sync_one_entry(ent)
+        with self._mutex:
+            for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
+                self._sync_one_entry(parent_conflict)
+            return self._sync_one_entry(ent)
 
     def smart_sync_oid(self, remote_oid):
         ent: SyncEntry = self.state.smart_sync_oid(remote_oid)

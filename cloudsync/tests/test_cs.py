@@ -3105,6 +3105,10 @@ def test_smartsync(scs):
 
     # confirm it no longer exists
     assert not local.exists_path(local_path1)
+
+    #confirm it didn't delete the remote when the local got trashed during the unsync
+    assert remote.exists_path(remote_path1)
+
     # update the file remotely, and confirm it didn't sync
     remote.upload(rinfo1.oid, BytesIO(contents1c))
     scs.run_until_clean(5)
