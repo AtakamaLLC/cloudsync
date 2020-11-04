@@ -2999,6 +2999,7 @@ def test_smartsync(scs):
     contents1d = b"hello1dddd"
     local_oid1 = None
     local, remote = scs.providers
+    scs.state._changeset = set()
 
     def autosync(path):
         return_value = "autosync" in path

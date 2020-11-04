@@ -192,7 +192,7 @@ class SmartSyncState(SyncState):
 
     @_changeset.setter
     def _changeset(self, value):
-        super()._changeset = value
+        self._changeset_storage = value
 
 
 @dataclass
