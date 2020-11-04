@@ -48,7 +48,7 @@ class SmartSyncState(SyncState):
                  prioritize: Callable[[int, str], int] = None):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
-        self._callbacks: List[callable] = list()
+        self._callbacks: List[Callable] = list()
         super().__init__(providers, storage, tag, shuffle, prioritize)
 
     def register_auto_sync_callback(self, callback):
@@ -101,20 +101,6 @@ class SmartSyncState(SyncState):
 
     def smart_unsync_ent(self, ent) -> Optional[SyncEntry]:
         return self._smart_unsync([ent], ent)
-
-    def smart_unsync_path(self, side, path) -> Optional[SyncEntry]:
-        """Delete a file locally, but leave it in the cloud"""
-        if side == LOCAL:
-            local_path = path
-            remote_path = self.translate(REMOTE, path)
-        else:
-            local_path = self.translate(LOCAL, path)
-            remote_path = path
-        local_ents: List = self.lookup_path(LOCAL, local_path)
-        remote_ents: List = self.lookup_path(REMOTE, remote_path)
-        ents = set(local_ents)
-        ents.update(remote_ents)
-        return self._smart_unsync(ents, remote_path)
 
     def smart_unsync_oid(self, remote_oid) -> Optional[SyncEntry]:
         ent = self.lookup_oid(REMOTE, remote_oid)
