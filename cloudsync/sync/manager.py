@@ -187,11 +187,12 @@ class SyncManager(Runnable):
             log.warning(
                 "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
             sync.punt()
+            self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
             # do we want to self.state.storage_commit() here?
             self.backoff()
-            raise
+            raise  # this is junk, self.backoff() already raises, so the raise on this line is unreachable
         except Exception as e:
-            # TODO: notify_from_exception
+            self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
             log.exception(
                 "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
             sync.punt()

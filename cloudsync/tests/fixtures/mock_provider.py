@@ -658,7 +658,10 @@ class MockProvider(Provider):
         file: MockFSObject = self._mock_fs.get(oid)
         if not (file and file.exists):
             return None
-        _, basename = self.split(file.path)
+        if file.path:
+            _, basename = self.split(file.path)
+        else:
+            basename = None
         return OInfo(otype=file.otype, oid=file.oid, hash=file.hash(), path=file.path, size=file.size, name=basename, mtime=file.mtime,
                      shared=False, readonly=False)
 

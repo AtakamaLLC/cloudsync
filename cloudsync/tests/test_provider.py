@@ -1853,11 +1853,11 @@ def test_info(provider):
     assert listdir_oid_info.size == create_info.size
     assert listdir_path_info.size == create_info.size
 
-    assert isinstance(create_info.mtime, int)
-    assert isinstance(oid_info.mtime, int)
-    assert isinstance(path_info.mtime, int)
-    assert isinstance(listdir_oid_info.mtime, int)
-    assert isinstance(listdir_path_info.mtime, int)
+    assert isinstance(create_info.mtime, int) or isinstance(create_info.mtime, float)
+    assert isinstance(oid_info.mtime, int) or isinstance(oid_info.mtime, float)
+    assert isinstance(path_info.mtime, int) or isinstance(path_info.mtime, float)
+    assert isinstance(listdir_oid_info.mtime, int) or isinstance(listdir_oid_info.mtime, float)
+    assert isinstance(listdir_path_info.mtime, int) or isinstance(listdir_path_info.mtime, float)
 
     fudge = 5
     now_before -= fudge
