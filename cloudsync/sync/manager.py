@@ -148,9 +148,10 @@ class SyncManager(Runnable):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
-        self.state: 'SmartSyncState' = state
+        self.state = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
+        self.translate = lambda side, path: self.__translate(side, path) if path else None
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
         self.__nmgr = notification_manager
@@ -222,12 +223,6 @@ class SyncManager(Runnable):
             shutil.rmtree(self.tempdir)
         except FileNotFoundError:
             pass
-
-    def translate(self, side, path):
-        if path:
-            return self.__translate(side, path)
-        else:
-            return None
 
     @property
     def busy(self):

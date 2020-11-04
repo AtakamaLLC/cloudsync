@@ -1,5 +1,6 @@
 import time
 import logging
+import tempfile
 from threading import RLock
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
@@ -13,6 +14,42 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class SmartSyncManager(SyncManager):
     """Class to allow for syncing files only on demand."""
+    # TODO: this is a copy of the init from SyncState, which should be unified
+    #   The problem is that mypy doesn't like the fact that the type of the 'state' parament is not correct in super()
+    #   perhaps remove the state paramater from the init, and create a method 'set_state' that sets the state
+    #   and then that can be overridden in the subclass and the types will work out, but this will mean
+    #   refactoring any of the clients of the SyncManager to use it
+    def __init__(self, state: 'SmartSyncState',                        # pylint: disable=too-many-arguments
+                 providers: Tuple['Provider', 'Provider'],
+                 translate: Callable,
+                 resolve_conflict: Callable,
+                 notification_manager: Optional['NotificationManager'] = None,
+                 sleep: Optional[Tuple[float, float]] = None,
+                 root_paths: Optional[Tuple[str, str]] = None,
+                 root_oids: Optional[Tuple[str, str]] = None):
+        self.state = state
+        self.providers: Tuple['Provider', 'Provider'] = providers
+        self.__translate = translate
+        self.translate = lambda side, path: self.__translate(side, path) if path else None
+        self._resolve_conflict = resolve_conflict
+        self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
+        self.__nmgr = notification_manager
+        self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
+        self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
+        if not sleep:
+            # these are the event sleeps, but really we need more info than this
+            sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
+
+        self.sleep = sleep
+
+        ####
+
+        max_sleep = max(sleep)                    # on sync fail, use the worst time for backoff
+        self.aging = max_sleep / 5                # how long before even trying to sync
+        self.min_backoff = max_sleep / 10.0       # event sleep of 15 seconds == 1.5 second backoff on failures
+        self.max_backoff = max_sleep * 10.0       # escalating up to a 3 minute wait time
+        self.mult_backoff = 2
+        assert len(self.providers) == 2
     def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         finished = super().pre_sync(sync)
         local_file = sync[LOCAL].oid and self.providers[LOCAL].exists_oid(sync[LOCAL].oid)
@@ -250,8 +287,8 @@ class SmartCloudSync(CloudSync):
     def smart_unsync_path(self, path, side):
         """Delete a file locally, but leave it in the cloud"""
         path = self._ensure_path_remote(path, side)
-        ents = self.state.lookup_path(REMOTE, path)
-        ents: set = self.state.requestset.intersection(ents)
+        state_ents = self.state.lookup_path(REMOTE, path)
+        ents: set = self.state.requestset.intersection(state_ents)
         if not ents:
             return None
         found_ents = set()
@@ -330,6 +367,6 @@ class SmartCloudSync(CloudSync):
         return None
 
     def smart_delete_oid(self, remote_oid):
-        ent = self.lookup_oid(REMOTE, remote_oid)
-        self.smart_unsync_ent(ent)
+        ent = self.state.lookup_oid(REMOTE, remote_oid)
+        self._smart_unsync_ent(ent)
         self.providers[REMOTE].delete(remote_oid)
