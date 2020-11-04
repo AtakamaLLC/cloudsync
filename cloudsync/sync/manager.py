@@ -192,7 +192,8 @@ class SyncManager(Runnable):
             self.backoff()
             raise  # this is junk, self.backoff() already raises, so the raise on this line is unreachable
         except Exception as e:
-            self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
+            if isinstance(e, ex.CloudException):
+                self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
             log.exception(
                 "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
             sync.punt()
