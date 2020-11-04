@@ -11,15 +11,17 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:  # pragma: no cover
     from .provider import Provider
     from cloudsync import Storage
+    from cloudsync.notification import NotificationManager
 
-class SmartSyncManager(SyncManager):
+
+class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attributes
     """Class to allow for syncing files only on demand."""
     # TODO: this is a copy of the init from SyncState, which should be unified
     #   The problem is that mypy doesn't like the fact that the type of the 'state' parament is not correct in super()
     #   perhaps remove the state paramater from the init, and create a method 'set_state' that sets the state
     #   and then that can be overridden in the subclass and the types will work out, but this will mean
     #   refactoring any of the clients of the SyncManager to use it
-    def __init__(self, state: 'SmartSyncState',                        # pylint: disable=too-many-arguments
+    def __init__(self, state: 'SmartSyncState',                        # pylint: disable=too-many-arguments, super-init-not-called
                  providers: Tuple['Provider', 'Provider'],
                  translate: Callable,
                  resolve_conflict: Callable,
@@ -190,7 +192,7 @@ class SmartSyncState(SyncState):
 
     @_changeset.setter
     def _changeset(self, value):
-        super()._changeset = value
+        super()._changeset(value)
 
 
 @dataclass
