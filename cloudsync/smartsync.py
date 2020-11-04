@@ -103,6 +103,7 @@ class SmartSyncState(SyncState):
         return self._smart_unsync([ent], ent)
 
     def smart_unsync_path(self, side, path) -> Optional[SyncEntry]:
+        """Delete a file locally, but leave it in the cloud"""
         if side == LOCAL:
             local_path = path
             remote_path = self.translate(REMOTE, path)
@@ -261,6 +262,7 @@ class SmartCloudSync(CloudSync):
         self._smart_unsync_ent(ent)
 
     def smart_unsync_path(self, path, side):
+        """Delete a file locally, but leave it in the cloud"""
         path = self._ensure_path_remote(path, side)
         ents = self.state.lookup_path(REMOTE, path)
         ents: set = self.state.requestset.intersection(ents)
