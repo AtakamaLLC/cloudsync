@@ -2470,7 +2470,7 @@ def test_unfile(cs):
     info = cs.providers[REMOTE].create(remote_path1, BytesIO(b"hello"), None)
     log.debug("UNFILE")
     cs.providers[REMOTE]._unfile(info.oid)
-    cs.run(until=lambda: cs.state.lookup_oid(REMOTE, info.oid).ignored != IgnoreReason.NONE, timeout=1)
+    cs.run(until=lambda: cs.state.lookup_oid(REMOTE, info.oid) and cs.state.lookup_oid(REMOTE, info.oid).ignored != IgnoreReason.NONE, timeout=1)
 
     # test 2
 

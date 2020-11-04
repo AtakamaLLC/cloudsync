@@ -706,7 +706,10 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
             fhash = self._fast_hash_path(fpath)
             otype = OType.DIRECTORY if os.path.isdir(fpath) else OType.FILE
             oid = self._fpath_to_oid(fpath)
-            ret = OInfo(otype=otype, oid=oid, hash=fhash, path=path)
+            stat_result = os.stat(fpath)
+            mtime = int(stat_result.st_mtime)
+            size = stat_result.st_size
+            ret = OInfo(otype=otype, oid=oid, hash=fhash, path=path, size=size, mtime=mtime)
             return ret
 
     def _trim_ns(self, path):
