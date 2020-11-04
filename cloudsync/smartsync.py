@@ -99,19 +99,20 @@ class SmartSyncState(SyncState):
                 return ent
         return None
 
-    def smart_delete_path(self, remote_path):
-        remote_info = self.providers[REMOTE].info_path(remote_path)
-        if remote_info:
-            self.providers[REMOTE].delete(remote_info.oid)  # TODO: explore if this is enough...
-
-    def smart_delete_oid(self, remote_oid):
-        self.providers[REMOTE].delete(remote_oid)  # TODO: explore if this is enough...
-
     def smart_unsync_ent(self, ent) -> Optional[SyncEntry]:
         return self._smart_unsync([ent], ent)
 
-    def smart_unsync_path(self, remote_path) -> Optional[SyncEntry]:
-        ents = self.lookup_path(REMOTE, remote_path)
+    def smart_unsync_path(self, side, path) -> Optional[SyncEntry]:
+        if side == LOCAL:
+            local_path = path
+            remote_path = self.translate(REMOTE, path)
+        else:
+            local_path = self.translate(LOCAL, path)
+            remote_path = path
+        local_ents: List = self.lookup_path(LOCAL, local_path)
+        remote_ents: List = self.lookup_path(REMOTE, remote_path)
+        ents = set(local_ents)
+        ents.update(remote_ents)
         return self._smart_unsync(ents, remote_path)
 
     def smart_unsync_oid(self, remote_oid) -> Optional[SyncEntry]:
@@ -192,6 +193,9 @@ class SmartCloudSync(CloudSync):
         with self._mutex:
             super().do()
 
+    def register_auto_sync_callback(self, callback):
+        self.state.register_auto_sync_callback(callback)
+
     def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
         assert ent or local_dir_info, "must provide one of ent or local_dir_info"
 
@@ -247,7 +251,10 @@ class SmartCloudSync(CloudSync):
 
             found = self.state.smart_unsync_ent(ent)
             if found:
-                self._smart_unsync_ent(ent)
+                self._smart_unsync_ent(found)
+                return found
+        return None
+
 
     def smart_unsync_oid(self, remote_oid):
         ent = self.state.lookup_oid(REMOTE, remote_oid)
@@ -258,9 +265,13 @@ class SmartCloudSync(CloudSync):
         ents = self.state.lookup_path(REMOTE, path)
         ents: set = self.state.requestset.intersection(ents)
         if not ents:
-            return
+            return None
+        found_ents = set()
         for ent in ents:
-            self._smart_unsync_ent(ent)
+            found = self._smart_unsync_ent(ent)
+            if found:
+                found_ents.add(found)
+        return found_ents
 
     def _smart_sync_ent(self, ent: SyncEntry) -> bool:
         """Request to sync down a file from the cloud, and mark the entry to maintain synchronization."""
@@ -329,3 +340,8 @@ class SmartCloudSync(CloudSync):
             local_path = self.translate(LOCAL, ent[REMOTE].path)
             return self._ent_to_smartinfo(ent, None, local_path)
         return None
+
+    def smart_delete_oid(self, remote_oid):
+        ent = self.lookup_oid(REMOTE, remote_oid)
+        self.smart_unsync_ent(ent)
+        self.providers[REMOTE].delete(remote_oid)

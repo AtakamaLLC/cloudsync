@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
-
+__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage',
+           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED']
 # safe ternary, don't allow traditional comparisons
 
 
@@ -634,6 +634,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset_storage: Set[SyncEntry] = set()
         self._dirtyset: Set[SyncEntry] = set()
+        self._dirtyset_mutex = RLock()
         self._storage: Optional[Storage] = storage
         self._tag = tag
         self.providers = providers
@@ -686,7 +687,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self._oids = ({}, {})
         self._paths = ({}, {})
         self._changeset = set()
-        self._dirtyset = set()
+        with self._dirtyset_mutex:
+            self._dirtyset = set()
         self.data_id = {}
         if self._storage:
             storage_dict = self._storage.read_all(cast(str, self._tag))
@@ -721,7 +723,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 if ent[REMOTE].changed:
                     ent[REMOTE].changed += ent._parent._punt_secs[REMOTE]
 
-        self._dirtyset.add(ent)
+        with self._dirtyset_mutex:
+            self._dirtyset.add(ent)
 
     @property
     def changes(self):
@@ -995,9 +998,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
     def storage_commit(self):
         self.pretty_log_state_table_diffs()
-        for ent in self._dirtyset:
-            self._storage_update(ent)
-        self._dirtyset.clear()
+        with self._dirtyset_mutex:
+            for ent in self._dirtyset:
+                self._storage_update(ent)
+            self._dirtyset.clear()
 
     def _storage_update(self, ent: SyncEntry):
         if self._tag is None:
@@ -1130,7 +1134,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         ents: List[SyncEntry] = list()
         widths: List[int] = [len(x) for x in SyncState.headers]
         if only_dirty:
-            all_ents = self._dirtyset
+            with self._dirtyset_mutex:
+                all_ents = self._dirtyset.copy()
         else:
             all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
 

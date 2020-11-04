@@ -3006,7 +3006,7 @@ def test_smartsync(scs):
             log.debug("autosync:%s", path)
         return return_value
 
-    scs.state.register_auto_sync_callback(autosync)
+    scs.register_auto_sync_callback(autosync)
 
     scs.run_until_clean(timeout)
     rfolder_oid = remote.mkdir(remote_parent)
