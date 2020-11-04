@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple, List, IO, Any, Type, Union, TYPE_CHECKING
+from typing import Optional, Tuple, List, IO, Any, Type, TYPE_CHECKING
 
 from pystrict import strict
 
@@ -75,7 +75,7 @@ class CloudSync(Runnable):
                             prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
         smgr = smgr_class(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                          self.resolve_conflict, self.nmgr, sleep=sleep, state_class=state_class)
+                          self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
         self.state: 'SmartSyncState' = state

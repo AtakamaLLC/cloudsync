@@ -14,8 +14,6 @@ from typing import Tuple, Optional, Callable, TYPE_CHECKING, List, Dict, Any, ca
 
 import msgpack
 from pystrict import strict
-if TYPE_CHECKING:
-    from cloudsync.smartsync import SmartSyncState
 
 __all__ = ['SyncManager']
 
@@ -32,6 +30,7 @@ from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UN
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
     from cloudsync.notification import NotificationManager
+    from cloudsync.smartsync import SmartSyncState
 
 log = logging.getLogger(__name__)
 
@@ -148,9 +147,8 @@ class SyncManager(Runnable):
                  notification_manager: Optional['NotificationManager'] = None,
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
-                 root_oids: Optional[Tuple[str, str]] = None,
-                 state_class: type = SyncState):
-        self.state: SmartSyncState = state
+                 root_oids: Optional[Tuple[str, str]] = None):
+        self.state: 'SmartSyncState' = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
         self._resolve_conflict = resolve_conflict
