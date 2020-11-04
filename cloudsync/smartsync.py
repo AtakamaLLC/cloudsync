@@ -54,7 +54,7 @@ class SmartSyncState(SyncState):
     def register_auto_sync_callback(self, callback):
         self._callbacks.append(callback)
 
-    def smart_sync_ent(self, ent):
+    def _smart_sync_ent(self, ent):
         if ent[LOCAL].path and not self.providers[LOCAL].exists_path(ent[LOCAL].path):
             ent[LOCAL].clear()
             ent[REMOTE].sync_path = None
@@ -71,12 +71,12 @@ class SmartSyncState(SyncState):
         #       or maybe always sync all folders at all times, and only files are smartsynced
         ents = self.lookup_path(REMOTE, remote_path)
         for ent in ents:
-            self.smart_sync_ent(ent)
+            self._smart_sync_ent(ent)
         return ents
 
     def smart_sync_oid(self, remote_oid) -> SyncEntry:
         ent = self.lookup_oid(REMOTE, remote_oid)
-        self.smart_sync_ent(ent)
+        self._smart_sync_ent(ent)
         return ent
 
     def _smart_unsync_ent(self, ent):
@@ -156,7 +156,7 @@ class SmartSyncState(SyncState):
             elif not ent[LOCAL].oid:  # this means the entry is not currently synced locally
                 for callback in self._callbacks:
                     if callback(ent[REMOTE].path):
-                        self.smart_sync_ent(ent)
+                        self._smart_sync_ent(ent)
                         included = True
                         break
 
