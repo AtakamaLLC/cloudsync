@@ -563,7 +563,11 @@ class FileSystemProvider(Provider):                     # pylint: disable=too-ma
                         otype = OType.DIRECTORY if entry.is_dir() else OType.FILE
                         name = self.is_subpath(fpath, entry_path).lstrip("/")
                         path = self._trim_ns(entry_path)
-                        yield DirInfo(otype=otype, oid=self._fpath_to_oid(entry_path), hash=ohash, path=path, name=name)
+                        stat_result = os.stat(entry_path)
+                        mtime = int(stat_result.st_mtime)
+                        size = stat_result.st_size if otype == OType.FILE else 0
+                        yield DirInfo(otype=otype, oid=self._fpath_to_oid(entry_path), hash=ohash, path=path, name=name,
+                                      size=size, mtime=mtime)
             except NotADirectoryError:
                 raise ex.CloudFileNotFoundError("not a directory")
 
