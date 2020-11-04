@@ -6,14 +6,14 @@ from typing import Optional, Tuple, List, IO, Any, Type, Union, TYPE_CHECKING
 from pystrict import strict
 
 from .sync import SyncManager, SyncState, Storage
-if TYPE_CHECKING:
-    from .smartsync import SmartSyncState, SmartSyncManager
 from .runnable import Runnable
 from .event import EventManager
 from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
 from .notification import NotificationManager, Notification, NotificationType, SourceEnum
+if TYPE_CHECKING:
+    from .smartsync import SmartSyncState, SmartSyncManager
 
 log = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ class CloudSync(Runnable):
                           self.resolve_conflict, self.nmgr, sleep=sleep, state_class=state_class)
 
         # for tests, make these accessible
-        self.state: Union[SyncState, SmartSyncState] = state
-        self.smgr: Union[SyncManager, SmartSyncManager] = smgr
+        self.state: Union[SyncState, 'SmartSyncState'] = state
+        self.smgr: Union[SyncManager, 'SmartSyncManager'] = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)
