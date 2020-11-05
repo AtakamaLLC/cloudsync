@@ -186,8 +186,8 @@ class SyncManager(Runnable):
                 ex.CloudNamespaceError) as e:
             log.warning(
                 "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-            sync.punt()
             self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
+            sync.punt()
             # do we want to self.state.storage_commit() here?
             self.backoff()
             raise  # this is junk, self.backoff() already raises, so the raise on this line is unreachable
@@ -338,7 +338,7 @@ class SyncManager(Runnable):
         sync.get_latest()
         return False
 
-    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
+    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches
         """
         Called on each changed entry.
         """
@@ -396,6 +396,8 @@ class SyncManager(Runnable):
             except ex.CloudTooManyRetriesError:
                 response = FINISHED
                 log.exception("too many retries - marked finished %s side:%s", sync, side)
+                if want_raise:
+                    raise
 
             if response == FINISHED:
                 something_got_done = True

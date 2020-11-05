@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
+import cloudsync.exceptions as ex
+from cloudsync.notification import SourceEnum
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -52,7 +54,8 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         self.max_backoff = max_sleep * 10.0       # escalating up to a 3 minute wait time
         self.mult_backoff = 2
         assert len(self.providers) == 2
-    def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
+
+    def pre_sync(self, sync: SyncEntry) -> bool:
         finished = super().pre_sync(sync)
         local_file = sync[LOCAL].oid and self.providers[LOCAL].exists_oid(sync[LOCAL].oid)
         if not finished:
@@ -103,12 +106,12 @@ class SmartSyncState(SyncState):
         self.excludeset.discard(ent)
 
     def smart_sync_path(self, remote_path) -> List[SyncEntry]:
-        # q: do we want to raise an exception if path isn't found?
-        # q: do we need to also sync path's parents all the way to the root?
-        #   a: probably, but it doesn't make sense to add them to the requestset, just sync them implicitly
-        #       or maybe it does make sense to add them to the requestset? that way they will get subscribed too
-        #       or maybe always sync all folders at all times, and only files are smartsynced
+        # We are automatically syncing all folders, so we don't need to worry about parent folders existing
+        #   although this could be a concern before the initial sync with a bed is complete,
+        #   parent_conflict handling should take care of it
         ents = self.lookup_path(REMOTE, remote_path)
+        if not ents:
+            raise ex.CloudFileNotFoundError(remote_path)
         for ent in ents:
             self._smart_sync_ent(ent)
         return ents
@@ -131,7 +134,7 @@ class SmartSyncState(SyncState):
 
     def _smart_unsync(self, ents, source_id) -> Optional[SyncEntry]:
         if not ents:
-            raise FileNotFoundError(source_id)
+            raise ex.CloudFileNotFoundError(source_id)
         for ent in ents:
             if ent in self.requestset:
                 self._smart_unsync_ent(ent)
@@ -219,7 +222,7 @@ class SmartCloudSync(CloudSync):
         with self._mutex:
             super().do()
 
-    def register_auto_sync_callback(self, callback):
+    def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
 
     def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
@@ -262,11 +265,16 @@ class SmartCloudSync(CloudSync):
         return retval
 
     def _sync_one_entry(self, sync: SyncEntry):
-        something_got_done = self.smgr.pre_sync(sync)
-        if not something_got_done:
-            something_got_done = self.smgr.sync(sync)
-        self.state.storage_commit()
-        return something_got_done
+        try:
+            something_got_done = self.smgr.pre_sync(sync)
+            if not something_got_done:
+                something_got_done = self.smgr.sync(sync, want_raise=True)
+            self.state.storage_commit()
+            return something_got_done
+        except ex.CloudException as e:
+            path = sync[REMOTE].path if sync[REMOTE].path else sync[LOCAL].path
+            self.nmgr.notify_from_exception(SourceEnum.SYNC, e, path)
+            raise
 
     def _smart_unsync_ent(self, ent):
         if ent:
@@ -313,15 +321,17 @@ class SmartCloudSync(CloudSync):
     def smart_sync_oid(self, remote_oid):
         ent: SyncEntry = self.state.smart_sync_oid(remote_oid)
         if not ent:
-            raise FileNotFoundError(remote_oid)
+            raise ex.CloudFileNotFoundError(remote_oid)
         self._smart_sync_ent(ent)
         return ent[LOCAL].path
 
     def smart_sync_path(self, path, side):
         remote_path = self._ensure_path_remote(path, side)
-        ents = self.state.smart_sync_path(remote_path)
-        if not ents:
-            raise FileNotFoundError(remote_path)
+        try:
+            ents = self.state.smart_sync_path(remote_path)
+        except ex.CloudException as e:
+            self.nmgr.notify_from_exception(SourceEnum.SYNC, e, remote_path)
+            raise
         for ent in ents:
             self._smart_sync_ent(ent)
 

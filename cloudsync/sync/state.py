@@ -942,7 +942,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].changed = self._last_changed_time + 0.001
         self._last_changed_time = ent[side].changed
         log.debug("change time for side %s is %s", side, ent[side].changed)
-        # assert ent in self._changeset
 
     def storage_get_data(self, data_tag):
         if data_tag is None:

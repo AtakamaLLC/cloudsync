@@ -3139,7 +3139,7 @@ def test_smartsync(scs):
     assert not local_oid1
     assert remote_oid1
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(CloudFileNotFoundError):
         scs.smart_sync_path('/noexist', LOCAL)
 
     rfolder_info = remote.info_path(remote_test_folder)
