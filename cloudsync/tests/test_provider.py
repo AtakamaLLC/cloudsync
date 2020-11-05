@@ -1696,7 +1696,7 @@ def test_cursor(provider):
 # TODO: test that renaming A over B replaces B's OID with A's OID, and B's OID is trashed
 
 
-@pytest.mark.manual  # remove this after upgrading providers to new listdir
+@pytest.mark.xfail  # remove this after upgrading providers to support new info
 def test_listdir(provider):
     outer = provider.temp_name()
     root = provider.dirname(outer)
@@ -1817,7 +1817,7 @@ def test_exists_oid(provider):
     assert(not provider.exists_oid(file_info.oid))
 
 
-@pytest.mark.manual  # remove this after upgrading providers to support new info
+@pytest.mark.xfail  # remove this after upgrading providers to support new info
 def test_info(provider):
     folder = '/test_info_oid'
     folder_oid = provider.mkdir(folder)
