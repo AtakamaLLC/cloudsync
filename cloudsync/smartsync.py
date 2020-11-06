@@ -292,8 +292,10 @@ class SmartCloudSync(CloudSync):
 
     def smart_unsync_path(self, path, side):
         """Delete a file locally, but leave it in the cloud"""
-        path = self._ensure_path_remote(path, side)
-        state_ents = self.state.lookup_path(REMOTE, path)
+        remote_path = self._ensure_path_remote(path, side)
+        if not remote_path:
+            return None
+        state_ents = self.state.lookup_path(REMOTE, remote_path)
         ents: set = self.state.requestset.intersection(state_ents)
         if not ents:
             return None
@@ -323,6 +325,8 @@ class SmartCloudSync(CloudSync):
 
     def smart_sync_path(self, path, side):
         remote_path = self._ensure_path_remote(path, side)
+        if not remote_path:
+            return
         try:
             ents = self.state.smart_sync_path(remote_path)
         except ex.CloudException as e:
@@ -346,8 +350,10 @@ class SmartCloudSync(CloudSync):
         remote_ents = dict()
         for dirent in local.listdir_path(local_path):
             local_ents[dirent.name] = dirent
-        for ent in self.state.smart_listdir_path(remote_path):
-            remote_ents[remote.basename(ent[REMOTE].path)] = ent
+        if remote_path:
+            for ent in self.state.smart_listdir_path(remote_path):
+                if self.translate(LOCAL, ent[REMOTE].path):
+                    remote_ents[remote.basename(ent[REMOTE].path)] = ent
         names = set(local_ents.keys()).union(remote_ents.keys())
         for name in names:
             rent = remote_ents.get(name)
@@ -362,16 +368,18 @@ class SmartCloudSync(CloudSync):
 
     def smart_info_path(self, local_path) -> Optional[SmartInfo]:
         remote_path = self.translate(REMOTE, local_path)
-        ents = self.state.lookup_path(REMOTE, remote_path)
-        if ents:
-            return self._ent_to_smartinfo(ents[0], None, local_path)
+        if remote_path:
+            ents = self.state.lookup_path(REMOTE, remote_path)
+            if ents:
+                return self._ent_to_smartinfo(ents[0], None, local_path)
         return None
 
     def smart_info_oid(self, remote_oid) -> Optional[SmartInfo]:
         ent = self.state.lookup_oid(REMOTE, remote_oid)
         if ent:
             local_path = self.translate(LOCAL, ent[REMOTE].path)
-            return self._ent_to_smartinfo(ent, None, local_path)
+            if local_path:
+                return self._ent_to_smartinfo(ent, None, local_path)
         return None
 
     def smart_delete_oid(self, remote_oid):
