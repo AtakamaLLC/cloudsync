@@ -283,12 +283,7 @@ class SmartCloudSync(CloudSync):
                 ent[LOCAL].changed = ent[LOCAL].changed or time.time()
                 self._sync_one_entry(ent)
 
-            found = self.state.smart_unsync_ent(ent)
-            if found:
-                self._smart_unsync_ent(found)
-                return found
-        return None
-
+            return self.state.smart_unsync_ent(ent)
 
     def smart_unsync_oid(self, remote_oid):
         ent = self.state.lookup_oid(REMOTE, remote_oid)

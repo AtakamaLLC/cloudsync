@@ -189,8 +189,7 @@ class SyncManager(Runnable):
             self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
             sync.punt()
             # do we want to self.state.storage_commit() here?
-            self.backoff()
-            raise  # this is junk, self.backoff() already raises, so the raise on this line is unreachable
+            self.backoff()  # raises a backoff error to the caller
         except Exception as e:
             if isinstance(e, ex.CloudException):
                 self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
@@ -198,8 +197,7 @@ class SyncManager(Runnable):
                 "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
             sync.punt()
             self.state.storage_commit()
-            self.backoff()
-            raise
+            self.backoff()  # raises a backoff error to the caller
         return something_got_done
 
     def do(self):
