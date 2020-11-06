@@ -284,6 +284,7 @@ class SmartCloudSync(CloudSync):
                 self._sync_one_entry(ent)
 
             return self.state.smart_unsync_ent(ent)
+        return None
 
     def smart_unsync_oid(self, remote_oid):
         ent = self.state.lookup_oid(REMOTE, remote_oid)
