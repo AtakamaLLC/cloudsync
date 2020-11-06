@@ -2992,6 +2992,8 @@ def test_smartsync(scs):
     remote_path_local_first = "/remote/testfolder/started_out_local"
     r_autosync_path = "/remote/testfolder/stuff.autosync"
     l_autosync_path = "/local/testfolder/stuff.autosync"
+    remote_filtered_path1 = "/remote/testfolder/notranslate"
+    local_filtered_path1 = "/local/testfolder/notranslate"
     contents1 = b"hello1"
     contents1a = b"hello1a"
     contents1b = b"hello1bb"
@@ -3053,10 +3055,10 @@ def test_smartsync(scs):
     assert local_info_oid
     assert local_info_oid.path == local_path1
 
-    noexist_info_path = scs.smart_info_path('/noexist')
+    noexist_info_path = scs.smart_info_path('/local/noexist')
     assert noexist_info_path is None
 
-    noexist_info_oid = scs.smart_info_oid('/noexist')
+    noexist_info_oid = scs.smart_info_oid('/local/noexist')
     assert noexist_info_oid is None
 
     # sync the file down
@@ -3069,6 +3071,13 @@ def test_smartsync(scs):
     ent1.get_latest(force=True)
     assert ent1[LOCAL].size == len(contents1)
     assert ent1[REMOTE].size == len(contents1a)
+
+    old_translate = scs.translate
+
+    def new_translate(side, path):
+        if "notranslate" in path:
+            return None
+        return old_translate(side, path)
 
     rinfo1a = remote.info_oid(rinfo1.oid)
     files = list(scs.smart_listdir_path(local_test_folder))
@@ -3087,6 +3096,16 @@ def test_smartsync(scs):
     scs.emgrs[1].do()
     change_count = scs.smgr.change_count(unverified=True)
     assert change_count == 3  # local paths 1 and 2 and started_out_local
+
+    remote.create(remote_filtered_path1, BytesIO(contents1a))
+    with patch.object(scs, "translate", side_effect=new_translate):
+        scs.run_until_clean(timeout)
+        assert not local.exists_path(local_filtered_path1)
+        files = list(scs.smart_listdir_path(local_test_folder))
+        for file in files:
+            assert file.path != local_filtered_path1
+
+
     scs.run_until_clean(timeout)
     assert remote.exists_path(remote_path_local_first)
     curr_contents = BytesIO()
@@ -3140,7 +3159,7 @@ def test_smartsync(scs):
     assert remote_oid1
 
     with pytest.raises(CloudFileNotFoundError):
-        scs.smart_sync_path('/noexist', LOCAL)
+        scs.smart_sync_path('/local/noexist', LOCAL)
 
     rfolder_info = remote.info_path(remote_test_folder)
     remote_test_folder2 = "/remote/testfolder2"

@@ -325,8 +325,6 @@ class SmartCloudSync(CloudSync):
 
     def smart_sync_path(self, path, side):
         remote_path = self._ensure_path_remote(path, side)
-        if not remote_path:
-            return
         try:
             ents = self.state.smart_sync_path(remote_path)
         except ex.CloudException as e:
