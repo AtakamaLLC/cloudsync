@@ -1,5 +1,5 @@
 [build-system]
-requires = ["flit"]
+requires = ["setuptools", "flit"]
 build-backend = "flit.buildapi"
 
 [tool.flit.metadata]
@@ -14,7 +14,7 @@ classifiers=["Intended Audience :: Developers",
     "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires = ["setuptools", "arrow", "dataclasses", "pystrict", "msgpack", "requests_oauthlib", "python-daemon", "xxhash", "urllib3>=1.25.3", "watchdog", "pywin32; sys_platform == 'win32'"]
+requires = ["arrow", "dataclasses", "pystrict", "msgpack", "requests_oauthlib", "python-daemon", "xxhash", "urllib3>=1.25.3", "watchdog", "pywin32; sys_platform == 'win32'"]
 requires-python = ">=3.6"
 
 [tool.flit.metadata.requires-extra]
