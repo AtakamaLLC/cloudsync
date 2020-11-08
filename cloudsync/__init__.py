@@ -29,7 +29,7 @@ cs = cloudsync.CloudSync((local, prov), "/home/stuff", "/stuff")
 cs.run()
 """
 
-__version__ = "%VERSION%"
+__version__ = "2.4.5a"
 
 from pystrict import strict, StrictError
 
