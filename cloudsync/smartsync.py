@@ -183,7 +183,7 @@ class SmartSyncState(SyncState):
                 included = True  # needs a get_latest() at least
             elif not ent[LOCAL].oid:  # this means the entry is not currently synced locally
                 for callback in self._callbacks:
-                    if callback(ent[REMOTE].path):
+                    if ent[REMOTE].path and callback(ent[REMOTE].path):
                         self._smart_sync_ent(ent)
                         included = True
                         break
