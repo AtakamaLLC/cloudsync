@@ -5,6 +5,7 @@ from threading import RLock
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
+from cloudsync.sync import MISSING, TRASHED
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
 from cloudsync.notification import SourceEnum
@@ -37,7 +38,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         self.translate = lambda side, path: self.__translate(side, path) if path else None
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-        self.__nmgr = notification_manager
+        self._nmgr = notification_manager
         self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
         self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
         if not sleep:
@@ -150,7 +151,6 @@ class SmartSyncState(SyncState):
 
     def smart_listdir_path(self, remote_path):
         """returns the ents for all files in remote folder by looking in the state db, doesn't hit the provider api."""
-        # TODO exclude files that are marked deleted but unsynced
         r_prov = self.providers[REMOTE]
         for ent, _ignored_rel_path in self.get_kids(remote_path, REMOTE):
             if r_prov.paths_match(r_prov.dirname(ent[REMOTE].path), remote_path):
@@ -226,6 +226,7 @@ class SmartCloudSync(CloudSync):
         self.state.register_auto_sync_callback(callback)
 
     def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
+        '''Returns None if file doesn't exist remotely or locally'''
         assert ent or local_dir_info, "must provide one of ent or local_dir_info"
 
         if local_dir_info:  # file is synced, use the local info
@@ -239,6 +240,8 @@ class SmartCloudSync(CloudSync):
             mtime = local_dir_info.mtime
             is_synced = True
         else:
+            if ent[REMOTE].exists in (TRASHED, MISSING):
+                return None
             otype = ent[REMOTE].otype
             oid = ent[LOCAL].oid
             remote_oid = ent[REMOTE].oid
@@ -328,7 +331,7 @@ class SmartCloudSync(CloudSync):
         try:
             ents = self.state.smart_sync_path(remote_path)
         except ex.CloudException as e:
-            self.nmgr.notify_from_exception(SourceEnum.SYNC, e, remote_path)
+            self._nmgr.notify_from_exception(SourceEnum.SYNC, e, remote_path)
             raise
         for ent in ents:
             self._smart_sync_ent(ent)
@@ -357,7 +360,8 @@ class SmartCloudSync(CloudSync):
             rent = remote_ents.get(name)
             lent = local_ents.get(name)
             yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
-            yield yield_val
+            if yield_val:
+                yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:
         if side == LOCAL:
