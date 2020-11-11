@@ -1024,7 +1024,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def __len__(self):
         return len(self.get_all())
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None, accurate=False):   # pylint: disable=redefined-builtin, too-many-arguments
+    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None, size=None, mtime=None, accurate=False):   # pylint: disable=redefined-builtin, too-many-arguments, disable=too-many-locals
         """Called by the event manager when an event happens."""
 
         log.log(TRACE, "lookup oid %s, sig %s", oid, debug_sig(oid))
@@ -1074,7 +1074,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        self.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
+        self.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=time.time(), otype=otype,
+                          size=size, mtime=mtime, accurate=accurate)
 
     def change(self, age):
         change_set = self._changeset
