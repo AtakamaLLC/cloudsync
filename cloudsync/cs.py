@@ -276,6 +276,9 @@ class CloudSync(Runnable):
             self.sthread = None
 
     # for tests, make this manually runnable
+    # This method is NEVER called in production, it is only called in tests!
+    #   Notice that the start() method is overridden in this class, and prevents do() from being called
+    #   by starting threads for all the managers, which get their do() methods called, but never this class! BEWARE
     def do(self):
         """
         One loop of sync, used for *tests only*.

@@ -55,6 +55,11 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         self.mult_backoff = 2
         assert len(self.providers) == 2
 
+    def do(self):
+        time.sleep(.01)  # give smartsync a chance to preempt
+        with self._mutex:
+            super().do()
+
     def pre_sync(self, sync: SyncEntry) -> bool:
         finished = super().pre_sync(sync)
         local_file = sync[LOCAL].oid and self.providers[LOCAL].exists_oid(sync[LOCAL].oid)
@@ -216,11 +221,6 @@ class SmartCloudSync(CloudSync):
         self._mutex = RLock()
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
-
-    def do(self):
-        time.sleep(.01)  # give smartsync a chance to preempt
-        with self._mutex:
-            super().do()
 
     def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
