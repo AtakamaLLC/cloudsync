@@ -57,7 +57,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
 
     def do(self):
         time.sleep(.01)  # give smartsync a chance to preempt
-        with self._mutex:
+        with self.state.sync_mutex:
             super().do()
 
     def pre_sync(self, sync: SyncEntry) -> bool:
@@ -96,6 +96,7 @@ class SmartSyncState(SyncState):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
         self._callbacks: List[Callable] = list()
+        self.sync_mutex = RLock()
         super().__init__(providers, storage, tag, shuffle, prioritize)
 
     def register_auto_sync_callback(self, callback):
@@ -218,7 +219,6 @@ class SmartCloudSync(CloudSync):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None
                  ):
-        self._mutex = RLock()
         super().__init__(providers=providers, roots=roots, storage=storage,
                          sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
 
@@ -311,7 +311,7 @@ class SmartCloudSync(CloudSync):
         # if the local file is missing,
         #   clear the local side of the ent and
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
-        with self._mutex:
+        with self.state.sync_mutex:
             for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
                 self._sync_one_entry(parent_conflict)
             return self._sync_one_entry(ent)
