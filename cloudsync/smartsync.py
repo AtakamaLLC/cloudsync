@@ -349,8 +349,12 @@ class SmartCloudSync(CloudSync):
         remote_path = self.translate(REMOTE, local_path)
         local_ents = dict()
         remote_ents = dict()
-        for dirent in local.listdir_path(local_path):
-            local_ents[dirent.name] = dirent
+        try:
+            for dirent in local.listdir_path(local_path):
+                local_ents[dirent.name] = dirent
+        except ex.CloudFileNotFoundError:
+            # Still should do remote listdir if local has been deleted
+            pass
         if remote_path:
             for ent in self.state.smart_listdir_path(remote_path):
                 if self.translate(LOCAL, ent[REMOTE].path):
@@ -385,9 +389,12 @@ class SmartCloudSync(CloudSync):
         return None
 
     def smart_delete_oid(self, remote_oid):
+        log.info("Smart delete oid %s", remote_oid)
         ent = self.state.lookup_oid(REMOTE, remote_oid)
-        ent[LOCAL].exists = TRASHED
-        ent[LOCAL].changed = time.time()
-
-        self.state.requestset.add(ent)
-        self.state.excludeset.discard(ent)
+        if ent:
+            ent[LOCAL].exists = TRASHED
+            ent[LOCAL].changed = time.time()
+            self.state.requestset.add(ent)
+            self.state.excludeset.discard(ent)
+        else:
+            raise ex.CloudFileNotFoundError(remote_oid)
