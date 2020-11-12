@@ -1,9 +1,8 @@
 import time
 import logging
-import tempfile
 from threading import RLock
 from dataclasses import dataclass
-from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
+from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
@@ -31,29 +30,8 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
-        self.state = state
-        self.providers: Tuple['Provider', 'Provider'] = providers
-        self.__translate = translate
-        self.translate = lambda side, path: self.__translate(side, path) if path else None
-        self._resolve_conflict = resolve_conflict
-        self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-        self.__nmgr = notification_manager
-        self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
-        self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
-        if not sleep:
-            # these are the event sleeps, but really we need more info than this
-            sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
-
-        self.sleep = sleep
-
-        ####
-
-        max_sleep = max(sleep)                    # on sync fail, use the worst time for backoff
-        self.aging = max_sleep / 5                # how long before even trying to sync
-        self.min_backoff = max_sleep / 10.0       # event sleep of 15 seconds == 1.5 second backoff on failures
-        self.max_backoff = max_sleep * 10.0       # escalating up to a 3 minute wait time
-        self.mult_backoff = 2
-        assert len(self.providers) == 2
+        super().__init__(cast(SyncState, state), providers, translate, resolve_conflict, notification_manager, sleep, root_paths, root_oids)
+        self.state: SmartSyncState = state
 
     def do(self):
         time.sleep(.01)  # give smartsync a chance to preempt
