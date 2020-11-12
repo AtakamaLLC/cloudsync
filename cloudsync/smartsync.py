@@ -392,8 +392,8 @@ class SmartCloudSync(CloudSync):
         log.info("Smart delete oid %s", remote_oid)
         ent = self.state.lookup_oid(REMOTE, remote_oid)
         if ent:
-            ent[LOCAL].exists = TRASHED
-            ent[LOCAL].changed = time.time()
+            ent[REMOTE].clear()
+            self.update_entry(ent, LOCAL, None, changed=True, exists=False)
             self.state.requestset.add(ent)
             self.state.excludeset.discard(ent)
         else:
