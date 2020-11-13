@@ -30,7 +30,8 @@ class CloudSync(Runnable):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None,
                  state_class: Type = SyncState,
-                 smgr_class: Type = SyncManager
+                 smgr_class: Type = SyncManager,
+                 emgr_class: Type = EventManager
                  ):
 
         """
@@ -85,10 +86,10 @@ class CloudSync(Runnable):
         event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)
         event_root_oids: Tuple[Optional[str], Optional[str]] = root_oids or (None, None)
 
-        self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, root_path=event_root_paths[0],
+        self.emgrs = (
+            emgr_class(smgr.providers[0], state, 0, self.nmgr, root_path=event_root_paths[0],
                          reauth=lambda: self.authenticate(0), root_oid=event_root_oids[0]),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
+            emgr_class(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
                          reauth=lambda: self.authenticate(1), root_oid=event_root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))

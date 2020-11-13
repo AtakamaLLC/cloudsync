@@ -3,7 +3,7 @@ import logging
 from threading import RLock
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast
-from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
+from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
 from cloudsync.notification import SourceEnum
@@ -132,12 +132,12 @@ class SmartSyncState(SyncState):
         ent = self.lookup_oid(REMOTE, remote_oid)
         return self._smart_unsync([ent], remote_oid)
 
-    def smart_listdir_path(self, remote_path):
+    def smart_listdir_path(self, side, path):
         """returns the ents for all files in remote folder by looking in the state db, doesn't hit the provider api."""
         # TODO exclude files that are marked deleted but unsynced
-        r_prov = self.providers[REMOTE]
-        for ent, _ignored_rel_path in self.get_kids(remote_path, REMOTE):
-            if r_prov.paths_match(r_prov.dirname(ent[REMOTE].path), remote_path):
+        r_prov = self.providers[side]
+        for ent, _ignored_rel_path in self.get_kids(path, side):
+            if r_prov.paths_match(r_prov.dirname(ent[side].path), path):
                 yield ent
 
     @property
@@ -188,6 +188,20 @@ class SmartInfo(OInfo):
     is_synced: bool = False
 
 
+class SmartEventManager(EventManager):
+    def _fill_event_path(self, event: Event):
+        if event.path:
+            return
+        if event.prior_oid:
+            log.error("rename from oid_is_path %s without full path", self.provider.name)   # pragma: no cover
+        state = self.state.lookup_oid(self.side, event.oid)
+        if state:
+            if self.side == 1 or (state[self.side].path and self.provider.exists_path(state[self.side].path)):
+                event.path = state[self.side].path
+        if not event.path and event.exists in (True, None):
+            self._make_event_accurate(event)
+
+
 class SmartCloudSync(CloudSync):
     """Class to add smart sync functionality to the CloudSync class"""
     def __init__(self,
@@ -198,7 +212,8 @@ class SmartCloudSync(CloudSync):
                  root_oids: Optional[Tuple[str, str]] = None
                  ):
         super().__init__(providers=providers, roots=roots, storage=storage,
-                         sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
+                         sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager,
+                         emgr_class=SmartEventManager, state_class=SmartSyncState)
 
     def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
@@ -322,20 +337,21 @@ class SmartCloudSync(CloudSync):
         #   remote_oid and is_synced
         local, remote = self.providers
         remote_path = self.translate(REMOTE, local_path)
-        local_ents = dict()
+        local_dir_ents = dict()
         remote_ents = dict()
         for dirent in local.listdir_path(local_path):
-            local_ents[dirent.name] = dirent
+            local_dir_ents[dirent.name] = dirent
         if remote_path:
-            for ent in self.state.smart_listdir_path(remote_path):
+            for ent in self.state.smart_listdir_path(REMOTE, remote_path):
                 if self.translate(LOCAL, ent[REMOTE].path):
                     remote_ents[remote.basename(ent[REMOTE].path)] = ent
-        names = set(local_ents.keys()).union(remote_ents.keys())
+        names = set(local_dir_ents.keys()).union(remote_ents.keys())
         for name in names:
             rent = remote_ents.get(name)
-            lent = local_ents.get(name)
-            yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
-            yield yield_val
+            lent = local_dir_ents.get(name)
+            if not rent or not rent[LOCAL].path or self.translate(LOCAL, rent[REMOTE].path) == rent[LOCAL].path:
+                yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
+                yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:
         if side == LOCAL:
