@@ -356,7 +356,7 @@ class SyncManager(Runnable):
                 # see test_cs_rename_folder_out_of_root
                 if self.translate(other_side(side), sync[side].path):
                     if sync[side].changed:
-                        log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s, side=%s, oid=%s, exists=%s", sync, side, sync[side].oid, sync[side].exists)
+                        log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                     sync[side].changed = 0
                     continue
 
