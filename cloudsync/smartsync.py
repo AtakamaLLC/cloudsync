@@ -325,7 +325,7 @@ class SmartCloudSync(CloudSync):
         try:
             ents = self.state.smart_sync_path(remote_path)
         except ex.CloudException as e:
-            self._nmgr.notify_from_exception(SourceEnum.SYNC, e, remote_path)
+            self.nmgr.notify_from_exception(SourceEnum.SYNC, e, remote_path)
             raise
         for ent in ents:
             self._smart_sync_ent(ent)
