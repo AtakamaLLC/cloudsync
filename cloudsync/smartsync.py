@@ -240,7 +240,8 @@ class SmartCloudSync(CloudSync):
             mtime = local_dir_info.mtime
             is_synced = True
         else:
-            if ent[REMOTE].exists in (TRASHED, MISSING):
+            if ent[LOCAL].exists in (TRASHED, MISSING) \
+                    or ent[REMOTE].exists in (TRASHED, MISSING):
                 return None
             otype = ent[REMOTE].otype
             oid = ent[LOCAL].oid
