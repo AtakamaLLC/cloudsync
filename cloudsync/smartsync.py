@@ -261,8 +261,7 @@ class SmartCloudSync(CloudSync):
     def _ignore_ent(self, ent: SyncEntry) -> bool:
         '''Returns True if Smartsync should ignore the ent during listdir/info'''
         if not ent:
-            # There's no ent to ignore
-            return False
+            return True
 
         # Ent has been trashed locally or remotely
         if ent[LOCAL].exists in (TRASHED, MISSING) \
@@ -371,7 +370,7 @@ class SmartCloudSync(CloudSync):
         for name in names:
             rent = remote_ents.get(name)
             lent = local_dir_ents.get(name)
-            if not self._ignore_ent(rent):
+            if lent or not self._ignore_ent(rent):
                 yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
                 yield yield_val
 
