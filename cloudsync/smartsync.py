@@ -388,13 +388,14 @@ class SmartCloudSync(CloudSync):
                 return self._ent_to_smartinfo(ent, None, local_path)
         return None
 
-    def smart_delete_oid(self, local_path, remote_oid):
-        log.info("Smart delete, path=%s oid=%s", local_path, remote_oid)
-        ent = self.state.lookup_oid(REMOTE, remote_oid)
-        if ent:
-            ent[REMOTE].changed = 0
-            self.state.update_entry(ent, LOCAL, local_path, path=local_path, changed=True, exists=False)
-            self.state.requestset.add(ent)
-            self.state.excludeset.discard(ent)
-        else:
-            raise ex.CloudFileNotFoundError(local_path)
+    def smart_delete_path(self, local_oid, local_path):
+        remote_path = self.translate(REMOTE, local_path)
+        log.info("Smart delete path %s", local_path)
+        if remote_path:
+            ents = self.state.lookup_path(REMOTE, remote_path)
+            if ents:
+                ent = ents[0]
+                ent[REMOTE].changed = 0
+                self.state.update_entry(ent, LOCAL, local_oid, path=local_path, changed=True, exists=False)
+                self.state.requestset.add(ent)
+                self.state.excludeset.discard(ent)
