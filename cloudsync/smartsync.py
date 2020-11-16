@@ -258,21 +258,21 @@ class SmartCloudSync(CloudSync):
                            )
         return retval
 
-    def _ignore_ent(self, ent: SyncEntry) -> bool:
-        '''Returns True if Smartsync should ignore the ent during listdir/info'''
+    def _include_ent(self, ent: SyncEntry) -> bool:
+        '''Returns True if Smartsync should include the ent during listdir/info'''
         if not ent:
-            return True
+            return False
 
-        # Ent has been trashed locally or remotely
+        # Ent has been trashed locally or remotely and there is no local counterpart
         if ent[LOCAL].exists in (TRASHED, MISSING) \
-                    or ent[REMOTE].exists in (TRASHED, MISSING):
-            return True
+                    or (not ent[LOCAL].path and ent[REMOTE].exists in (TRASHED, MISSING)):
+            return False
 
-        # Local rename in process
-        if ent[LOCAL].path and self.translate(LOCAL, ent[REMOTE].path) != ent[LOCAL].path:
-            return True
+        # Ignore if a local rename is in progress
+        if ent[LOCAL].path:
+            return self.translate(LOCAL, ent[REMOTE].path) == ent[LOCAL].path
 
-        return False
+        return True
 
     def _sync_one_entry(self, sync: SyncEntry):
         try:
@@ -370,7 +370,7 @@ class SmartCloudSync(CloudSync):
         for name in names:
             rent = remote_ents.get(name)
             lent = local_dir_ents.get(name)
-            if lent or not self._ignore_ent(rent):
+            if lent or self._include_ent(rent):
                 yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
                 yield yield_val
 
@@ -383,13 +383,13 @@ class SmartCloudSync(CloudSync):
         remote_path = self.translate(REMOTE, local_path)
         if remote_path:
             ents = self.state.lookup_path(REMOTE, remote_path)
-            if ents and not self._ignore_ent(ents[0]):
+            if ents and self._include_ent(ents[0]):
                 return self._ent_to_smartinfo(ents[0], None, local_path)
         return None
 
     def smart_info_oid(self, remote_oid) -> Optional[SmartInfo]:
         ent = self.state.lookup_oid(REMOTE, remote_oid)
-        if ent and not self._ignore_ent(ent):
+        if ent and self._include_ent(ent):
             local_path = self.translate(LOCAL, ent[REMOTE].path)
             if local_path:
                 return self._ent_to_smartinfo(ent, None, local_path)
