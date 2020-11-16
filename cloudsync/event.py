@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass  # pylint: disable=too-many-instance-attributes
 class Event:
     """Information on stuff that happens in a provider, returned from the events() function."""
 
@@ -32,6 +32,7 @@ class Event:
     prior_oid: Optional[str] = None             # path based systems use this on renames
     new_cursor: Optional[str] = None            # todo: this should not be in the base class here, not supported
     accurate: bool = False                      # has event info been vetted
+    size: int = 0
 
 
 class ProviderGuard(set):
@@ -288,7 +289,8 @@ class EventManager(Runnable):
             self._fill_event_path(event)
             self._notify_on_root_change_event(event)
             self.state.update(self.side, event.otype, event.oid, path=event.path, hash=event.hash,
-                              exists=event.exists, prior_oid=event.prior_oid, accurate=event.accurate)
+                              exists=event.exists, prior_oid=event.prior_oid, size=event.size, mtime=event.mtime,
+                              accurate=event.accurate)
             self.state.storage_commit()
 
     def _make_event_accurate(self, event):
@@ -302,6 +304,8 @@ class EventManager(Runnable):
             event.otype = info.otype
             event.hash = info.hash
             event.exists = True
+            event.mtime = info.mtime
+            event.size = info.size
         else:
             event.exists = False
         event.accurate = True

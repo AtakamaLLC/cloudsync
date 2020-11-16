@@ -1,11 +1,10 @@
 import time
 import logging
-import tempfile
 from threading import RLock
 from dataclasses import dataclass
-from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set
-from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry
+from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast
 from cloudsync.sync import MISSING, TRASHED
+from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
 from cloudsync.notification import SourceEnum
@@ -32,29 +31,13 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
-        self.state = state
-        self.providers: Tuple['Provider', 'Provider'] = providers
-        self.__translate = translate
-        self.translate = lambda side, path: self.__translate(side, path) if path else None
-        self._resolve_conflict = resolve_conflict
-        self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-        self._nmgr = notification_manager
-        self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
-        self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
-        if not sleep:
-            # these are the event sleeps, but really we need more info than this
-            sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
+        super().__init__(cast(SyncState, state), providers, translate, resolve_conflict, notification_manager, sleep, root_paths, root_oids)
+        self.state: SmartSyncState = state
 
-        self.sleep = sleep
-
-        ####
-
-        max_sleep = max(sleep)                    # on sync fail, use the worst time for backoff
-        self.aging = max_sleep / 5                # how long before even trying to sync
-        self.min_backoff = max_sleep / 10.0       # event sleep of 15 seconds == 1.5 second backoff on failures
-        self.max_backoff = max_sleep * 10.0       # escalating up to a 3 minute wait time
-        self.mult_backoff = 2
-        assert len(self.providers) == 2
+    def do(self):
+        time.sleep(.01)  # give smartsync a chance to preempt
+        with self.state.sync_mutex:
+            super().do()
 
     def pre_sync(self, sync: SyncEntry) -> bool:
         finished = super().pre_sync(sync)
@@ -92,6 +75,7 @@ class SmartSyncState(SyncState):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
         self._callbacks: List[Callable] = list()
+        self.sync_mutex = RLock()
         super().__init__(providers, storage, tag, shuffle, prioritize)
 
     def register_auto_sync_callback(self, callback):
@@ -149,11 +133,11 @@ class SmartSyncState(SyncState):
         ent = self.lookup_oid(REMOTE, remote_oid)
         return self._smart_unsync([ent], remote_oid)
 
-    def smart_listdir_path(self, remote_path):
+    def smart_listdir_path(self, side, path):
         """returns the ents for all files in remote folder by looking in the state db, doesn't hit the provider api."""
-        r_prov = self.providers[REMOTE]
-        for ent, _ignored_rel_path in self.get_kids(remote_path, REMOTE):
-            if r_prov.paths_match(r_prov.dirname(ent[REMOTE].path), remote_path):
+        r_prov = self.providers[side]
+        for ent, _ignored_rel_path in self.get_kids(path, side):
+            if r_prov.paths_match(r_prov.dirname(ent[side].path), path):
                 yield ent
 
     @property
@@ -204,6 +188,20 @@ class SmartInfo(OInfo):
     is_synced: bool = False
 
 
+class SmartEventManager(EventManager):
+    def _fill_event_path(self, event: Event):
+        if event.path:
+            return
+        if event.prior_oid:
+            log.error("rename from oid_is_path %s without full path", self.provider.name)   # pragma: no cover
+        state = self.state.lookup_oid(self.side, event.oid)
+        if state:
+            if self.side == 1 or (state[self.side].path and self.provider.exists_path(state[self.side].path)):
+                event.path = state[self.side].path
+        if not event.path and event.exists in (True, None):
+            self._make_event_accurate(event)
+
+
 class SmartCloudSync(CloudSync):
     """Class to add smart sync functionality to the CloudSync class"""
     def __init__(self,
@@ -213,14 +211,9 @@ class SmartCloudSync(CloudSync):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None
                  ):
-        self._mutex = RLock()
         super().__init__(providers=providers, roots=roots, storage=storage,
-                         sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager, state_class=SmartSyncState)
-
-    def do(self):
-        time.sleep(.01)  # give smartsync a chance to preempt
-        with self._mutex:
-            super().do()
+                         sleep=sleep, root_oids=root_oids, smgr_class=SmartSyncManager,
+                         emgr_class=SmartEventManager, state_class=SmartSyncState)
 
     def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
@@ -315,7 +308,7 @@ class SmartCloudSync(CloudSync):
         # if the local file is missing,
         #   clear the local side of the ent and
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
-        with self._mutex:
+        with self.state.sync_mutex:
             for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
                 self._sync_one_entry(parent_conflict)
             return self._sync_one_entry(ent)
@@ -348,25 +341,26 @@ class SmartCloudSync(CloudSync):
         #   remote_oid and is_synced
         local, remote = self.providers
         remote_path = self.translate(REMOTE, local_path)
-        local_ents = dict()
+        local_dir_ents = dict()
         remote_ents = dict()
         try:
             for dirent in local.listdir_path(local_path):
-                local_ents[dirent.name] = dirent
+                local_dir_ents[dirent.name] = dirent
         except ex.CloudFileNotFoundError:
             # Still should do remote listdir if local has been deleted
             pass
         if remote_path:
-            for ent in self.state.smart_listdir_path(remote_path):
+            for ent in self.state.smart_listdir_path(REMOTE, remote_path):
                 if self.translate(LOCAL, ent[REMOTE].path):
                     remote_ents[remote.basename(ent[REMOTE].path)] = ent
-        names = set(local_ents.keys()).union(remote_ents.keys())
+        names = set(local_dir_ents.keys()).union(remote_ents.keys())
         for name in names:
             rent = remote_ents.get(name)
-            lent = local_ents.get(name)
-            yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
-            if yield_val:
-                yield yield_val
+            lent = local_dir_ents.get(name)
+            if not rent or not rent[LOCAL].path or self.translate(LOCAL, rent[REMOTE].path) == rent[LOCAL].path:
+                yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
+                if yield_val:
+                    yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:
         if side == LOCAL:

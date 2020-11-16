@@ -3194,8 +3194,7 @@ def test_smartsync(scs):
     rfolder_info = remote.info_path(remote_test_folder)
     remote_test_folder2 = "/remote/testfolder2"
     local_test_folder2 = "/local/testfolder2"
-    local_path2 = local.join(local_test_folder2, 'stuff1')
-    remote_path2 = local.join(remote_test_folder2, 'stuff1')
+    local_path1_2 = local.join(local_test_folder2, 'stuff1')
     remote.rename(rfolder_info.oid, remote_test_folder2)  # create a parent conflict
     assert remote.exists_path(remote_test_folder2)
     assert local.exists_path(local_test_folder)
@@ -3205,7 +3204,7 @@ def test_smartsync(scs):
 
     # remote folder has been renamed, so there should be a parent conflict when smart_syncing
     scs.smart_sync_path(local_path1, LOCAL)
-    local_info1 = local.info_path(local_path2)
+    local_info1 = local.info_path(local_path1_2)
     assert local_info1
 
     scs.run_until_clean(timeout)
@@ -3219,6 +3218,36 @@ def test_smartsync(scs):
             new_ent = SyncEntry(parent=scs.state, otype=None, storage_init=(entry.storage_id, ent_ser))
             assert new_ent[side].size == entry[side].size
             assert new_ent[side].mtime == entry[side].mtime
+    
+    # rename a file locally and confirm it doesn't appear in smart_listdir under the old name
+    remote_path3 = "/remote/testfolder2/stuff3"
+    local_path3 = "/local/testfolder2/stuff3"
+    remote_path3a = remote_path3 + 'a'
+    local_path3a = local_path3 + 'a'
+    local.create(local_path3, BytesIO(contents1))
+    scs.run_until_clean(timeout)
+    assert local.exists_path(local_path3)
+    assert remote.exists_path(remote_path3)
+
+    local_info3 = local.info_path(local_path3)
+    local.rename(local_info3.oid, local_path3a)
+    scs.emgrs[0].do()
+    scs.emgrs[1].do()
+
+    assert local.exists_path(local_path3a)
+    assert remote.exists_path(remote_path3)
+    files = list(scs.smart_listdir_path(local_test_folder2))
+    found3 = False
+    found3a = False
+    for file in files:
+        if file.name.endswith('stuff3'):
+            found3 = True
+        if file.name.endswith('stuff3a'):
+            found3a = True
+    assert found3a  # confirm file is listed under new name
+    assert not found3  # confirm file is not listed under old name
+
+
 
 
 def test_cursor_tag_delete(mock_provider_generator):
