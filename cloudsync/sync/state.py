@@ -121,6 +121,10 @@ class SideState:
         self._exists = xval
         self._parent.updated(self._side, "exists", xval)
 
+    def mark_changed(self):
+        # setting to an old mtime marks this as fully aged
+        self._parent.mark_changed(self.side)
+
     def set_aged(self):
         # setting to an old mtime marks this as fully aged
         self.changed = 1
@@ -244,6 +248,9 @@ class SyncEntry:
         if getattr(self, "_" + k) != v:
             self.updated(None, k, v)
             object.__setattr__(self, "_" + k, v)
+
+    def mark_changed(self, side):
+        self._parent.mark_changed(side, self)
 
     def updated(self, side, key, val):
         self._parent.updated(self, side, key, val)
@@ -923,7 +930,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
-            self._mark_changed(side, ent)
+            self.mark_changed(side, ent)
 
             if accurate:
                 ent[side]._last_gotten = changed
@@ -931,7 +938,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         log.log(TRACE, "updated %s", ent)
 
-    def _mark_changed(self, side, ent):
+    def mark_changed(self, side, ent):
         ent[side].changed = time.time()
         # ensure that change times can't repeat and must increase
         # this is a problem on my windows vm, or any machine with a low resolution clock which can
@@ -1225,8 +1232,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         assert replace_ent[replace].oid
         assert replace_ent in self.get_all()
 
-        self._mark_changed(replace, replace_ent)
-        self._mark_changed(defer, defer_ent)
+        self.mark_changed(replace, replace_ent)
+        self.mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
 

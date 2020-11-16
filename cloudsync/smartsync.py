@@ -307,6 +307,7 @@ class SmartCloudSync(CloudSync):
         with self.state.sync_mutex:
             for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
                 self._sync_one_entry(parent_conflict)
+            ent[REMOTE].mark_changed()
             return self._sync_one_entry(ent)
 
     def smart_sync_oid(self, remote_oid):

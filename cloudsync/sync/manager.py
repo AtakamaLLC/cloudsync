@@ -321,7 +321,7 @@ class SyncManager(Runnable):
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
-                    sync[changed].changed = time.time()
+                    sync[changed].set_changed()
                     sync[synced].clear()
 
 
@@ -778,7 +778,7 @@ class SyncManager(Runnable):
                         # Clear the sync_path, and set synced to MISSING,
                         # that way, we will recognize that this dir needs to be created
                         parent_ent[changed].sync_path = None
-                        parent_ent[changed].changed = time.time()
+                        parent_ent[changed].set_changed()
                         parent_ent[synced].exists = MISSING
                         assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
                         assert parent_ent[changed].needs_sync(), "%s doesn't need sync" % parent_ent
@@ -1054,10 +1054,10 @@ class SyncManager(Runnable):
         # Mark children changed so we will check if already deleted
         log.info("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
-            kid[changed].changed = time.time()
+            kid[changed].set_changed()
 
         # Mark us changed, so we will sync after kids, not before
-        sync[changed].changed = time.time()
+        sync[changed].set_changed()
 
         return PUNT
 
@@ -1290,7 +1290,7 @@ class SyncManager(Runnable):
         # replace.path = new_path # this will break test_sync_conflict_resolve, until the above is addressed
 
         replace.oid = new_oid
-        replace.changed = time.time()
+        replace.set_changed()
         return True
 
     def rename_to_fix_conflict(self, sync, side, path, temp_rename=False):
@@ -1442,7 +1442,7 @@ class SyncManager(Runnable):
             sync[changed].clear()
             sync[synced].sync_path = None
             sync[synced].sync_hash = None
-            sync[synced].changed = time.time()
+            sync[synced].set_changed()
             log.warning("%s now unsynced: %s", sync[synced].path, sync)
 
         return FINISHED
