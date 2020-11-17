@@ -258,15 +258,19 @@ class SmartCloudSync(CloudSync):
                            )
         return retval
 
-    def _include_ent(self, ent: SyncEntry) -> bool:
-        '''Returns True if Smartsync should include the ent during listdir/info'''
+    def _include_ent(self, ent: SyncEntry, check_local=False) -> bool:
+        '''Returns True if Smartsync should include the ent during listdir/info
+           If check_local is True, double check with provider before assuming ent is trashed'''
         if not ent:
             return False
 
         # Ent has been trashed locally or remotely and there is no local counterpart
         if ent[LOCAL].exists in (TRASHED, MISSING) \
                     or (not ent[LOCAL].path and ent[REMOTE].exists in (TRASHED, MISSING)):
-            return False
+            if check_local:
+                return self.providers[LOCAL].exists_path(ent[LOCAL].path)
+            else:
+                return False
 
         # Ignore if a local rename is in progress
         if ent[LOCAL].path:
@@ -383,7 +387,7 @@ class SmartCloudSync(CloudSync):
         remote_path = self.translate(REMOTE, local_path)
         if remote_path:
             ents = self.state.lookup_path(REMOTE, remote_path)
-            if ents and self._include_ent(ents[0]):
+            if ents and self._include_ent(ents[0], check_local=True):
                 return self._ent_to_smartinfo(ents[0], None, local_path)
         return None
 
