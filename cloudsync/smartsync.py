@@ -350,7 +350,7 @@ class SmartCloudSync(CloudSync):
         for name in names:
             rent = remote_ents.get(name)
             lent = local_dir_ents.get(name)
-            if not rent or not rent[LOCAL].path or self.translate(LOCAL, rent[REMOTE].path) == rent[LOCAL].path:
+            if not rent or not rent[LOCAL].path or local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path):
                 yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
                 yield yield_val
 
