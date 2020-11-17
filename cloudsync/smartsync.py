@@ -389,7 +389,7 @@ class SmartCloudSync(CloudSync):
 
     def smart_info_oid(self, remote_oid) -> Optional[SmartInfo]:
         ent = self.state.lookup_oid(REMOTE, remote_oid)
-        if ent and self._include_ent(ent):
+        if ent:
             local_path = self.translate(LOCAL, ent[REMOTE].path)
             if local_path:
                 return self._ent_to_smartinfo(ent, None, local_path)
