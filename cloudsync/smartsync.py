@@ -219,7 +219,6 @@ class SmartCloudSync(CloudSync):
         self.state.register_auto_sync_callback(callback)
 
     def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
-        '''Returns None if file doesn't exist remotely or locally'''
         assert ent or local_dir_info, "must provide one of ent or local_dir_info"
 
         if local_dir_info:  # file is synced, use the local info
@@ -258,23 +257,20 @@ class SmartCloudSync(CloudSync):
                            )
         return retval
 
-    def _include_ent(self, ent: SyncEntry, check_local=False) -> bool:
-        '''Returns True if Smartsync should include the ent during listdir/info
-           If check_local is True, double check with provider before assuming ent is trashed'''
+    def _include_remote_ent(self, ent: SyncEntry) -> bool:
+        '''Returns True if Smartsync should include the ent during listdir/info'''
         if not ent:
             return False
 
         # Ent has been trashed locally or remotely and there is no local counterpart
         if ent[LOCAL].exists in (TRASHED, MISSING) \
-                    or (not ent[LOCAL].path and ent[REMOTE].exists in (TRASHED, MISSING)):
-            if check_local:
-                return self.providers[LOCAL].exists_path(ent[LOCAL].path)
-            else:
-                return False
+                    or ent[REMOTE].exists in (TRASHED, MISSING):
+            return False
 
         # Ignore if a local rename is in progress
         if ent[LOCAL].path:
             return local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path)
+
         return True
 
     def _sync_one_entry(self, sync: SyncEntry):
@@ -374,7 +370,7 @@ class SmartCloudSync(CloudSync):
         for name in names:
             rent = remote_ents.get(name)
             lent = local_dir_ents.get(name)
-            if lent or self._include_ent(rent):
+            if lent or self._include_remote_ent(rent):
                 yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
                 yield yield_val
 
@@ -384,10 +380,13 @@ class SmartCloudSync(CloudSync):
         return path
 
     def smart_info_path(self, local_path) -> Optional[SmartInfo]:
+        local_info = self.providers[LOCAL].info_path(local_path)
+        if local_info:
+            return self._ent_to_smartinfo(None, local_info, local_path)
         remote_path = self.translate(REMOTE, local_path)
         if remote_path:
             ents = self.state.lookup_path(REMOTE, remote_path)
-            if ents and self._include_ent(ents[0], check_local=True):
+            if ents and self._include_remote_ent(ents[0]):
                 return self._ent_to_smartinfo(ents[0], None, local_path)
         return None
 
