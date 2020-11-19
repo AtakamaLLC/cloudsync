@@ -218,31 +218,57 @@ class SmartCloudSync(CloudSync):
     def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
 
-    def _ent_to_smartinfo(self, ent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
-        assert ent or local_dir_info, "must provide one of ent or local_dir_info"
+    def _get_smartinfo(self, rent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
+        """
+        Construct a SmartInfo object based on the local info and the remote entry in the statedb.
+
+        Args:
+            rent: SyncEntry read from statedb using the remote oid or path
+            local_dir_info: Local provider DirInfo. Typically retrieved using listdir, info_path, or info_oid
+            local_path: The local path of the file or folder
+
+        Returns:
+            SmartInfo object with fields populated based on the local and remote info.
+            Local info is always preferred.
+
+        Returns None if this path should be excluded from listdir and smart_info calls. This does some
+        filtering on the remote ent to remove ents that have been trashed or are in the middle of a local
+        rename. If the local DirInfo is present, this method should never return None.
+        """
+        if not rent and not local_dir_info:
+            return None
+
+        # Always return SmartInfo if the local info is available
+        if not local_dir_info:
+            if rent[LOCAL].exists in (TRASHED, MISSING) or rent[REMOTE].exists in (TRASHED, MISSING):
+                # Ignore trashed or missing ents
+                return None
+            if rent[LOCAL].path and not local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path):
+                # Ignore outdated remote ent if a local rename is in progress
+                return None
 
         if local_dir_info:  # file is synced, use the local info
             otype = local_dir_info.otype
             oid = local_dir_info.oid
-            remote_oid = ent[REMOTE].oid if ent else None
+            remote_oid = rent[REMOTE].oid if rent else None
             obj_hash = local_dir_info.hash
-            path = local_dir_info.path or ent[LOCAL].path
+            path = local_dir_info.path or (rent and rent[LOCAL].path)
             size = local_dir_info.size
             name = local_dir_info.name
             mtime = local_dir_info.mtime
             is_synced = True
         else:
-            otype = ent[REMOTE].otype
-            oid = ent[LOCAL].oid
-            remote_oid = ent[REMOTE].oid
+            otype = rent[REMOTE].otype
+            oid = rent[LOCAL].oid
+            remote_oid = rent[REMOTE].oid
             obj_hash = None
             path = local_path
-            size = ent[REMOTE].size
-            name = self.providers[REMOTE].basename(ent[REMOTE].path)
-            mtime = ent[REMOTE].mtime
+            size = rent[REMOTE].size
+            name = self.providers[REMOTE].basename(rent[REMOTE].path)
+            mtime = rent[REMOTE].mtime
             is_synced = False
-        shared = False  # TODO: ent[REMOTE].shared,
-        readonly = False  # TODO: ent[REMOTE].readonly
+        shared = False  # TODO: rent[REMOTE].shared,
+        readonly = False  # TODO: rent[REMOTE].readonly
         retval = SmartInfo(otype=otype,
                            oid=oid,
                            remote_oid=remote_oid,
@@ -251,27 +277,11 @@ class SmartCloudSync(CloudSync):
                            size=size,
                            name=name,
                            mtime=mtime,
-                           shared=shared,  # TODO: ent[REMOTE].shared,
-                           readonly=readonly,  # TODO: ent[REMOTE].readonly
+                           shared=shared,  # TODO: rent[REMOTE].shared,
+                           readonly=readonly,  # TODO: rent[REMOTE].readonly
                            is_synced=is_synced,
                            )
         return retval
-
-    def _include_remote_ent(self, ent: SyncEntry) -> bool:
-        '''Returns True if Smartsync should include the ent during listdir/info'''
-        if not ent:
-            return False
-
-        # Ent has been trashed locally or remotely and there is no local counterpart
-        if ent[LOCAL].exists in (TRASHED, MISSING) \
-                    or ent[REMOTE].exists in (TRASHED, MISSING):
-            return False
-
-        # Ignore if a local rename is in progress
-        if ent[LOCAL].path:
-            return local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path)
-
-        return True
 
     def _sync_one_entry(self, sync: SyncEntry):
         try:
@@ -368,10 +378,10 @@ class SmartCloudSync(CloudSync):
                     remote_ents[remote.basename(ent[REMOTE].path)] = ent
         names = set(local_dir_ents.keys()).union(remote_ents.keys())
         for name in names:
+            local_dir_ent = local_dir_ents.get(name)
             rent = remote_ents.get(name)
-            lent = local_dir_ents.get(name)
-            if lent or self._include_remote_ent(rent):
-                yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
+            yield_val = self._get_smartinfo(rent, local_dir_ent, local.join(local_path, name))
+            if yield_val:
                 yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:
@@ -380,22 +390,23 @@ class SmartCloudSync(CloudSync):
         return path
 
     def smart_info_path(self, local_path) -> Optional[SmartInfo]:
-        local_info = self.providers[LOCAL].info_path(local_path)
-        if local_info:
-            return self._ent_to_smartinfo(None, local_info, local_path)
+        local_dir_ent = self.providers[LOCAL].info_path(local_path)
+        rent = None
+
         remote_path = self.translate(REMOTE, local_path)
         if remote_path:
-            ents = self.state.lookup_path(REMOTE, remote_path)
-            if ents and self._include_remote_ent(ents[0]):
-                return self._ent_to_smartinfo(ents[0], None, local_path)
-        return None
+            rents = self.state.lookup_path(REMOTE, remote_path)
+            if rents:
+                rent = rents[0]
+
+        return self._get_smartinfo(rent, local_dir_ent, local_path)
 
     def smart_info_oid(self, remote_oid) -> Optional[SmartInfo]:
-        ent = self.state.lookup_oid(REMOTE, remote_oid)
-        if ent:
-            local_path = self.translate(LOCAL, ent[REMOTE].path)
+        rent = self.state.lookup_oid(REMOTE, remote_oid)
+        if rent:
+            local_path = self.translate(LOCAL, rent[REMOTE].path)
             if local_path:
-                return self._ent_to_smartinfo(ent, None, local_path)
+                return self._get_smartinfo(rent, None, local_path)
         return None
 
     def smart_delete_path(self, local_oid, local_path):
