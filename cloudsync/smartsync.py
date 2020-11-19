@@ -35,8 +35,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
 
     def do(self):
         time.sleep(.01)  # give smartsync a chance to preempt
-        with self.state.sync_mutex:
-            super().do()
+        super().do()
 
     def pre_sync(self, sync: SyncEntry) -> bool:
         finished = super().pre_sync(sync)
@@ -74,7 +73,6 @@ class SmartSyncState(SyncState):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
         self._callbacks: List[Callable] = list()
-        self.sync_mutex = RLock()
         super().__init__(providers, storage, tag, shuffle, prioritize)
 
     def register_auto_sync_callback(self, callback):
@@ -198,7 +196,9 @@ class SmartEventManager(EventManager):
         if state:
             if self.side == 1 or (state[self.side].path and self.provider.exists_path(state[self.side].path)):
                 event.path = state[self.side].path
-        if not event.path and event.exists in (True, None):
+        # if there is no state entry, then the item is new, so make the event accurate
+        #   so that the new state entry will have a size and mtime
+        if not state or (not event.path and event.exists in (True, None)):
             self._make_event_accurate(event)
 
 
@@ -304,7 +304,7 @@ class SmartCloudSync(CloudSync):
         # if the local file is missing,
         #   clear the local side of the ent and
         #   mark the remote side changed and clear the sync_path/sync_hash so that it will look new and sync down
-        with self.state.sync_mutex:
+        with self.state.lock:
             for parent_conflict in self.smgr.get_parent_conflicts(ent, REMOTE):  # ALWAYS remote
                 self._sync_one_entry(parent_conflict)
             ent[REMOTE].mark_changed()
@@ -352,7 +352,8 @@ class SmartCloudSync(CloudSync):
             lent = local_dir_ents.get(name)
             if not rent or not rent[LOCAL].path or local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path):
                 yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
-                yield yield_val
+                if yield_val.mtime or yield_val.size:
+                    yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:
         if side == LOCAL:
