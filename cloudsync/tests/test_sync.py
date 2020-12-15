@@ -1125,7 +1125,8 @@ def test_backoff_cleared_after_delete_synced(sync):
         sync.run_until_clean(timeout=1)
         nothing_happened.assert_not_called()
 
-def test_equivalent_path_and_sync_path_do_nothing(sync):
+
+def test_equivalent_path_and_sync_path_not_embraced(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
     local_file = "/local/sub/file"
@@ -1142,16 +1143,17 @@ def test_equivalent_path_and_sync_path_do_nothing(sync):
     sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
 
     with patch.object(sync, "nothing_happened") as nothing_happened:
-        sync_entry[LOCAL].sync_path = "/local/sub\\file"
-        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
-        sync.run_until_clean(timeout=1)
-        nothing_happened.assert_called()
+        with patch.object(sync, "embrace_change") as embrace_change:
+            sync_entry[LOCAL].sync_path = "/local/sub\\file"
+            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+            sync.run_until_clean(timeout=1)
 
-    with patch.object(sync, "nothing_happened") as nothing_happened:
-        sync_entry[LOCAL].sync_path = "\\local\\sub/file"
-        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
-        sync.run_until_clean(timeout=1)
-        nothing_happened.assert_called()
+            sync_entry[LOCAL].sync_path = "\\local\\sub/file"
+            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+            sync.run_until_clean(timeout=1)
+
+            embrace_change.assert_not_called()
+            nothing_happened.assert_not_called()
 
 
 @pytest.mark.skipif(system() == "Linux", reason="flaky on travis CI")
