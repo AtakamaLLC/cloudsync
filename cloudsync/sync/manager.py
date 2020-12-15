@@ -331,7 +331,7 @@ class SyncManager(Runnable):
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
 
-        something_got_done = False
+        something_got_done = True
 
         for side in ordered:
             if not sync[side].needs_sync():
@@ -383,8 +383,11 @@ class SyncManager(Runnable):
                 something_got_done = True
                 self.finished(side, sync)
             elif response == PUNT:
+                something_got_done = False
                 sync.punt()
-            # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+            else:
+                # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+                something_got_done = False
             break
 
         return something_got_done
