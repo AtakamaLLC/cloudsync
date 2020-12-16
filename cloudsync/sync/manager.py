@@ -322,6 +322,24 @@ class SyncManager(Runnable):
             self.finished(REMOTE, sync)
             return True
 
+        if self.in_backoff and sync.is_latest():
+            # Sync manager is in backoff (degraded performance) and the following get_latest() call will not make any
+            # provider calls -- make dummy calls to force providers to reconnect and fetch something.
+            #
+            # If successful, then it is safe to clear backoff even though this iteration will not do any syncing.
+            # If this fails then an exception is raised and backoff is increased.
+            #
+            # The idea is to resolve the degraded performance that comes with operating with a backoff timeout
+            # as quickly as possible, rather than wait for it to resolve itself "naturally".
+            #
+            # TODO: fix this -- is_latest() returns False when only LOCAL changed, so this block is skipped, but the
+            #                   get_latest() call below will not hit REMOTE, and backoff is cleared anyway
+            self.providers[LOCAL].reconnect()
+            self.providers[LOCAL].get_quota()
+            self.providers[REMOTE].reconnect()
+            self.providers[REMOTE].get_quota()
+
+        something_got_done = True
         sync.get_latest()
 
         if sync.hash_conflict():
@@ -330,8 +348,6 @@ class SyncManager(Runnable):
             return True
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
-
-        something_got_done = True
 
         for side in ordered:
             if not sync[side].needs_sync():

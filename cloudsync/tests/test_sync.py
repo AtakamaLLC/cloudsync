@@ -1126,6 +1126,36 @@ def test_backoff_cleared_after_delete_synced(sync):
         nothing_happened.assert_not_called()
 
 
+def test_backoff_cleared_after_disconnect(sync):
+    local_parent = "/local"
+    local_sub = "/local/sub"
+    local_file = "/local/sub/file"
+
+    # create local folders + file, sync to remote
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[LOCAL].mkdir(local_sub)
+    lfil = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+    sync.run_until_clean(timeout=1)
+    log.warning("TABLE 0:\n%s", sync.state.pretty_print())
+
+    with patch.object(sync, "in_backoff", 1):
+        with patch.object(sync.providers[0], "get_quota") as dummy:
+            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+            sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
+            sync_entry[LOCAL].changed -= 100
+            sync.run_until_clean(timeout=1)
+            # in backoff, processing a NOOP event - force provider call to ensure connectivity and clear backoff
+            dummy.assert_called_once()
+
+    with patch.object(sync, "in_backoff", 1):
+        with patch.object(sync.providers[0], "get_quota") as dummy:
+            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+            sync.run_until_clean(timeout=1)
+            # in backoff, processing an event that "does something" - skip dummy provider calls
+            dummy.assert_not_called()
+
+
 def test_equivalent_path_and_sync_path_not_embraced(sync):
     local_parent = "/local"
     local_sub = "/local/sub"
@@ -1142,18 +1172,16 @@ def test_equivalent_path_and_sync_path_not_embraced(sync):
     log.info("TABLE 0:\n%s", sync.state.pretty_print())
     sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
 
-    with patch.object(sync, "nothing_happened") as nothing_happened:
-        with patch.object(sync, "embrace_change") as embrace_change:
-            sync_entry[LOCAL].sync_path = "/local/sub\\file"
-            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
-            sync.run_until_clean(timeout=1)
+    with patch.object(sync, "embrace_change") as embrace_change:
+        sync_entry[LOCAL].sync_path = "/local/sub\\file"
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        sync.run_until_clean(timeout=1)
 
-            sync_entry[LOCAL].sync_path = "\\local\\sub/file"
-            sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
-            sync.run_until_clean(timeout=1)
+        sync_entry[LOCAL].sync_path = "\\local\\sub/file"
+        sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
+        sync.run_until_clean(timeout=1)
 
-            embrace_change.assert_not_called()
-            nothing_happened.assert_not_called()
+        embrace_change.assert_not_called()
 
 
 @pytest.mark.skipif(system() == "Linux", reason="flaky on travis CI")
