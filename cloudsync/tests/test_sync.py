@@ -1140,16 +1140,16 @@ def test_backoff_cleared_after_disconnect(sync):
     log.warning("TABLE 0:\n%s", sync.state.pretty_print())
 
     with patch.object(sync, "in_backoff", 1):
-        with patch.object(sync.providers[0], "get_quota") as dummy:
+        with patch.object(sync.providers[REMOTE], "info_path") as dummy:
             sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
             sync_entry = sync.state.lookup_oid(LOCAL, lfil.oid)
             sync_entry[LOCAL].changed -= 100
             sync.run_until_clean(timeout=1)
             # in backoff, processing a NOOP event - force provider call to ensure connectivity and clear backoff
-            dummy.assert_called_once()
+            dummy.assert_called_once_with("/", use_cache=False)
 
     with patch.object(sync, "in_backoff", 1):
-        with patch.object(sync.providers[0], "get_quota") as dummy:
+        with patch.object(sync.providers[REMOTE], "info_path") as dummy:
             sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
             sync.run_until_clean(timeout=1)
             # in backoff, processing an event that "does something" - skip dummy provider calls

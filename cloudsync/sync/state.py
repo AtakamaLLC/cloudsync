@@ -573,6 +573,10 @@ class SyncEntry:
                 return False
         return True
 
+    def is_latest_side(self, side: int) -> bool:
+        max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
+        return max_changed <= self[side]._last_gotten
+
     def is_related_to(self, e):
         for side in (LOCAL, REMOTE):
             for attr in ("path", "sync_path"):

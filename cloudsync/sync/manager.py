@@ -322,22 +322,18 @@ class SyncManager(Runnable):
             self.finished(REMOTE, sync)
             return True
 
-        if self.in_backoff and sync.is_latest():
+        if self.in_backoff and sync.is_latest_side(REMOTE):
             # Sync manager is in backoff (degraded performance) and the following get_latest() call will not make any
-            # provider calls -- make dummy calls to force providers to reconnect and fetch something.
+            # REMOTE provider calls -- make a dummy call to ensure we are connected.
             #
-            # If successful, then it is safe to clear backoff even though this iteration will not do any syncing.
-            # If this fails then an exception is raised and backoff is increased.
+            # If successful, then it is safe to clear backoff even though this iteration will not do any REMOTE syncing.
+            # If it fails then an exception is raised and backoff is increased.
             #
-            # The idea is to resolve the degraded performance that comes with operating with a backoff timeout
-            # as quickly as possible, rather than wait for it to resolve itself "naturally".
+            # The idea is to resolve the degraded performance that comes with operating "in_backoff"
+            # as quickly as possible, rather than wait for it to resolve itself naturally.
             #
-            # TODO: fix this -- is_latest() returns False when only LOCAL changed, so this block is skipped, but the
-            #                   get_latest() call below will not hit REMOTE, and backoff is cleared anyway
-            self.providers[LOCAL].reconnect()
-            self.providers[LOCAL].get_quota()
-            self.providers[REMOTE].reconnect()
-            self.providers[REMOTE].get_quota()
+            # TODO: hardcoding REMOTE is a hack, because REMOTE is a cloud provider by convention only
+            self.providers[REMOTE].info_path("/", use_cache=False)
 
         something_got_done = True
         sync.get_latest()
