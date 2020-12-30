@@ -15,7 +15,7 @@ def create_event_manager(provider_generator, root_path):
     provider = provider_generator()
     state = SyncState((provider, provider), shuffle=True)
     if provider.oid_is_path:
-        root_oid = provider.mkdir(root_path) if root_path else None
+        root_oid = provider.mkdirs(root_path) if root_path else None
         event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_oid)
     else:
         event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
