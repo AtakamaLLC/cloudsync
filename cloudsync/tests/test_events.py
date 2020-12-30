@@ -13,11 +13,10 @@ log = logging.getLogger(__name__)
 
 def create_event_manager(provider_generator, root_path):
     provider = provider_generator()
-    if root_path:
-        provider.mkdir(root_path)
     state = SyncState((provider, provider), shuffle=True)
     if provider.oid_is_path:
-        event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_path)
+        root_oid = provider.mkdir(root_path)
+        event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_oid)
     else:
         event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
     event_manager._drain()
