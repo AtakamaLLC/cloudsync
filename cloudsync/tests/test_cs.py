@@ -51,34 +51,28 @@ def _fixture_cs(providers, storage=None):
     cs.done()
 
 
-@pytest.fixture(name="cs_nested")
-def fixture_cs_nested():
+@pytest.fixture(name="cs_nested", params=[(False, True), (True, False)], ids=["cs_nested-1", "cs_nested-1"])
+def fixture_cs_nested(request):
     # providers for outer sync
-    providers_outer = (
-        # TODO: parameterize
-        mock_provider_instance(oid_is_path=True, case_sensitive=False),
-        mock_provider_instance(oid_is_path=False, case_sensitive=True)
-    )
-    providers_outer[LOCAL].name += "-l-outer"
-    providers_outer[REMOTE].name += "-r-outer"
+    lpo = mock_provider_instance(oid_is_path=True, case_sensitive=request.param[0])
+    lpo.name += "-local-outer"
+    rpo = mock_provider_instance(oid_is_path=False, case_sensitive=request.param[1], filter_events=request.param[1])
+    rpo.name += "-remote-outer"
 
     # providers for inner sync
-    providers_inner = (
-        # TODO: parameterize
-        mock_provider_instance(oid_is_path=True, case_sensitive=False),
-        mock_provider_instance(oid_is_path=False, case_sensitive=True)
-    )
-    providers_inner[LOCAL].name += "-l-inner"
-    providers_inner[REMOTE].name += "-r-inner"
+    lpi = mock_provider_instance(oid_is_path=True, case_sensitive=request.param[0])
+    lpi.name += "-local-inner"
+    rpi = mock_provider_instance(oid_is_path=False, case_sensitive=request.param[1], filter_events=request.param[1])
+    rpi.name += "-remote-inner"
 
     # providers share a mock FS across syncs
-    providers_inner[LOCAL]._set_mock_fs(providers_outer[LOCAL]._mock_fs)
-    providers_inner[REMOTE]._set_mock_fs(providers_outer[REMOTE]._mock_fs)
+    lpi._set_mock_fs(lpo._mock_fs)
+    rpi._set_mock_fs(rpo._mock_fs)
 
     # yield a tuple of syncs
     cs_nested = (
-        CloudSyncMixin(providers_outer, ("/local/outer", "/remote/outer")),
-        CloudSyncMixin(providers_inner, ("/local/outer/inner", "/remote/inner")),
+        CloudSyncMixin((lpo, rpo), ("/local/outer", "/remote/outer")),
+        CloudSyncMixin((lpi, rpi), ("/local/outer/inner", "/remote/inner")),
     )
     yield cs_nested
     cs_nested[0].done()
@@ -3134,9 +3128,8 @@ def test_cs_nested_local_folders(cs_nested):
         if to == REMOTE:
             # local path being translated to remote path
             for nested_sync_paths in get_nested_sync_paths():
-                if lpo.is_subpath(nested_sync_paths[0], path):
-                    # nested synced folders and their conflict folders are not synced to remote
-                    log.warning("here3 - %s", path)
+                if lpo.is_subpath(nested_sync_paths[0], path) or lpo.is_subpath(nested_sync_paths[1], path):
+                    # nested synced folders and conflict folders are not synced to remote
                     return None
         else:  # to == LOCAL
             # remote path being translated to local path
@@ -3146,7 +3139,6 @@ def test_cs_nested_local_folders(cs_nested):
                     return lpo.replace_path(provisional, nested_sync_paths[0], nested_sync_paths[1])
                 if lpo.is_subpath(nested_sync_paths[1], provisional):
                     # conflict folder itself is never synced from remote
-                    log.warning("here2 - %s", provisional)
                     return None
 
         return provisional
@@ -3165,12 +3157,12 @@ def test_cs_nested_local_folders(cs_nested):
     assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner")
     assert not rpo.info_path("/remote/outer/inner")
     assert cso.state.lookup_path(REMOTE, "/remote/outer/f1.dat")
+    assert rpo.info_path("/remote/outer/f1.dat")
     assert cso.state.lookup_path(LOCAL, "/local/outer/f3.dat")
     assert lpo.info_path("/local/outer/f3.dat")
-    assert rpo.info_path("/remote/outer/f1.dat")
     assert csi.state.lookup_path(REMOTE, "/remote/inner/f2.dat")
-    assert csi.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
     assert rpi.info_path("/remote/inner/f2.dat")
+    assert csi.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
     assert lpi.info_path("/local/outer/inner/f4.dat")
 
     # ensure remote conflicts are resolved
@@ -3183,9 +3175,17 @@ def test_cs_nested_local_folders(cs_nested):
     assert cso.state.lookup_path(LOCAL, "/local/outer/inner.conflict/c1.dat")
     assert lpo.info_path("/local/outer/inner.conflict/c1.dat")
 
-    # ensure conflict folders are not synced from remote
+    # ensure conflict folders are not synced from/to remote
     rpo.mkdir("/remote/outer/inner.conflict")
     rpo.create("/remote/outer/inner.conflict/c2.dat", BytesIO(b"outer-inner.conflict-c2"))
     cso.run_until_clean(timeout=1)
     log.info("TABLE OUTER 3\n%s", cso.state.pretty_print())
-    assert not cso.state.lookup_path(LOCAL, "/local/outer/.conflict/c2.dat")
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner.conflict/c2.dat")
+    assert not lpo.info_path("/local/outer/inner.conflict/c2.dat")
+    assert rpo.info_path("/remote/outer/inner.conflict/c2.dat")
+    lpo.create("/local/outer/inner.conflict/c3.dat", BytesIO(b"outer-inner.conflict-c3"))
+    cso.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 4\n%s", cso.state.pretty_print())
+    assert not cso.state.lookup_path(REMOTE, "/local/outer/inner.conflict/c3.dat")
+    assert not rpo.info_path("/remote/outer/inner.conflict/c3.dat")
+    assert lpo.info_path("/local/outer/inner.conflict/c3.dat")

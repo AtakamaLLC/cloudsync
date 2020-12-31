@@ -347,14 +347,10 @@ class SyncManager(Runnable):
 
         for side in ordered:
             if not sync[side].needs_sync():
-                # if the changed side's path doesn't translate then ignore 'needs_sync' and process
-                # the change anyway (likely a rename to irrelevant directory)
-                # see test_cs_rename_folder_out_of_root
-                if self.translate(other_side(side), sync[side].path):
-                    if sync[side].changed:
-                        log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
+                if sync[side].changed:
+                    log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                     sync[side].changed = 0
-                    continue
+                continue
 
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
                 log.debug("ignore:%s, side:%s", sync, side)
@@ -1024,7 +1020,7 @@ class SyncManager(Runnable):
         if sync.priority > 0:
             all_synced = True
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
-                if kid.needs_sync() or not self.translate(synced, sync[changed].path):
+                if kid.needs_sync():
                     all_synced = False
                     break
             if all_synced:
@@ -1052,6 +1048,8 @@ class SyncManager(Runnable):
         log.info("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
+            # hack to ensure state.needs_sync() recognizes this as an actionable change
+            kid[changed].sync_path = "really-changed"
 
         # Mark us changed, so we will sync after kids, not before
         sync[changed].changed = time.time()
