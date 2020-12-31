@@ -239,6 +239,14 @@ class ProviderTestMixin(ProviderBase):
         return self.__strip_root(self.prov.info_path(path, use_cache))
 
     @wrap_retry
+    def set_root(self, root_path: str = None, root_oid: str = None):
+        if root_path:
+            root_path = self.__add_root(root_path)
+        (_, root_oid) = self.prov.set_root(root_path, root_oid)
+        root_path = self.info_oid(root_oid).path
+        return root_path, root_oid
+
+    @wrap_retry
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
@@ -338,6 +346,9 @@ class ProviderTestMixin(ProviderBase):
     def test_cleanup(self, *, connected):
         for p in self.__patches:
             p.stop()
+
+        self.prov._root_path = None
+        self.prov._root_oid = None
 
         if not connected:
             return
@@ -581,6 +592,27 @@ def test_info_root(provider):
     assert info
     assert info.oid
     assert info.path == "/"
+
+
+def test_set_root_path_creates_path(provider):
+    # root path does not exist yet
+    assert not provider.info_path("/sync_root")
+
+    # set_root creates it
+    (root_path, root_oid) = provider.set_root(root_path="/sync_root")
+    assert provider.info_path(root_path).oid == root_oid
+    assert "/sync_root" == root_path
+
+
+def test_set_root_path_uses_existing_path(provider):
+    # create root path
+    oid = provider.mkdir("/sync_root")
+    assert oid
+
+    # set_root uses existing folder
+    (root_path, root_oid) = provider.set_root(root_path="/sync_root")
+    assert oid == root_oid
+    assert "/sync_root" == root_path
 
 
 def test_create_upload_download(provider):
