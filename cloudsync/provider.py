@@ -184,11 +184,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             info = self.info_path(root_path)
             if info and info.otype != DIRECTORY:
                 raise CloudRootMissingError(f"Root path is not a directory: {root_path}")
-            if info:
-                root_oid = info.oid
-            else:
-                root_oid = self.mkdirs(root_path)
-            #root_oid = info.oid if info else self.mkdirs(root_path)
+            root_oid = info.oid if info else self.mkdirs(root_path)
         return (root_path, root_oid)
 
     @property
