@@ -51,7 +51,10 @@ def _fixture_cs(providers, storage=None):
     cs.done()
 
 
-@pytest.fixture(name="cs_nested", params=[(False, True), (True, False)], ids=["cs_nested-1", "cs_nested-1"])
+# parameterization:
+# - cs-nested-lci = local prov is case insensitive, remote is case sensitive, event filtering enabled
+# - cs-nested-rci = local prov is case sensitive, remote is case insensitive, event filtering disabled
+@pytest.fixture(name="cs_nested", params=[(False, True), (True, False)], ids=["cs-nested-lci", "cs-nested-rci"])
 def fixture_cs_nested(request):
     # providers for outer sync
     lpo = mock_provider_instance(oid_is_path=True, case_sensitive=request.param[0])
