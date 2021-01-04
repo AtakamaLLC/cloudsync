@@ -1049,7 +1049,7 @@ class SyncManager(Runnable):
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
             # hack to ensure state.needs_sync() recognizes this as an actionable change
-            kid[changed].sync_path = "really-changed"
+            kid[changed].sync_path = "REALLY-changed"
 
         # Mark us changed, so we will sync after kids, not before
         sync[changed].changed = time.time()
