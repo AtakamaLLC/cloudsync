@@ -1011,7 +1011,7 @@ def test_event_del_create(provider):
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
     infox = provider.create(dest2, temp2)
-    time.sleep(1)
+    time.sleep(2)
 
     log.info("test oid 1 %s", info1.oid)
     log.info("test oid 2 %s", info2.oid)
