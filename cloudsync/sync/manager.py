@@ -1394,8 +1394,9 @@ class SyncManager(Runnable):
                     # force the trash to sync instead
                     # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
                     # also breaks test_folder_del_loop
+                    #
+                    # NOTE: above-mentioned tests no longer fail with this if-block removed
                     sync[synced].changed = 1
-                    sync[synced].force_sync = True
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
