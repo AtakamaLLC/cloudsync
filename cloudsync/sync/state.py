@@ -125,7 +125,7 @@ class SideState:
         self.changed = 1
 
     def set_force_sync(self):
-        self.changed = time.time()
+        self.changed = time.time()  # type: ignore
         self.force_sync = True
 
     def clear(self):
