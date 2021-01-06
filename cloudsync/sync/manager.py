@@ -1048,11 +1048,11 @@ class SyncManager(Runnable):
         log.info("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
             kid[changed].changed = time.time()
-            # hack to ensure state.needs_sync() recognizes this as an actionable change
-            kid[changed].sync_path = "REALLY-changed"
+            kid[changed].force_sync = True
 
         # Mark us changed, so we will sync after kids, not before
         sync[changed].changed = time.time()
+        sync[changed].force_sync = True
 
         return PUNT
 
@@ -1395,6 +1395,7 @@ class SyncManager(Runnable):
                     # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
                     # also breaks test_folder_del_loop
                     sync[synced].changed = 1
+                    sync[synced].force_sync = True
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
@@ -1438,6 +1439,7 @@ class SyncManager(Runnable):
             sync[synced].sync_path = None
             sync[synced].sync_hash = None
             sync[synced].changed = time.time()
+            sync[synced].force_sync = True
             log.warning("%s now unsynced: %s", sync[synced].path, sync)
 
         return FINISHED

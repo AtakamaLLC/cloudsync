@@ -61,7 +61,7 @@ MISSING = Exists.MISSING
 
 # state of a single object
 @strict         # pylint: disable=too-many-instance-attributes
-class SideState():
+class SideState:
     """
     One half of a sync
     """
@@ -81,6 +81,7 @@ class SideState():
         self._path: Optional[str] = None             # path at provider
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
+        self._force_sync: bool = False
         self._temp_file: Optional[str] = None
         self.temp_file: str
 
@@ -138,6 +139,8 @@ class SideState():
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
 
     def needs_sync(self):
+        if self.force_sync:
+            return True
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.parent.paths_differ(self.side) or
@@ -369,6 +372,8 @@ class SyncEntry:
 
     def needs_sync(self):
         for i in (LOCAL, REMOTE):
+            if self[i].force_sync:
+                return True
             if not self[i].changed:
                 continue
             if self.paths_differ(i) and self[i].oid:
@@ -1084,6 +1089,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         log.debug("finished: %s", ent)
         self._changeset.discard(ent)
+        ent[0].force_sync = False
+        ent[1].force_sync = False
 
         for e in self._changeset:
             if e.priority > 0 and ent.is_related_to(e):
