@@ -3113,18 +3113,13 @@ def test_cs_event_filter(cs):
     assert len(cs.state) == 3
 
 
-def test_cs_nested_local_folders(cs_nested):
+def test_cs_nested_local_folders_with_conflict_resolution(cs_nested):
     (cso, csi) = cs_nested
     (lpo, rpo) = cso.providers  # /local/outer <-> /remote/outer
     (lpi, rpi) = csi.providers  # /local/outer/inner <-> /remote/inner
-    translate_cso_orig = cso.translate
 
-    def translate_cso_new(to, path):
-        # translate function needs to know about nested sync folders
-        def get_nested_sync_paths():
-            return [("/local/outer/inner", "/local/outer/inner.conflict")]
-
-        provisional = translate_cso_orig(to, path)
+    def translate_impl(to, path, get_nested_sync_paths, translate_orig):
+        provisional = translate_orig(to, path)
         if not provisional:
             return None
 
@@ -3141,12 +3136,28 @@ def test_cs_nested_local_folders(cs_nested):
                     # conflict with nested sync path - redirect to conflict folder
                     return lpo.replace_path(provisional, nested_sync_paths[0], nested_sync_paths[1])
                 if lpo.is_subpath(nested_sync_paths[1], provisional):
-                    # conflict folder itself is never synced from remote
+                    # conflict folder is never synced from remote
                     return None
 
         return provisional
 
+    def translate_cso_new(to, path, translate_orig=cso.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_cso():
+            return [("/local/outer/inner", "/local/outer/inner.conflict")]
+
+        return translate_impl(to, path, get_nested_sync_paths_cso, translate_orig)
+
+    def translate_csi_new(to, path, translate_orig=csi.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_csi():
+            return []
+
+        return translate_impl(to, path, get_nested_sync_paths_csi, translate_orig)
+
+    # replace translate functions
     cso.translate = translate_cso_new
+    csi.translate = translate_csi_new
 
     # ensure local/remote files sync to the appropriate folders
     lpo.create("/local/outer/f1.dat", BytesIO(b"outer-f1"))
@@ -3173,8 +3184,11 @@ def test_cs_nested_local_folders(cs_nested):
     rpo.create("/remote/outer/inner/c1.dat", BytesIO(b"outer-inner-c1"))
     cso.run_until_clean(timeout=1)
     log.info("TABLE OUTER 2\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 2\n%s", csi.state.pretty_print())
     assert not cso.state.lookup_path(LOCAL, "/local/outer/inner")
     assert not lpo.info_path("/local/outer/inner/c1.dat")
+    assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner.conflict")
+    assert not rpo.info_path("/remote/outer/inner.conflict")
     assert cso.state.lookup_path(LOCAL, "/local/outer/inner.conflict/c1.dat")
     assert lpo.info_path("/local/outer/inner.conflict/c1.dat")
 
@@ -3192,3 +3206,79 @@ def test_cs_nested_local_folders(cs_nested):
     assert not cso.state.lookup_path(REMOTE, "/local/outer/inner.conflict/c3.dat")
     assert not rpo.info_path("/remote/outer/inner.conflict/c3.dat")
     assert lpo.info_path("/local/outer/inner.conflict/c3.dat")
+
+
+def test_cs_nested_local_folders_ignores_conflicts(cs_nested):
+    (cso, csi) = cs_nested
+    (lpo, rpo) = cso.providers  # /local/outer <-> /remote/outer
+    (lpi, rpi) = csi.providers  # /local/outer/inner <-> /remote/inner
+
+    def translate_impl(to, path, get_nested_sync_paths, translate_orig):
+        provisional = translate_orig(to, path)
+        if not provisional:
+            return None
+
+        if to == REMOTE:
+            # local path being translated to remote path
+            for nested_sync_path in get_nested_sync_paths():
+                if lpo.is_subpath(nested_sync_path, path):
+                    # nested synced folders are not synced to remote
+                    return None
+        else:  # to == LOCAL
+            # remote path being translated to local path
+            for nested_sync_path in get_nested_sync_paths():
+                if lpo.is_subpath(nested_sync_path, provisional):
+                    # ignore files/folders that conflict with nested sync folder
+                    return None
+
+        return provisional
+
+    def translate_cso_new(to, path, translate_orig=cso.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_cso():
+            return ["/local/outer/inner"]
+
+        return translate_impl(to, path, get_nested_sync_paths_cso, translate_orig)
+
+    def translate_csi_new(to, path, translate_orig=csi.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_csi():
+            return []
+
+        return translate_impl(to, path, get_nested_sync_paths_csi, translate_orig)
+
+    # replace translate functions
+    cso.translate = translate_cso_new
+    csi.translate = translate_csi_new
+
+    # ensure local/remote files sync to the appropriate folders
+    lpo.create("/local/outer/f1.dat", BytesIO(b"outer-f1"))
+    lpi.create("/local/outer/inner/f2.dat", BytesIO(b"inner-f2"))
+    rpo.create("/remote/outer/f3.dat", BytesIO(b"outer-f3"))
+    rpi.create("/remote/inner/f4.dat", BytesIO(b"inner-f4"))
+    cso.run_until_clean(timeout=1)
+    csi.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 1\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 1\n%s", csi.state.pretty_print())
+    assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner")
+    assert not rpo.info_path("/remote/outer/inner")
+    assert cso.state.lookup_path(REMOTE, "/remote/outer/f1.dat")
+    assert rpo.info_path("/remote/outer/f1.dat")
+    assert cso.state.lookup_path(LOCAL, "/local/outer/f3.dat")
+    assert lpo.info_path("/local/outer/f3.dat")
+    assert csi.state.lookup_path(REMOTE, "/remote/inner/f2.dat")
+    assert rpi.info_path("/remote/inner/f2.dat")
+    assert csi.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
+    assert lpi.info_path("/local/outer/inner/f4.dat")
+
+    # ensure remote conflicts are ignored
+    rpo.mkdir("/remote/outer/inner")
+    rpo.create("/remote/outer/inner/c1.dat", BytesIO(b"outer-inner-c1"))
+    cso.run_until_clean(timeout=1)
+    csi.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 2\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 2\n%s", csi.state.pretty_print())
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner")
+    assert not lpo.info_path("/local/outer/inner/c1.dat")
+    # the conflict file should still exist on remote
+    assert rpo.info_path("/remote/outer/inner/c1.dat")

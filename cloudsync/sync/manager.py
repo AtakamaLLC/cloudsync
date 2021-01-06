@@ -1047,12 +1047,10 @@ class SyncManager(Runnable):
         # Mark children changed so we will check if already deleted
         log.info("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
-            kid[changed].changed = time.time()
-            kid[changed].force_sync = True
+            kid[changed].set_force_sync()
 
         # Mark us changed, so we will sync after kids, not before
-        sync[changed].changed = time.time()
-        sync[changed].force_sync = True
+        sync[changed].set_force_sync()
 
         return PUNT
 
@@ -1439,8 +1437,7 @@ class SyncManager(Runnable):
             sync[changed].clear()
             sync[synced].sync_path = None
             sync[synced].sync_hash = None
-            sync[synced].changed = time.time()
-            sync[synced].force_sync = True
+            sync[synced].set_force_sync()
             log.warning("%s now unsynced: %s", sync[synced].path, sync)
 
         return FINISHED

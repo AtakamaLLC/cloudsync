@@ -124,6 +124,10 @@ class SideState:
         # setting to an old mtime marks this as fully aged
         self.changed = 1
 
+    def set_force_sync(self):
+        self.changed = time.time()
+        self.force_sync = True
+
     def clear(self):
         self.exists = UNKNOWN
         self.changed = None
@@ -1083,14 +1087,17 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return None
 
     def finished(self, ent: SyncEntry):
+        if not ent[0].changed:
+            ent[0].force_sync = False
+        if not ent[1].changed:
+            ent[1].force_sync = False
+
         if ent[1].changed or ent[0].changed:
             log.debug("not marking finished: %s", ent)
             return
 
         log.debug("finished: %s", ent)
         self._changeset.discard(ent)
-        ent[0].force_sync = False
-        ent[1].force_sync = False
 
         for e in self._changeset:
             if e.priority > 0 and ent.is_related_to(e):
