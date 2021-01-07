@@ -1,6 +1,5 @@
 import time
 import logging
-from threading import RLock
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event
@@ -187,6 +186,7 @@ class SmartInfo(OInfo):
 
 
 class SmartEventManager(EventManager):
+    """Class to add smart sync functionality to the EventManager class"""
     def _fill_event_path(self, event: Event):
         if event.path:
             return
