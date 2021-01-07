@@ -235,7 +235,7 @@ class SmartCloudSync(CloudSync):
         filtering on the remote ent to remove ents that have been trashed or are in the middle of a local
         rename. If the local DirInfo is present, this method should never return None.
         """
-        local, remote = self.providers
+        local, _ = self.providers
         if not rent and not local_dir_info:
             return None
 
