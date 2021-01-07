@@ -107,6 +107,9 @@ class CloudSync(Runnable):
         self.emgrs[0].forget()
         self.emgrs[1].forget()
 
+    def set_need_walk(self, side, need_walk=True):
+        self.emgrs[side].need_walk=need_walk
+
     @property
     def aging(self) -> float:
         """float: The number of seconds to wait before syncing a file.
