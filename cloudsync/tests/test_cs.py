@@ -2976,6 +2976,67 @@ def test_root_needed(cs, cs_root_oid, mode):
             cs.wait(timeout=2)
             assert until()
 
+def test_smart_delete_path(scs):
+    timeout = 1
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_dir = "/local/dir"
+    remote_dir = "/remote/dir"
+    local_file = "/local/file.txt"
+    remote_file = "/remote/file.txt"
+    local_dir_file = "/local/dir/file1.txt"
+    remote_dir_file = "/remote/dir/file1.txt"
+
+    local, remote = scs.providers
+
+    remote.mkdir(remote_parent)
+    remote.mkdir(remote_dir)
+    remote.create(remote_file, BytesIO(b"hello"))
+    remote.create(remote_dir_file, BytesIO(b"hello"))
+
+    scs.run_until_clean(timeout)
+
+    assert remote.exists_path(remote_dir_file)
+    assert remote.exists_path(remote_file)
+
+    scs.smart_delete_path(local_dir_file, local_dir_file)
+    scs.smart_delete_path(local_file, local_file)
+
+    scs.run_until_clean(timeout)
+
+    assert not remote.exists_path(remote_dir_file)
+    assert not remote.exists_path(remote_file)
+
+def test_smart_delete_path_local(scs):
+    timeout = 1
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_dir = "/local/dir"
+    remote_dir = "/remote/dir"
+    local_file = "/local/file.txt"
+    remote_file = "/remote/file.txt"
+
+    local, remote = scs.providers
+
+    local.mkdir(local_parent)
+    doid = local.mkdir(local_dir)
+    foid = local.create(local_file, BytesIO(b"hello")).oid
+
+    scs.run_until_clean(timeout)
+
+    assert remote.exists_path(remote_dir)
+    assert remote.exists_path(remote_file)
+
+    local._delete(foid, without_event=True)
+    local._delete(doid, without_event=True)
+    scs.smart_delete_path(foid, local_file)
+    scs.smart_delete_path(doid, local_dir)
+
+    scs.run_until_clean(timeout)
+
+    assert not remote.exists_path(remote_dir)
+    assert not remote.exists_path(remote_file)
+
 
 def test_smartsync(scs):
     timeout = 1

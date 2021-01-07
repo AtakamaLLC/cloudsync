@@ -154,7 +154,7 @@ class SyncManager(Runnable):
         self.translate = lambda side, path: self.__translate(side, path) if path else None
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-        self.__nmgr = notification_manager
+        self._nmgr = notification_manager
         self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
         self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
         if not sleep:
@@ -186,13 +186,13 @@ class SyncManager(Runnable):
                 ex.CloudNamespaceError) as e:
             log.warning(
                 "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-            self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
+            self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
             sync.punt()
             # do we want to self.state.storage_commit() here?
             self.backoff()  # raises a backoff error to the caller
         except Exception as e:
             if isinstance(e, ex.CloudException):
-                self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
+                self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
             log.exception(
                 "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
             sync.punt()
@@ -791,8 +791,8 @@ class SyncManager(Runnable):
         # pretend this sync translated as "None"
         log.warning("File name error: not creating '%s' on %s", translated_path, self.providers[synced].name)
         sync.ignore(IgnoreReason.IRRELEVANT)
-        if self.__nmgr:
-            self.__nmgr.notify(Notification(SourceEnum(synced), NotificationType.FILE_NAME_ERROR, translated_path))
+        if self._nmgr:
+            self._nmgr.notify(Notification(SourceEnum(synced), NotificationType.FILE_NAME_ERROR, translated_path))
 
     def __resolve_file_likes(self, side_states):
         class Guard:
