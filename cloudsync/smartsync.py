@@ -235,6 +235,7 @@ class SmartCloudSync(CloudSync):
         filtering on the remote ent to remove ents that have been trashed or are in the middle of a local
         rename. If the local DirInfo is present, this method should never return None.
         """
+        local, remote = self.providers
         if not rent and not local_dir_info:
             return None
 
@@ -381,7 +382,7 @@ class SmartCloudSync(CloudSync):
             rent = remote_ents.get(name)
             lent = local_dir_ents.get(name)
             if not rent or not rent[LOCAL].path or local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path):
-                yield_val = self._ent_to_smartinfo(rent, lent, local.join(local_path, name))
+                yield_val = self._get_smartinfo(rent, lent, local.join(local_path, name))
                 if yield_val.mtime or yield_val.size:
                     yield yield_val
 
@@ -391,6 +392,7 @@ class SmartCloudSync(CloudSync):
         return path
 
     def smart_info_path(self, local_path) -> Optional[SmartInfo]:
+        """Add smartsync features to info_path"""
         local_dir_ent = self.providers[LOCAL].info_path(local_path)
         rent = None
 
@@ -411,6 +413,7 @@ class SmartCloudSync(CloudSync):
         return None
 
     def smart_delete_path(self, local_oid, local_path):
+        """smartsync aware path deletion"""
         remote_path = self.translate(REMOTE, local_path)
         log.info("Smart delete path %s", local_path)
         if remote_path:
