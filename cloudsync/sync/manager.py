@@ -333,6 +333,20 @@ class SyncManager(Runnable):
             self.finished(REMOTE, sync)
             return True
 
+        if self.in_backoff:
+            # Sync manager is in backoff (degraded performance) and the following get_latest() call will not make any
+            # provider calls -- make a dummy call to ensure we are connected.
+            #
+            # If successful, then it is safe to clear backoff even though this iteration will not do any syncing.
+            # If it fails then an exception is raised and backoff is increased.
+            #
+            # The idea is to resolve the degraded performance that comes with operating "in_backoff"
+            # as quickly as possible, rather than wait for it to resolve itself naturally.
+            for side in [LOCAL, REMOTE]:
+                if sync.is_latest_side(side):
+                    self.providers[side].info_path("/", use_cache=False)
+
+        something_got_done = True
         sync.get_latest()
         return False
 
@@ -346,8 +360,6 @@ class SyncManager(Runnable):
             return True
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
-
-        something_got_done = False
 
         for side in ordered:
             if not sync[side].needs_sync():
@@ -401,8 +413,11 @@ class SyncManager(Runnable):
                 something_got_done = True
                 self.finished(side, sync)
             elif response == PUNT:
+                something_got_done = False
                 sync.punt()
-            # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+            else:
+                # otherwise, just do it again, the contract is that returning REQUEUE involved some manual manipulation of the priority
+                something_got_done = False
             break
 
         return something_got_done
