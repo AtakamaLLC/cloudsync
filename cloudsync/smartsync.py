@@ -1,7 +1,7 @@
 import time
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast
+from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast, Union
 from cloudsync.sync import MISSING, TRASHED
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
@@ -218,7 +218,7 @@ class SmartCloudSync(CloudSync):
     def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
 
-    def _get_smartinfo(self, rent: Optional[SyncEntry], local_dir_info: Optional[DirInfo], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
+    def _get_smartinfo(self, rent: Optional[SyncEntry], local_dir_info: Optional[Union[DirInfo, OInfo]], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
         """
         Construct a SmartInfo object based on the local info and the remote entry in the statedb.
 
@@ -274,7 +274,7 @@ class SmartCloudSync(CloudSync):
                            oid=oid,
                            remote_oid=remote_oid,
                            hash=obj_hash,
-                           path=path,
+                           path=str(path),
                            size=size,
                            name=name,
                            mtime=mtime,
