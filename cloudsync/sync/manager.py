@@ -346,7 +346,6 @@ class SyncManager(Runnable):
                 if sync.is_latest_side(side):
                     self.providers[side].info_path("/", use_cache=False)
 
-        something_got_done = True
         sync.get_latest()
         return False
 
@@ -360,6 +359,8 @@ class SyncManager(Runnable):
             return True
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
+
+        something_got_done = True
 
         for side in ordered:
             if not sync[side].needs_sync():
