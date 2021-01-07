@@ -146,7 +146,7 @@ class EventManager(Runnable):
                     except NotImplementedError:
                         raise CloudTokenError("No auth method defined")
                 self.need_auth = False
-            else:
+            elif not self.stopped:
                 log.info("reconnect to %s", self.provider.name)
                 self.provider.reconnect()
 
