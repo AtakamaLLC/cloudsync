@@ -180,7 +180,12 @@ class SmartSyncState(SyncState):
 
 
 @dataclass
-class SmartInfo(OInfo):
+class FSInfo(OInfo):
+    fs_custom: Optional[dict] = None
+
+
+@dataclass
+class SmartInfo(FSInfo):
     remote_oid: str = ''
     is_synced: bool = False
 
@@ -218,7 +223,7 @@ class SmartCloudSync(CloudSync):
     def register_auto_sync_callback(self, callback: Callable):
         self.state.register_auto_sync_callback(callback)
 
-    def _get_smartinfo(self, rent: Optional[SyncEntry], local_dir_info: Optional[Union[DirInfo, OInfo]], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
+    def _get_smartinfo(self, rent: Optional[SyncEntry], local_dir_info: Optional[Union[DirInfo, OInfo, FSInfo]], local_path) -> SmartInfo:  # pylint: disable=too-many-locals
         """
         Construct a SmartInfo object based on the local info and the remote entry in the statedb.
 
@@ -248,6 +253,7 @@ class SmartCloudSync(CloudSync):
                 # Ignore outdated remote ent if a local rename is in progress
                 return None
 
+        stat = {"stat": None}
         if local_dir_info:  # file is synced, use the local info
             otype = local_dir_info.otype
             oid = local_dir_info.oid
@@ -257,6 +263,8 @@ class SmartCloudSync(CloudSync):
             size = local_dir_info.size
             name = local_dir_info.name
             mtime = local_dir_info.mtime
+            if hasattr(local_dir_info, "fs_custom") and isinstance(local_dir_info.fs_custom, dict):
+                stat = local_dir_info.fs_custom
             is_synced = True
         else:
             otype = rent[REMOTE].otype
@@ -281,6 +289,7 @@ class SmartCloudSync(CloudSync):
                            shared=shared,  # TODO: rent[REMOTE].shared,
                            readonly=readonly,  # TODO: rent[REMOTE].readonly
                            is_synced=is_synced,
+                           fs_custom=stat,
                            )
         return retval
 
@@ -393,7 +402,7 @@ class SmartCloudSync(CloudSync):
 
     def smart_info_path(self, local_path) -> Optional[SmartInfo]:
         """Add smartsync features to info_path"""
-        local_dir_ent = self.providers[LOCAL].info_path(local_path)
+        local_dir_ent: Union[FSInfo, OInfo, DirInfo] = self.providers[LOCAL].info_path(local_path)
         rent = None
 
         remote_path = self.translate(REMOTE, local_path)
