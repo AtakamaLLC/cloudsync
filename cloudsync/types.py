@@ -43,6 +43,7 @@ class OInfo:
     mtime: Optional[float] = None          # modification time
     shared: bool = False                   # file is shared by the cloud provider
     readonly: bool = False                 # file is readonly in the cloud
+    custom: Optional[Any] = None          # dict of provider specific information
 
 
 @dataclass
