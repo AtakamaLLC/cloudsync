@@ -1387,13 +1387,13 @@ class SyncManager(Runnable):
 
                 log.info("parent modify %s should happen first %s", sync[changed].path, conflict)
                 if sync.is_path_change(changed) and sync[synced].exists == TRASHED and sync.priority > 2:
+                    # TODO: revisit this -- this codepath is not hit by any existing tests
+                    #
                     # right hand side was trashed at the same time as a rename happened
                     # punting is in a loop
                     # force the trash to sync instead
                     # removing this flakes test: folder_conflicts_del shuffled/oid_is_path version
                     # also breaks test_folder_del_loop
-                    #
-                    # NOTE: above-mentioned tests no longer fail with this if-block removed
                     sync[synced].changed = 1
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above

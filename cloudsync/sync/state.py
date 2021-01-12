@@ -375,19 +375,7 @@ class SyncEntry:
         return not self.paths_match(side)
 
     def needs_sync(self):
-        for i in (LOCAL, REMOTE):
-            if self[i].force_sync:
-                return True
-            if not self[i].changed:
-                continue
-            if self.paths_differ(i) and self[i].oid:
-                return True
-            if self[i].hash != self[i].sync_hash and self[i].oid:
-                return True
-        if self[LOCAL].exists != self[REMOTE].exists and \
-           self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
-            return True
-        return False
+        return self[LOCAL].needs_sync() or self[REMOTE].needs_sync()
 
     def is_pending_delete(self):
         pending_delete = False
