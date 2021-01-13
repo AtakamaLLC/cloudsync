@@ -1011,23 +1011,31 @@ def test_event_del_create(provider):
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
     infox = provider.create(dest2, temp2)
-    time.sleep(2)
-
     log.info("test oid 1 %s", info1.oid)
     log.info("test oid 2 %s", info2.oid)
-    events = []
-    for event in provider.events():
-        log.info("test event %s", event)
-        # you might get events for the root folder here or other setup stuff
-        path = event.path
-        if not event.path:
-            info = provider.info_oid(event.oid)
-            if info:
-                path = info.path
 
-        # always possible to get events for other things
-        if path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid):
-            events.append(event)
+    # wait for events
+    events = []
+    iter_count = 0
+    while True:
+        for event in provider.events():
+            log.info("test event %s", event)
+            # you might get events for the root folder here or other setup stuff
+            path = event.path
+            if not event.path:
+                info = provider.info_oid(event.oid)
+                if info:
+                    path = info.path
+
+            # always possible to get events for other things
+            if path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid):
+                events.append(event)
+
+        iter_count += 1
+        if events or iter_count > 20:
+            break
+        else:
+            time.sleep(0.1)
 
     event_num = 0
     create1, delete1, create2 = [None] * 3
