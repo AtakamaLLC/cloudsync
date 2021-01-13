@@ -347,14 +347,10 @@ class SyncManager(Runnable):
 
         for side in ordered:
             if not sync[side].needs_sync():
-                # if the changed side's path doesn't translate then ignore 'needs_sync' and process
-                # the change anyway (likely a rename to irrelevant directory)
-                # see test_cs_rename_folder_out_of_root
-                if self.translate(other_side(side), sync[side].path):
-                    if sync[side].changed:
-                        log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
+                if sync[side].changed:
+                    log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                     sync[side].changed = 0
-                    continue
+                continue
 
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
                 log.debug("ignore:%s, side:%s", sync, side)
@@ -1024,7 +1020,7 @@ class SyncManager(Runnable):
         if sync.priority > 0:
             all_synced = True
             for kid, _ in self.state.get_kids(sync[changed].path, changed):
-                if kid.needs_sync() or not self.translate(synced, sync[changed].path):
+                if kid.needs_sync():
                     all_synced = False
                     break
             if all_synced:
@@ -1051,10 +1047,10 @@ class SyncManager(Runnable):
         # Mark children changed so we will check if already deleted
         log.info("kids exist, mark changed and punt %s", sync[changed].path)
         for kid, _ in self.state.get_kids(sync[changed].path, changed):
-            kid[changed].changed = time.time()
+            kid[changed].set_force_sync()
 
         # Mark us changed, so we will sync after kids, not before
-        sync[changed].changed = time.time()
+        sync[changed].set_force_sync()
 
         return PUNT
 
@@ -1391,6 +1387,8 @@ class SyncManager(Runnable):
 
                 log.info("parent modify %s should happen first %s", sync[changed].path, conflict)
                 if sync.is_path_change(changed) and sync[synced].exists == TRASHED and sync.priority > 2:
+                    # TODO: revisit this -- this codepath is not hit by any existing tests
+                    #
                     # right hand side was trashed at the same time as a rename happened
                     # punting is in a loop
                     # force the trash to sync instead
@@ -1439,7 +1437,7 @@ class SyncManager(Runnable):
             sync[changed].clear()
             sync[synced].sync_path = None
             sync[synced].sync_hash = None
-            sync[synced].changed = time.time()
+            sync[synced].set_force_sync()
             log.warning("%s now unsynced: %s", sync[synced].path, sync)
 
         return FINISHED
