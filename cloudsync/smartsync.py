@@ -428,11 +428,11 @@ class SmartCloudSync(CloudSync):
                 self.state.requestset.add(ent)
                 self.state.excludeset.discard(ent)
 
-    def smart_rename(self, side, oid, new_path):
+    def smart_rename(self, side, oid, new_path) -> str:
+        """smartsync aware rename"""
         # oid MUST exist on the specified side
         #   then, if target exists on same side, renaming on that side will fail in the rename
         #   if target exists only on the other side, then there will be a conflict
-        info = self.providers[side].info_oid(oid)
         other_side = REMOTE if side == LOCAL else LOCAL
         other_side_new_path = self.translate(other_side, new_path)
         if self.providers[other_side].exists_path(other_side_new_path):
