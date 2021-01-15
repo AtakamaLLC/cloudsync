@@ -427,3 +427,15 @@ class SmartCloudSync(CloudSync):
                 self.state.update_entry(ent, LOCAL, local_oid, path=local_path, changed=True, exists=False)
                 self.state.requestset.add(ent)
                 self.state.excludeset.discard(ent)
+
+    def smart_rename(self, side, oid, new_path):
+        # oid MUST exist on the specified side
+        #   then, if target exists on same side, renaming on that side will fail in the rename
+        #   if target exists only on the other side, then there will be a conflict
+        info = self.providers[side].info_oid(oid)
+        other_side = REMOTE if side == LOCAL else LOCAL
+        other_side_new_path = self.translate(other_side, new_path)
+        if self.providers[other_side].exists_path(other_side_new_path):
+            other_side_adverb = "remotely" if other_side == REMOTE else "locally"
+            raise ex.CloudFileExistsError("Rename target %s already exists %s as %s" % (new_path, other_side_adverb, other_side_new_path))
+        return self.providers[side].rename(oid, new_path)
