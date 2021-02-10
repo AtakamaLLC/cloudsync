@@ -79,6 +79,8 @@ class SmartSyncState(SyncState):
         self._callbacks.append(callback)
 
     def _smart_sync_ent(self, ent):
+        if not ent:
+            return
         if ent[LOCAL].path and not self.providers[LOCAL].exists_path(ent[LOCAL].path):
             ent[LOCAL].clear()
             ent[REMOTE].sync_path = None
@@ -100,7 +102,8 @@ class SmartSyncState(SyncState):
 
     def smart_sync_oid(self, remote_oid) -> SyncEntry:
         ent = self.lookup_oid(REMOTE, remote_oid)
-        self._smart_sync_ent(ent)
+        if ent:
+            self._smart_sync_ent(ent)
         return ent
 
     def _smart_unsync_ent(self, ent):
@@ -294,24 +297,27 @@ class SmartCloudSync(CloudSync):
                 something_got_done = self.smgr.sync(sync, want_raise=True)
             self.state.storage_commit()
             return something_got_done
-        except ex.CloudException as e:
+        except ex.CloudException as e:  # notify and re-raise # pragma: no cover
             path = sync[REMOTE].path if sync[REMOTE].path else sync[LOCAL].path
             self.nmgr.notify_from_exception(SourceEnum.SYNC, e, path)
             raise
 
     def _smart_unsync_ent(self, ent):
-        if ent:
-            self.state.unconditionally_get_latest(ent, LOCAL)
-            if ent[LOCAL].hash != ent[LOCAL].sync_hash or ent[LOCAL].parent.paths_differ(LOCAL):
-                ent[LOCAL].changed = ent[LOCAL].changed or time.time()
-                self._sync_one_entry(ent)
+        assert ent
+        self.state.unconditionally_get_latest(ent, LOCAL)
+        if ent[LOCAL].hash != ent[LOCAL].sync_hash or ent[LOCAL].parent.paths_differ(LOCAL):
+            ent[LOCAL].changed = ent[LOCAL].changed or time.time()
+            self._sync_one_entry(ent)
 
-            return self.state.smart_unsync_ent(ent)
-        return None
+        return ent
 
     def smart_unsync_oid(self, remote_oid):
         ent = self.state.lookup_oid(REMOTE, remote_oid)
+        if not ent:
+            raise ex.CloudFileNotFoundError(remote_oid)
         self._smart_unsync_ent(ent)
+        ent: SyncEntry = self.state.smart_unsync_oid(remote_oid)
+        return ent[LOCAL].path
 
     def smart_unsync_path(self, path, side):
         """Delete a file locally, but leave it in the cloud"""
@@ -327,6 +333,8 @@ class SmartCloudSync(CloudSync):
             found = self._smart_unsync_ent(ent)
             if found:
                 found_ents.add(found)
+        for ent in found_ents:
+            self.state.smart_unsync_ent(ent)
         return found_ents
 
     def _smart_sync_ent(self, ent: SyncEntry) -> bool:
@@ -386,7 +394,7 @@ class SmartCloudSync(CloudSync):
             lent = local_dir_ents.get(name)
             if not rent or not rent[LOCAL].path or local.paths_match(self.translate(LOCAL, rent[REMOTE].path), rent[LOCAL].path):
                 yield_val = self._get_smartinfo(rent, lent, local.join(local_path, name))
-                if yield_val.mtime or yield_val.size:
+                if yield_val and (yield_val.mtime or yield_val.size):
                     yield yield_val
 
     def _ensure_path_remote(self, path, side) -> str:

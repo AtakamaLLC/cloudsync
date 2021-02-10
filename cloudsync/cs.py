@@ -12,7 +12,7 @@ from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
 from .notification import NotificationManager, Notification, NotificationType, SourceEnum
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from .smartsync import SmartSyncState, SmartSyncManager
 
 log = logging.getLogger(__name__)

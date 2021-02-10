@@ -3061,6 +3061,8 @@ def test_smartsync(scs):
     contents1c = b"hello1ccc"
     contents1d = b"hello1dddd"
     local_oid1 = None
+    local: MockProvider
+    remote: MockProvider
     local, remote = scs.providers
     scs.state._changeset = set()
 
@@ -3090,15 +3092,15 @@ def test_smartsync(scs):
     assert len(files) == 4
     for file in files:
         assert file.mtime
-        assert local.dirname(file.path) == local_test_folder
+        assert local.dirname(file.path) == local_test_folder, "bad folder"
         if file.name in ('stuff1', 'stuff2'):
-            assert file.size == len(contents1)
+            assert file.size == len(contents1), "bad file size"
             assert file.oid is None
             assert file.hash is None
             assert file.remote_oid
             assert not file.is_synced
         elif file.name in ('stuff.autosync', 'started_out_local'):
-            assert file.size == len(contents1a)
+            assert file.size == len(contents1a), "bad other file size"
             assert file.oid is not None
             assert file.hash is not None
             assert file.is_synced
@@ -3130,8 +3132,8 @@ def test_smartsync(scs):
     remote.upload(rinfo1.oid, BytesIO(contents1a))
     ent1: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
     ent1.get_latest(force=True)
-    assert ent1[LOCAL].size == len(contents1)
-    assert ent1[REMOTE].size == len(contents1a)
+    assert ent1[LOCAL].size == len(contents1), "bad ent1 local size"
+    assert ent1[REMOTE].size == len(contents1a), "bad ent1 remote size"
 
     old_translate = scs.translate
 
@@ -3144,7 +3146,7 @@ def test_smartsync(scs):
     files = list(scs.smart_listdir_path(local_test_folder))
     for file in files:
         if file.path == local_path1:
-            assert file.size == len(contents1)  # remotely updated to contents1a, but local overrides
+            assert file.size == len(contents1), f"bad size of {file.path}"  # remotely updated to contents1a, but local overrides
             assert file.is_synced
             assert rinfo1a.mtime >= file.mtime
 
@@ -3182,7 +3184,7 @@ def test_smartsync(scs):
     # unsync the file, should upload the new contents when unsyncing
     scs.smart_unsync_oid(rinfo1.oid)
     rinfo_unsynced = remote.info_oid(rinfo1.oid)
-    assert rinfo_unsynced.size == len(contents1b)
+    assert rinfo_unsynced.size == len(contents1b), "bad unsynced size"
 
     # confirm it no longer exists
     assert not local.exists_path(local_path1)
@@ -3204,14 +3206,14 @@ def test_smartsync(scs):
     ent2: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
     ent2.get_latest(force=True)
     assert not ent1[LOCAL].size
-    assert ent1[REMOTE].size == len(contents1c)
+    assert ent1[REMOTE].size == len(contents1c), "bad remote ent1 size"
 
     files = list(scs.smart_listdir_path(local_test_folder))
     assert local_path1 in [x.path for x in files]
     check_time = time.time() - 5
     for file in files:
         if file.path == local_path1:
-            assert file.size == len(contents1c)
+            assert file.size == len(contents1c), f"bad size, contents should be {contents1c}"
             assert file.mtime >= check_time
             local_oid1 = file.oid
             remote_oid1 = file.remote_oid
@@ -3241,14 +3243,31 @@ def test_smartsync(scs):
     scs.run_until_clean(timeout)
     assert local.exists_path(local_test_folder2)
 
+    # confirm that smart_sync_path syncs down a file that has been deleted locally
+    local._delete(local_info1.oid, without_event=True)
+    local_info1_after_delete = local.info_path(local_path1_2)
+    assert not local_info1_after_delete
+    scs.smart_sync_path(local_path1_2, LOCAL)
+    local_info1_after_resync = local.info_path(local_path1_2)
+    assert local_info1_after_resync
+
+    # get coverage for no local and also no remote file for smart_info_path
+    remote_path1_2 = scs.translate(REMOTE, local_path1_2)
+    remote_info1_2 = remote.info_path(remote_path1_2)
+    local._delete(local_info1_after_resync.oid, without_event=True)
+    remote._delete(remote_info1_2.oid, without_event=True)
+    no_local_info_after_delete = local.info_path(local_path1_2)
+    assert no_local_info_after_delete is None
+    noexist_info_path = scs.smart_info_path(local_path1_2)
+
     # confirm that the size and mtime are serialized and deserialized
     entries = scs.state.get_all()
     for entry in entries:
         ent_ser = entry.serialize()
         for side in range(1):
             new_ent = SyncEntry(parent=scs.state, otype=None, storage_init=(entry.storage_id, ent_ser))
-            assert new_ent[side].size == entry[side].size
-            assert new_ent[side].mtime == entry[side].mtime
+            assert new_ent[side].size == entry[side].size, "bad size"
+            assert new_ent[side].mtime == entry[side].mtime, "bad time"
     
     # rename a file locally and confirm it doesn't appear in smart_listdir under the old name
     remote_path3 = "/remote/testfolder2/stuff3"
@@ -3277,6 +3296,11 @@ def test_smartsync(scs):
             found3a = True
     assert found3a  # confirm file is listed under new name
     assert not found3  # confirm file is not listed under old name
+
+    with pytest.raises(CloudFileNotFoundError):
+        scs.smart_sync_oid('junkoid')
+
+    assert scs.smart_unsync_path('/not/translatable', LOCAL) is None, "smart unsync path should return None if bad path"
 
 
 
