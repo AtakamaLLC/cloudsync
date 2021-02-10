@@ -312,11 +312,11 @@ class SmartCloudSync(CloudSync):
         return ent
 
     def smart_unsync_oid(self, remote_oid):
-        ent = self.state.lookup_oid(REMOTE, remote_oid)
+        ent: SyncEntry = self.state.lookup_oid(REMOTE, remote_oid)
         if not ent:
             raise ex.CloudFileNotFoundError(remote_oid)
         self._smart_unsync_ent(ent)
-        ent: SyncEntry = self.state.smart_unsync_oid(remote_oid)
+        ent = self.state.smart_unsync_oid(remote_oid)
         return ent[LOCAL].path
 
     def smart_unsync_path(self, path, side):

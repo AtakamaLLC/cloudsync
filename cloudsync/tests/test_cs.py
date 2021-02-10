@@ -3213,7 +3213,7 @@ def test_smartsync(scs):
     check_time = time.time() - 5
     for file in files:
         if file.path == local_path1:
-            assert file.size == len(contents1c), f"bad size, contents should be {contents1c}"
+            assert file.size == len(contents1c), f"bad size {file.size}, contents should be {len(contents1c)}"
             assert file.mtime >= check_time
             local_oid1 = file.oid
             remote_oid1 = file.remote_oid
