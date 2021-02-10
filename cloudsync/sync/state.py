@@ -81,6 +81,7 @@ class SideState:
         self._path: Optional[str] = None             # path at provider
         self._oid: Optional[str] = None              # oid at provider
         self._exists: Exists = UNKNOWN               # exists at provider
+        self._force_sync: bool = False
         self._temp_file: Optional[str] = None
         self.temp_file: str
         self._size: Optional[int] = None
@@ -129,6 +130,10 @@ class SideState:
         # setting to an old mtime marks this as fully aged
         self.changed = 1
 
+    def set_force_sync(self):
+        self.changed = time.time()  # type: ignore
+        self.force_sync = True
+
     def clear(self):
         self.exists = UNKNOWN
         self.changed = None
@@ -146,6 +151,8 @@ class SideState:
         return self.__class__.__name__ + ":" + debug_sig(id(self)) + str(d)
 
     def needs_sync(self):
+        if self.force_sync:
+            return True
         return self.changed and self.oid and (
                self.hash != self.sync_hash or
                self.parent.paths_differ(self.side) or
@@ -384,17 +391,7 @@ class SyncEntry:
         return not self.paths_match(side)
 
     def needs_sync(self):
-        for i in (LOCAL, REMOTE):
-            if not self[i].changed:
-                continue
-            if self.paths_differ(i) and self[i].oid:
-                return True
-            if self[i].hash != self[i].sync_hash and self[i].oid:
-                return True
-        if self[LOCAL].exists != self[REMOTE].exists and \
-           self[LOCAL].exists == TRASHED or self[REMOTE].exists == TRASHED:
-            return True
-        return False
+        return self[LOCAL].needs_sync() or self[REMOTE].needs_sync()
 
     def is_pending_delete(self):
         pending_delete = False
@@ -1108,6 +1105,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         return None
 
     def finished(self, ent: SyncEntry):
+        if not ent[0].changed:
+            ent[0].force_sync = False
+        if not ent[1].changed:
+            ent[1].force_sync = False
+
         if ent[1].changed or ent[0].changed:
             log.debug("not marking finished: %s", ent)
             return

@@ -75,6 +75,37 @@ def _fixture_cs(providers, storage=None):
     cs.done()
 
 
+# parameterization:
+# - cs-nested-lci = local prov is case insensitive, remote is case sensitive, event filtering enabled
+# - cs-nested-rci = local prov is case sensitive, remote is case insensitive, event filtering disabled
+@pytest.fixture(name="cs_nested", params=[(False, True), (True, False)], ids=["cs-nested-lci", "cs-nested-rci"])
+def fixture_cs_nested(request):
+    # providers for outer sync
+    lpo = mock_provider_instance(oid_is_path=True, case_sensitive=request.param[0])
+    lpo.name += "-local-outer"
+    rpo = mock_provider_instance(oid_is_path=False, case_sensitive=request.param[1], filter_events=request.param[1])
+    rpo.name += "-remote-outer"
+
+    # providers for inner sync
+    lpi = mock_provider_instance(oid_is_path=True, case_sensitive=request.param[0])
+    lpi.name += "-local-inner"
+    rpi = mock_provider_instance(oid_is_path=False, case_sensitive=request.param[1], filter_events=request.param[1])
+    rpi.name += "-remote-inner"
+
+    # providers share a mock FS across syncs
+    lpi._set_mock_fs(lpo._mock_fs)
+    rpi._set_mock_fs(rpo._mock_fs)
+
+    # yield a tuple of syncs
+    cs_nested = (
+        CloudSyncMixin((lpo, rpo), ("/local/outer", "/remote/outer")),
+        CloudSyncMixin((lpi, rpi), ("/local/outer/inner", "/remote/inner")),
+    )
+    yield cs_nested
+    cs_nested[0].done()
+    cs_nested[1].done()
+
+
 def make_cs(mock_provider_creator, left=(True, True), right=(True, True), storage=None):
     return CloudSyncMixin((mock_provider_creator(*left), mock_provider_creator(*right)), roots, storage=storage, sleep=None)
 
@@ -3133,6 +3164,8 @@ def test_smartsync(scs):
     contents1c = b"hello1ccc"
     contents1d = b"hello1dddd"
     local_oid1 = None
+    local: MockProvider
+    remote: MockProvider
     local, remote = scs.providers
     scs.state._changeset = set()
 
@@ -3167,15 +3200,15 @@ def test_smartsync(scs):
     for file in files:
         # test 3: confirm each directory entry in the listdir results has appropriate properties
         assert file.mtime
-        assert local.dirname(file.path) == local_test_folder
+        assert local.dirname(file.path) == local_test_folder, "bad folder"
         if file.name in ('stuff1', 'stuff2'):
-            assert file.size == len(contents1)
+            assert file.size == len(contents1), "bad file size"
             assert file.oid is None
             assert file.hash is None
             assert file.remote_oid
             assert not file.is_synced
         elif file.name in ('stuff.autosync', 'started_out_local'):
-            assert file.size == len(contents1a)
+            assert file.size == len(contents1a), "bad other file size"
             assert file.oid is not None
             assert file.hash is not None
             assert file.is_synced
@@ -3215,8 +3248,8 @@ def test_smartsync(scs):
     ent1.get_latest(force=True)
 
     # test 11: confirm the file has not yet synced (will sync when emgr.do() is called)
-    assert ent1[LOCAL].size == len(contents1)
-    assert ent1[REMOTE].size == len(contents1a)
+    assert ent1[LOCAL].size == len(contents1), "bad ent1 local size"
+    assert ent1[REMOTE].size == len(contents1a), "bad ent1 remote size"
 
     old_translate = scs.translate
 
@@ -3230,7 +3263,7 @@ def test_smartsync(scs):
     for file in files:
         if file.path == local_path1:
             # test 12: remote updated to contents1a, but local has precedence in listdir results
-            assert file.size == len(contents1)
+            assert file.size == len(contents1), f"bad size of {file.path}"  # remotely updated to contents1a, but local overrides
             assert file.is_synced  # file "is_synced" because it exists locally and remotely, even if it isnt up to date
             assert rinfo1a.mtime >= file.mtime
 
@@ -3271,7 +3304,7 @@ def test_smartsync(scs):
     # unsync the file, should upload the new contents when unsyncing
     scs.smart_unsync_oid(rinfo1.oid)
     rinfo_unsynced = remote.info_oid(rinfo1.oid)
-    assert rinfo_unsynced.size == len(contents1b)
+    assert rinfo_unsynced.size == len(contents1b), "bad unsynced size"
 
     # confirm it no longer exists
     assert not local.exists_path(local_path1)
@@ -3293,14 +3326,14 @@ def test_smartsync(scs):
     ent2: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
     ent2.get_latest(force=True)
     assert not ent1[LOCAL].size
-    assert ent1[REMOTE].size == len(contents1c)
+    assert ent1[REMOTE].size == len(contents1c), "bad remote ent1 size"
 
     files = list(scs.smart_listdir_path(local_test_folder))
     assert local_path1 in [x.path for x in files]
     check_time = time.time() - 5
     for file in files:
         if file.path == local_path1:
-            assert file.size == len(contents1c)
+            assert file.size == len(contents1c), f"bad size {file.size}, contents should be {len(contents1c)}"
             assert file.mtime >= check_time
             local_oid1 = file.oid
             remote_oid1 = file.remote_oid
@@ -3330,14 +3363,31 @@ def test_smartsync(scs):
     scs.run_until_clean(timeout)
     assert local.exists_path(local_test_folder2)
 
+    # confirm that smart_sync_path syncs down a file that has been deleted locally
+    local._delete(local_info1.oid, without_event=True)
+    local_info1_after_delete = local.info_path(local_path1_2)
+    assert not local_info1_after_delete
+    scs.smart_sync_path(local_path1_2, LOCAL)
+    local_info1_after_resync = local.info_path(local_path1_2)
+    assert local_info1_after_resync
+
+    # get coverage for no local and also no remote file for smart_info_path
+    remote_path1_2 = scs.translate(REMOTE, local_path1_2)
+    remote_info1_2 = remote.info_path(remote_path1_2)
+    local._delete(local_info1_after_resync.oid, without_event=True)
+    remote._delete(remote_info1_2.oid, without_event=True)
+    no_local_info_after_delete = local.info_path(local_path1_2)
+    assert no_local_info_after_delete is None
+    noexist_info_path = scs.smart_info_path(local_path1_2)
+
     # confirm that the size and mtime are serialized and deserialized
     entries = scs.state.get_all()
     for entry in entries:
         ent_ser = entry.serialize()
         for side in range(1):
             new_ent = SyncEntry(parent=scs.state, otype=None, storage_init=(entry.storage_id, ent_ser))
-            assert new_ent[side].size == entry[side].size
-            assert new_ent[side].mtime == entry[side].mtime
+            assert new_ent[side].size == entry[side].size, "bad size"
+            assert new_ent[side].mtime == entry[side].mtime, "bad time"
     
     # rename a file locally and confirm it doesn't appear in smart_listdir under the old name
     remote_path3 = "/remote/testfolder2/stuff3"
@@ -3366,6 +3416,11 @@ def test_smartsync(scs):
             found3a = True
     assert found3a  # confirm file is listed under new name
     assert not found3  # confirm file is not listed under old name
+
+    with pytest.raises(CloudFileNotFoundError):
+        scs.smart_sync_oid('junkoid')
+
+    assert scs.smart_unsync_path('/not/translatable', LOCAL) is None, "smart unsync path should return None if bad path"
 
 
 
@@ -3496,5 +3551,176 @@ def test_cs_event_filter(cs):
     cs.providers[REMOTE].rename(qux.oid, "/remote/qux")
     cs.run_until_clean(timeout=2)
     log.info("TABLE 4\n%s", cs.state.pretty_print())
-    # moved 2 files into root, these events should be processed, state entries addded, etc.
+    # moved 2 files into root, these events should be processed, state entries added, etc.
     assert len(cs.state) == 3
+
+
+def test_cs_nested_local_folders_with_conflict_resolution(cs_nested):
+    (cso, csi) = cs_nested
+    (lpo, rpo) = cso.providers  # /local/outer <-> /remote/outer
+    (lpi, rpi) = csi.providers  # /local/outer/inner <-> /remote/inner
+
+    def translate_impl(to, path, get_nested_sync_paths, translate_orig):
+        provisional = translate_orig(to, path)
+        if not provisional:
+            return None
+
+        if to == REMOTE:
+            # local path being translated to remote path
+            for nested_sync_paths in get_nested_sync_paths():
+                if lpo.is_subpath(nested_sync_paths[0], path) or lpo.is_subpath(nested_sync_paths[1], path):
+                    # nested synced folders and conflict folders are not synced to remote
+                    return None
+        else:  # to == LOCAL
+            # remote path being translated to local path
+            for nested_sync_paths in get_nested_sync_paths():
+                if lpo.is_subpath(nested_sync_paths[0], provisional):
+                    # conflict with nested sync path - redirect to conflict folder
+                    return lpo.replace_path(provisional, nested_sync_paths[0], nested_sync_paths[1])
+                if lpo.is_subpath(nested_sync_paths[1], provisional):
+                    # conflict folder is never synced from remote
+                    return None
+
+        return provisional
+
+    def translate_cso_new(to, path, translate_orig=cso.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_cso():
+            return [("/local/outer/inner", "/local/outer/inner.conflict")]
+
+        return translate_impl(to, path, get_nested_sync_paths_cso, translate_orig)
+
+    def translate_csi_new(to, path, translate_orig=csi.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_csi():
+            return []
+
+        return translate_impl(to, path, get_nested_sync_paths_csi, translate_orig)
+
+    # replace translate functions
+    cso.translate = translate_cso_new
+    csi.translate = translate_csi_new
+
+    # ensure local/remote files sync to the appropriate folders
+    lpo.create("/local/outer/f1.dat", BytesIO(b"outer-f1"))
+    lpi.create("/local/outer/inner/f2.dat", BytesIO(b"inner-f2"))
+    rpo.create("/remote/outer/f3.dat", BytesIO(b"outer-f3"))
+    rpi.create("/remote/inner/f4.dat", BytesIO(b"inner-f4"))
+    cso.run_until_clean(timeout=1)
+    csi.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 1\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 1\n%s", csi.state.pretty_print())
+    assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner")
+    assert not rpo.info_path("/remote/outer/inner")
+    assert cso.state.lookup_path(REMOTE, "/remote/outer/f1.dat")
+    assert rpo.info_path("/remote/outer/f1.dat")
+    assert cso.state.lookup_path(LOCAL, "/local/outer/f3.dat")
+    assert lpo.info_path("/local/outer/f3.dat")
+    assert csi.state.lookup_path(REMOTE, "/remote/inner/f2.dat")
+    assert rpi.info_path("/remote/inner/f2.dat")
+    assert csi.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
+    assert lpi.info_path("/local/outer/inner/f4.dat")
+
+    # ensure remote conflicts are resolved
+    rpo.mkdir("/remote/outer/inner")
+    rpo.create("/remote/outer/inner/c1.dat", BytesIO(b"outer-inner-c1"))
+    cso.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 2\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 2\n%s", csi.state.pretty_print())
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner")
+    assert not lpo.info_path("/local/outer/inner/c1.dat")
+    assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner.conflict")
+    assert not rpo.info_path("/remote/outer/inner.conflict")
+    assert cso.state.lookup_path(LOCAL, "/local/outer/inner.conflict/c1.dat")
+    assert lpo.info_path("/local/outer/inner.conflict/c1.dat")
+
+    # ensure conflict folders are not synced from/to remote
+    rpo.mkdir("/remote/outer/inner.conflict")
+    rpo.create("/remote/outer/inner.conflict/c2.dat", BytesIO(b"outer-inner.conflict-c2"))
+    cso.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 3\n%s", cso.state.pretty_print())
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner.conflict/c2.dat")
+    assert not lpo.info_path("/local/outer/inner.conflict/c2.dat")
+    assert rpo.info_path("/remote/outer/inner.conflict/c2.dat")
+    lpo.create("/local/outer/inner.conflict/c3.dat", BytesIO(b"outer-inner.conflict-c3"))
+    cso.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 4\n%s", cso.state.pretty_print())
+    assert not cso.state.lookup_path(REMOTE, "/local/outer/inner.conflict/c3.dat")
+    assert not rpo.info_path("/remote/outer/inner.conflict/c3.dat")
+    assert lpo.info_path("/local/outer/inner.conflict/c3.dat")
+
+
+def test_cs_nested_local_folders_ignores_conflicts(cs_nested):
+    (cso, csi) = cs_nested
+    (lpo, rpo) = cso.providers  # /local/outer <-> /remote/outer
+    (lpi, rpi) = csi.providers  # /local/outer/inner <-> /remote/inner
+
+    def translate_impl(to, path, get_nested_sync_paths, translate_orig):
+        provisional = translate_orig(to, path)
+        if not provisional:
+            return None
+
+        if to == REMOTE:
+            # local path being translated to remote path
+            for nested_sync_path in get_nested_sync_paths():
+                if lpo.is_subpath(nested_sync_path, path):
+                    # nested synced folders are not synced to remote
+                    return None
+        else:  # to == LOCAL
+            # remote path being translated to local path
+            for nested_sync_path in get_nested_sync_paths():
+                if lpo.is_subpath(nested_sync_path, provisional):
+                    # ignore files/folders that conflict with nested sync folder
+                    return None
+
+        return provisional
+
+    def translate_cso_new(to, path, translate_orig=cso.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_cso():
+            return ["/local/outer/inner"]
+
+        return translate_impl(to, path, get_nested_sync_paths_cso, translate_orig)
+
+    def translate_csi_new(to, path, translate_orig=csi.translate):
+        # translate() needs to know about nested sync folders
+        def get_nested_sync_paths_csi():
+            return []
+
+        return translate_impl(to, path, get_nested_sync_paths_csi, translate_orig)
+
+    # replace translate functions
+    cso.translate = translate_cso_new
+    csi.translate = translate_csi_new
+
+    # ensure local/remote files sync to the appropriate folders
+    lpo.create("/local/outer/f1.dat", BytesIO(b"outer-f1"))
+    lpi.create("/local/outer/inner/f2.dat", BytesIO(b"inner-f2"))
+    rpo.create("/remote/outer/f3.dat", BytesIO(b"outer-f3"))
+    rpi.create("/remote/inner/f4.dat", BytesIO(b"inner-f4"))
+    cso.run_until_clean(timeout=1)
+    csi.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 1\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 1\n%s", csi.state.pretty_print())
+    assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner")
+    assert not rpo.info_path("/remote/outer/inner")
+    assert cso.state.lookup_path(REMOTE, "/remote/outer/f1.dat")
+    assert rpo.info_path("/remote/outer/f1.dat")
+    assert cso.state.lookup_path(LOCAL, "/local/outer/f3.dat")
+    assert lpo.info_path("/local/outer/f3.dat")
+    assert csi.state.lookup_path(REMOTE, "/remote/inner/f2.dat")
+    assert rpi.info_path("/remote/inner/f2.dat")
+    assert csi.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
+    assert lpi.info_path("/local/outer/inner/f4.dat")
+
+    # ensure remote conflicts are ignored
+    rpo.mkdir("/remote/outer/inner")
+    rpo.create("/remote/outer/inner/c1.dat", BytesIO(b"outer-inner-c1"))
+    cso.run_until_clean(timeout=1)
+    csi.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 2\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 2\n%s", csi.state.pretty_print())
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner")
+    assert not lpo.info_path("/local/outer/inner/c1.dat")
+    # the conflict file should still exist on remote
+    assert rpo.info_path("/remote/outer/inner/c1.dat")
