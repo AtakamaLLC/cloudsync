@@ -239,6 +239,14 @@ class ProviderTestMixin(ProviderBase):
         return self.__strip_root(self.prov.info_path(path, use_cache))
 
     @wrap_retry
+    def set_root(self, root_path: str = None, root_oid: str = None):
+        if root_path:
+            root_path = self.__add_root(root_path)
+        (_, root_oid) = self.prov.set_root(root_path, root_oid)
+        root_path = self.info_oid(root_oid).path
+        return root_path, root_oid
+
+    @wrap_retry
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
@@ -338,6 +346,9 @@ class ProviderTestMixin(ProviderBase):
     def test_cleanup(self, *, connected):
         for p in self.__patches:
             p.stop()
+
+        self.prov._root_path = None
+        self.prov._root_oid = None
 
         if not connected:
             return
@@ -581,6 +592,27 @@ def test_info_root(provider):
     assert info
     assert info.oid
     assert info.path == "/"
+
+
+def test_set_root_path_creates_path(provider):
+    # root path does not exist yet
+    assert not provider.info_path("/sync_root")
+
+    # set_root creates it
+    (root_path, root_oid) = provider.set_root(root_path="/sync_root")
+    assert provider.info_path(root_path).oid == root_oid
+    assert "/sync_root" == root_path
+
+
+def test_set_root_path_uses_existing_path(provider):
+    # create root path
+    oid = provider.mkdir("/sync_root")
+    assert oid
+
+    # set_root uses existing folder
+    (root_path, root_oid) = provider.set_root(root_path="/sync_root")
+    assert oid == root_oid
+    assert "/sync_root" == root_path
 
 
 def test_create_upload_download(provider):
@@ -979,23 +1011,31 @@ def test_event_del_create(provider):
     provider.delete(info1.oid)
     info2 = provider.create(dest, temp2)
     infox = provider.create(dest2, temp2)
-    time.sleep(1)
-
     log.info("test oid 1 %s", info1.oid)
     log.info("test oid 2 %s", info2.oid)
-    events = []
-    for event in provider.events():
-        log.info("test event %s", event)
-        # you might get events for the root folder here or other setup stuff
-        path = event.path
-        if not event.path:
-            info = provider.info_oid(event.oid)
-            if info:
-                path = info.path
 
-        # always possible to get events for other things
-        if path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid):
-            events.append(event)
+    # wait for events
+    events = []
+    iter_count = 0
+    while True:
+        for event in provider.events():
+            log.info("test event %s", event)
+            # you might get events for the root folder here or other setup stuff
+            path = event.path
+            if not event.path:
+                info = provider.info_oid(event.oid)
+                if info:
+                    path = info.path
+
+            # always possible to get events for other things
+            if path == dest or path == dest2 or event.oid in (info1.oid, info2.oid, infox.oid):
+                events.append(event)
+
+        iter_count += 1
+        if events or iter_count > 20:
+            break
+        else:
+            time.sleep(0.1)
 
     event_num = 0
     create1, delete1, create2 = [None] * 3
