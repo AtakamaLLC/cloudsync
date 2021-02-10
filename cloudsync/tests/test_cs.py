@@ -3041,7 +3041,35 @@ def test_smart_delete_path_local(scs):
     assert not remote.exists_path(remote_file)
 
 
-def test_smartsync_rename(scs):
+def test_smartsync_rename_folder(scs):
+    timeout = 1
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_test_folder = "/local/testfolder1"
+    remote_test_folder1 = "/remote/testfolder1"
+    remote_test_folder2 = "/remote/testfolder2"
+    remote_path1 = "/remote/testfolder1/stuff"
+    local_path1 = "/local/testfolder1/stuff"
+    remote_path2 = "/remote/testfolder2/stuff"
+    local_path2 = "/local/testfolder2/stuff"
+    contents = b"hello"
+
+    local, remote = scs.providers
+    remote.mkdir(remote_parent)
+    remote_test_folder_oid = remote.mkdir(remote_test_folder1)
+    rinfo_start = remote.create(remote_path1, BytesIO(contents))
+    scs.run_until_clean(timeout)
+
+    scs.smart_sync_oid(rinfo_start.oid)
+    assert remote.exists_path(remote_path1)
+    assert local.exists_path(local_path1)
+    remote.rename(remote_test_folder_oid, remote_test_folder2)
+    scs.run_until_clean(timeout)
+    assert remote.exists_path(remote_path2)
+    assert local.exists_path(local_path2)
+
+
+def test_smartsync_rename_file(scs):
     timeout = 1
     local_parent = "/local"
     remote_parent = "/remote"
@@ -3050,8 +3078,8 @@ def test_smartsync_rename(scs):
     remote_test_folder_contents = "/remote/testfolder/testfile"
     remote_path1 = "/remote/testfolder/stuff1"
     local_path1 = "/local/testfolder/stuff1"
-    remote_path2 = "/remote/testfolder/stuff2"
-    local_path2 = "/local/testfolder/stuff2"
+    remote_path1a = "/remote/testfolder/stuff2"
+    local_path1b = "/local/testfolder/stuff2"
     contents = b"hello"
 
     local, remote = scs.providers
@@ -3065,10 +3093,12 @@ def test_smartsync_rename(scs):
     scs.run_until_clean(timeout)
     assert local.exists_path(local_path1)
     assert remote.exists_path(remote_path1)
-    new_oid = scs.smart_rename(LOCAL, linfo_start.oid, local_path2)
+    new_oid = scs.smart_rename(LOCAL, linfo_start.oid, local_path1b) # rename local_path1 to local_path1b
     scs.run_until_clean(timeout)
-    assert local.exists_path(local_path2)
-    assert remote.exists_path(remote_path2)
+    assert local.exists_path(local_path1b)
+    assert remote.exists_path(remote_path1a)
+    assert not local.exists_path(local_path1)
+    assert not local.exists_path(remote_path1)
 
     # confirm rename fails if source doesn't exist
     with pytest.raises(CloudFileNotFoundError):
