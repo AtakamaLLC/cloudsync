@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast, Union
 from cloudsync.sync import MISSING, TRASHED
-from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event
+from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event, other_side
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
 from cloudsync.notification import SourceEnum
@@ -435,3 +435,15 @@ class SmartCloudSync(CloudSync):
                 self.state.update_entry(ent, LOCAL, local_oid, path=local_path, changed=True, exists=False)
                 self.state.requestset.add(ent)
                 self.state.excludeset.discard(ent)
+
+    def smart_rename(self, side, oid, new_path) -> str:
+        """smartsync aware rename"""
+        # oid MUST exist on the specified side
+        #   then, if target exists on same side, renaming on that side will fail in the rename
+        #   check if target exists only on the other side, and raise the FileExists here if so
+        other = other_side(side)
+        other_side_new_path = self.translate(other, new_path)
+        if self.providers[other].exists_path(other_side_new_path):
+            other_side_adverb = "remotely" if other_side == REMOTE else "locally"
+            raise ex.CloudFileExistsError("Rename target %s already exists %s as %s" % (new_path, other_side_adverb, other_side_new_path))
+        return self.providers[side].rename(oid, new_path)

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 __all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage',
-           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED']
+           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'other_side']
 # safe ternary, don't allow traditional comparisons
 
 
