@@ -1,7 +1,6 @@
-from setuptools import setup  # pragma: no cover
-import sys  # pragma: no cover
+from setuptools import setup
 
-setup(  # pragma: no cover
+setup(
     name='cloudsync',
     version='2.4.5a',
     packages=['cloudsync', 'cloudsync.sync', 'cloudsync.oauth', 'cloudsync.tests', 'cloudsync.tests.fixtures',
@@ -12,5 +11,3 @@ setup(  # pragma: no cover
     author_email='',
     description=''
 )
-
-print("WARNING: setup.py is intended for test use only, not for production", file=sys.stderr)  # pragma: no cover
