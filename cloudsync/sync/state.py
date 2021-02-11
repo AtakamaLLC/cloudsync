@@ -15,6 +15,7 @@ import random
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
+import datetime
 from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator, overload
 
 from typing import Union, Sequence
@@ -87,6 +88,13 @@ class SideState:
         self._size: Optional[int] = None
         self._mtime: Optional[float] = None
 
+    def _set_mtime(self, value):
+        if isinstance(value, datetime.datetime):
+            value = value.timestamp()
+        assert value is None or isinstance(value, (int, float))
+        self._mtime = value
+        self._parent.updated(self._side, "mtime", value)
+
     def __getattr__(self, k):
         if k[0] != "_":
             return getattr(self, "_" + k)
@@ -101,6 +109,8 @@ class SideState:
 
         if k == "exists":
             self._set_exists(v)
+        elif k == "mtime":
+            self._set_mtime(v)
         else:
             object.__setattr__(self, "_" + k, v)
 
@@ -286,7 +296,11 @@ class SyncEntry:
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
-        return msgpack.dumps(ser, use_bin_type=True)
+        try:
+            return msgpack.dumps(ser, use_bin_type=True)
+        except TypeError:
+            log.exception("Could not serialize SyncEntry: %s", ser)
+            raise
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
