@@ -1768,11 +1768,25 @@ def test_listdir(provider):
     assert all([x.oid for x in contents])
     assert all([x.otype for x in contents])
     names_sizes = [[x.name, x.size] for x in contents]
-    assert len(names_sizes) == 3
-    expected = [["file1", 5], ["file2", 10], [temp_name[1:], 0]]
     log.info("names_sizes %s", names_sizes)
-    # Sort on name
-    assert sorted(names_sizes, key=lambda x: x[0]) == sorted(expected, key=lambda x: x[0])
+    assert len(names_sizes) == 3
+    found_file1 = 0
+    found_file2 = 0
+    found_folder = 0
+    for element in names_sizes:
+        if element[0] == "file1":
+            assert element == ["file1", 5]
+            found_file1 += 1
+        elif element[0] == "file2":
+            assert element == ["file2", 10]
+            found_file2 += 1
+        else:
+            assert element[0] == temp_name[1:]
+            assert element[1] is not None
+            found_folder +=1
+    assert found_file1 == 1
+    assert found_file2 == 1
+    assert found_folder == 1
 
     paths1 = [x.path for x in contents]
     contents2 = list(provider.listdir_oid(outer_oid, path=outer))
