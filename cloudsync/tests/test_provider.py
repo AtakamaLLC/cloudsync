@@ -1916,7 +1916,8 @@ def test_info(provider):
     fudge = 5
     now_before -= fudge
     now_after += fudge
-    assert now_before < create_info.mtime < now_after
+    assert now_before < create_info.mtime, f"bad create mtime {now_before - create_info.mtime}"
+    assert create_info.mtime < now_after, f"bad create mtime {create_info.mtime - now_after}"
     assert abs(create_info.mtime - oid_info.mtime) < fudge
     assert abs(create_info.mtime - path_info.mtime) < fudge
     assert abs(create_info.mtime - listdir_oid_info.mtime) < fudge

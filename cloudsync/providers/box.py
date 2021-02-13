@@ -99,6 +99,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         #   a logistical nightmire that is...
         self.__cache = HierarchicalCache(self, '0', metadata_template=metadata_template)
         self.__root_id = None
+        self._generic_fields = ['size', 'modified_at', 'content_modified_at', 'name', 'object_id', 'sha1',
+                                'object_type', 'item_collection', 'path_collection']
 
     def get_quota(self):
         with self._api() as client:
@@ -523,7 +525,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             page_size = 5000
         if box_object.object_type == 'file':
             return []
-        entries = list(box_object.get_items(limit=page_size))
+        entries = list(box_object.get_items(limit=page_size, fields=self._generic_fields))
         if not path:
             path = self._box_get_path(client, box_object)
         self._cache_collection_entries(client, entries, path)
@@ -618,17 +620,33 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             oinfo.path = self._box_get_path(client, box_object)
         if oinfo:
             retval = DirInfo(otype=oinfo.otype, oid=oinfo.oid, hash=oinfo.hash, path=oinfo.path, name=box_object.name,
-                             size=0, mtime=None, shared=False, readonly=False)
+                             size=oinfo.size, mtime=oinfo.mtime, shared=False, readonly=False)
             # TODO: get the size, mtime, shared and readonly from the box_object
             return retval
         return None
+
+    @staticmethod
+    def _parse_time(rfc3339_time_str):
+        try:
+            ret_val = arrow.get(rfc3339_time_str).float_timestamp
+        except Exception as e:  # pragma: no cover
+            log.error("could not convert rfc3339 formatted time string '%s' to timestamp: %s", rfc3339_time_str, e)
+            ret_val = 0
+        return ret_val
 
     def _box_get_oinfo(self, client: Client, box_object: BoxItem, parent_path=None, use_cache=True) -> Optional[OInfo]:
         assert isinstance(client, Client)
         if box_object is None:
             return None
 
-        obj_type = DIRECTORY if box_object.object_type == 'folder' else FILE
+        if box_object.object_type == 'folder':
+            obj_type = DIRECTORY
+            size = 0
+            mtime = 0
+        else:
+            obj_type = FILE
+            size = box_object.size
+            mtime = self._parse_time(box_object.content_modified_at)
         if parent_path:
             path = self.join(parent_path, box_object.name)
         else:
@@ -641,10 +659,14 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             path=path,
             otype=obj_type,
             hash=None if obj_type == DIRECTORY else box_object.sha1,
-            size=0  # TODO: get the size from the box_object
+            size=size,
+            mtime=mtime
         )
 
     def _box_get_dirinfo_from_collection_entry(self, entry: dict, parent: str = None) -> Optional[DirInfo]:
+        # This method is not used, but it is retained in a comment above for possible future use.
+        # This method does not properly return the size and mtime in the DirInfo, and needs to be fixed
+        # if it will be used.
         if entry is None:
             return None
         if entry.get('item_status') and entry.get('item_status') != "active":
@@ -695,8 +717,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
                 if metadata:
                     ohash = metadata.get("hash")
                     size = metadata.get("size")
+                    mtime = metadata.get("mtime")
                     if cached_oid and ohash and size:
-                        return OInfo(cached_type, cached_oid, ohash, path, size)
+                        return OInfo(cached_type, cached_oid, ohash, path, size, mtime=mtime)
 
         with self._api() as client:
             log.debug("getting box object for %s:%s", cached_oid, path)
@@ -707,7 +730,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
 
         # pylint: disable=no-member
         if dir_info:
-            return OInfo(dir_info.otype, dir_info.oid, dir_info.hash, dir_info.path, dir_info.size)
+            return OInfo(dir_info.otype, dir_info.oid, dir_info.hash, dir_info.path, dir_info.size, mtime=dir_info.mtime)
         return None
 
     def _get_box_object(self, client: Client, oid=None, path=None, object_type: OType = None, strict=True, use_cache=True) -> Optional[BoxItem]:
@@ -785,10 +808,9 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         return metadata, dir_info
 
     # noinspection PyTypeChecker
-    @staticmethod
-    def _unsafe_box_object_populate(client: Client, box_object: BoxItem) -> BoxItem:
+    def _unsafe_box_object_populate(self, client: Client, box_object: BoxItem) -> BoxItem:
         assert isinstance(client, Client)
-        retval: BoxItem = box_object.get()
+        retval: BoxItem = box_object.get(fields=self._generic_fields)
         return retval
 
     def _unsafe_get_box_object_from_path(self, client: Client,  # pylint: disable=too-many-locals
@@ -851,7 +873,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             with self._api():
                 if object_type == FILE:
                     box_object = client.file(file_id=oid)
-                if object_type == DIRECTORY:
+                elif object_type == DIRECTORY:
                     box_object = client.folder(folder_id=oid)
                 if box_object:
                     box_object = self._unsafe_box_object_populate(client, box_object)

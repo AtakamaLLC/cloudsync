@@ -17,6 +17,7 @@ from os import urandom
 from base64 import urlsafe_b64encode as u_b64enc
 import requests
 import arrow
+from datetime import datetime, timezone
 
 from pystrict import strict
 
@@ -91,7 +92,7 @@ class DropboxProvider(Provider):
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         super().__init__()
-        self.__root_id = None
+        self.__root_id = ""
         self.__cursor: str = None
         self._creds: Dict[str, str] = None
         self._client = None
@@ -369,7 +370,7 @@ class DropboxProvider(Provider):
 
     @property
     def _root_id(self):
-        return ""
+        return self.__root_id
 
     def disconnect(self):
         self._long_poll_manager.stop(forever=False)
@@ -506,14 +507,21 @@ class DropboxProvider(Provider):
                 if isinstance(res, files.FolderMetadata):
                     otype = DIRECTORY
                     ohash = None
+                    size = 0
+                    # dropbox doesn't return modified time in FolderMetadata. There is apparently no way to get it
+                    # https://www.dropboxforum.com/t5/Dropbox-API-Support-Feedback/How-to-get-last-modified-date-for-folders-in-Dropbox-V2-API/td-p/177792
+                    # https://github.com/dropbox/dropbox-sdk-java/issues/130
+                    mtime = 0
                 else:
                     otype = FILE
                     ohash = res.content_hash
+                    size = res.size
+                    mtime = self._mtime_from_metadata(res)
                 path = res.path_display
                 oid = res.id
                 relative = self.is_subpath(info.path, path).lstrip("/")
                 if relative:
-                    yield DirInfo(otype, oid, ohash, path, name=relative)
+                    yield DirInfo(otype, oid, ohash, path, name=relative, size=size, mtime=mtime)
         except CloudCursorError as e:
             raise CloudTemporaryError("Cursor error %s during listdir" % e)
         except CloudFileExistsError:
@@ -529,6 +537,18 @@ class DropboxProvider(Provider):
         if cache_ent:
             cache_ent["used"] += ret.size
         return ret
+
+    @staticmethod
+    def _mtime_from_metadata(res):
+        mtime = res.server_modified
+        assert isinstance(mtime, datetime)
+        if not mtime.tzinfo or not mtime.tzinfo.utcoffset(mtime):
+            # if the datetime object is "naive" WRT timezone, then assume it is UTC or the timestamp will be wrong
+            # because naive datetimes are assumed by the datetime library to represent local time
+            # and dropbox gives naive UTC times
+            # https://docs.python.org/3/library/datetime.html#datetime.datetime.timestamp
+            mtime = mtime.replace(tzinfo=timezone.utc)
+        return mtime.timestamp()
 
     def upload(self, oid: str, file_like, metadata=None) -> OInfo:
         if oid.startswith(self.sep):
@@ -578,7 +598,8 @@ class DropboxProvider(Provider):
         if res is None:
             raise CloudFileExistsError()
 
-        ret = OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display, size=size)
+        ret = OInfo(otype=FILE, oid=res.id, hash=res.content_hash, path=res.path_display, size=size,
+                    mtime=self._mtime_from_metadata(res))
         log.debug('upload result is %s', ret)
         return ret
 
@@ -589,7 +610,8 @@ class DropboxProvider(Provider):
         res, content = ok
         for data in content.iter_content(self.upload_block_size):
             file_like.write(data)
-        return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display)
+        return OInfo(otype=FILE, oid=oid, hash=res.content_hash, path=res.path_display, size=res.size,
+                     mtime=self._mtime_from_metadata(res))
 
     def _attempt_rename_folder_over_empty_folder(self, info: OInfo, path: str) -> None:
         if info.otype != DIRECTORY:
@@ -743,7 +765,7 @@ class DropboxProvider(Provider):
 
     def info_path(self, path: str, use_cache=True) -> Optional[OInfo]:
         if path == "/":
-            return OInfo(DIRECTORY, "", None, "/")
+            return OInfo(DIRECTORY, self._root_id, None, "/", size=0, mtime=0)
 
         try:
             log.debug("res info path %s", path)
@@ -757,12 +779,16 @@ class DropboxProvider(Provider):
             if isinstance(res, files.FolderMetadata):
                 otype = DIRECTORY
                 fhash = None
+                size = 0
+                mtime = 0
             else:
                 otype = FILE
                 fhash = res.content_hash
+                size = res.size
+                mtime = self._mtime_from_metadata(res)
 
             path = res.path_display or path
-            return OInfo(otype, oid, fhash, path)
+            return OInfo(otype, oid, fhash, path, size=size, mtime=mtime)
         except CloudFileNotFoundError:
             return None
 
@@ -770,10 +796,12 @@ class DropboxProvider(Provider):
         return self.info_path(path) is not None
 
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
-        if oid == "":
+        if oid == self._root_id:
             otype = DIRECTORY
             fhash = None
             path = "/"
+            size = 0
+            mtime = 0
         else:
             try:
                 res = self._api('files_get_metadata', oid)
@@ -782,12 +810,17 @@ class DropboxProvider(Provider):
                 if isinstance(res, files.FolderMetadata):
                     otype = DIRECTORY
                     fhash = None
+                    size = 0
+                    mtime = 0
                 else:
                     otype = FILE
                     fhash = res.content_hash
+                    size = res.size
+                    mtime = self._mtime_from_metadata(res)
+
             except CloudFileNotFoundError:
                 return None
-        return OInfo(otype, oid, fhash, path)
+        return OInfo(otype, oid, fhash, path, size=size, mtime=mtime)
 
     @classmethod
     def test_instance(cls):
