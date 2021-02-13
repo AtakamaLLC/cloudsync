@@ -642,7 +642,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         if box_object.object_type == 'folder':
             obj_type = DIRECTORY
             size = 0
-            mtime = 0
+            mtime = self._parse_time(box_object.content_modified_at)
         else:
             obj_type = FILE
             size = box_object.size
