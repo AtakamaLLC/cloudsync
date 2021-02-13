@@ -873,7 +873,7 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
             with self._api():
                 if object_type == FILE:
                     box_object = client.file(file_id=oid)
-                elif object_type == DIRECTORY:
+                if object_type == DIRECTORY:
                     box_object = client.folder(folder_id=oid)
                 if box_object:
                     box_object = self._unsafe_box_object_populate(client, box_object)
