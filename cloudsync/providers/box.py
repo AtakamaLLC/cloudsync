@@ -68,8 +68,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     name = 'box'
     _listdir_page_size = 5000
     default_sleep = 10
-    _generic_fields = ['size', 'modified_at', 'content_modified_at', 'name', 'object_id', 'sha1',
-                            'object_type', 'item_collection', 'path_collection']
+    _generic_fields = ('size', 'modified_at', 'content_modified_at', 'name', 'object_id', 'sha1',
+                       'object_type', 'item_collection', 'path_collection')
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         """
