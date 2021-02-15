@@ -1932,7 +1932,7 @@ def test_info(provider):
     assert upload_info.size == length + 1
     assert upload_info.size == new_oid_info.size
     assert upload_info.mtime > create_info.mtime
-    assert upload_info.mtime == new_oid_info.mtime
+    assert abs(upload_info.mtime - new_oid_info.mtime) < fudge
 
 
 @pytest.mark.parametrize("otype", ["file", "folder"])
