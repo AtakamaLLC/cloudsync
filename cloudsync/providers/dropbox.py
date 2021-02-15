@@ -15,9 +15,9 @@ import webbrowser
 from typing import Generator, Optional, Dict, Any, Union, Callable
 from os import urandom
 from base64 import urlsafe_b64encode as u_b64enc
+from datetime import datetime, timezone
 import requests
 import arrow
-from datetime import datetime, timezone
 
 from pystrict import strict
 
