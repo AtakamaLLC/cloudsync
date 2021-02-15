@@ -68,6 +68,8 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
     name = 'box'
     _listdir_page_size = 5000
     default_sleep = 10
+    _generic_fields = ['size', 'modified_at', 'content_modified_at', 'name', 'object_id', 'sha1',
+                            'object_type', 'item_collection', 'path_collection']
 
     def __init__(self, oauth_config: Optional[OAuthConfig] = None):
         """
@@ -99,8 +101,6 @@ class BoxProvider(Provider):  # pylint: disable=too-many-instance-attributes, to
         #   a logistical nightmire that is...
         self.__cache = HierarchicalCache(self, '0', metadata_template=metadata_template)
         self.__root_id = None
-        self._generic_fields = ['size', 'modified_at', 'content_modified_at', 'name', 'object_id', 'sha1',
-                                'object_type', 'item_collection', 'path_collection']
 
     def get_quota(self):
         with self._api() as client:
