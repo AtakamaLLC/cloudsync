@@ -869,10 +869,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if oid is not None:
             if ent.is_discarded:
                 if self.providers[side].oid_is_path:
-                    if path:
-                        if otype:
-                            log.log(TRACE, "dropping old entry %s, and making new", ent)
-                            ent = SyncEntry(self, otype)
+                    if path and otype:
+                        log.log(TRACE, "dropping old entry %s, and making new", ent)
+                        ent = SyncEntry(self, otype)
 
             ent[side].oid = oid
 
