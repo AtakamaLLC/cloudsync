@@ -881,7 +881,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         assert otype is not NOTKNOWN or not exists
 
-        if isinstance(path, str):
+        if path is not None:
             new_path = self.providers[side].normalize_path_separators(path)
             if new_path != ent[side].path:
                 ent[side].path = new_path
