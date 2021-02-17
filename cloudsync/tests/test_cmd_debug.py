@@ -11,6 +11,7 @@ from cloudsync.utils import NamedTemporaryFile
 from cloudsync.command.debug import DebugCmd
 
 from cloudsync import SqliteStorage, SyncState, LOCAL, FILE, IgnoreReason
+from .fixtures import MockProvider
 
 log = logging.getLogger()
 
@@ -19,7 +20,7 @@ log = logging.getLogger()
 @pytest.mark.parametrize("arg_discard", [True, False], ids=["discarded", "nodiscarded"])
 @pytest.mark.parametrize("arg_changed", [True, False], ids=["changed", "unchanged"])
 def test_debug_mode(capsys, arg_json, arg_discard, arg_changed):
-    providers = (MagicMock(), MagicMock())
+    providers = (MockProvider(False, False), MockProvider(False, False))
 
     tf = NamedTemporaryFile(mode=None)
     try:

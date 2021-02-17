@@ -3282,3 +3282,40 @@ def test_cs_nested_local_folders_ignores_conflicts(cs_nested):
     assert not lpo.info_path("/local/outer/inner/c1.dat")
     # the conflict file should still exist on remote
     assert rpo.info_path("/remote/outer/inner/c1.dat")
+
+
+def test_cs_del_folder_remote_add_file_local(cs):
+    (lp, rp) = cs.providers
+    lp_info_oid_orig = lp.info_oid
+
+    def lp_info_oid_new(oid, use_cache=True):
+        info = lp_info_oid_orig(oid, use_cache)
+        if info and info.path:
+            info.path = info.path.replace("/", "\\")
+        return info
+
+    # info_oid() returns paths with Windows-style separators
+    with patch.object(lp, "info_oid", side_effect=lp_info_oid_new):
+        local_parent = "\\local"
+        local_folder = local_parent + "\\folder"
+        local_file = local_folder + "\\stuff"
+        local_file2 = local_folder + "\\stuff2"
+        remote_parent = "/remote"
+        remote_folder = remote_parent + "/folder"
+        remote_file = remote_folder + "/stuff"
+
+        # create a folder with a file in it on LOCAL, allow it to sync to REMOTE
+        lp.mkdir(local_folder)
+        lp.create(local_file, BytesIO(b'bytes'))
+        cs.run_until_clean(timeout=1)
+        assert rp.info_path(remote_file)
+        log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+        # delete the folder containing the file on REMOTE, and create a new file in that folder on LOCAL --
+        remote_folder_oid = rp.info_path(remote_folder).oid
+        rp.rmtree(remote_folder_oid)
+        lp.create(local_file2, BytesIO(b'bytes'))
+        # this combination of operations can loop forever if state-lookup-by-path does not work correctly
+        # (e.g., mismatched path separators cause problems)
+        cs.run_until_clean(timeout=1)
+        log.info("TABLE 2\n%s", cs.state.pretty_print())
