@@ -44,6 +44,7 @@ after_success:
 branches:
     only:
     - master
+    - hotfix-2.4
     - /^v/
 
 install:
