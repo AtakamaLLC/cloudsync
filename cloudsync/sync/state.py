@@ -869,10 +869,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if oid is not None:
             if ent.is_discarded:
                 if self.providers[side].oid_is_path:
-                    if path:
-                        if otype:
-                            log.log(TRACE, "dropping old entry %s, and making new", ent)
-                            ent = SyncEntry(self, otype)
+                    if path and otype:
+                        log.log(TRACE, "dropping old entry %s, and making new", ent)
+                        ent = SyncEntry(self, otype)
 
             ent[side].oid = oid
 
@@ -881,8 +880,10 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         assert otype is not NOTKNOWN or not exists
 
-        if path is not None and path != ent[side].path:
-            ent[side].path = path
+        if path is not None:
+            new_path = self.providers[side].normalize_path_separators(path)
+            if new_path != ent[side].path:
+                ent[side].path = new_path
 
         if hash is not None and hash != ent[side].hash:
             ent[side].hash = hash
@@ -1267,8 +1268,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 if ent[i].hash is None:
                     log.warning("Cannot sync %s, since hash is None", ent[i])
 
-        if ent[i].path != info.path:
-            ent[i].path = info.path
+        new_path = self.providers[i].normalize_path_separators(info.path)
+        if ent[i].path != new_path:
+            ent[i].path = new_path
             if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
 
