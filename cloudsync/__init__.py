@@ -49,3 +49,4 @@ from .notification import *
 from .oauth import OAuthConfig
 from .providers import *
 from .command import *
+from .smartsync import *

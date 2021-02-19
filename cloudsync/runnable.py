@@ -169,6 +169,8 @@ class Runnable(ABC):
         if self.__shutdown:
             raise RuntimeError("Service was stopped, create a new instance to run.")
         if self.__thread:
+            self.__thread.join(timeout=1)  # give the old thread a chance to die
+        if self.__thread:
             raise RuntimeError("Service already started")
         self.__stopping = False
         self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)

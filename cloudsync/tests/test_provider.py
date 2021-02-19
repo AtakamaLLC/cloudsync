@@ -1761,17 +1761,32 @@ def test_listdir(provider):
     assert provider.exists_oid(inner_oid)
     new_list = provider.listdir(outer_oid)
     assert old_list != new_list  # confirm that the folder contents are not cached
-    provider.create(outer + "/file1", BytesIO(b"hello"))
-    provider.create(outer + "/file2", BytesIO(b"there"))
-    provider.create(inner + "/file3", BytesIO(b"world"))
+    provider.create(outer + "/file1", BytesIO(b"h" * 5))
+    provider.create(outer + "/file2", BytesIO(b"t" * 10))
+    provider.create(inner + "/file3", BytesIO(b"w" * 15))
     contents = list(provider.listdir(outer_oid))
     assert all([x.oid for x in contents])
     assert all([x.otype for x in contents])
-    names = [x.name for x in contents]
-    assert len(names) == 3
-    expected = ["file1", "file2", temp_name[1:]]
-    log.info("names %s", names)
-    assert sorted(names) == sorted(expected)
+    names_sizes = [[x.name, x.size] for x in contents]
+    log.info("names_sizes %s", names_sizes)
+    assert len(names_sizes) == 3
+    found_file1 = 0
+    found_file2 = 0
+    found_folder = 0
+    for element in names_sizes:
+        if element[0] == "file1":
+            assert element == ["file1", 5]
+            found_file1 += 1
+        elif element[0] == "file2":
+            assert element == ["file2", 10]
+            found_file2 += 1
+        else:
+            assert element[0] == temp_name[1:]
+            assert element[1] is not None
+            found_folder +=1
+    assert found_file1 == 1
+    assert found_file2 == 1
+    assert found_folder == 1
 
     paths1 = [x.path for x in contents]
     contents2 = list(provider.listdir_oid(outer_oid, path=outer))
@@ -1853,6 +1868,72 @@ def test_exists_oid(provider):
 
     provider.delete(file_info.oid)
     assert(not provider.exists_oid(file_info.oid))
+
+
+def test_info(provider):
+    folder = '/test_info_oid'
+    folder_oid = provider.mkdir(folder)
+    path = provider.temp_name(folder=folder)
+    _, name = provider.split(path)
+
+    length = 32
+    content = BytesIO(os.urandom(length))
+    now_before = time.time()
+    create_info = provider.create(path, content)
+    now_after = time.time()
+    provider._clear_cache()
+    oid_info: OInfo = provider.info_oid(create_info.oid)
+    path_info: OInfo = provider.info_path(path)
+
+    listdir_path_info = None
+    for ent in provider.listdir_path(folder):
+        if ent.name == name:
+            listdir_path_info = ent
+
+    listdir_oid_info = None
+    for ent in provider.listdir_oid(folder_oid):
+        if ent.name == name:
+            listdir_oid_info = ent
+
+    assert isinstance(create_info.size, int)
+    assert isinstance(oid_info.size, int)
+    assert isinstance(path_info.size, int)
+    assert isinstance(listdir_oid_info.size, int)
+    assert isinstance(listdir_path_info.size, int)
+
+    assert oid_info.size == length
+    assert oid_info.size == create_info.size
+    assert path_info.size == create_info.size
+    assert listdir_oid_info.size == create_info.size
+    assert listdir_path_info.size == create_info.size
+
+    assert isinstance(create_info.mtime, int) or isinstance(create_info.mtime, float)
+    assert isinstance(oid_info.mtime, int) or isinstance(oid_info.mtime, float)
+    assert isinstance(path_info.mtime, int) or isinstance(path_info.mtime, float)
+    assert isinstance(listdir_oid_info.mtime, int) or isinstance(listdir_oid_info.mtime, float)
+    assert isinstance(listdir_path_info.mtime, int) or isinstance(listdir_path_info.mtime, float)
+
+    fudge = 5
+    now_before -= fudge
+    now_after += fudge
+    assert now_before < create_info.mtime, f"bad create mtime {now_before - create_info.mtime}"
+    assert create_info.mtime < now_after, f"bad create mtime {create_info.mtime - now_after}"
+    assert abs(create_info.mtime - oid_info.mtime) < fudge
+    assert abs(create_info.mtime - path_info.mtime) < fudge
+    assert abs(create_info.mtime - listdir_oid_info.mtime) < fudge
+    assert abs(create_info.mtime - listdir_path_info.mtime) < fudge
+
+    if time.time() - create_info.mtime < 1:
+        time.sleep(1)
+
+    content2 = BytesIO(os.urandom(length + 1))
+    upload_info = provider.upload(create_info.oid, content2)
+    new_oid_info = provider.info_oid(create_info.oid)
+
+    assert upload_info.size == length + 1
+    assert upload_info.size == new_oid_info.size
+    assert upload_info.mtime > create_info.mtime
+    assert abs(upload_info.mtime - new_oid_info.mtime) < fudge
 
 
 @pytest.mark.parametrize("otype", ["file", "folder"])
