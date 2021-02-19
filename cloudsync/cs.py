@@ -1,7 +1,7 @@
 import threading
 import logging
 
-from typing import Optional, Tuple, List, IO, Any
+from typing import Optional, Tuple, List, IO, Any, Type, TYPE_CHECKING
 
 from pystrict import strict
 
@@ -12,6 +12,8 @@ from .provider import Provider
 from .log import TRACE
 from .utils import debug_sig
 from .notification import NotificationManager, Notification, NotificationType, SourceEnum
+if TYPE_CHECKING:  # pragma: no cover
+    from .smartsync import SmartSyncState, SmartSyncManager
 
 log = logging.getLogger(__name__)
 
@@ -19,14 +21,17 @@ log = logging.getLogger(__name__)
 @strict  # pylint: disable=too-many-instance-attributes
 class CloudSync(Runnable):
     """
-    The main syncrhonization class used.
+    The main synchronization class used.
     """
-    def __init__(self,
+    def __init__(self,  # pylint: disable=too-many-arguments
                  providers: Tuple[Provider, Provider],
                  roots: Optional[Tuple[str, str]] = None,
                  storage: Optional[Storage] = None,
                  sleep: Optional[Tuple[float, float]] = None,
                  root_oids: Optional[Tuple[str, str]] = None,
+                 state_class: Type = SyncState,
+                 smgr_class: Type = SyncManager,
+                 emgr_class: Type = EventManager
                  ):
 
         """
@@ -67,24 +72,24 @@ class CloudSync(Runnable):
         # The tag for the SyncState will isolate the state of a pair of providers along with the sync roots
 
         # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through
-        state = SyncState(providers, storage, tag=self.storage_label(), shuffle=False,
-                          prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
+        state = state_class(providers, storage, tag=self.storage_label(), shuffle=False,
+                            prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
 
-        smgr = SyncManager(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                           self.resolve_conflict, self.nmgr, sleep=sleep)
+        smgr = smgr_class(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
+                          self.resolve_conflict, self.nmgr, sleep=sleep)
 
         # for tests, make these accessible
-        self.state = state
-        self.smgr = smgr
+        self.state: 'SmartSyncState' = state
+        self.smgr: 'SmartSyncManager' = smgr
 
         # the label for each event manager will isolate the cursor to the provider/login combo for that side
         event_root_paths: Tuple[Optional[str], Optional[str]] = roots or (None, None)
         event_root_oids: Tuple[Optional[str], Optional[str]] = root_oids or (None, None)
 
-        self.emgrs: Tuple[EventManager, EventManager] = (
-            EventManager(smgr.providers[0], state, 0, self.nmgr, root_path=event_root_paths[0],
+        self.emgrs = (
+            emgr_class(smgr.providers[0], state, 0, self.nmgr, root_path=event_root_paths[0],
                          reauth=lambda: self.authenticate(0), root_oid=event_root_oids[0]),
-            EventManager(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
+            emgr_class(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
                          reauth=lambda: self.authenticate(1), root_oid=event_root_oids[1])
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
@@ -101,6 +106,9 @@ class CloudSync(Runnable):
         self.state.forget()
         self.emgrs[0].forget()
         self.emgrs[1].forget()
+
+    def set_need_walk(self, side, need_walk=True):
+        self.emgrs[side].need_walk=need_walk
 
     @property
     def aging(self) -> float:
@@ -272,6 +280,9 @@ class CloudSync(Runnable):
             self.sthread = None
 
     # for tests, make this manually runnable
+    # This method is NEVER called in production, it is only called in tests!
+    #   Notice that the start() method is overridden in this class, and prevents do() from being called
+    #   by starting threads for all the managers, which get their do() methods called, but never this class! BEWARE
     def do(self):
         """
         One loop of sync, used for *tests only*.

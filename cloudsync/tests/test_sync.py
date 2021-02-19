@@ -1122,6 +1122,7 @@ def test_backoff_cleared_after_delete_synced(sync):
     with patch.object(sync, "nothing_happened") as nothing_happened:
         sync.providers[LOCAL].delete(lfil.oid)
         sync.create_event(LOCAL, FILE, oid=lfil.oid, exists=TRASHED)
+        time.sleep(.1)  # give the event a bit of time to age, otherwise nothing might happen :-)
         sync.run_until_clean(timeout=1)
         nothing_happened.assert_not_called()
 

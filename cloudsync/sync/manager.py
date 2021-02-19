@@ -30,6 +30,7 @@ from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UN
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
     from cloudsync.notification import NotificationManager
+    from cloudsync.smartsync import SmartSyncState
 
 log = logging.getLogger(__name__)
 
@@ -147,12 +148,13 @@ class SyncManager(Runnable):
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
-        self.state: SyncState = state
+        self.state = state
         self.providers: Tuple['Provider', 'Provider'] = providers
         self.__translate = translate
+        self.translate = lambda side, path: self.__translate(side, path) if path else None
         self._resolve_conflict = resolve_conflict
         self.tempdir = tempfile.mkdtemp(suffix=".cloudsync")
-        self.__nmgr = notification_manager
+        self._nmgr = notification_manager
         self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
         self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
         if not sleep:
@@ -173,35 +175,44 @@ class SyncManager(Runnable):
     def set_resolver(self, resolver):
         self._resolve_conflict = resolver
 
+    def _sync_one_entry(self, sync: SyncEntry):
+        something_got_done = False
+        try:
+            something_got_done = self.pre_sync(sync)
+            if not something_got_done:
+                something_got_done = self.sync(sync)
+            self.state.storage_commit()
+        except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError,
+                ex.CloudNamespaceError) as e:
+            log.warning(
+                "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
+            self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
+            sync.punt()
+            # do we want to self.state.storage_commit() here?
+            self.backoff()  # raises a backoff error to the caller
+        except Exception as e:
+            if isinstance(e, ex.CloudException):
+                self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
+            log.exception(
+                "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
+            sync.punt()
+            self.state.storage_commit()
+            self.backoff()  # raises a backoff error to the caller
+        return something_got_done
+
     def do(self):
         need_to_sleep = True
-        something_got_done = True
+        something_got_done = False  # shouldn't this be default False? Don't assume there will be no exceptions...
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
             if sync:
                 need_to_sleep = False
-                try:
-                    something_got_done = self.sync(sync)
-                    self.state.storage_commit()
-                except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError, ex.CloudNamespaceError) as e:
-                    if self.__nmgr:
-                        self.__nmgr.notify_from_exception(SourceEnum.SYNC, e)
-                    log.warning(
-                        "error %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-                    sync.punt()
-                    # do we want to self.state.storage_commit() here?
-                    self.backoff()
-                except Exception as e:
-                    # TODO: notify_from_exception
-                    log.exception(
-                        "exception %s[%s] while processing %s, %i", type(e), e, sync, sync.priority)
-                    sync.punt()
-                    self.state.storage_commit()
-                    self.backoff()
+                something_got_done = self._sync_one_entry(sync)
 
         if need_to_sleep:
             time.sleep(self.aging)
 
+        # q: if something got done due to pre_sync, is that sufficient condition to clear the backoff flag?
         if not something_got_done:
             # don't clear the backoff flag if all we did was punt
             self.nothing_happened()
@@ -213,15 +224,17 @@ class SyncManager(Runnable):
         except FileNotFoundError:
             pass
 
-    def translate(self, side, path):
-        if path:
-            return self.__translate(side, path)
-        else:
-            return None
-
     @property
     def busy(self):
+        return self.changeset_len
+
+    @property
+    def changeset_len(self):
         return self.state.changeset_len
+
+    @property
+    def changes(self):
+        return self.state.changes
 
     def change_count(self, side: Optional[int] = None, unverified: bool = False):
         """Show the number of changes for UX purposes."""
@@ -308,13 +321,11 @@ class SyncManager(Runnable):
                     log.debug(">>>Suddenly a cloud path %s, creating", provider_path)
                     sync.ignored = IgnoreReason.NONE
                     sync[changed].sync_path = None
-                    sync[changed].changed = time.time()
+                    sync[changed].mark_changed()
                     sync[synced].clear()
 
-    def sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches,too-many-statements
-        """
-        Called on each changed entry.
-        """
+
+    def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         self.check_revivify(sync)
 
         if sync.is_discarded:
@@ -335,15 +346,21 @@ class SyncManager(Runnable):
                 if sync.is_latest_side(side):
                     self.providers[side].info_path("/", use_cache=False)
 
-        something_got_done = True
         sync.get_latest()
+        return False
 
+    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches
+        """
+        Called on each changed entry.
+        """
         if sync.hash_conflict():
             log.debug("handle hash conflict")
             self.handle_hash_conflict(sync)
             return True
 
         ordered = sorted((LOCAL, REMOTE), key=lambda e: sync[e].changed or 0)
+
+        something_got_done = True
 
         for side in ordered:
             if not sync[side].needs_sync():
@@ -386,6 +403,8 @@ class SyncManager(Runnable):
             except ex.CloudTooManyRetriesError:
                 response = FINISHED
                 log.exception("too many retries - marked finished %s side:%s", sync, side)
+                if want_raise:
+                    raise
 
             if response == FINISHED:
                 something_got_done = True
@@ -684,7 +703,7 @@ class SyncManager(Runnable):
     def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None):  # pylint: disable=redefined-builtin
         # updates entry without marking as changed unless explicit
         # used internally
-        self.state.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=changed, otype=otype)
+        self.state.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=changed, otype=otype)
 
     def create_event(self, side, otype, oid, *, path=None, hash=None, exists=True, prior_oid=None):  # pylint: disable=redefined-builtin
         # looks up oid and changes state, marking changed as if it's an event
@@ -771,7 +790,7 @@ class SyncManager(Runnable):
                         # Clear the sync_path, and set synced to MISSING,
                         # that way, we will recognize that this dir needs to be created
                         parent_ent[changed].sync_path = None
-                        parent_ent[changed].changed = time.time()
+                        parent_ent[changed].mark_changed()
                         parent_ent[synced].exists = MISSING
                         assert parent_ent.is_creation(changed), "%s is not a creation" % parent_ent
                         assert parent_ent[changed].needs_sync(), "%s doesn't need sync" % parent_ent
@@ -784,8 +803,8 @@ class SyncManager(Runnable):
         # pretend this sync translated as "None"
         log.warning("File name error: not creating '%s' on %s", translated_path, self.providers[synced].name)
         sync.ignore(IgnoreReason.IRRELEVANT)
-        if self.__nmgr:
-            self.__nmgr.notify(Notification(SourceEnum(synced), NotificationType.FILE_NAME_ERROR, translated_path))
+        if self._nmgr:
+            self._nmgr.notify(Notification(SourceEnum(synced), NotificationType.FILE_NAME_ERROR, translated_path))
 
     def __resolve_file_likes(self, side_states):
         class Guard:
@@ -1283,7 +1302,7 @@ class SyncManager(Runnable):
         # replace.path = new_path # this will break test_sync_conflict_resolve, until the above is addressed
 
         replace.oid = new_oid
-        replace.changed = time.time()
+        replace.mark_changed()
         return True
 
     def rename_to_fix_conflict(self, sync, side, path, temp_rename=False):

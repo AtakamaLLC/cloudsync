@@ -15,13 +15,14 @@ import random
 from threading import RLock
 from abc import ABC, abstractmethod
 from enum import Enum
+import datetime
 from typing import Optional, Tuple, Any, List, Dict, Set, cast, TYPE_CHECKING, Callable, Generator, overload
 
 from typing import Union, Sequence
 import msgpack
 from pystrict import strict
 
-from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMOTE
+from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMOTE, OInfo
 from cloudsync.types import OType
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
@@ -30,8 +31,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN']
-
+__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage',
+           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'other_side']
 # safe ternary, don't allow traditional comparisons
 
 
@@ -84,6 +85,15 @@ class SideState:
         self._force_sync: bool = False
         self._temp_file: Optional[str] = None
         self.temp_file: str
+        self._size: Optional[int] = None
+        self._mtime: Optional[float] = None
+
+    def _set_mtime(self, value):
+        if isinstance(value, datetime.datetime):
+            value = value.timestamp()
+        assert value is None or isinstance(value, (int, float))
+        self._mtime = value
+        self._parent.updated(self._side, "mtime", value)
 
     def __getattr__(self, k):
         if k[0] != "_":
@@ -99,6 +109,8 @@ class SideState:
 
         if k == "exists":
             self._set_exists(v)
+        elif k == "mtime":
+            self._set_mtime(v)
         else:
             object.__setattr__(self, "_" + k, v)
 
@@ -120,6 +132,10 @@ class SideState:
         self._exists = xval
         self._parent.updated(self._side, "exists", xval)
 
+    def mark_changed(self):
+        # setting to an old mtime marks this as fully aged
+        self._parent.mark_changed(self.side)
+
     def set_aged(self):
         # setting to an old mtime marks this as fully aged
         self.changed = 1
@@ -136,6 +152,8 @@ class SideState:
         self.sync_path = None
         self.path = None
         self.oid = None
+        self.size = None
+        self.mtime = None
 
     def __repr__(self):
         d = self.__dict__.copy()
@@ -183,7 +201,7 @@ class Storage(ABC):
 
     @abstractmethod
     def delete(self, tag: str, eid: Any):
-        """ take a serialization str, upsert it in sqlite, return the row id of the row as a persistence id"""
+        """ take a serialization str, look up the eid, and delete the row with that eid"""
         ...
 
     @overload
@@ -248,6 +266,9 @@ class SyncEntry:
             self.updated(None, k, v)
             object.__setattr__(self, "_" + k, v)
 
+    def mark_changed(self, side):
+        self._parent.mark_changed(side, self)
+
     def updated(self, side, key, val):
         self._parent.updated(self, side, key, val)
 
@@ -265,6 +286,8 @@ class SyncEntry:
             ret['oid'] = side_state.oid
             ret['exists'] = side_state.exists.value
             ret['temp_file'] = side_state.temp_file
+            ret['size'] = side_state.size
+            ret['mtime'] = side_state.mtime
             # storage_id does not get serialized, it always comes WITH a serialization when deserializing
             return ret
 
@@ -273,7 +296,11 @@ class SyncEntry:
         ser['side1'] = side_state_to_dict(self.__states[1])
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
-        return msgpack.dumps(ser, use_bin_type=True)
+        try:
+            return msgpack.dumps(ser, use_bin_type=True)
+        except TypeError:
+            log.exception("Could not serialize SyncEntry: %s", ser)
+            raise
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
@@ -285,8 +312,8 @@ class SyncEntry:
             side_state.changed = side_dict['changed']
             side_state.sync_hash = side_dict['sync_hash']
             side_state.sync_path = side_dict['sync_path']
-            side_state.path = side_dict['path']
             side_state.oid = side_dict['oid']
+            side_state.path = side_dict['path']
             # back compat: 10/21/19
             if side_dict['exists'] is None:
                 side_state.exists = UNKNOWN
@@ -296,6 +323,9 @@ class SyncEntry:
                 side_state.exists = TRASHED
             side_state.exists = side_dict['exists']
             side_state.temp_file = side_dict['temp_file']
+            side_state.size = side_dict.get('size')
+            side_state.mtime = side_dict.get('mtime')
+
             return side_state
 
         self.storage_id = storage_init[0]
@@ -624,7 +654,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  prioritize: Callable[[int, str], int] = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
-        self._changeset: Set[SyncEntry] = set()
+        self._changeset_storage: Set[SyncEntry] = set()
         self._dirtyset: Set[SyncEntry] = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
@@ -652,7 +682,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                         self._paths[side][path][oid] = ent
                         self._oids[side][oid] = ent
                         if ent[side].changed:
-                            self._changeset.add(ent)
+                            self._changeset_storage.add(ent)
                 except Exception as e:
                     log.error("exception during deserialization %s", e)
                     self._storage.delete(tag, eid)
@@ -660,6 +690,14 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         self.prioritize = prioritize
         if prioritize is None:
             self.prioritize = lambda side, path: 0
+
+    @property
+    def _changeset(self):
+        return self._changeset_storage
+
+    @_changeset.setter
+    def _changeset(self, value):
+        self._changeset_storage = value
 
     def forget_oid(self, side, oid):
         ent = self._oids[side].pop(oid, None)
@@ -691,12 +729,12 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if val == IgnoreReason.DISCARDED:
                 ent[LOCAL]._changed = False
                 ent[REMOTE]._changed = False
-                self._changeset.discard(ent)
+                self._changeset_storage.discard(ent)
         elif key == "changed":
             if (val and ent[side].oid) or (ent[other_side(side)].changed and ent[other_side(side)].oid):
-                self._changeset.add(ent)
+                self._changeset_storage.add(ent)
             else:
-                self._changeset.discard(ent)
+                self._changeset_storage.discard(ent)
         elif key == "priority":
             if val > ent.priority and val > 0:
                 # move to later on priority drop below zero
@@ -812,11 +850,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
             if ent[side].changed or ent[other_side(side)].changed:
-                self._changeset.add(ent)
+                self._changeset_storage.add(ent)
         else:
             # ent without oid doesn't go in changeset
             if ent[side].changed and not ent[other_side(side)].changed:
-                self._changeset.discard(ent)
+                self._changeset_storage.discard(ent)
 
     def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]
@@ -863,7 +901,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         for path in remove:
             self._paths[side].pop(path)
 
-    def update_entry(self, ent, side, oid, *, path=None, hash=None, exists=True, changed=False, otype=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments
+    def update_entry(self, ent, side, oid, *, path=None, file_hash=None, exists=True, changed=False, otype=None, size=None, mtime=None, accurate=False):  # pylint: disable=redefined-builtin, too-many-arguments, too-many-branches
         assert ent
 
         if oid is not None:
@@ -879,13 +917,19 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if otype is not None and otype != ent[side].otype:
             ent[side].otype = otype
 
+        if size is not None:
+            ent[side].size = size
+
+        if mtime is not None:
+            ent[side].mtime = mtime
+
         assert otype is not NOTKNOWN or not exists
 
         if path is not None and path != ent[side].path:
             ent[side].path = path
 
-        if hash is not None and hash != ent[side].hash:
-            ent[side].hash = hash
+        if file_hash is not None and file_hash != ent[side].hash:
+            ent[side].hash = file_hash
 
         if ent[side].exists is TRASHED and exists is True:
             # oid was deleted, and then re-created, this can only happen for oid-is-path providers
@@ -898,7 +942,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if changed:
             assert ent[side].path or ent[side].oid
             log.log(TRACE, "add %s to changeset", ent)
-            self._mark_changed(side, ent)
+            self.mark_changed(side, ent)
 
             if accurate:
                 ent[side]._last_gotten = changed
@@ -906,7 +950,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         log.log(TRACE, "updated %s", ent)
 
-    def _mark_changed(self, side, ent):
+    def mark_changed(self, side, ent):
         ent[side].changed = time.time()
         # ensure that change times can't repeat and must increase
         # this is a problem on my windows vm, or any machine with a low resolution clock which can
@@ -917,7 +961,6 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].changed = self._last_changed_time + 0.001
         self._last_changed_time = ent[side].changed
         log.debug("change time for side %s is %s", side, ent[side].changed)
-        assert ent in self._changeset
 
     def storage_get_data(self, data_tag):
         if data_tag is None:
@@ -999,7 +1042,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def __len__(self):
         return len(self.get_all())
 
-    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None, accurate=False):   # pylint: disable=redefined-builtin, too-many-arguments
+    def update(self, side, otype, oid, path=None, hash=None, exists=True, prior_oid=None, size=None, mtime=None, accurate=False):   # pylint: disable=redefined-builtin, too-many-arguments, disable=too-many-locals
         """Called by the event manager when an event happens."""
 
         log.log(TRACE, "lookup oid %s, sig %s", oid, debug_sig(oid))
@@ -1049,18 +1092,19 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             log.debug("creating new entry because %s not found in %s", debug_sig(oid), side)
             ent = SyncEntry(self, otype)
 
-        self.update_entry(ent, side, oid, path=path, hash=hash, exists=exists, changed=time.time(), otype=otype, accurate=accurate)
-
+        self.update_entry(ent, side, oid, path=path, file_hash=hash, exists=exists, changed=time.time(), otype=otype,
+                          size=size, mtime=mtime, accurate=accurate)
 
     def change(self, age):
-        if not self._changeset:
+        change_set = self._changeset
+        if not change_set:  # todo: cache the changeset
             return None
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
             sort_key = lambda a: (a.priority, random.random())
 
-        changes = sorted(self._changeset, key=sort_key)
+        changes = sorted(change_set, key=sort_key)
 
         now = time.time()
         earlier_than = now - age
@@ -1085,7 +1129,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             return
 
         log.debug("finished: %s", ent)
-        self._changeset.discard(ent)
+        self._changeset_storage.discard(ent)
 
         for e in self._changeset:
             if e.priority > 0 and ent.is_related_to(e):
@@ -1113,7 +1157,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         ents: List[SyncEntry] = list()
         widths: List[int] = [len(x) for x in SyncState.headers]
         if only_dirty:
-            all_ents = self._dirtyset
+            all_ents = self._dirtyset.copy()
         else:
             all_ents = self.get_all(discarded=True)  # allow conflicted to be printed
 
@@ -1203,8 +1247,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         assert replace_ent[replace].oid
         assert replace_ent in self.get_all()
 
-        self._mark_changed(replace, replace_ent)
-        self._mark_changed(defer, defer_ent)
+        self.mark_changed(replace, replace_ent)
+        self.mark_changed(defer, defer_ent)
 
         assert replace_ent[replace].oid
 
@@ -1238,13 +1282,17 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             # we haven't gotten a trashed event yet
             ent[i].exists = MISSING if self.providers[i].oid_is_path else TRASHED
 
+        if ent[i].exists == TRASHED:
+            ent[i].size = None
+            ent[i].mtime = None
+
     def unconditionally_get_latest(self, ent, i):
         if ent[i].oid is None:
             if ent[i].exists not in (TRASHED, MISSING):
                 ent[i].exists = UNKNOWN
             return
 
-        info = self.providers[i].info_oid(ent[i].oid, use_cache=False)
+        info: OInfo = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
             self.unconditionally_get_no_info(ent, i)
@@ -1271,6 +1319,9 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[i].path = info.path
             if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
                 ent[i].changed = time.time()
+
+        ent[i].size = info.size
+        ent[i].mtime = info.mtime
 
     def get_state_lookup(self, side: int) -> 'SyncStateLookup':
         return SyncStateLookup(self, side)
