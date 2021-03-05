@@ -215,6 +215,11 @@ class ProviderTestMixin(ProviderBase):
         return self.__strip_root(self.prov.mkdir(path))
 
     @wrap_retry
+    def mkdirs(self, path):
+        path = self.__add_root(path)
+        return self.prov.mkdirs(path)
+
+    @wrap_retry
     def rmtree(self, *args, **kwargs):
         log.debug("rmtree %s %s", args, kwargs)
         return self.__strip_root(self.prov.rmtree(*args, **kwargs))
