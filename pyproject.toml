@@ -21,9 +21,9 @@ requires-python = ">=3.6"
 box = [ "boxsdk>=2.9.0", ]
 dropbox = [ "dropbox>=10.3.0", "six>=1.14.0"]
 boxcom = [ "boxsdk[jwt]", ]
-onedrive = [ "cloudsync-onedrive~=3.0.0a2", ]
-gdrive = [ "cloudsync-gdrive~=2.0.0a2", ]
-all = [ "cloudsync-gdrive~=2.0.0a2", "cloudsync-onedrive~=3.0.0a2", "boxsdk[jwt]", "dropbox>=10.3.0", "six>=1.14.0", "boxsdk>=2.9.0" ]
+onedrive = [ "cloudsync-onedrive~=3.1.0", ]
+gdrive = [ "cloudsync-gdrive~=2.0.0", ]
+all = [ "cloudsync-gdrive~=2.0.0", "cloudsync-onedrive~=3.1.0", "boxsdk[jwt]", "dropbox>=10.3.0", "six>=1.14.0", "boxsdk>=2.9.0" ]
 
 [tool.flit.scripts]
 cloudsync = "cloudsync.command:main"
