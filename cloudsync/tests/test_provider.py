@@ -259,21 +259,21 @@ class ProviderTestMixin(ProviderBase):
     def listdir(self, oid):
         for e in self.prov.listdir(oid):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     @wrap_retry
     def listdir_path(self, path):
         path = self.__add_root(path)
         for e in self.prov.listdir_path(path):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     @wrap_retry
     def listdir_oid(self, oid, path=None):
         path = self.__add_root(path)
         for e in self.prov.listdir_oid(oid, path):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     def __add_root(self, path):
         return self.prov.join(self.test_root, path)
@@ -294,8 +294,6 @@ class ProviderTestMixin(ProviderBase):
 
             if not self.prov.is_subpath(self.test_root, raw_path):
                 return False
-
-            self.__strip_root(obj)
 
         return True
 
