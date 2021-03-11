@@ -259,21 +259,21 @@ class ProviderTestMixin(ProviderBase):
     def listdir(self, oid):
         for e in self.prov.listdir(oid):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     @wrap_retry
     def listdir_path(self, path):
         path = self.__add_root(path)
         for e in self.prov.listdir_path(path):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     @wrap_retry
     def listdir_oid(self, oid, path=None):
         path = self.__add_root(path)
         for e in self.prov.listdir_oid(oid, path):
             if self.__filter_root(e):
-                yield e
+                yield self.__strip_root(e)
 
     def __add_root(self, path):
         return self.prov.join(self.test_root, path)
@@ -295,25 +295,19 @@ class ProviderTestMixin(ProviderBase):
             if not self.prov.is_subpath(self.test_root, raw_path):
                 return False
 
-            self.__strip_root(obj)
-
         return True
 
     def __strip_root(self, obj):
-        if hasattr(obj, "path"):
-            path = obj.path
-            if path:
-                obj = copy.copy(obj)
-                relative = self.prov.is_subpath(self.test_root, path)
-                if not relative:
-                    # event from prior test
-                    return obj
-                path = relative
+        obj_copy = copy.copy(obj)
+        if hasattr(obj_copy, "path") and obj_copy.path:
+            relative = self.prov.is_subpath(self.test_root, obj_copy.path)
+            if relative:
                 # TODO: This does not obey provider control over paths. Frex, consider windows paths and "C:"
-                if not path.startswith(self.prov.sep):
-                    path = self.prov.sep + path
-                obj.path = path
-        return obj
+                if not relative.startswith(self.prov.sep):
+                    relative = self.prov.sep + relative
+                obj_copy.path = relative
+        return obj_copy
+
     # HELPERS
 
     def temp_name(self, name="tmp", *, folder=None):
