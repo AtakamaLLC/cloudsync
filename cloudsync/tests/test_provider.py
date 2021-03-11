@@ -298,17 +298,15 @@ class ProviderTestMixin(ProviderBase):
         return True
 
     def __strip_root(self, obj):
-        if hasattr(obj, "path") and obj.path:
-            relative = self.prov.is_subpath(self.test_root, obj.path)
+        obj_copy = copy.copy(obj)
+        if hasattr(obj_copy, "path") and obj_copy.path:
+            relative = self.prov.is_subpath(self.test_root, obj_copy.path)
             if relative:
                 # TODO: This does not obey provider control over paths. Frex, consider windows paths and "C:"
                 if not relative.startswith(self.prov.sep):
                     relative = self.prov.sep + relative
-                # return a copy with modified path
-                obj_copy = copy.copy(obj)
                 obj_copy.path = relative
-                return obj_copy
-        return obj
+        return obj_copy
 
     # HELPERS
 
