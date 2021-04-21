@@ -1417,7 +1417,7 @@ class SyncManager(Runnable):
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
-        handled = self.check_rename_is_delete_create(sync, changed, synced)
+        handled = self.check_rename_is_delete_create(sync, changed)
         if handled is not None:
             # only handles it if it is the delete side, otherwise create is converted to rename, and falls thru to below
             return handled
@@ -1447,7 +1447,7 @@ class SyncManager(Runnable):
         log.debug("nothing changed %s", sync)
         return FINISHED
 
-    def check_rename_is_delete_create(self, sync, changed, synced):
+    def check_rename_is_delete_create(self, sync, changed):
         # It is possible that a rename will come in as two events, a delete of the file under the old name, and a
         # create of the file under the new name. This is fine on oid_is_oid providers, because the oid will tie the
         # two events to the same entry in the state, and we don't honor the type of event, so the file won't be
@@ -1483,6 +1483,7 @@ class SyncManager(Runnable):
                 return None  # the current sync is the delete->rename, which isn't finished yet
             else:
                 return FINISHED  # the current sync is the create, which is the loser, so we're done for this round
+        return None
 
     def handle_changed_is_missing(self, sync, changed, synced):     # pylint: disable=no-self-use
         log.info("%s missing", sync[changed].path)

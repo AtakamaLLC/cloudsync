@@ -851,19 +851,20 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             if ent[side].changed and not ent[other_side(side)].changed:
                 self._changeset_storage.discard(ent)
 
-    def lookup_creation(self, hash, side):
+    def lookup_creation(self, content_hash, side):
         for ent in self.get_all():
-            if ent[side].otype != FILE or ent[side].hash != hash:
+            if ent[side].otype != FILE or ent[side].hash != content_hash:
                 continue
             ent.get_latest()  # ent may not have the path yet, which will confuse is_creation()
             if ent.is_creation(side):
                 return ent
         return None
 
-    def lookup_deletion(self, hash, side):
+    def lookup_deletion(self, content_hash, side):
         for ent in self.get_all():
-            if ent[side].hash == hash and ent.is_deletion(side):
+            if ent[side].hash == content_hash and ent.is_deletion(side):
                 return ent
+        return None
 
     def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]
