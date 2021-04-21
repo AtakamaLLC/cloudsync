@@ -390,6 +390,9 @@ class SyncEntry:
     def is_path_change(self, changed):
         return self[changed].sync_path and self.paths_differ(changed)
 
+    def is_deletion(self, side):
+        return self[other_side(side)].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
+
     def is_creation(self, changed):
         return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
                 and self[changed].path and self[changed].exists == EXISTS
@@ -406,14 +409,6 @@ class SyncEntry:
 
     def needs_sync(self):
         return self[LOCAL].needs_sync() or self[REMOTE].needs_sync()
-
-    def is_pending_delete(self):
-        pending_delete = False
-        for a in (LOCAL, REMOTE):
-            b = other_side(a)
-            if self[a].exists == EXISTS and self[b].exists in (TRASHED, MISSING) and self[b].changed:
-                pending_delete = True
-        return pending_delete
 
     @property
     def is_discarded(self):
@@ -855,6 +850,21 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             # ent without oid doesn't go in changeset
             if ent[side].changed and not ent[other_side(side)].changed:
                 self._changeset_storage.discard(ent)
+
+    def lookup_creation(self, content_hash, side):
+        for ent in self.get_all():
+            if ent[side].otype != FILE or ent[side].hash != content_hash:
+                continue
+            ent.get_latest()  # ent may not have the path yet, which will confuse is_creation()
+            if ent.is_creation(side):
+                return ent
+        return None
+
+    def lookup_deletion(self, content_hash, side):
+        for ent in self.get_all():
+            if ent[side].hash == content_hash and ent.is_deletion(side):
+                return ent
+        return None
 
     def get_kids(self, parent_path: str, side: int) -> Generator[Tuple[SyncEntry, str], None, None]:
         provider = self.providers[side]

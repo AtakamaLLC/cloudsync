@@ -1384,7 +1384,7 @@ class SyncManager(Runnable):
             else:
                 sync.unignore(IgnoreReason.CONFLICT)
 
-        if sync[changed].path and sync[changed].exists == EXISTS and not sync.is_pending_delete():
+        if sync[changed].path and sync[changed].exists == EXISTS and not sync.is_deletion(changed):
             # parent_conflict code
             conflict = self._get_parent_conflict(sync, changed)
             if conflict:
@@ -1417,6 +1417,11 @@ class SyncManager(Runnable):
 
                 return REQUEUE  # we don't want to punt here, we just manually adjusted the priority above
 
+        handled = self.check_rename_is_delete_create(sync, changed)
+        if handled is not None:
+            # only handles it if it is the delete side, otherwise create is converted to rename, and falls thru to below
+            return handled
+
         if sync[changed].exists == TRASHED:
             log.debug("delete")
             return self.delete_synced(sync, changed, synced)
@@ -1441,6 +1446,44 @@ class SyncManager(Runnable):
 
         log.debug("nothing changed %s", sync)
         return FINISHED
+
+    def check_rename_is_delete_create(self, sync, changed):
+        # It is possible that a rename will come in as two events, a delete of the file under the old name, and a
+        # create of the file under the new name. This is fine on oid_is_oid providers, because the oid will tie the
+        # two events to the same entry in the state, and we don't honor the type of event, so the file won't be
+        # deleted or created, it will see the events correctly as renames. Oid_is_path providers will see the delete
+        # come in on one oid, and the create come in on a different oid, however. This delete+create does not always
+        # sync correctly, and NEVER syncs efficiently.
+        #
+        # Instead, if a delete or create is being handled, look for a matching create or delete (matching means a file
+        # with the same hash). If a match is found, kill the create and turn the delete into the rename that it should
+        # have been all along.
+        if not self.providers[changed].oid_is_path:
+            return None
+        match = False
+        sync_is_delete = False
+        if sync.is_deletion(changed):
+            sync_is_delete = True
+            match = self.state.lookup_creation(sync[changed].hash, changed)
+        elif sync.is_creation(changed):
+            match = self.state.lookup_deletion(sync[changed].hash, changed)
+        if match:
+            # merge the sync and its match, by turning the delete into a rename, and chucking the create
+            delete, create = (sync, match) if sync_is_delete else (match, sync)
+            assert delete[changed].hash == create[changed].hash  # definitely the same file
+
+            create.ignore(IgnoreReason.DISCARDED)  # create & delete have same oid, create=LOSER, delete=WINNER
+
+            delete[changed].exists = create[changed].exists  # convert the delete into a rename
+            delete[changed].path = create[changed].path
+            delete[changed].oid = create[changed].oid
+
+            if sync_is_delete:
+                self.finished(changed, create)  # create=LOSER
+                return None  # the current sync is the delete->rename, which isn't finished yet
+            else:
+                return FINISHED  # the current sync is the create, which is the loser, so we're done for this round
+        return None
 
     def handle_changed_is_missing(self, sync, changed, synced):     # pylint: disable=no-self-use
         log.info("%s missing", sync[changed].path)
@@ -1556,7 +1599,7 @@ class SyncManager(Runnable):
         return True
 
     def _get_child_conflict(self, sync: SyncEntry, changed):
-        return [kid[0] for kid in self.state.get_kids(sync[changed].path, changed) if not kid[0].is_pending_delete()]
+        return [kid[0] for kid in self.state.get_kids(sync[changed].path, changed) if not kid[0].is_deletion(changed)]
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
         provider = self.providers[changed]
