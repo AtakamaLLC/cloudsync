@@ -1599,7 +1599,6 @@ class SyncManager(Runnable):
         return True
 
     def _get_child_conflict(self, sync: SyncEntry, changed):
-        # todo: this is not properly covered by a test. If you reverse the sense of the if condition, all tests pass
         return [kid[0] for kid in self.state.get_kids(sync[changed].path, changed) if not kid[0].is_deletion(changed)]
 
     def _get_parent_conflict(self, sync: SyncEntry, changed) -> SyncEntry:
