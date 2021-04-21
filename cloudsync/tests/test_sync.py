@@ -14,7 +14,7 @@ import pytest
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
 from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNotFoundError, CloudFileNameError,\
         LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError, Notification,\
-        NotificationManager, NotificationType
+        NotificationManager, NotificationType, SyncEntry
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
@@ -973,6 +973,53 @@ def test_file_name_error(sync):
 
     assert not sync.providers[REMOTE].info_path(remote_file3)
     assert sync.state.lookup_oid(LOCAL, new_oid).ignored == IgnoreReason.IRRELEVANT
+
+
+@pytest.mark.parametrize("order", [1, 0], ids=("createfirst", "deletefirst"))
+def test_rename_by_delete_create(sync, order):
+    oid_provider = not sync.providers[LOCAL].oid_is_path
+    inner = "delete" if not order else "create"
+    local_parent = "/local"
+    local_parent_inner = f"/local/{inner}"
+    local_file1 = f"/local/{inner}/file"
+    local_file2 = f"/local/{inner}/file2"
+    remote_file1 = f"/remote/{inner}/file"
+    remote_file2 = f"/remote/{inner}/file2"
+    local, remote = sync.providers
+
+    local.mkdir(local_parent)
+    local.mkdir(local_parent_inner)
+    linfo1 = local.create(local_file1, BytesIO(b"hello"))
+
+    sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo1.hash)
+    sync.run_until_found((REMOTE, remote_file1))
+    log.debug("Test setup complete")
+
+    new_loid = local.rename(linfo1.oid, local_file2)
+    sync.create_event(LOCAL, FILE, oid=linfo1.oid, exists=False)
+    sync.create_event(LOCAL, FILE, oid=new_loid, hash=linfo1.hash, exists=True)
+    create: SyncEntry = sync.state.lookup_oid(LOCAL, new_loid)
+    create._priority = (-1, -2)[order]
+
+    delete: SyncEntry = sync.state.lookup_oid(LOCAL, linfo1.oid)
+    delete._priority = (-2, -1)[order]
+    assert sync.state.changeset_len == 1 if oid_provider else 2
+
+    with patch.object(sync.providers[REMOTE], "rename", side_effect=sync.providers[REMOTE].rename) as patched_rename, \
+        patch.object(sync.state, "lookup_creation", side_effect=sync.state.lookup_creation) as patched_creation, \
+        patch.object(sync.state, "lookup_deletion", side_effect=sync.state.lookup_deletion) as patched_deletion:
+        sync.run_until_found((REMOTE, remote_file2))
+        patched_rename.assert_called()
+        if not oid_provider:  # real oid providers auto-merge the delete and create, because the oid is the same
+            if order:
+                patched_deletion.assert_called()
+            else:
+                patched_creation.assert_called()
+    assert remote.exists_path(remote_file2)
+    assert local.exists_path(local_file2)
+    assert not local.exists_path(local_file1)
+    assert not remote.exists_path(remote_file1)
+
 
 def test_modif_rename(sync):
     local_parent = "/local"
