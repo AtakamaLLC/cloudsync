@@ -370,7 +370,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
         for i in range(0, 4):
             start = time.monotonic()
-            four_local_cs[i].wait_until(found=lambda: finished_condition(i, timeout=30), timeout=30)
+            four_local_cs[i].wait_until(until=lambda: finished_condition(i, timeout=30), timeout=30)
     finally:
         for i in range(0, 4):
             four_local_cs[i].stop()  # Stop the sync
