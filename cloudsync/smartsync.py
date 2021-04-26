@@ -30,6 +30,13 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
+        # pre_sync_callback is a function that takes 4 arguments:
+        #   (sync_manager: SmartSyncManager, sync: SyncEntry, discarded: bool, unsynced: bool)
+        #   discarded specifies whether the SyncManager.pre_sync method ignored the file (which happens if the file is discarded)
+        #   unsynced specifies whether the SmartSyncManager.pre_sync method ignored the file (meaning it is an unsynced file)
+        # this callback is used for notification of the reason, when files are skipped during smartsync
+        self.pre_sync_callback = None
+
         super().__init__(cast(SyncState, state), providers, translate, resolve_conflict, notification_manager, sleep, root_paths, root_oids)
         self.state: SmartSyncState = state
 
@@ -38,10 +45,13 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         super().do()
 
     def pre_sync(self, sync: SyncEntry) -> bool:
-        finished = super().pre_sync(sync)
+        super_finished = super().pre_sync(sync)
         local_file = sync[LOCAL].oid and self.providers[LOCAL].exists_oid(sync[LOCAL].oid)
+        finished = super_finished
         if not finished:
             finished = not (local_file or sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
+        if self.pre_sync_callback:
+            self.pre_sync_callback(self, sync, super_finished, finished)
         return finished
 
     def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
