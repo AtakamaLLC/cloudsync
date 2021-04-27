@@ -1040,7 +1040,7 @@ def test_modif_rename(sync):
 
     log.debug("CHANGE LF1 NO REN EVENT")
     log.debug("TABLE 0:\n%s", sync.state.pretty_print())
-    sync.run(until=lambda: not sync.busy, timeout=1)
+    sync.run(until=lambda: sync.providers[REMOTE].info_path(remote_file1) is not None, timeout=1)
 
     if sync.providers[LOCAL].oid_is_path:
         # other providers can figure out the rename happend
@@ -1119,7 +1119,6 @@ def test_re_mkdir_synced(sync):
     sync.providers[LOCAL].delete(lfil.oid)
     sync.providers[LOCAL].delete(lsub_oid)
 
-    sync.run(until=lambda: not sync.busy)
     sync.create_event(REMOTE, FILE, path=remote_file, oid=rfil.oid, hash=rfil.hash)
 
     log.info("TABLE 0:\n%s", sync.state.pretty_print())
