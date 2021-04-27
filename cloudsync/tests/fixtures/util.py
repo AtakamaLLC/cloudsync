@@ -94,7 +94,7 @@ class RunUntilHelper:
             timeout = cls.default_timeout
 
         if not exc:
-            exc = Exception("Timed out waiting for %s" % str(until))
+            exc = TimeoutError("Timed out waiting for %s" % str(until))
         while not until():
             timeout -= poll_time
             if timeout <= 0:
