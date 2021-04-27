@@ -1,3 +1,4 @@
+""" Implements SmartSync, which only syncs files to local storage upon request """
 import time
 import logging
 from datetime import datetime
@@ -38,7 +39,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         self.state: SmartSyncState = state
 
     @staticmethod
-    def pre_sync_callback(sync_manager: "SmartSyncManager", sync: SyncEntry, discarded: bool, unsynced: bool):
+    def pre_sync_callback(sync_manager: "SmartSyncManager", sync: SyncEntry, discarded: bool, unsynced: bool):  # pylint: disable=unused-argument
         """
         this callback is overridden when files are skipped during smartsync for notification of the reason
         :param sync_manager: provides tools to evaluate the status of the relevant files
@@ -468,12 +469,14 @@ class SmartCloudSync(CloudSync):
 
 
 class SmartSyncMonitor:
+    """ Class that allows tests or other consumers to know when SmartSync chooses to not sync a file """
     def __init__(self, csync):
         self.smart_synced_paths = dict()
         self.skipped_paths = dict()
         self.csync = csync
 
     def pre_sync_callback(self, _: SmartSyncManager, sync: SyncEntry, discarded: bool, unsynced: bool):
+        """ implementation of callback that logs when files are discarded or skipped by SmartSync """
         path = sync[REMOTE].path
         if not discarded:
             if unsynced:  # skipped for smart reasons
@@ -488,21 +491,24 @@ class SmartSyncMonitor:
                     log.error("%s: pre_sync needs sync %s", datetime.now(), sync)
                     time.sleep(1)
 
-    def _path_in(self, path, path_dict):
-        provider = self.csync.cs.providers[REMOTE]
+    @staticmethod
+    def _path_in(path, path_dict, provider):
+        """ Checks if path is in path_dict, the keys of which are remote paths """
         for candidate, sync in path_dict.items():
             if provider.paths_match(path, candidate):
                 return sync
         return False
 
     def clear_smartsync_state(self):
+        """ Resets the log of synced/skipped paths """
         self.smart_synced_paths = dict()
         self.skipped_paths = dict()
 
     def check_smartsync_state(self, synced_paths: List[str], skipped_paths: List[str], quiet=True):
+        """ Returns True if synced_paths have synced and skipped_paths have explicitly been skipped """
         retval = True
         for path in synced_paths:
-            sync: SyncEntry = self._path_in(path, self.smart_synced_paths)
+            sync: SyncEntry = self._path_in(path, self.smart_synced_paths, self.csync.cs.providers[REMOTE])
             if not sync:
                 if not quiet:
                     log.error(
@@ -523,7 +529,7 @@ class SmartSyncMonitor:
                     )
                 retval = False
         for path in skipped_paths:
-            if not self._path_in(path, self.skipped_paths):
+            if not self._path_in(path, self.skipped_paths, self.csync.cs.providers[REMOTE]):
                 if not quiet:
                     log.error(
                         "%s not found in skipped paths.\nsynced paths=%s\nskipped paths=%s",
@@ -535,6 +541,7 @@ class SmartSyncMonitor:
         return retval
 
     def wait_smartsync_state(self, synced_paths: List[str], skipped_paths: List[str], timeout=60, poll_time=0.25, exc=None):
+        """ Waits for when synced paths have been synced and skipped paths have been explicitly skipped """
         try:
             RunUntilHelper.wait_until(
                 until=lambda: self.check_smartsync_state(synced_paths, skipped_paths),
