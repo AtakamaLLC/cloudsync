@@ -33,15 +33,21 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
-        # pre_sync_callback is a function that takes 4 arguments:
-        #   (sync_manager: SmartSyncManager, sync: SyncEntry, discarded: bool, unsynced: bool)
-        #   discarded specifies whether the SyncManager.pre_sync method ignored the file (which happens if the file is discarded)
-        #   unsynced specifies whether the SmartSyncManager.pre_sync method ignored the file (meaning it is an unsynced file)
-        # this callback is used for notification of the reason, when files are skipped during smartsync
-        self.pre_sync_callback = None
 
         super().__init__(cast(SyncState, state), providers, translate, resolve_conflict, notification_manager, sleep, root_paths, root_oids)
         self.state: SmartSyncState = state
+
+    @staticmethod
+    def pre_sync_callback(sync_manager: "SmartSyncManager", sync: SyncEntry, discarded: bool, unsynced: bool):
+        """
+        this callback is overridden when files are skipped during smartsync for notification of the reason
+        :param sync_manager: provides tools to evaluate the status of the relevant files
+        :param sync: the SyncEntry that has been pre_synced
+        :param discarded: bool, True if the sync entry has been discarded
+        :param unsynced: bool, True if the sync entry has not been synced because smart sync declined to sync it
+        :return:
+        """
+        return
 
     def do(self):
         time.sleep(.01)  # give smartsync a chance to preempt
@@ -53,8 +59,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         finished = super_finished
         if not finished:
             finished = not (local_file or sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
-        if self.pre_sync_callback:
-            self.pre_sync_callback(self, sync, super_finished, finished)
+        self.pre_sync_callback(self, sync, super_finished, finished)
         return finished
 
     def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
@@ -529,10 +534,14 @@ class SmartSyncMonitor:
                 retval = False
         return retval
 
-    def wait_smartsync_state(self, synced_paths: List[str], skipped_paths: List[str], timeout=60, *args, **kwargs):
+    def wait_smartsync_state(self, synced_paths: List[str], skipped_paths: List[str], timeout=60, poll_time=0.25, exc=None):
         try:
-            RunUntilHelper.wait_until(until=lambda: self.check_smartsync_state(synced_paths, skipped_paths),
-                                      timeout=timeout, *args, **kwargs)
+            RunUntilHelper.wait_until(
+                until=lambda: self.check_smartsync_state(synced_paths, skipped_paths),
+                timeout=timeout,
+                poll_time=poll_time,
+                exc=exc
+            )
         except Exception:
             # one last check, and also log what is missing
             if not self.check_smartsync_state(synced_paths, skipped_paths, quiet=False):
