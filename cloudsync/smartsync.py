@@ -1,7 +1,6 @@
 """ Implements SmartSync, which only syncs files to local storage upon request """
 import time
 import logging
-from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast, Union
 from cloudsync.sync import MISSING, TRASHED
@@ -508,7 +507,7 @@ class SmartSyncMonitor:
         self.skipped_paths = set()
         self.discarded_paths = set()
 
-    def check_smartsync_state(
+    def check_smartsync_state(  # pylint: disable=too-many-branches
             self,
             *,
             remote_paths: Optional[List[Union[str, Tuple[str, str]]]] = None,
