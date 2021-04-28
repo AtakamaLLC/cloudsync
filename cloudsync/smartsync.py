@@ -510,20 +510,17 @@ class SmartSyncMonitor:
     def check_smartsync_state(  # pylint: disable=too-many-branches
             self,
             *,
-            remote_paths: Optional[List[Union[str, Tuple[str, str]]]] = None,
-            local_paths: Optional[List[Union[str, Tuple[str, str]]]] = None,
-            skipped_paths: List[str] = None,
+            remote_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+            local_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+            skipped_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
             quiet=True
     ):
         """ Returns True if synced_paths have synced and skipped_paths have explicitly been skipped """
         if not (remote_paths or local_paths or skipped_paths):
             raise ValueError("Specify remote_paths or local_paths or skipped_paths")
-        remote_paths = remote_paths or []
-        local_paths = local_paths or []
-        skipped_paths = skipped_paths or []
 
         retval = True
-        for path in remote_paths:
+        for path in remote_paths or []:
             h = None
             if isinstance(path, tuple):
                 path, h = path
@@ -532,7 +529,7 @@ class SmartSyncMonitor:
                     log.error("%s not synced remotely", path)
                 retval = False
 
-        for path in local_paths:
+        for path in local_paths or []:
             h = None
             if isinstance(path, tuple):
                 path, h = path
@@ -542,7 +539,7 @@ class SmartSyncMonitor:
                     self._is_synced(LOCAL, path, h)
                 retval = False
 
-        for path in skipped_paths:
+        for path in skipped_paths or []:
             if isinstance(path, tuple):
                 path, _ = path
             if not self._path_in(path, self.skipped_paths, self.csync.providers[REMOTE]):
