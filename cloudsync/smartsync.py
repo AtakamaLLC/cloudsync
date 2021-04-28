@@ -38,18 +38,6 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         super().__init__(cast(SyncState, state), providers, translate, resolve_conflict, notification_manager, sleep, root_paths, root_oids)
         self.state: SmartSyncState = state
 
-    @staticmethod
-    def pre_sync_callback(sync_manager: "SmartSyncManager", sync: SyncEntry, discarded: bool, unsynced: bool):  # pylint: disable=unused-argument
-        """
-        this callback is overridden when files are skipped during smartsync for notification of the reason
-        :param sync_manager: provides tools to evaluate the status of the relevant files
-        :param sync: the SyncEntry that has been pre_synced
-        :param discarded: bool, True if the sync entry has been discarded
-        :param unsynced: bool, True if the sync entry has not been synced because smart sync declined to sync it
-        :return:
-        """
-        return
-
     def do(self):
         time.sleep(.01)  # give smartsync a chance to preempt
         super().do()
