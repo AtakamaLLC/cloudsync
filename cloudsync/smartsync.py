@@ -8,8 +8,8 @@ from cloudsync.sync import MISSING, TRASHED
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event, other_side
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
-from cloudsync.notification import SourceEnum
 from cloudsync.tests.fixtures import RunUntilHelper
+from cloudsync.notification import Notification, NotificationType, SourceEnum
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +60,21 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         finished = super_finished
         if not finished:
             finished = not (local_file or sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
-        self.pre_sync_callback(self, sync, super_finished, finished)
+
+        if finished:
+            sync.get_latest()
+            ntype = NotificationType.SYNC_DISCARDED if super_finished else NotificationType.SYNC_SMART_UNSYNCED
+            source = SourceEnum.REMOTE
+            path = None
+            if sync[REMOTE].path:
+                path = sync[REMOTE].path
+            if not path and sync[LOCAL].path:
+                path = self.translate(REMOTE, sync[LOCAL].path)
+                if not path:  # we only want local path if we don't have, and can't get, a remote path
+                    source = SourceEnum.LOCAL
+                    path = sync[LOCAL].path
+            if path:
+                self._nmgr.notify(Notification(source, ntype, path))
         return finished
 
     def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
@@ -470,88 +484,100 @@ class SmartCloudSync(CloudSync):
 
 class SmartSyncMonitor:
     """ Class that allows tests or other consumers to know when SmartSync chooses to not sync a file """
-    def __init__(self, csync):
-        self.smart_synced_paths = dict()
-        self.skipped_paths = dict()
+    def __init__(self, csync: CloudSync):
+        self.skipped_paths: set = set()
+        self.discarded_paths: set = set()
         self.csync = csync
 
-    def pre_sync_callback(self, _: SmartSyncManager, sync: SyncEntry, discarded: bool, unsynced: bool):
+    def handle_notification(self, notification: Notification):
         """ implementation of callback that logs when files are discarded or skipped by SmartSync """
-        path = sync[REMOTE].path
-        if not discarded:
-            if unsynced:  # skipped for smart reasons
-                self.skipped_paths[path] = sync
-                if path in self.smart_synced_paths:
-                    self.smart_synced_paths.pop(path)
-            else:
-                self.smart_synced_paths[path] = sync
-                if path in self.skipped_paths:
-                    self.skipped_paths.pop(path)
-                if sync.needs_sync():
-                    log.error("%s: pre_sync needs sync %s", datetime.now(), sync)
-                    time.sleep(1)
+        n = notification
+        if n.ntype not in (NotificationType.SYNC_DISCARDED, NotificationType.SYNC_SMART_UNSYNCED):
+            return  # not interested in non-sync related events
+
+        if n.source == SourceEnum.LOCAL:
+            return  # only interested in REMOTE events, because this is smartsync, which operates primarily remotely
+
+        if n.ntype == NotificationType.SYNC_SMART_UNSYNCED:
+            self.skipped_paths.add(n.path)
+        elif n.ntype == NotificationType.SYNC_DISCARDED:
+            self.discarded_paths.add(n.path)
 
     @staticmethod
-    def _path_in(path, path_dict, provider):
+    def _path_in(path, paths, provider):
         """ Checks if path is in path_dict, the keys of which are remote paths """
-        for candidate, sync in path_dict.items():
+        for candidate in paths:
             if provider.paths_match(path, candidate):
-                return sync
+                return True
         return False
+
+    def _is_synced(self, side, path, hash_str):
+        info: OInfo = self.csync.providers[side].info_path(path)
+        return info and (not hash_str or info.hash == hash_str)
 
     def clear_smartsync_state(self):
         """ Resets the log of synced/skipped paths """
-        self.smart_synced_paths = dict()
-        self.skipped_paths = dict()
+        self.skipped_paths = set()
+        self.discarded_paths = set()
 
-    def check_smartsync_state(self, synced_paths: List[str], skipped_paths: List[str], quiet=True):
+    def check_smartsync_state(
+            self,
+            *,
+            remote_paths: Optional[List[Union[str, Tuple[str, str]]]] = None,
+            local_paths: Optional[List[Union[str, Tuple[str, str]]]] = None,
+            skipped_paths: List[str] = None,
+            quiet=True
+    ):
         """ Returns True if synced_paths have synced and skipped_paths have explicitly been skipped """
+        if not (remote_paths or local_paths or skipped_paths):
+            raise ValueError("Specify remote_paths or local_paths or skipped_paths")
+        remote_paths = remote_paths or []
+        local_paths = local_paths or []
+        skipped_paths = skipped_paths or []
+
         retval = True
-        for path in synced_paths:
-            sync: SyncEntry = self._path_in(path, self.smart_synced_paths, self.csync.cs.providers[REMOTE])
-            if not sync:
+        for path in remote_paths:
+            h = None
+            if isinstance(path, tuple):
+                path, h = path
+            if not self._is_synced(REMOTE, path, h):
                 if not quiet:
-                    log.error(
-                        "%s not found in synced paths.\nsynced paths=%s\nskipped paths=%s",
-                        path,
-                        self.smart_synced_paths,
-                        self.skipped_paths,
-                    )
+                    log.error("%s not synced remotely", path)
                 retval = False
-            elif sync.needs_sync():
+
+        for path in local_paths:
+            h = None
+            if isinstance(path, tuple):
+                path, h = path
+            if not self._is_synced(LOCAL, path, h):
                 if not quiet:
-                    log.error(
-                        "%s found in synced paths, but not yet synced.\nsync=%s\nsynced paths=%s\nskipped paths=%s",
-                        path,
-                        sync,
-                        self.smart_synced_paths,
-                        self.skipped_paths,
-                    )
+                    log.error("%s not synced locally", path)
+                    self._is_synced(LOCAL, path, h)
                 retval = False
+
         for path in skipped_paths:
-            if not self._path_in(path, self.skipped_paths, self.csync.cs.providers[REMOTE]):
+            if isinstance(path, tuple):
+                path, _ = path
+            if not self._path_in(path, self.skipped_paths, self.csync.providers[REMOTE]):
                 if not quiet:
-                    log.error(
-                        "%s not found in skipped paths.\nsynced paths=%s\nskipped paths=%s",
-                        path,
-                        self.smart_synced_paths,
-                        self.skipped_paths,
-                    )
+                    log.error("%s not found in skipped paths %s", path, self.skipped_paths)
                 retval = False
         return retval
 
-    def wait_smartsync_state(self, synced_paths: List[str], skipped_paths: List[str], timeout=60, poll_time=0.25, exc=None):
+    def wait_smartsync_state(self, *, remote_paths: List[str], local_paths: List[str], skipped_paths: List[str], timeout=20, poll_time=0.25, exc=None):
         """ Waits for when synced paths have been synced and skipped paths have been explicitly skipped """
+        if not (remote_paths or local_paths or skipped_paths):
+            raise ValueError("Specify remote_paths or local_paths or skipped_paths")
         try:
             RunUntilHelper.wait_until(
-                until=lambda: self.check_smartsync_state(synced_paths, skipped_paths),
+                until=lambda: self.check_smartsync_state(remote_paths=remote_paths, local_paths=local_paths, skipped_paths=skipped_paths),
                 timeout=timeout,
                 poll_time=poll_time,
                 exc=exc
             )
         except Exception:
             # one last check, and also log what is missing
-            if not self.check_smartsync_state(synced_paths, skipped_paths, quiet=False):
+            if not self.check_smartsync_state(remote_paths=remote_paths, local_paths=local_paths, skipped_paths=skipped_paths, quiet=False):
                 raise
 
 

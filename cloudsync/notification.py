@@ -24,6 +24,8 @@ class NotificationType(enum.Enum):
     NAMESPACE_ERROR = 'namespace_error'             ; """Specified namespace is invalid/unavailable (could be auth issue)"""
     ROOT_MISSING_ERROR = 'root_missing_error'       ; """Root of cloud sync is missing, and will not be created"""
     TEMPORARY_ERROR = 'temporary_error'             ; """Upload failure, or other temp error that will be retried."""
+    SYNC_DISCARDED = 'sync_discarded'               ; """Sync discarded a file due to path translation failure"""
+    SYNC_SMART_UNSYNCED = 'sync_smart_skipped'      ; """SmartSync file has not been requested, and therefore skipped during sync"""
 
 
 class SourceEnum(enum.Enum):
