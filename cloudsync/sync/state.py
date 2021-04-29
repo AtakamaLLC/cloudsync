@@ -26,9 +26,10 @@ from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMO
 from cloudsync.types import OType
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
+from cloudsync import NotificationManager
+
 if TYPE_CHECKING:
     from cloudsync import Provider
-    from cloudsync import NotificationManager
 
 log = logging.getLogger(__name__)
 
@@ -648,7 +649,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  tag: Optional[str] = None,
                  shuffle: bool = False,
                  prioritize: Callable[[int, str], int] = None,
-                 nmgr: 'NotificationManager' = None):
+                 nmgr: NotificationManager = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset_storage: Set[SyncEntry] = set()

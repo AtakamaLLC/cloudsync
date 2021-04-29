@@ -3338,7 +3338,7 @@ def test_smartsync(scs):
     scs.csmonitor.wait_sync_state(skipped_paths=[rinfo1.path])
     assert not local.exists_path(local_path1)
 
-    ent1: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
+    ent1 = scs.state.lookup_oid(REMOTE, rinfo1.oid)
     ent1.get_latest(force=True)
     assert not ent1[LOCAL].size
     assert ent1[REMOTE].size == len(contents1c), "bad remote ent1 size"

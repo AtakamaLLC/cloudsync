@@ -512,10 +512,10 @@ class SyncNotificationHandler:
     def check_sync_state(  # pylint: disable=too-many-branches
             self,
             *,
-            remote_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+            remote_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,  # tuple is (path, hash)
             local_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
             skipped_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
-            discarded_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+            discarded_paths: Optional[Union[List[str], List[Tuple[str, int]]]] = None,  # tuple is (path, side)
             quiet=False
     ):
         """ Returns True if synced_paths have synced and skipped_paths have explicitly been skipped """
