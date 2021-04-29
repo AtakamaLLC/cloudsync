@@ -539,7 +539,6 @@ class SyncNotificationHandler:
             if not self._is_synced(LOCAL, path, h):
                 if not quiet:
                     log.error("%s not synced locally", path)
-                    self._is_synced(LOCAL, path, h)
                 retval = False
 
         for path in skipped_paths or []:
