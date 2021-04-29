@@ -472,7 +472,7 @@ class SmartCloudSync(CloudSync):
 
 
 class SyncNotificationHandler:
-    """ Class that allows tests or other consumers to know when SmartSync chooses to not sync a file """
+    """ Class that allows tests or other consumers to know when SyncManager chooses to not sync a file """
     def __init__(self, csync: CloudSync):
         self.skipped_paths: set = set()
         self.discarded_paths: set = set()
@@ -524,19 +524,19 @@ class SyncNotificationHandler:
 
         retval = True
         for path in remote_paths or []:
-            h = None
+            hash_str = None
             if isinstance(path, tuple):
-                path, h = path
-            if not self._is_synced(REMOTE, path, h):
+                path, hash_str = path
+            if not self._is_synced(REMOTE, path, hash_str):
                 if not quiet:
                     log.error("%s not synced remotely", path)
                 retval = False
 
         for path in local_paths or []:
-            h = None
+            hash_str = None
             if isinstance(path, tuple):
-                path, h = path
-            if not self._is_synced(LOCAL, path, h):
+                path, hash_str = path
+            if not self._is_synced(LOCAL, path, hash_str):
                 if not quiet:
                     log.error("%s not synced locally", path)
                 retval = False
