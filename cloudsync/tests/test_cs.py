@@ -13,7 +13,7 @@ from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, F
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
-from cloudsync.smartsync import SmartCloudSync
+from cloudsync.smartsync import SmartCloudSync, SyncNotificationHandler
 import time
 
 from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
@@ -26,16 +26,25 @@ roots = ("/local", "/remote")
 
 class SmartCloudSyncMixin(SmartCloudSync, RunUntilHelper):
     def __init__(self, *ar, **kw):
+        self.csmonitor = SyncNotificationHandler(self)
         super().__init__(*ar, **kw)
         # default for tests is no aging, feel free to change
         self.aging = 0
+
+    def handle_notification(self, notification: Notification):
+        return self.csmonitor.handle_notification(notification)
+
 
 
 class CloudSyncMixin(CloudSync, RunUntilHelper):
     def __init__(self, *ar, **kw):
+        self.csmonitor = SyncNotificationHandler(self)
         super().__init__(*ar, **kw)
         # default for tests is no aging, feel free to change
         self.aging = 0
+
+    def handle_notification(self, notification: Notification):
+        return self.csmonitor.handle_notification(notification)
 
 
 @pytest.fixture(name="cs_storage")
@@ -57,8 +66,11 @@ def _fixture_scs(mock_provider_generator, mock_provider_creator, storage=None):
     cs.providers[LOCAL].name += '-l'
     cs.providers[REMOTE].name += '-r'
 
+    cs.nmgr.start()
+
     yield cs
 
+    cs.nmgr.stop()
     cs.done()
 
 
@@ -71,7 +83,9 @@ def _fixture_cs(providers, storage=None):
     cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
     cs.providers[LOCAL].name += '-l'
     cs.providers[REMOTE].name += '-r'
+    cs.nmgr.start()
     yield cs
+    cs.nmgr.stop()
     cs.done()
 
 
@@ -808,6 +822,7 @@ def test_cs_move_in_and_out_of_root(cs):
     rfile_info = rp.info_path("/remote/file-1")
     rp.rename(rfile_info.oid, "/file-1")
     cs.run_until_clean(timeout=1)
+    cs.csmonitor.wait_sync_state(discarded_paths=["/file-1"])
     log.info("TABLE 2.0\n%s", cs.state.pretty_print())
     assert not lp.info_oid(lfile_info.oid)
 
@@ -3026,9 +3041,12 @@ def test_smart_delete_path(scs):
     remote.create(remote_dir_file, BytesIO(b"hello"))
 
     scs.run_until_clean(timeout)
+    scs.csmonitor.wait_sync_state(skipped_paths=[remote_file])
 
     assert remote.exists_path(remote_dir_file)
     assert remote.exists_path(remote_file)
+    assert local.exists_path(local_dir)
+    assert not local.exists_path(local_file)
 
     scs.smart_delete_path(local_dir_file, local_dir_file)
     scs.smart_delete_path(local_file, local_file)
@@ -3055,6 +3073,7 @@ def test_smart_delete_path_local(scs):
     foid = local.create(local_file, BytesIO(b"hello")).oid
 
     scs.run_until_clean(timeout)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_dir, remote_file])
 
     # test 1: confirm the local folder and file have synced remotely
     assert remote.exists_path(remote_dir)
@@ -3090,14 +3109,16 @@ def test_smartsync_rename_folder(scs):
     remote_test_folder_oid = remote.mkdir(remote_test_folder1)
     rinfo_start = remote.create(remote_path1, BytesIO(contents))
     scs.run_until_clean(timeout)
+    scs.csmonitor.wait_sync_state(local_paths=[local_test_folder], skipped_paths=[remote_path1])
+    scs.csmonitor.clear_sync_state()
 
     scs.smart_sync_oid(rinfo_start.oid)
-    assert remote.exists_path(remote_path1)
-    assert local.exists_path(local_path1)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_path1], local_paths=[local_path1])
     remote.rename(remote_test_folder_oid, remote_test_folder2)
     scs.run_until_clean(timeout)
-    assert remote.exists_path(remote_path2)
-    assert local.exists_path(local_path2)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_path2], local_paths=[local_path2])
+    assert not remote.exists_path(remote_path1)
+    assert not local.exists_path(local_path1)
 
 
 def test_smartsync_rename_file(scs):
@@ -3118,16 +3139,15 @@ def test_smartsync_rename_file(scs):
 
     remote.mkdir(remote_test_folder)
     scs.run_until_clean(timeout)
+    scs.csmonitor.wait_sync_state(local_paths=[local_test_folder])
 
     # confirm successful regular rename
     linfo_start = local.create(local_path1, BytesIO(contents))
     scs.run_until_clean(timeout)
-    assert local.exists_path(local_path1)
-    assert remote.exists_path(remote_path1)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_path1], local_paths=[local_path1])
     new_oid = scs.smart_rename(LOCAL, linfo_start.oid, local_path1b) # rename local_path1 to local_path1b
     scs.run_until_clean(timeout)
-    assert local.exists_path(local_path1b)
-    assert remote.exists_path(remote_path1a)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_path1a], local_paths=[local_path1b])
     assert not local.exists_path(local_path1)
     assert not local.exists_path(remote_path1)
 
@@ -3156,8 +3176,8 @@ def test_smartsync(scs):
     remote_path_local_first = "/remote/testfolder/started_out_local"
     r_autosync_path = "/remote/testfolder/stuff.autosync"
     l_autosync_path = "/local/testfolder/stuff.autosync"
-    remote_filtered_path1 = "/remote/testfolder/notranslate"
-    local_filtered_path1 = "/local/testfolder/notranslate"
+    remote_filtered_path1 = "/remote/testfolder/notranslate.autosync"  # notranslate wins, and this won't sync
+    local_filtered_path1 = "/local/testfolder/notranslate.autosync"
     contents1 = b"hello1"
     contents1a = b"hello1a"
     contents1b = b"hello1bb"
@@ -3185,12 +3205,13 @@ def test_smartsync(scs):
     scs.run_until_clean(timeout)
 
     # test 1: confirm remote folder creation syncs locally
-    assert local.exists_path(local_test_folder)
+    scs.csmonitor.wait_sync_state(local_paths=[local_test_folder])
 
     rinfo1 = remote.create(remote_path1, BytesIO(contents1))
     rinfo2 = remote.create(remote_path2, BytesIO(contents1))
     asinfo = remote.create(r_autosync_path, BytesIO(contents1a))
     scs.run_until_clean(timeout)
+
     local_first_info = local.create(local_path_local_first, BytesIO(contents1a))
 
     files = list(scs.smart_listdir_path(local_test_folder))
@@ -3216,8 +3237,7 @@ def test_smartsync(scs):
             raise ValueError("unexpected file in listdir: %s", file)
 
     # test 4: confirm remote files that are not autosync did not sync locally
-    assert not local.exists_path(local_path1)
-    assert not local.exists_path(local_path2)
+    scs.csmonitor.wait_sync_state(skipped_paths=[remote_path1, remote_path2])
     assert local.exists_path(l_autosync_path)  # test 5: autosync file should have automatically synced down
 
     # test 6: confirm smart_info_path returns results for a non-existent local file
@@ -3282,26 +3302,24 @@ def test_smartsync(scs):
         scs.run_until_clean(timeout)
         # test 13: due to local_filtered_path1 having no translation, it should not exist locally, and should not
         #           appear in smart_listdir results
+        scs.csmonitor.wait_sync_state(discarded_paths=[(remote_filtered_path1, REMOTE)])
         assert not local.exists_path(local_filtered_path1)
         files = list(scs.smart_listdir_path(local_test_folder))
         for file in files:
             assert file.path != local_filtered_path1
 
-
     scs.run_until_clean(timeout)
+
     # test 14: confirm a file that was created locally will be uploaded remotely without explicitly smartsyncing it
     assert remote.exists_path(remote_path_local_first)
+
+    # test 15: check file contents, then upload new contents, then unsync the file, should upload the new contents when unsyncing
     curr_contents = BytesIO()
     local_info1 = local.info_path(local_path1)
-    local_oid1 = local_info1.oid
-    local.download(local_oid1, curr_contents)
+    local.download(local_info1.oid, curr_contents)
     assert curr_contents.getvalue() == contents1a
 
-    assert local.exists_path(local_path1)
-
     local.upload(local_info1.oid, BytesIO(contents1b))
-
-    # unsync the file, should upload the new contents when unsyncing
     scs.smart_unsync_oid(rinfo1.oid)
     rinfo_unsynced = remote.info_oid(rinfo1.oid)
     assert rinfo_unsynced.size == len(contents1b), "bad unsynced size"
@@ -3312,25 +3330,23 @@ def test_smartsync(scs):
     #confirm it didn't delete the remote when the local got trashed during the unsync
     assert remote.exists_path(remote_path1)
 
-    # update the file remotely, and confirm it didn't sync
+    # test 16: update the file remotely over a previously unsynced file, and confirm it didn't sync down locally
+    #       and that smart_listdir_path has the correct metadata
+    scs.csmonitor.clear_sync_state()
     remote.upload(rinfo1.oid, BytesIO(contents1c))
     scs.run_until_clean(5)
+    scs.csmonitor.wait_sync_state(skipped_paths=[rinfo1.path])
     assert not local.exists_path(local_path1)
 
-    assert local.exists_path(local_path2)
-    # desync the file
-    scs.smart_unsync_path(local_path2, LOCAL)
-    # confirm it no longer exists
-    assert not local.exists_path(local_path2)
-
-    ent2: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
-    ent2.get_latest(force=True)
+    ent1: SyncEntry = scs.state.lookup_oid(REMOTE, rinfo1.oid)
+    ent1.get_latest(force=True)
     assert not ent1[LOCAL].size
     assert ent1[REMOTE].size == len(contents1c), "bad remote ent1 size"
 
     files = list(scs.smart_listdir_path(local_test_folder))
     assert local_path1 in [x.path for x in files]
     check_time = time.time() - 5
+    remote_oid1 = None
     for file in files:
         if file.path == local_path1:
             assert file.size == len(contents1c), f"bad size {file.size}, contents should be {len(contents1c)}"
@@ -3341,9 +3357,18 @@ def test_smartsync(scs):
     assert not local_oid1
     assert remote_oid1
 
+    # test 17: assert a file exists, unsync it, confirm it no longer exists
+    assert local.exists_path(local_path2)
+    # desync the file
+    scs.smart_unsync_path(local_path2, LOCAL)
+    # confirm it no longer exists
+    assert not local.exists_path(local_path2)
+
+    # test 18: confirm smart_sync_path raises FNF on non-existing file
     with pytest.raises(CloudFileNotFoundError):
         scs.smart_sync_path('/local/noexist', LOCAL)
 
+    # test 19: test smart_syncing a file when the parent folder has already been renamed in the cloud(parent conflict)
     rfolder_info = remote.info_path(remote_test_folder)
     remote_test_folder2 = "/remote/testfolder2"
     local_test_folder2 = "/local/testfolder2"
@@ -3360,10 +3385,9 @@ def test_smartsync(scs):
     local_info1 = local.info_path(local_path1_2)
     assert local_info1
 
-    scs.run_until_clean(timeout)
     assert local.exists_path(local_test_folder2)
 
-    # confirm that smart_sync_path syncs down a file that has been deleted locally
+    # test 20: confirm that smart_sync_path syncs down a file that has been deleted locally
     local._delete(local_info1.oid, without_event=True)
     local_info1_after_delete = local.info_path(local_path1_2)
     assert not local_info1_after_delete
@@ -3371,7 +3395,7 @@ def test_smartsync(scs):
     local_info1_after_resync = local.info_path(local_path1_2)
     assert local_info1_after_resync
 
-    # get coverage for no local and also no remote file for smart_info_path
+    # test 21: get coverage for no local and also no remote file for smart_info_path
     remote_path1_2 = scs.translate(REMOTE, local_path1_2)
     remote_info1_2 = remote.info_path(remote_path1_2)
     local._delete(local_info1_after_resync.oid, without_event=True)
@@ -3380,7 +3404,7 @@ def test_smartsync(scs):
     assert no_local_info_after_delete is None
     noexist_info_path = scs.smart_info_path(local_path1_2)
 
-    # confirm that the size and mtime are serialized and deserialized
+    # test 22: confirm that the size and mtime are serialized and deserialized
     entries = scs.state.get_all()
     for entry in entries:
         ent_ser = entry.serialize()
@@ -3389,23 +3413,21 @@ def test_smartsync(scs):
             assert new_ent[side].size == entry[side].size, "bad size"
             assert new_ent[side].mtime == entry[side].mtime, "bad time"
     
-    # rename a file locally and confirm it doesn't appear in smart_listdir under the old name
+    # test 23: rename a file locally and confirm it doesn't appear in smart_listdir under the old name
     remote_path3 = "/remote/testfolder2/stuff3"
     local_path3 = "/local/testfolder2/stuff3"
     remote_path3a = remote_path3 + 'a'
     local_path3a = local_path3 + 'a'
     local.create(local_path3, BytesIO(contents1))
     scs.run_until_clean(timeout)
-    assert local.exists_path(local_path3)
-    assert remote.exists_path(remote_path3)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_path3], local_paths=[local_path3])
 
     local_info3 = local.info_path(local_path3)
     local.rename(local_info3.oid, local_path3a)
     scs.emgrs[0].do()
     scs.emgrs[1].do()
 
-    assert local.exists_path(local_path3a)
-    assert remote.exists_path(remote_path3)
+    scs.csmonitor.wait_sync_state(remote_paths=[remote_path3], local_paths=[local_path3a])
     files = list(scs.smart_listdir_path(local_test_folder2))
     found3 = False
     found3a = False

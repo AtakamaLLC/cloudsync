@@ -68,6 +68,7 @@ class RunUntilHelper:
     default_timeout = 10  # seconds
 
     def run_until_clean(self: Any, timeout=TIMEOUT):
+        timeout = 1000;
         # self.run(until=lambda: not self.busy, timeout=1)  # older, SLIGHTLY slower version
         start = time.monotonic()
         busy = True  # make sure we run the loop once -- necessary for smartsync tests

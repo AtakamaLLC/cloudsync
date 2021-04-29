@@ -73,7 +73,7 @@ class CloudSync(Runnable):
 
         # by using a lambda here, tests can inject functions into cs.prioritize, and they will get passed through
         state = state_class(providers, storage, tag=self.storage_label(), shuffle=False,
-                            prioritize=lambda *a: self.prioritize(*a))                              # pylint: disable=unnecessary-lambda
+                            prioritize=lambda *a: self.prioritize(*a), nmgr=self.nmgr)                              # pylint: disable=unnecessary-lambda
 
         smgr = smgr_class(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
                           self.resolve_conflict, self.nmgr, sleep=sleep)

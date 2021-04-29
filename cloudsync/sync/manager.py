@@ -1363,6 +1363,8 @@ class SyncManager(Runnable):
         if sync[changed].path or (sync[changed].exists == EXISTS):
             translated_path = self.translate(synced, sync[changed].path)
             if not translated_path:
+                src = SourceEnum.LOCAL if changed == LOCAL else SourceEnum.REMOTE
+                self._nmgr.notify(Notification(src, NotificationType.SYNC_DISCARDED, sync[changed].path))
                 if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
                     log.info(">>>Removing remnants of file moved out of cloud root")
                     ret = self.delete_synced(sync, changed, synced, IgnoreReason.IRRELEVANT)
