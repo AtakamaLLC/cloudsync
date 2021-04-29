@@ -550,13 +550,13 @@ class SyncNotificationHandler:
                     log.error("%s not found in skipped paths %s", path, self.skipped_paths)
                 retval = False
 
-        for path in discarded_paths or []:
+        for path2 in discarded_paths or []:
             side = REMOTE
-            if isinstance(path, tuple):
-                path, side = path
-            if not self._path_in(path, self.discarded_paths, self.csync.providers[side]):
+            if isinstance(path2, tuple):
+                path2, side = path2
+            if not self._path_in(path2, self.discarded_paths, self.csync.providers[side]):
                 if not quiet:
-                    log.error("%s not found in discarded paths %s", path, self.discarded_paths)
+                    log.error("%s not found in discarded paths %s", path2, self.discarded_paths)
                 retval = False
 
         return retval
@@ -566,7 +566,7 @@ class SyncNotificationHandler:
                         remote_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
                         local_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
                         skipped_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
-                        discarded_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+                        discarded_paths: Optional[Union[List[str], List[Tuple[str, int]]]] = None,
                         timeout=20,
                         poll_time=0.25,
                         exc=None):
