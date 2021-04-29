@@ -26,7 +26,7 @@ from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMO
 from cloudsync.types import OType
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
-from cloudsync import NotificationManager
+from cloudsync.notification import NotificationManager
 
 if TYPE_CHECKING:
     from cloudsync import Provider
