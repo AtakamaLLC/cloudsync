@@ -12,7 +12,7 @@ rm -rf _build
 
 make html > make.out 2>&1
 
-grep -A10 'WARNING' make.out && exit 1
+grep 'WARNING' make.out && cat make.out && exit 1
 grep 'build succeeded' make.out && exit 0
 
 echo "unknown status"
