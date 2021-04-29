@@ -74,18 +74,24 @@ def _fixture_scs(mock_provider_generator, mock_provider_creator, storage=None):
     cs.done()
 
 
+@pytest.fixture(name="cs_nmgr")
+def fixture_cs_no_start(mock_provider_tuple):
+    yield from _fixture_cs(mock_provider_tuple, with_nmgr=True)
+
 @pytest.fixture(name="cs")
 def fixture_cs(mock_provider_tuple):
     yield from _fixture_cs(mock_provider_tuple)
 
 
-def _fixture_cs(providers, storage=None):
+def _fixture_cs(providers, with_nmgr=False, storage=None):
     cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
     cs.providers[LOCAL].name += '-l'
     cs.providers[REMOTE].name += '-r'
-    cs.nmgr.start()
+    if with_nmgr:
+        cs.nmgr.start()
     yield cs
-    cs.nmgr.stop()
+    if with_nmgr:
+        cs.nmgr.stop()
     cs.done()
 
 
@@ -802,7 +808,8 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
-def test_cs_move_in_and_out_of_root(cs):
+def test_cs_move_in_and_out_of_root(cs_nmgr):
+    cs = cs_nmgr
     # TODO: fix this - moving things in/out of root is not fully supported with event filtering turned off
     cs.providers[0]._filter_events = True
     cs.providers[1]._filter_events = True

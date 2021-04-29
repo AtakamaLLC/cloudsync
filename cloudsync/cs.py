@@ -260,6 +260,7 @@ class CloudSync(Runnable):
         self.nmgr.notify(Notification(SourceEnum.SYNC, NotificationType.STARTED, None))
         self.nmgr.start(**kwargs)
 
+
     def stop(self, forever=True, wait=True):
         """
         Stops the cloudsync service.
