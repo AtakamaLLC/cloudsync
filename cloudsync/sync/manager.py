@@ -1022,7 +1022,7 @@ class SyncManager(Runnable):
                 self.providers[synced].delete(sync[synced].oid)
                 sync[changed].sync_path = None
             except ex.CloudFileNotFoundError:
-                pass
+                log.debug("file oid %s was already gone.", debug_sig(sync[synced].oid))
             except ex.CloudFileExistsError:
                 return self._handle_dir_delete_not_empty(sync, changed, synced)
         else:
@@ -1423,6 +1423,9 @@ class SyncManager(Runnable):
             return handled
 
         if sync[changed].exists == TRASHED:
+            if sync.is_creation(synced) and sync[synced].otype == FILE and sync[synced].changed:
+                log.debug("Delete of oid %s on side %s is a create on the other side, ignoring Delete.", sync[changed].oid, changed)
+                return FINISHED
             log.debug("delete")
             return self.delete_synced(sync, changed, synced)
 
