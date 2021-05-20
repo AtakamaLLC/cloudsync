@@ -334,7 +334,7 @@ def test_create_before_delete(sync, delete_side):
     delete, create = (l, r) if delete_side == LOCAL else (r, l)
     delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
     create_side = other_side(delete_side)
-    # create_path = create.join(create_parent, "hello")  # implied file, prior to rename
+    create_path = create.join(create_parent, "hello")
     create_path2 = create.join(create_parent, "goodbye")
     delete_path = delete.join(delete_parent, "hello")
     delete_path2 = delete.join(delete_parent, "goodbye")
@@ -355,6 +355,11 @@ def test_create_before_delete(sync, delete_side):
     ent[delete_side].sync_hash = rinfo.hash
 
     sync.run(until=lambda: delete.exists_path(delete_path2) or not create.exists_path(create_path2))
+    # pre-rename file shouldn't exists, because it was renamed
+    assert not create.exists_path(create_path)
+    assert not delete.exists_path(delete_path)
+
+    # post-rename file should exist, because it wasn't accidentally deleted
     assert create.exists_path(create_path2)
     assert delete.exists_path(delete_path2)
 
