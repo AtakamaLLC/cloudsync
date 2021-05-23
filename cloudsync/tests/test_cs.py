@@ -3029,6 +3029,42 @@ def test_root_needed(cs, cs_root_oid, mode):
             cs.wait(timeout=2)
             assert until()
 
+
+def test_sync_notification_handler(scs):
+    timeout = 1
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_dir = "/local/dir"
+    remote_dir = "/remote/dir"
+    local_file = "/local/file.txt"
+    remote_file = "/remote/file.txt"
+    local_dir_file = "/local/dir/file1.txt"
+    remote_dir_file = "/remote/dir/file1.txt"
+
+    local, remote = scs.providers
+
+    remote.mkdir(remote_parent)
+    remote.mkdir(remote_dir)
+    assert not scs.csmonitor.check_sync_state(remote_paths=["/file-1"])
+    assert not scs.csmonitor.check_sync_state(remote_paths=[("/file-1", "a")])
+    assert not scs.csmonitor.check_sync_state(local_paths=["/file-1"])
+    assert not scs.csmonitor.check_sync_state(local_paths=[("/file-1", "a")])
+    assert not scs.csmonitor.check_sync_state(skipped_paths=["/file-1"])
+    assert not scs.csmonitor.check_sync_state(skipped_paths=[("/file-1", "a")])
+    assert not scs.csmonitor.check_sync_state(discarded_paths=["/file-1"])
+    assert not scs.csmonitor.check_sync_state(discarded_paths=[("/file-1", 0)])
+    assert not scs.csmonitor.check_sync_state(discarded_paths=[("/file-1", 0)])
+
+    with pytest.raises(ValueError):
+        scs.csmonitor.check_sync_state()
+
+    with pytest.raises(ValueError):
+        scs.csmonitor.wait_sync_state()
+
+    with pytest.raises(TimeoutError):
+        scs.csmonitor.wait_sync_state(remote_paths=["/file-1"], timeout=.1, exc=TimeoutError)
+
+
 def test_smart_delete_path(scs):
     timeout = 1
     local_parent = "/local"
