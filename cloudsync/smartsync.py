@@ -57,7 +57,8 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
                 path = sync[REMOTE].path
             if not path and sync[LOCAL].path:
                 path = self.translate(REMOTE, sync[LOCAL].path)
-                if not path:  # we only want local path if we don't have, and can't get, a remote path
+                # only use local path if we can't get a remote path
+                if not path:  # pragma: no cover
                     source = SourceEnum.LOCAL
                     path = sync[LOCAL].path
             if path:
@@ -484,7 +485,7 @@ class SyncNotificationHandler:
         if n.ntype not in (NotificationType.SYNC_DISCARDED, NotificationType.SYNC_SMART_UNSYNCED):
             return  # not interested in non-sync related events
 
-        if n.ntype == NotificationType.SYNC_SMART_UNSYNCED and n.source == SourceEnum.LOCAL:
+        if n.ntype == NotificationType.SYNC_SMART_UNSYNCED and n.source == SourceEnum.LOCAL:  # pragma: no cover
             return  # only interested in REMOTE events, because smartsync operates primarily remotely
 
         if n.ntype == NotificationType.SYNC_SMART_UNSYNCED:
