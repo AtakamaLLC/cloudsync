@@ -18,7 +18,7 @@ from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNot
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, MISSING, SideState
+from cloudsync.sync.state import TRASHED, MISSING, SideState, other_side
 
 log = logging.getLogger(__name__)
 
@@ -318,6 +318,50 @@ def test_sync_mkdir(sync):
 
     assert sync.providers[REMOTE].info_path(remote_path1) is None
     sync.state.assert_index_is_correct()
+
+
+@pytest.mark.parametrize("delete_side", [LOCAL, REMOTE], ids=["delete_local", "delete_remote"])
+def test_create_before_delete(sync, delete_side):
+    # This emulates the condition where a file called hello was created and synced, then hello was renamed to goodbye
+    # locally, but the local event system translated the rename into a delete of hello, and a create of goodbye
+    # The local delete event is processed, the remote file is deleted, and then the local create and the mirror event
+    # of the remote delete come in around the same time. So now, the sync entry looks like a local create of goodbye,
+    # and a remote deletion of hello. If the remote delete is processed first, then local goodbye will be deleted, then
+    # the rename of the remote from hello to goodbye will fail because hello doesn't exist. Processing the create
+    # should work fine, and the delete can be safely ignored by the sync engine.
+
+    l, r = sync.providers
+    delete, create = (l, r) if delete_side == LOCAL else (r, l)
+    delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
+    create_side = other_side(delete_side)
+    create_path = create.join(create_parent, "hello")
+    create_path2 = create.join(create_parent, "goodbye")
+    delete_path = delete.join(delete_parent, "hello")
+    delete_path2 = delete.join(delete_parent, "goodbye")
+
+    create.mkdir(create_parent)
+    delete.mkdir(delete_parent)
+    linfo = create.create(create_path2, BytesIO(b"goodbye"))
+    rinfo = delete.create(delete_path, BytesIO(b"hello"))
+    delete.delete(rinfo.oid)  # creating the file and deleting it gives us the oid and the hash
+
+    # test requires the deleted side has an earlier change time, so that the delete gets processed first
+    sync.create_event(delete_side, FILE, path=delete_path, oid=rinfo.oid, hash=rinfo.hash, exists=False)
+    ent = sync.state.lookup_oid(delete_side, rinfo.oid)
+    sync.state.update_entry(ent, create_side, linfo.oid, path=create_path2, file_hash=linfo.hash, exists=True, changed=True, otype=FILE)
+    ent[create_side].sync_path = None  # this got set to None when the delete happened on the delete side
+    ent[create_side].sync_hash = linfo.hash
+    ent[delete_side].sync_path = rinfo.path
+    ent[delete_side].sync_hash = rinfo.hash
+
+    sync.run(until=lambda: delete.exists_path(delete_path2) or not create.exists_path(create_path2))
+    # pre-rename file shouldn't exists, because it was renamed
+    assert not create.exists_path(create_path)
+    assert not delete.exists_path(delete_path)
+
+    # post-rename file should exist, because it wasn't accidentally deleted
+    assert create.exists_path(create_path2)
+    assert delete.exists_path(delete_path2)
 
 
 def test_sync_conflict_simul(sync):
