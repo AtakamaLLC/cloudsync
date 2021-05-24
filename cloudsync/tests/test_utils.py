@@ -170,7 +170,7 @@ def test_wait_until():
         return False
 
     with pytest.raises(TimeoutError):
-        RunUntilHelper().wait_until(found=found_callable_too_long, timeout=0.1)
+        RunUntilHelper.wait_until(until=found_callable_too_long, timeout=0.1)
 
 
 def test_generic_oauth_config():

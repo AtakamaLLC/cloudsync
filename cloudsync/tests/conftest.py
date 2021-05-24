@@ -1,6 +1,6 @@
 import cloudsync
 
-from .fixtures import *  # pylint: disable=unused-import, unused-wildcard-import, wildcard-import
+from cloudsync.tests.fixtures import *  # pylint: disable=unused-import, unused-wildcard-import, wildcard-import
 
 cloudsync.logger.setLevel("TRACE")
 

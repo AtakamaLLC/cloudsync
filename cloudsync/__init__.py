@@ -37,10 +37,10 @@ from pystrict import strict, StrictError
 from .log import logger
 
 # import modules into top level for convenience
+from .exceptions import *
 from .provider import *
 from .event import *
 from .sync import *
-from .exceptions import *
 from .types import *
 from .cs import *
 from .long_poll import *

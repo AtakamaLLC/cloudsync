@@ -26,6 +26,8 @@ from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMO
 from cloudsync.types import OType
 from cloudsync.log import TRACE
 from cloudsync.utils import debug_sig, disable_log_multiline
+from cloudsync.notification import NotificationManager
+
 if TYPE_CHECKING:
     from cloudsync import Provider
 
@@ -646,13 +648,15 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                  storage: Optional[Storage] = None,
                  tag: Optional[str] = None,
                  shuffle: bool = False,
-                 prioritize: Callable[[int, str], int] = None):
+                 prioritize: Callable[[int, str], int] = None,
+                 nmgr: NotificationManager = None):
         self._oids: Tuple[Dict[Any, SyncEntry], Dict[Any, SyncEntry]] = ({}, {})
         self._paths: Tuple[Dict[str, Dict[Any, SyncEntry]], Dict[str, Dict[Any, SyncEntry]]] = ({}, {})
         self._changeset_storage: Set[SyncEntry] = set()
         self._dirtyset: Set[SyncEntry] = set()
         self._storage: Optional[Storage] = storage
         self._tag = tag
+        self._nmgr = nmgr or NotificationManager(lambda e: None)
         self.providers = providers
         self._punt_secs = (providers[0].default_sleep/10.0, providers[1].default_sleep/10.0)
         self._pretty_time = time.time()

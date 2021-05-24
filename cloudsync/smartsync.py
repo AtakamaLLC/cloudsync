@@ -1,3 +1,4 @@
+""" Implements SmartSync, which only syncs files to local storage upon request """
 import time
 import logging
 from dataclasses import dataclass
@@ -6,7 +7,9 @@ from cloudsync.sync import MISSING, TRASHED
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event, other_side
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
 import cloudsync.exceptions as ex
-from cloudsync.notification import SourceEnum
+from cloudsync.tests.fixtures import RunUntilHelper
+from cloudsync.notification import Notification, NotificationType, SourceEnum
+
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -30,6 +33,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
                  sleep: Optional[Tuple[float, float]] = None,
                  root_paths: Optional[Tuple[str, str]] = None,
                  root_oids: Optional[Tuple[str, str]] = None):
+
         super().__init__(cast(SyncState, state), providers, translate, resolve_conflict, notification_manager, sleep, root_paths, root_oids)
         self.state: SmartSyncState = state
 
@@ -38,10 +42,27 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         super().do()
 
     def pre_sync(self, sync: SyncEntry) -> bool:
-        finished = super().pre_sync(sync)
+        super_finished = super().pre_sync(sync)
         local_file = sync[LOCAL].oid and self.providers[LOCAL].exists_oid(sync[LOCAL].oid)
+        finished = super_finished
         if not finished:
             finished = not (local_file or sync in self.state.requestset or sync[REMOTE].otype == DIRECTORY)
+
+        if finished:
+            sync.get_latest()
+            ntype = NotificationType.SYNC_DISCARDED if super_finished else NotificationType.SYNC_SMART_UNSYNCED
+            source = SourceEnum.REMOTE
+            path = None
+            if sync[REMOTE].path:
+                path = sync[REMOTE].path
+            if not path and sync[LOCAL].path:
+                path = self.translate(REMOTE, sync[LOCAL].path)
+                # only use local path if we can't get a remote path
+                if not path:  # pragma: no cover
+                    source = SourceEnum.LOCAL
+                    path = sync[LOCAL].path
+            if path:
+                self._nmgr.notify(Notification(source, ntype, path))
         return finished
 
     def get_parent_conflicts(self, sync: SyncEntry, changed) -> List[SyncEntry]:
@@ -69,11 +90,12 @@ class SmartSyncState(SyncState):
                  storage: Optional['Storage'] = None,
                  tag: Optional[str] = None,
                  shuffle: bool = False,
-                 prioritize: Callable[[int, str], int] = None):
+                 prioritize: Callable[[int, str], int] = None,
+                 nmgr: 'NotificationManager' = None):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
         self._callbacks: List[Callable] = list()
-        super().__init__(providers, storage, tag, shuffle, prioritize)
+        super().__init__(providers, storage, tag, shuffle, prioritize, nmgr=nmgr)
 
     def register_auto_sync_callback(self, callback):
         self._callbacks.append(callback)
@@ -156,6 +178,7 @@ class SmartSyncState(SyncState):
         changes = set()
         for ent in self._changeset_storage:
             if ent in self.excludeset and not ent[LOCAL].changed:
+                self._nmgr.notify(Notification(SourceEnum.REMOTE, NotificationType.SYNC_SMART_UNSYNCED, ent[REMOTE].path))
                 continue
 
             included = False
@@ -447,3 +470,124 @@ class SmartCloudSync(CloudSync):
             other_side_adverb = "remotely" if other_side == REMOTE else "locally"
             raise ex.CloudFileExistsError("Rename target %s already exists %s as %s" % (new_path, other_side_adverb, other_side_new_path))
         return self.providers[side].rename(oid, new_path)
+
+
+class SyncNotificationHandler:
+    """ Class that allows tests or other consumers to know when SyncManager chooses to not sync a file """
+    def __init__(self, csync: CloudSync):
+        self.skipped_paths: set = set()
+        self.discarded_paths: set = set()
+        self.csync = csync
+
+    def handle_notification(self, notification: Notification):
+        """ implementation of callback that logs when files are discarded or skipped by SmartSync """
+        n = notification
+        if n.ntype not in (NotificationType.SYNC_DISCARDED, NotificationType.SYNC_SMART_UNSYNCED):
+            return  # not interested in non-sync related events
+
+        if n.ntype == NotificationType.SYNC_SMART_UNSYNCED and n.source == SourceEnum.LOCAL:  # pragma: no cover
+            return  # only interested in REMOTE events, because smartsync operates primarily remotely
+
+        if n.ntype == NotificationType.SYNC_SMART_UNSYNCED:
+            self.skipped_paths.add(n.path)
+        elif n.ntype == NotificationType.SYNC_DISCARDED:
+            self.discarded_paths.add(n.path)
+
+    @staticmethod
+    def _path_in(path, paths, provider):
+        """ Checks if path is in path_dict, the keys of which are remote paths """
+        for candidate in paths:
+            if provider.paths_match(path, candidate):
+                return True
+        return False
+
+    def _is_synced(self, side, path, hash_str):
+        info: OInfo = self.csync.providers[side].info_path(path)
+        return info and (not hash_str or info.hash == hash_str)
+
+    def clear_sync_state(self):
+        """ Resets the log of synced/skipped paths """
+        self.skipped_paths = set()
+        self.discarded_paths = set()
+
+    def check_sync_state(  # pylint: disable=too-many-branches
+            self,
+            *,
+            remote_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,  # tuple is (path, hash)
+            local_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+            skipped_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+            discarded_paths: Optional[Union[List[str], List[Tuple[str, int]]]] = None,  # tuple is (path, side)
+            quiet=False
+    ):
+        """ Returns True if synced_paths have synced and skipped_paths have explicitly been skipped """
+        if not (remote_paths or local_paths or skipped_paths or discarded_paths):
+            raise ValueError("Specify remote_paths or local_paths or skipped_paths or discarded_paths")
+
+        retval = True
+        for path in remote_paths or []:
+            hash_str = None
+            if isinstance(path, tuple):
+                path, hash_str = path
+            if not self._is_synced(REMOTE, path, hash_str):
+                if not quiet:
+                    log.error("%s not synced remotely", path)
+                retval = False
+
+        for path in local_paths or []:
+            hash_str = None
+            if isinstance(path, tuple):
+                path, hash_str = path
+            if not self._is_synced(LOCAL, path, hash_str):
+                if not quiet:
+                    log.error("%s not synced locally", path)
+                retval = False
+
+        for path in skipped_paths or []:
+            if isinstance(path, tuple):
+                path, _ = path
+            if not self._path_in(path, self.skipped_paths, self.csync.providers[REMOTE]):
+                if not quiet:
+                    log.error("%s not found in skipped paths %s", path, self.skipped_paths)
+                retval = False
+
+        for path2 in discarded_paths or []:
+            side = REMOTE
+            if isinstance(path2, tuple):
+                path2, side = path2
+            if not self._path_in(path2, self.discarded_paths, self.csync.providers[side]):
+                if not quiet:
+                    log.error("%s not found in discarded paths %s", path2, self.discarded_paths)
+                retval = False
+
+        return retval
+
+    def wait_sync_state(self,
+                        *,
+                        remote_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+                        local_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+                        skipped_paths: Optional[Union[List[str], List[Tuple[str, str]]]] = None,
+                        discarded_paths: Optional[Union[List[str], List[Tuple[str, int]]]] = None,
+                        timeout=20,
+                        poll_time=0.25,
+                        exc=None):
+        """ Waits for when synced paths have been synced and skipped paths have been explicitly skipped """
+        if not (remote_paths or local_paths or skipped_paths or discarded_paths):
+            raise ValueError("Specify remote_paths or local_paths or skipped_paths or discarded_paths")
+        try:
+            RunUntilHelper.wait_until(
+                until=lambda: self.check_sync_state(
+                    remote_paths=remote_paths,
+                    local_paths=local_paths,
+                    skipped_paths=skipped_paths,
+                    discarded_paths=discarded_paths,
+                    quiet=True),
+                timeout=timeout,
+                poll_time=poll_time,
+                exc=exc
+            )
+        except Exception:
+            # one last check, and also log what is missing
+            if not self.check_sync_state(remote_paths=remote_paths, local_paths=local_paths, skipped_paths=skipped_paths, quiet=False):
+                raise
+
+

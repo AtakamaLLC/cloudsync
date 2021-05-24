@@ -65,6 +65,8 @@ class WaitFor(NamedTuple):
 
 
 class RunUntilHelper:
+    default_timeout = 10  # seconds
+
     def run_until_clean(self: Any, timeout=TIMEOUT):
         # self.run(until=lambda: not self.busy, timeout=1)  # older, SLIGHTLY slower version
         start = time.monotonic()
@@ -86,12 +88,19 @@ class RunUntilHelper:
         if not found():
             raise TimeoutError("timed out while waiting: %s" % errs)
 
-    def wait_until(self: Any, found: Callable, timeout=TIMEOUT):
-        start = time.monotonic()
-        while not found():
-            time.sleep(0.1)
-            if time.monotonic() - start > timeout and not found():
-                raise TimeoutError("timed out while waiting")
+    @classmethod
+    def wait_until(cls, until, timeout=None, poll_time=0.1, exc=None):
+        if timeout is None:
+            timeout = cls.default_timeout
+
+        if not exc:
+            exc = TimeoutError("Timed out waiting for %s" % str(until))
+        while not until():
+            timeout -= poll_time
+            if timeout <= 0:
+                log.debug("Cond %s returned False after waiting %.2f", until, timeout)
+                raise exc
+            time.sleep(poll_time)
 
     def wait_until_found(self: Any, *files: WaitForArg, timeout=TIMEOUT):
         log.debug("waiting until found")
