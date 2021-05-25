@@ -1357,7 +1357,7 @@ class SyncManager(Runnable):
         log.info("conflict renamed: %s -> %s", path, conflict_path)
         return oinfo.oid, new_oid, conflict_path
 
-    def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches
+    def embrace_change(self, sync, changed, synced):  # pylint: disable=too-many-return-statements, too-many-branches, too-many-statements
         log.debug("embrace %s, side:%s", sync, changed)
 
         if sync[changed].path or (sync[changed].exists == EXISTS):
