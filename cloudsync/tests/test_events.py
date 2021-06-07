@@ -195,6 +195,13 @@ def test_event_provider_contract(manager, rootless_manager, mode):
             notify.notify_from_exception.assert_called_once()
             assert not manager._root_validated
 
+    with patch.object(manager, "_validate_root", raise_root_missing_error):
+        with pytest.raises(Exception):
+            # _BackoffError
+            manager.do()
+            notify.notify_from_exception.assert_called_once()
+            assert not manager._root_validated
+
     prov.connection_id = None
     with pytest.raises(ValueError):
         # connection id is required
