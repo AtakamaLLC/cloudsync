@@ -36,8 +36,19 @@ from _pytest.fixtures import FixtureLookupError
 import cloudsync
 import cloudsync.providers
 
-from cloudsync import Event, CloudException, CloudFileNotFoundError, CloudDisconnectedError, CloudTemporaryError, CloudFileExistsError, \
-        CloudOutOfSpaceError, CloudCursorError, CloudTokenError, CloudNamespaceError
+from cloudsync import (
+    Event,
+    CloudException,
+    CloudFileNotFoundError,
+    CloudDisconnectedError,
+    CloudTemporaryError,
+    CloudFileExistsError,
+    CloudOutOfSpaceError,
+    CloudCursorError,
+    CloudTokenError,
+    CloudNamespaceError,
+    CloudRootMissingError
+)
 from cloudsync.provider import Namespace
 from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
@@ -596,6 +607,11 @@ def test_info_root(provider):
 def test_set_root_path_creates_path(provider):
     # root path does not exist yet
     assert not provider.info_path("/sync_root")
+
+    # failure to create the root dir is a CloudRootMissingError
+    with patch.object(provider.prov, "mkdirs", side_effect=Exception):
+        with pytest.raises(CloudRootMissingError):
+            provider.set_root(root_path="/sync_root")
 
     # set_root creates it
     (root_path, root_oid) = provider.set_root(root_path="/sync_root")

@@ -157,7 +157,8 @@ class EventManager(Runnable):
                 self._do_unsafe()
         except (CloudTemporaryError, CloudDisconnectedError, CloudNamespaceError) as e:
             # CloudRootMissingError is a CloudTemporaryError so handled here
-            log.warning("temporary error %s[%s] in event watcher", type(e), e)
+            if not self.in_backoff:
+                log.warning("temporary error %s[%s] in event watcher", type(e), e)
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
             self.backoff()
