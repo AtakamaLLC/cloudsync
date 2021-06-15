@@ -51,6 +51,9 @@ class SyncCmd(SubCmd):
 
         done = None
         if args.onetime:
+            # set roots ahead of time
+            provs[0].set_root(root_path=roots[0])
+            provs[1].set_root(root_path=roots[1])
             done = lambda: not cs.busy
 
         if args.daemon:
