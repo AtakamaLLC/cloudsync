@@ -84,6 +84,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
     win_paths: bool = False                   ; """C: drive letter stuff needed for paths"""
     default_sleep: float = 0.01               ; """Per event loop sleep time"""
     test_root: str = '/'                      ; """Root folder to use during provider tests"""
+    root_validated: bool = False              ; """Whether or not root oid/path has beed validated"""
     _root_path: Optional[str] = None          ; """Root path to use for syncing, event filtering, etc."""
     _root_oid: Optional[str] = None           ; """Root oid to use for syncing, event filtering, etc."""
     _oauth_info: OAuthProviderInfo = None     ; """OAuth providers can set this as a class variable"""
@@ -163,10 +164,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             if self.paths_match(self._root_path, root_path) or self._root_oid == root_oid:
                 return (self._root_path, self._root_oid)
             raise ValueError("Sync root already set and cannot be changed")
-        if not root_path and not root_oid:
-            return (None, None)
-        (self._root_path, self._root_oid) = self._validate_root(root_path, root_oid)
-        return (self._root_path, self._root_oid)
+        return self._validate_root(root_path, root_oid)
 
     def _validate_root(self, root_path, root_oid):
         if root_oid:
@@ -188,6 +186,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 root_oid = info.oid if info else self.mkdirs(root_path)
             except:
                 raise CloudRootMissingError(f"Failed to create root path: {root_path}")
+
+        self._root_path = root_path
+        self._root_oid = root_oid
+        self.root_validated = True
         return (root_path, root_oid)
 
     @property

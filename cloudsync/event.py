@@ -88,8 +88,9 @@ class EventManager(Runnable):
         self.reauthenticate = reauth or self.__reauth
 
     def _validate_root(self):
-        if not self._root_validated and self.provider.connected:
-            (self._root_path, self._root_oid) = self.provider.set_root(self._root_path, self._root_oid)
+        if not self._root_validated and self.provider.root_validated:
+            self._root_path = self.provider.root_path
+            self._root_oid = self.provider.root_oid
             my_root = self._root_path or self._root_oid
             if my_root:
                 self._walk_tag = self.label + "_walked_" + my_root

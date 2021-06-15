@@ -1853,14 +1853,15 @@ def test_cursor(cs_storage):
 
     linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
 
-    p1 = cs.providers[LOCAL]
-    p2 = cs.providers[REMOTE]
-    p1.current_cursor = None
-    p2.current_cursor = None
-    roots = cs.roots
-
     cs.done()
-    cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
+    p1 = cs.providers[LOCAL]
+    p1.current_cursor = None
+    p1.root_validated = False
+    p2 = cs.providers[REMOTE]
+    p2.current_cursor = None
+    p2.root_validated = False
+
+    cs2 = CloudSyncMixin((p1, p2), cs.roots, storage=storage, sleep=None)
     cs2.run_until_found(
         (LOCAL, local_path2),
         timeout=2)
@@ -2939,18 +2940,24 @@ def test_walk_bad_vals(cs):
     with pytest.raises(ValueError):
         cs.walk(root="foo")
 
+
+@pytest.mark.manual
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
     preroot = "oid" in mode
 
+    log.info("here1")
     if preroot:
+        log.info("here2")
         cs = cs_root_oid
         assert cs.providers[0].info_path("/local")
         assert cs.providers[1].info_path("/remote")
 
     (local, remote) = cs.providers
-    remote.delete(remote.info_path("/remote").oid)
+    rinfo = remote.info_path("/remote")
+    if rinfo:
+        remote.delete(rinfo.oid)
     cs.emgrs[REMOTE]._drain()
     assert remote.info_path("/remote") is None
 
@@ -2959,6 +2966,9 @@ def test_root_needed(cs, cs_root_oid, mode):
         cs.smgr._root_paths[side] = path
         cs.emgrs[side]._root_oid = oid
         cs.emgrs[side]._root_path = path
+        cs.providers[side].root_validated = True
+        cs.providers[side]._root_path = path
+        cs.providers[side]._root_oid = oid
 
     if not create:
         # set root oid to random stuff that will break any checks
@@ -3014,9 +3024,9 @@ def test_root_needed(cs, cs_root_oid, mode):
             # to test failure modes, you need to use start(), not run_until, or do()
             # we keep backing off because the root isn't there
             until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 50
-            cs.start(until=until)
+            cs.start(until=lambda: called)
             cs.wait(timeout=2)
-            assert until()
+            #assert until()
             assert called
 
             # then we create the root:
