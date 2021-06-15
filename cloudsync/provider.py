@@ -161,6 +161,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         log.debug("set_root for %s - %s - %s", self.name, root_path, root_oid)
         if self._root_path and self._root_oid:
             if self.paths_match(self._root_path, root_path) or self._root_oid == root_oid:
+                self.root_validated = True
                 return (self._root_path, self._root_oid)
             raise ValueError("Sync root already set and cannot be changed")
         return self._validate_root(root_path, root_oid)

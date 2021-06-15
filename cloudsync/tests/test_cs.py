@@ -1856,15 +1856,14 @@ def test_cursor(cs_storage):
 
     linfo1 = cs.providers[LOCAL].create(local_path2, BytesIO(b"hello2"), None)
 
-    cs.done()
     p1 = cs.providers[LOCAL]
-    p1.current_cursor = None
-    p1.root_validated = False
     p2 = cs.providers[REMOTE]
+    p1.current_cursor = None
     p2.current_cursor = None
-    p2.root_validated = False
+    roots = cs.roots
 
-    cs2 = CloudSyncMixin((p1, p2), cs.roots, storage=storage, sleep=None)
+    cs.done()
+    cs2 = CloudSyncMixin((p1, p2), roots, storage=storage, sleep=None)
     cs2.run_until_found(
         (LOCAL, local_path2),
         timeout=2)
