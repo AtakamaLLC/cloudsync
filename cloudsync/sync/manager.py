@@ -203,7 +203,7 @@ class SyncManager(Runnable):
     def _validate_provider_roots(self):
         try:
             for p in [LOCAL, REMOTE]:
-                if not self.providers[p].root_validated:
+                if not self.providers[p].root_validated and self.providers[p].connected:
                     (self._root_paths[p], self._root_oids[p]) = self.providers[p].set_root(self._root_paths[p], self._root_oids[p])
         except Exception as e:
             if isinstance(e, ex.CloudException):

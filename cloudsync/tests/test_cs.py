@@ -156,7 +156,9 @@ def multi_local_cs_generator(how_many_cs: int, provider_generator):
         local_provider = provider_generator()
         remote_provider = mock_provider_instance(oid_is_path=False, case_sensitive=True)
         remote_provider._set_mock_fs(remote_mock_fs)
-        css.append(CloudSyncMixin((local_provider, remote_provider), roots, storage, sleep=None))
+        cs = CloudSyncMixin((local_provider, remote_provider), roots, storage, sleep=None)
+        cs.smgr._validate_provider_roots()
+        css.append(cs)
 
     yield css
 
@@ -1421,6 +1423,7 @@ def test_storage(storage):
 
     storage1: Storage = storage_class(storage_mechanism)
     cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
+    cs1.smgr._validate_provider_roots()
     cs1.do()
     old_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
     assert old_cursor is not None
@@ -1431,6 +1434,7 @@ def test_storage(storage):
 
     storage2 = storage_class(storage_mechanism)
     cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
+    cs2.smgr._validate_provider_roots()
 
     log.debug(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
     log.debug(f"state2 = {cs2.state.entry_count()}\n{cs2.state.pretty_print()}")
@@ -3526,7 +3530,9 @@ def test_cursor_tag_delete(mock_provider_generator):
     roots2 = ("/local2", "/remote2")
 
     cs1 = CloudSyncMixin((p1a, p2), roots1, storage, sleep=None)
+    cs1.smgr._validate_provider_roots()
     cs2 = CloudSyncMixin((p1b, p3), roots2, storage, sleep=None)
+    cs2.smgr._validate_provider_roots()
 
     cs1.done()
     cs2.done()
@@ -3542,6 +3548,7 @@ def test_cursor_tag_delete(mock_provider_generator):
     assert cs1.state.storage_get_data(cs1.emgrs[REMOTE]._cursor_tag) is None
     assert cs2.state.storage_get_data(cs2.emgrs[REMOTE]._cursor_tag) == mock_cursor_2
 
+
 def test_walk_tag_delete(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)
@@ -3554,6 +3561,7 @@ def test_walk_tag_delete(mock_provider_generator):
     roots = ("/local", "/remote")
 
     cs = CloudSyncMixin((p1, p2), roots, storage, sleep=None)
+    cs.smgr._validate_provider_roots()
     cs.do()
 
     assert cs.state.storage_get_data(cs.emgrs[LOCAL]._walk_tag) is not None
@@ -3565,8 +3573,10 @@ def test_walk_tag_delete(mock_provider_generator):
     cs.stop()
 
     p1 = mock_provider_generator()
+    p1.set_root(roots[0])
     p2 = mock_provider_generator()
     p2.connection_id = mock_remote_connection_id
+    # TODO: set_root on disconnected prov throws
 
     p2.disconnect()
 
