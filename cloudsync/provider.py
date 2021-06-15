@@ -155,7 +155,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             self.connection_id = new_id
         self.__connected = True
         assert self.connected
-        self._validate_root(self._root_path, self._root_oid)
 
     def set_root(self, root_path=None, root_oid=None):
         """Set sync root path and oid. Once set, these values cannot be changed."""

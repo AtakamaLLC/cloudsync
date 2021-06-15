@@ -200,7 +200,7 @@ class SyncManager(Runnable):
             self.backoff()  # raises a backoff error to the caller
         return something_got_done
 
-    def do(self):
+    def _validate_provider_roots(self):
         try:
             for p in [LOCAL, REMOTE]:
                 if not self.providers[p].root_validated:
@@ -211,6 +211,8 @@ class SyncManager(Runnable):
             log.exception("exception %s[%s] while validating provider root", type(e), e)
             self.backoff()  # raises a backoff error to the caller
 
+    def do(self):
+        self._validate_provider_roots()
         need_to_sleep = True
         something_got_done = False  # shouldn't this be default False? Don't assume there will be no exceptions...
         with self.state.lock:

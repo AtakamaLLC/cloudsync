@@ -87,6 +87,7 @@ def _fixture_cs(providers, with_nmgr=False, storage=None):
     cs = CloudSyncMixin(providers, roots, storage=storage, sleep=None)
     cs.providers[LOCAL].name += '-l'
     cs.providers[REMOTE].name += '-r'
+    cs.smgr._validate_provider_roots()
     if with_nmgr:
         cs.nmgr.start()
     yield cs
@@ -121,6 +122,8 @@ def fixture_cs_nested(request):
         CloudSyncMixin((lpo, rpo), ("/local/outer", "/remote/outer")),
         CloudSyncMixin((lpi, rpi), ("/local/outer/inner", "/remote/inner")),
     )
+    cs_nested[0].smgr._validate_provider_roots()
+    cs_nested[1].smgr._validate_provider_roots()
     yield cs_nested
     cs_nested[0].done()
     cs_nested[1].done()
@@ -3583,6 +3586,7 @@ def test_walk_tag_delete(mock_provider_generator):
     # Check cursor tag is cleaned up for good measure
     assert cs1.state.storage_get_data(cs1.emgrs[LOCAL]._walk_tag) is None
     assert cs1.state.storage_get_data(remote_cursor_tag) is None
+
 
 def test_cs_event_filter(cs):
     log.debug("local root: %s", cs.providers[LOCAL]._root_path)     # /local
