@@ -16,8 +16,10 @@ def create_event_manager(provider_generator, root_path):
     state = SyncState((provider, provider), shuffle=True)
     if provider.oid_is_path:
         root_oid = provider.mkdirs(root_path) if root_path else None
+        provider.set_root(root_oid=root_oid)
         event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_oid)
     else:
+        provider.set_root(root_path=root_path)
         event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
     event_manager._drain()
     return event_manager
@@ -154,8 +156,10 @@ def test_event_provider_contract(manager, rootless_manager, mode):
 
     manager.done()
     if mode == "root":
-        with pytest.raises(ValueError):
-            manager = EventManager(prov, MagicMock(), LOCAL, root_path="/cannot-change-after-set")
+        assert prov.info_path(manager._root_path)
+        assert prov.info_oid(manager._root_oid)
+        assert prov.root_path == manager._root_path
+        assert prov.root_oid == manager._root_oid
     else:
         foo = prov.create("/foo", BytesIO(b"oo"))
         prov.mkdir("/bar")
