@@ -39,6 +39,8 @@ class SyncCmd(SubCmd):
 
         provs = (_provs[0], _provs[1])
         roots = (uris[0].path, uris[1].path)
+        provs[0].set_root(root_path=roots[0])
+        provs[1].set_root(root_path=roots[1])
 
         storage = SqliteStorage(args.statedb)
 
@@ -51,9 +53,6 @@ class SyncCmd(SubCmd):
 
         done = None
         if args.onetime:
-            # set roots ahead of time
-            provs[0].set_root(root_path=roots[0])
-            provs[1].set_root(root_path=roots[1])
             done = lambda: not cs.busy
 
         if args.daemon:

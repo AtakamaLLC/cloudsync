@@ -162,11 +162,9 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         if self._root_path and self._root_oid:
             if self.paths_match(self._root_path, root_path) or self._root_oid == root_oid:
                 self.root_validated = True
-                return (self._root_path, self._root_oid)
+                return root_path, root_oid
             raise ValueError("Sync root already set and cannot be changed")
-        return self._validate_root(root_path, root_oid)
 
-    def _validate_root(self, root_path, root_oid):
         if root_oid:
             # prefer root_oid
             info = self.info_oid(root_oid)
@@ -190,7 +188,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         self._root_path = root_path
         self._root_oid = root_oid
         self.root_validated = True
-        return (root_path, root_oid)
+        return root_path, root_oid
 
     @property
     def root_path(self) -> Optional[str]:

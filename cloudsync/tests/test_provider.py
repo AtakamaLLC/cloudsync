@@ -116,8 +116,6 @@ class ProviderTestMixin(ProviderBase):
         self.prov_api_func = self.prov._api
         self.prov._api = lambda *ar, **kw: self.__api_retry(self._api, *ar, **kw)
 
-        self.root_validated = False
-
         self.__short_poll_only = short_poll_only
         prov.test_short_poll_only(short_poll_only=short_poll_only)
 
@@ -262,7 +260,6 @@ class ProviderTestMixin(ProviderBase):
             root_path = self.__add_root(root_path)
         (_, root_oid) = self.prov.set_root(root_path, root_oid)
         root_path = self.info_oid(root_oid).path
-        self.root_validated = self.prov.root_validated
         return root_path, root_oid
 
     @wrap_retry
@@ -381,6 +378,10 @@ class ProviderTestMixin(ProviderBase):
         finally:
             self.prov.test_short_poll_only(self.__short_poll_only)
         self.current_cursor = self.latest_cursor
+
+    @property
+    def root_validated(self):
+        return self.prov.root_validated
 
     @property
     def current_cursor(self):

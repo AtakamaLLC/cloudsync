@@ -203,7 +203,7 @@ class SyncManager(Runnable):
     def _validate_provider_roots(self):
         try:
             for p in [LOCAL, REMOTE]:
-                if not self.providers[p].root_validated and self.providers[p].connected:
+                if not self.providers[p].root_validated:
                     (self._root_paths[p], self._root_oids[p]) = self.providers[p].set_root(self._root_paths[p], self._root_oids[p])
         except Exception as e:
             if isinstance(e, ex.CloudException):
@@ -336,7 +336,7 @@ class SyncManager(Runnable):
                     sync[changed].mark_changed()
                     sync[synced].clear()
 
-    def pre_sync(self, sync: SyncEntry) -> bool:
+    def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         self.check_revivify(sync)
 
         if sync.is_discarded:
@@ -545,21 +545,6 @@ class SyncManager(Runnable):
             self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
             # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
             return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
-
-        # if self._root_oids[synced]:
-        #     if not self._root_paths[synced]:
-        #         info = self.providers[synced].info_oid(self._root_oids[synced])
-        #         if info:
-        #             self._root_paths[synced] = info.path
-        #         else:
-        #             raise ex.CloudRootMissingError("root missing: %s" % self._root_oids[synced])
-        #
-        # if self._root_paths[synced] and self.providers[synced].is_subpath(self._root_paths[synced], translated_path):
-        #     info = self.providers[synced].info_path(self._root_paths[synced])
-        #     if not info:
-        #         raise ex.CloudRootMissingError("root missing: %s" % self._root_paths[synced])
-        #     if info and self._root_oids[synced] and info.oid != self._root_oids[synced]:
-        #         raise ex.CloudRootMissingError("root oid moved: %s" % self._root_paths[synced])
 
         # make the dir
         oid = self.providers[synced].mkdirs(translated_path)
