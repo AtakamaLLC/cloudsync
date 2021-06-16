@@ -2952,7 +2952,6 @@ def test_walk_bad_vals(cs):
         cs.walk(root="foo")
 
 
-@pytest.mark.manual
 @pytest.mark.parametrize("mode", ["create-path", "nocreate-path", "nocreate-oid"])
 def test_root_needed(cs, cs_root_oid, mode):
     create = "nocreate" not in mode
@@ -2975,7 +2974,7 @@ def test_root_needed(cs, cs_root_oid, mode):
         cs.smgr._root_paths[side] = path
         cs.emgrs[side]._root_oid = oid
         cs.emgrs[side]._root_path = path
-        cs.providers[side].root_validated = True
+        cs.providers[side].root_validated = False
         cs.providers[side]._root_path = path
         cs.providers[side]._root_oid = oid
 
@@ -3033,9 +3032,9 @@ def test_root_needed(cs, cs_root_oid, mode):
             # to test failure modes, you need to use start(), not run_until, or do()
             # we keep backing off because the root isn't there
             until = lambda: cs.smgr.in_backoff > cs.smgr.min_backoff * 50
-            cs.start(until=lambda: called)
+            cs.start(until=until)
             cs.wait(timeout=2)
-            #assert until()
+            assert until()
             assert called
 
             # then we create the root:
