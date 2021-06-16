@@ -1427,7 +1427,7 @@ def test_storage(storage):
     p2.connect("creds")
 
     storage1: Storage = storage_class(storage_mechanism)
-    cs1: CloudSync = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
+    cs1 = CloudSyncMixin((p1, p2), roots, storage1, sleep=None)
     cs1.validate_provider_roots()
     cs1.do()
     old_cursor = cs1.emgrs[0].state.storage_get_data(cs1.emgrs[0]._cursor_tag)
@@ -1438,7 +1438,7 @@ def test_storage(storage):
     cs1.done()
 
     storage2 = storage_class(storage_mechanism)
-    cs2: CloudSync = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
+    cs2 = CloudSyncMixin((p1, p2), roots, storage2, sleep=None)
     cs2.validate_provider_roots()
 
     log.debug(f"state1 = {cs1.state.entry_count()}\n{cs1.state.pretty_print()}")
