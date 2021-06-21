@@ -380,10 +380,6 @@ class ProviderTestMixin(ProviderBase):
         self.current_cursor = self.latest_cursor
 
     @property
-    def root_validated(self):
-        return self.prov.root_validated
-
-    @property
     def current_cursor(self):
         return self.prov.current_cursor
 

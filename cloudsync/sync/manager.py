@@ -157,6 +157,7 @@ class SyncManager(Runnable):
         self._nmgr = notification_manager
         self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
         self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
+        self._root_validated: List[bool] = [False, False]
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -201,15 +202,21 @@ class SyncManager(Runnable):
         return something_got_done
 
     def _validate_provider_roots(self):
-        try:
-            for p in [LOCAL, REMOTE]:
-                if not self.providers[p].root_validated:
-                    (self._root_paths[p], self._root_oids[p]) = self.providers[p].set_root(self._root_paths[p], self._root_oids[p])
-        except Exception as e:
-            if isinstance(e, ex.CloudException):
-                self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
-            log.exception("exception %s[%s] while validating provider root", type(e), e)
-            self.backoff()  # raises a backoff error to the caller
+        if self._root_validated[LOCAL] and self._root_validated[REMOTE]:
+            return
+
+        for side in [LOCAL, REMOTE]:
+            if not self._root_validated[side]:
+                try:
+                    (path, oid) = self.providers[side].set_root(self._root_paths[side], self._root_oids[side])
+                    self._root_paths[side] = path
+                    self._root_oids[side] = oid
+                    self._root_validated[side] = True
+                except Exception as e:
+                    if isinstance(e, ex.CloudException):
+                        self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
+                    log.exception("exception %s[%s] while validating provider root", type(e), e)
+                    self.backoff()  # raises a backoff error to the caller
 
     def do(self):
         self._validate_provider_roots()

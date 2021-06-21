@@ -2972,9 +2972,10 @@ def test_root_needed(cs, cs_root_oid, mode):
     def set_root(cs, side, oid, path):
         cs.smgr._root_oids[side] = oid
         cs.smgr._root_paths[side] = path
+        cs.smgr._root_validated[side] = False
         cs.emgrs[side]._root_oid = oid
         cs.emgrs[side]._root_path = path
-        cs.providers[side].root_validated = False
+        cs.emgrs[side]._root_validated = False
         cs.providers[side]._root_path = path
         cs.providers[side]._root_oid = oid
 
