@@ -95,18 +95,29 @@ class EventManager(Runnable):
         self.reauthenticate = reauth or self.__reauth
 
     def _validate_root(self):
-        if not self._root_validated and self.provider.connected:
-            (self._root_path, self._root_oid) = self.provider.set_root(self._root_path, self._root_oid)
-            my_root = self._root_path or self._root_oid
-            if my_root:
-                self._walk_tag = self.label + "_walked_" + my_root
-                self._cursor_tag = self.label + "_cursor_" + my_root
-                self.cursor = self.state.storage_get_data(self._cursor_tag)
-                self.need_walk = self.cursor is None or self.state.storage_get_data(self._walk_tag) is None
-            else:
-                self._cursor_tag = self.label = "_cursor"
-                self.cursor = self.state.storage_get_data(self._cursor_tag)
+        if self._root_validated:
+            return True
+
+        if self.provider.root_path and self.provider.root_oid:
+            # provider's root set, use it
+            self._root_path = self.provider.root_path
+            self._root_oid = self.provider.root_oid
+
+        if not self._root_path and not self._root_oid:
+            # no root specified, nothing to validate
+            self._cursor_tag = self.label = "_cursor"
+            self.cursor = self.state.storage_get_data(self._cursor_tag)
             self._root_validated = True
+
+        elif self._root_path and self._root_oid:
+            # path and oid specified, assume they are valid
+            my_root = self._root_path or self._root_oid
+            self._walk_tag = self.label + "_walked_" + my_root
+            self._cursor_tag = self.label + "_cursor_" + my_root
+            self.cursor = self.state.storage_get_data(self._cursor_tag)
+            self.need_walk = self.cursor is None or self.state.storage_get_data(self._walk_tag) is None
+            self._root_validated = True
+
         return self._root_validated
 
     def __reauth(self):

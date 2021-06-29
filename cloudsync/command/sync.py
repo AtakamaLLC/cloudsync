@@ -39,6 +39,8 @@ class SyncCmd(SubCmd):
 
         provs = (_provs[0], _provs[1])
         roots = (uris[0].path, uris[1].path)
+        provs[0].set_root(root_path=roots[0])
+        provs[1].set_root(root_path=roots[1])
 
         storage = SqliteStorage(args.statedb)
 

@@ -76,7 +76,7 @@ class CloudSync(Runnable):
                             prioritize=lambda *a: self.prioritize(*a), nmgr=self.nmgr)                              # pylint: disable=unnecessary-lambda
 
         smgr = smgr_class(state, providers, lambda *a, **kw: self.translate(*a, **kw),           # pylint: disable=unnecessary-lambda
-                          self.resolve_conflict, self.nmgr, sleep=sleep)
+                          self.resolve_conflict, self.nmgr, sleep=sleep, root_paths=roots, root_oids=root_oids)
 
         # for tests, make these accessible
         self.state: 'SmartSyncState' = state
