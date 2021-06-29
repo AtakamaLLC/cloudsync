@@ -5,8 +5,17 @@ from io import BytesIO
 
 import pytest
 
-from cloudsync import exceptions, EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, \
-    CloudRootMissingError, CloudCursorError
+from cloudsync import (
+    exceptions,
+    EventManager,
+    Event,
+    SyncState,
+    LOCAL,
+    CloudTokenError,
+    DIRECTORY,
+    CloudRootMissingError,
+    CloudCursorError,
+)
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
