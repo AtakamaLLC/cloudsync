@@ -5,7 +5,17 @@ from io import BytesIO
 
 import pytest
 
-from cloudsync import exceptions, EventManager, Event, SyncState, LOCAL, CloudTokenError, FILE, DIRECTORY, CloudRootMissingError
+from cloudsync import (
+    exceptions,
+    EventManager,
+    Event,
+    SyncState,
+    LOCAL,
+    CloudTokenError,
+    DIRECTORY,
+    CloudRootMissingError,
+    CloudCursorError,
+)
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
@@ -228,3 +238,13 @@ def test_event_root_change(manager):
     event.accurate = False
     # no error
     manager._notify_on_root_change_event(event)
+
+
+def test_event_cursor_error(manager):
+    manager.need_walk = False
+
+    with patch.object(manager.provider, "events", side_effect=CloudCursorError):
+        with pytest.raises(Exception):
+            # _BackoffError
+            manager.do()
+        assert manager.need_walk
