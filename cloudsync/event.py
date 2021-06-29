@@ -4,8 +4,15 @@ from typing import TYPE_CHECKING, Optional, Callable, Any
 from dataclasses import dataclass, replace
 from pystrict import strict
 
-from .exceptions import CloudTemporaryError, CloudDisconnectedError, CloudCursorError, CloudTokenError, CloudFileNotFoundError, \
-    CloudNamespaceError, CloudRootMissingError
+from .exceptions import (
+    CloudTemporaryError,
+    CloudDisconnectedError,
+    CloudCursorError,
+    CloudTokenError,
+    CloudFileNotFoundError,
+    CloudNamespaceError,
+    CloudRootMissingError,
+)
 from .runnable import Runnable
 from .types import OType, DIRECTORY
 from .notification import SourceEnum
@@ -166,6 +173,7 @@ class EventManager(Runnable):
             log.exception("Cursor error... resetting cursor. %s", e)
             self.provider.current_cursor = self.provider.latest_cursor
             self._save_current_cursor()
+            self.need_walk = True
             self.backoff()
         except CloudTokenError:
             # this is separated from the main block because
