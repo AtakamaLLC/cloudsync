@@ -180,8 +180,8 @@ class EventManager(Runnable):
             if self.__nmgr:
                 self.__nmgr.notify_from_exception(SourceEnum(self.side), e)
             self.backoff()
-        except CloudCursorError as e:
-            log.exception("Cursor error... resetting cursor. %s", e)
+        except (CloudCursorError, FileNotFoundError) as e:
+            log.exception("Cursor error... resetting cursor. %s", repr(e))
             self.provider.current_cursor = self.provider.latest_cursor
             self._save_current_cursor()
             self.need_walk = True

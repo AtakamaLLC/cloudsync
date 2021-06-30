@@ -246,8 +246,14 @@ def test_event_root_change(manager):
 
 def test_event_cursor_error(manager):
     manager.need_walk = False
-
     with patch.object(manager.provider, "events", side_effect=CloudCursorError):
+        with pytest.raises(Exception):
+            # _BackoffError
+            manager.do()
+        assert manager.need_walk
+
+    manager.need_walk = False
+    with patch.object(manager.provider, "events", side_effect=FileNotFoundError):
         with pytest.raises(Exception):
             # _BackoffError
             manager.do()
