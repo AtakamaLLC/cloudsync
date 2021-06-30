@@ -157,6 +157,7 @@ class SyncManager(Runnable):
         self._nmgr = notification_manager
         self._root_oids: List[str] = list(root_oids) if root_oids else [None, None]
         self._root_paths: List[str] = list(root_paths) if root_paths else [None, None]
+        self._root_validated: List[bool] = [False, False]
         if not sleep:
             # these are the event sleeps, but really we need more info than this
             sleep = (self.providers[LOCAL].default_sleep, self.providers[REMOTE].default_sleep)
@@ -200,7 +201,25 @@ class SyncManager(Runnable):
             self.backoff()  # raises a backoff error to the caller
         return something_got_done
 
+    def _validate_provider_roots(self):
+        if self._root_validated[LOCAL] and self._root_validated[REMOTE]:
+            return
+
+        for side in [LOCAL, REMOTE]:
+            if not self._root_validated[side]:
+                try:
+                    (path, oid) = self.providers[side].set_root(self._root_paths[side], self._root_oids[side])
+                    self._root_paths[side] = path
+                    self._root_oids[side] = oid
+                    self._root_validated[side] = True
+                except Exception as e:
+                    if isinstance(e, ex.CloudException):
+                        self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
+                    log.exception("exception %s[%s] while validating provider root", type(e), e)
+                    self.backoff()  # raises a backoff error to the caller
+
     def do(self):
+        self._validate_provider_roots()
         need_to_sleep = True
         something_got_done = False  # shouldn't this be default False? Don't assume there will be no exceptions...
         with self.state.lock:
@@ -323,7 +342,6 @@ class SyncManager(Runnable):
                     sync[changed].sync_path = None
                     sync[changed].mark_changed()
                     sync[synced].clear()
-
 
     def pre_sync(self, sync: SyncEntry) -> bool:  # pylint: disable=too-many-branches
         self.check_revivify(sync)
@@ -534,21 +552,6 @@ class SyncManager(Runnable):
             self.resolve_conflict((sync[changed], chent[synced]))                   # pylint: disable=unsubscriptable-object
             # the defer entry may not have finished, so PUNT, just in case. If it is finished, it'll clear on the next go
             return PUNT  # fixes test_cs_folder_conflicts_file[mock_oid_cs-prio]
-
-        if self._root_oids[synced]:
-            if not self._root_paths[synced]:
-                info = self.providers[synced].info_oid(self._root_oids[synced])
-                if info:
-                    self._root_paths[synced] = info.path
-                else:
-                    raise ex.CloudRootMissingError("root missing: %s" % self._root_oids[synced])
-
-        if self._root_paths[synced] and self.providers[synced].is_subpath(self._root_paths[synced], translated_path):
-            info = self.providers[synced].info_path(self._root_paths[synced])
-            if not info:
-                raise ex.CloudRootMissingError("root missing: %s" % self._root_paths[synced])
-            if info and self._root_oids[synced] and info.oid != self._root_oids[synced]:
-                raise ex.CloudRootMissingError("root oid moved: %s" % self._root_paths[synced])
 
         # make the dir
         oid = self.providers[synced].mkdirs(translated_path)
