@@ -364,7 +364,7 @@ def test_create_before_delete(sync, delete_side):
     assert delete.exists_path(delete_path2)
 
 
-@pytest.mark.parametrize("delete_side", [LOCAL, REMOTE], ids=["delete_remote", "delete_local"])
+@pytest.mark.parametrize("delete_side", [REMOTE, LOCAL], ids=["delete_remote", "delete_local"])
 def test_delete_plus_unchanged_marked_changed(sync, delete_side):
     # This emulates the condition where a file called hello was created and synced, then hello was renamed to goodbye
     # locally. the rename was synced, and then the file was deleted locally. The delete event comes in locally and
