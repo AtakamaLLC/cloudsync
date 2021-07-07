@@ -354,7 +354,7 @@ def test_create_before_delete(sync, delete_side):
     ent[delete_side].sync_path = rinfo.path
     ent[delete_side].sync_hash = rinfo.hash
 
-    sync.run(until=lambda: delete.exists_path(delete_path2) or not create.exists_path(create_path2))
+    sync.run(until=lambda: delete.exists_path(delete_path2) or not create.exists_path(create_path2), timeout=TIMEOUT)
     # pre-rename file shouldn't exists, because it was renamed
     assert not create.exists_path(create_path)
     assert not delete.exists_path(delete_path)
@@ -362,6 +362,46 @@ def test_create_before_delete(sync, delete_side):
     # post-rename file should exist, because it wasn't accidentally deleted
     assert create.exists_path(create_path2)
     assert delete.exists_path(delete_path2)
+
+
+@pytest.mark.parametrize("delete_side", [REMOTE, LOCAL], ids=["delete_remote", "delete_local"])
+def test_delete_plus_unchanged_marked_changed(sync, delete_side):
+    # This emulates the condition where a file called hello was created and synced, then hello was renamed to goodbye
+    # locally. the rename was synced, and then the file was deleted locally. The delete event comes in locally and
+    # the mirror rename event comes in remotely at the same time. So now, the sync entry looks like a local delete of
+    # goodbye, and the remote side is marked changed, but hasn't actually changed because it was only marked changed
+    # because of a mirror event. If the remote side gets processed first, no big deal, the fact that it is a non-
+    # change is identified and the changed flag is cleared for that side and the delete gets synced as expected.
+    # if the local side gets processed first, the local delete may panic when it notices the remote side is changed
+    # and refuse to delete, even though the remote side is not really changed. Test that the delete gets synced as
+    # expected, and does not get stuck waiting for something that won't ever happen.
+
+    l, r = sync.providers
+    delete, create = (l, r) if delete_side == LOCAL else (r, l)
+    delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
+    create_side = other_side(delete_side)
+    create_path = create.join(create_parent, "goodbye")
+    delete_path = delete.join(delete_parent, "goodbye")
+
+    create.mkdir(create_parent)
+    delete.mkdir(delete_parent)
+    linfo = create.create(create_path, BytesIO(b"goodbye"))
+    rinfo = delete.create(delete_path, BytesIO(b"goodbye"))
+    delete.delete(rinfo.oid)  # creating the file and deleting it gives us the oid and the hash
+
+    # test requires the deleted side has an earlier change time, so that the delete gets processed first
+    sync.create_event(delete_side, FILE, path=delete_path, oid=rinfo.oid, hash=rinfo.hash, exists=False)
+    ent = sync.state.lookup_oid(delete_side, rinfo.oid)
+    sync.state.update_entry(ent, create_side, linfo.oid, path=create_path, file_hash=linfo.hash, exists=True, changed=True, otype=FILE)
+    ent[create_side].sync_path = linfo.path
+    ent[create_side].sync_hash = linfo.hash
+    ent[delete_side].sync_path = rinfo.path
+    ent[delete_side].sync_hash = rinfo.hash
+
+    sync.run(until=lambda: delete.exists_path(delete_path) == create.exists_path(create_path), timeout=TIMEOUT)
+    # post-rename file should not exist, because it wasn't actually altered on the other side
+    assert not create.exists_path(create_path)
+    assert not delete.exists_path(delete_path)
 
 
 def test_sync_conflict_simul(sync):
@@ -386,7 +426,8 @@ def test_sync_conflict_simul(sync):
     sync.run(until=lambda:
              sync.providers[REMOTE].exists_path("/remote/stuff1.conflicted")
              or
-             sync.providers[LOCAL].exists_path("/local/stuff1.conflicted")
+             sync.providers[LOCAL].exists_path("/local/stuff1.conflicted"),
+             timeout=TIMEOUT
              )
 
     sync.run_until_found(

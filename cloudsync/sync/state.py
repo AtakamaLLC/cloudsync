@@ -395,9 +395,9 @@ class SyncEntry:
     def is_deletion(self, side):
         return self[other_side(side)].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
 
-    def is_creation(self, changed):
-        return (not self[other_side(changed)].oid or self[other_side(changed)].exists in (TRASHED, MISSING)) \
-                and self[changed].path and self[changed].exists == EXISTS
+    def is_creation(self, side):
+        return (not self[other_side(side)].oid or self[other_side(side)].exists in (TRASHED, MISSING)) \
+               and self[side].path and self[side].exists == EXISTS and self[side].needs_sync()
 
     def is_rename(self, changed):
         return self[changed].sync_path and self[changed].path and self.paths_differ(changed)
