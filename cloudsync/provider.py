@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
-from .types import OInfo, DIRECTORY, DirInfo, Any
+from .types import OInfo, DIRECTORY, DirInfo, Any, FILE
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
     CloudRootMissingError
 from .oauth import OAuthConfig, OAuthProviderInfo
@@ -418,15 +418,28 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         except CloudFileNotFoundError:
             pass
 
-    def _walk(self, path, oid, recursive):
+    def _walk(self, path: Optional[str], oid: str, recursive: bool, info: Union[OInfo, DirInfo]):
+        assert not info or oid == info.oid
         try:
+            if not info:
+                info = self.info_oid(oid) if oid else self.info_path(path)
+            if not info:
+                return
+            otype = info.otype
+            if not path and info.path:
+                path = info.path
+            if otype == FILE:
+                event = Event(otype=otype, oid=info.oid, path=path, hash=info.hash, exists=True, mtime=time.time())
+                yield event
+                return
+
             for ent in self.listdir(oid):
                 current_path = self.join(path, ent.name)
                 event = Event(otype=ent.otype, oid=ent.oid, path=current_path, hash=ent.hash, exists=True, mtime=time.time())
                 # log.debug("walk %s", event)
                 yield event
                 if ent.otype == DIRECTORY and recursive:
-                    yield from self._walk(current_path, ent.oid, recursive)
+                    yield from self._walk(current_path, ent.oid, recursive, ent)
         except CloudFileNotFoundError:
             # folders that disappear are not in the walk
             pass
@@ -436,14 +449,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         info = self.info_path(path)
         if not info:
             raise CloudFileNotFoundError(path)
-        yield from self._walk(path, info.oid, recursive)
+        yield from self._walk(path, info.oid, recursive, info)
 
     def walk_oid(self, oid, recursive=True):
         """List all files recursively, yielded as events"""
         info = self.info_oid(oid)
         if not info:
             raise CloudFileNotFoundError(oid)
-        yield from self._walk(info.path, info.oid, recursive)
+        yield from self._walk(info.path, info.oid, recursive, info)
 
 
 # HELPER
