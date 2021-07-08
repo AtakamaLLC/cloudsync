@@ -836,6 +836,10 @@ def test_walk(scoped_provider):
     info = provider.create(dest2, temp, None)
     oids[dest2] = info.oid
 
+    # test walking a file instead of a directory
+    for e in provider.walk(dest0):
+        assert e.oid == oids[dest0]
+
     got_event = False
     found = {}
     for e in provider.walk("/"):
@@ -880,6 +884,20 @@ def test_walk(scoped_provider):
     # check bad oid
     with pytest.raises(CloudFileNotFoundError):
         list(provider.walk_oid("bad-oid"))
+
+    # if you _walk a folder that has disappeared, then it should show up as empty
+    temp_folder = provider.temp_name("tempfolder")
+    temp_file = provider.join(temp_folder, provider.temp_name("tempfile"))
+    temp_folder_oid = provider.mkdir(temp_folder)
+    temp_folder_info = provider.info_oid(temp_folder_oid)
+    temp_file_info = provider.create(temp_file, temp, None)
+    assert provider.info_oid(temp_folder_oid)
+    for e in provider._walk(temp_folder, temp_folder_oid, True, temp_folder_info):
+        assert e.oid == temp_file_info.oid
+    provider.rmtree(temp_folder_oid)
+    assert not provider.info_oid(temp_folder_oid)
+    temp_folder_events = list(provider._walk(temp_folder, temp_folder_oid, True, temp_folder_info))
+    assert temp_folder_events == []
 
 
 def check_event_path(event: Event, provider, target_path):

@@ -419,15 +419,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             pass
 
     def _walk(self, path: Optional[str], oid: str, recursive: bool, info: Union[OInfo, DirInfo]):
-        assert not info or oid == info.oid
+        assert oid == info.oid
         try:
-            if not info:
-                info = self.info_oid(oid) if oid else self.info_path(path)
-            if not info:
-                return
             otype = info.otype
-            if not path and info.path:
-                path = info.path
+            path = path or info.path
             if otype == FILE:
                 event = Event(otype=otype, oid=info.oid, path=path, hash=info.hash, exists=True, mtime=time.time())
                 yield event
