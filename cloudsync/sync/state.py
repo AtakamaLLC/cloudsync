@@ -1329,45 +1329,45 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[i].size = None
             ent[i].mtime = None
 
-    def unconditionally_get_latest(self, ent, side):
-        if ent[side].oid is None:
-            if ent[side].exists not in (TRASHED, MISSING):
-                ent[side].exists = UNKNOWN
+    def unconditionally_get_latest(self, ent, i):
+        if ent[i].oid is None:
+            if ent[i].exists not in (TRASHED, MISSING):
+                ent[i].exists = UNKNOWN
             return
 
-        info: OInfo = self.providers[side].info_oid(ent[side].oid, use_cache=False)
+        info: OInfo = self.providers[i].info_oid(ent[i].oid, use_cache=False)
 
         if not info:
-            self.unconditionally_get_no_info(ent, side)
+            self.unconditionally_get_no_info(ent, i)
             return
 
-        if ent[side].hash != info.hash:
-            ent[side].hash = info.hash
-            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
-                ent[side].changed = time.time()
+        if ent[i].hash != info.hash:
+            ent[i].hash = info.hash
+            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
+                ent[i].changed = time.time()
 
         # if it's corrupt, then "exists" won't actually change to the new value
         # set the exists after setting the hash, since that can clear the corrupt flag
-        ent[side].exists = EXISTS
+        ent[i].exists = EXISTS
 
-        ent[side].otype = info.otype
+        ent[i].otype = info.otype
 
-        if ent[side].otype == FILE:
-            if ent[side].hash is None:
-                ent[side].hash = self.providers[side].hash_oid(ent[side].oid)
+        if ent[i].otype == FILE:
+            if ent[i].hash is None:
+                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
 
-            if ent[side].exists == EXISTS:
-                if ent[side].hash is None:
-                    log.warning("Cannot sync %s, since hash is None", ent[side])
+            if ent[i].exists == EXISTS:
+                if ent[i].hash is None:
+                    log.warning("Cannot sync %s, since hash is None", ent[i])
 
-        new_path = self.providers[side].normalize_path_separators(info.path)
-        if ent[side].path != new_path:
-            ent[side].path = new_path
-            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
-                ent[side].changed = time.time()
+        new_path = self.providers[i].normalize_path_separators(info.path)
+        if ent[i].path != new_path:
+            ent[i].path = new_path
+            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
+                ent[i].changed = time.time()
 
-        ent[side].size = info.size
-        ent[side].mtime = info.mtime
+        ent[i].size = info.size
+        ent[i].mtime = info.mtime
 
     def get_state_lookup(self, side: int) -> 'SyncStateLookup':
         return SyncStateLookup(self, side)
