@@ -367,7 +367,7 @@ class SyncManager(Runnable):
         sync.get_latest()
         return False
 
-    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches
+    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches, too-many-statements
         """
         Called on each changed entry.
         """
@@ -1000,9 +1000,6 @@ class SyncManager(Runnable):
             log.info("RESOLVED CONFLICT: %s side: %s", side_states, defer)
 
     def delete_synced(self, sync, changed, synced, ignore_reason=IgnoreReason.DISCARDED):
-        if sync[changed].is_corrupt:
-            log.info("Skipping deletion of corrupt file %s", sync[changed].path)
-            return FINISHED
         log.debug("try sync deleted %s", sync[changed].path)
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
@@ -1221,16 +1218,16 @@ class SyncManager(Runnable):
             try:
                 if not self.download_changed(changed, sync):
                     return PUNT
-
-                if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING, CORRUPT_GONE):
-                    if self.upload_synced(changed, sync):
-                        return FINISHED
-                    return PUNT
-
-                return self.create_synced(changed, sync, translated_path)
-            except ex.CloudCorruptError as e:
+            except ex.CloudCorruptError:
                 log.debug("Handling corrupt download in handle_path_change_or_creation")
                 return self.handle_corrupt_download(changed, sync)
+
+            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING, CORRUPT_GONE):
+                if self.upload_synced(changed, sync):
+                    return FINISHED
+                return PUNT
+
+            return self.create_synced(changed, sync, translated_path)
 
         if not sync[changed].is_corrupt:
             return self.handle_rename(sync, changed, synced, translated_path)
@@ -1576,7 +1573,7 @@ class SyncManager(Runnable):
                 return PUNT
             if not self.upload_synced(changed, sync):
                 return PUNT
-        except ex.CloudCorruptError as e:
+        except ex.CloudCorruptError:
             log.debug("Handling corrupt download in handle hash_diff")
             return self.handle_corrupt_download(changed, sync)
 

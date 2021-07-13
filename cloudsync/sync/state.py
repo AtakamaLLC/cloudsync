@@ -423,6 +423,7 @@ class SyncEntry:
                 return not self[other_side(side)].oid or self[other_side(side)].exists in (TRASHED, MISSING)
             else:
                 return self[other_side(side)].is_corrupt
+        return False
 
     def is_rename(self, changed):
         return self[changed].sync_path and self[changed].path and self.paths_differ(changed)
