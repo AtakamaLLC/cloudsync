@@ -51,3 +51,7 @@ class CloudNamespaceError(CloudException):            # 'namespaces are not supp
 
 class CloudTooManyRetriesError(CloudException):       # giving up on an operation after N unsucessful attempts
     pass
+
+
+class CloudCorruptError(CloudException):              # identifies a file that is not readable when downloaded
+    pass
