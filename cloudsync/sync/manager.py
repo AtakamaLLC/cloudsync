@@ -1571,11 +1571,12 @@ class SyncManager(Runnable):
         try:
             if not self.download_changed(changed, sync):
                 return PUNT
-            if not self.upload_synced(changed, sync):
-                return PUNT
         except ex.CloudCorruptError:
             log.debug("Handling corrupt download in handle hash_diff")
             return self.handle_corrupt_download(changed, sync)
+
+        if not self.upload_synced(changed, sync):
+            return PUNT
 
         return FINISHED
 
