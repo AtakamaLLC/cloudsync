@@ -418,8 +418,11 @@ class SyncEntry:
         return self[other_side(side)].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
 
     def is_creation(self, side):
-        return (not self[other_side(side)].oid or self[other_side(side)].exists in (TRASHED, MISSING, CORRUPT_GONE, CORRUPT_EXISTS)) \
-               and self[side].path and self[side].exists == EXISTS and self[side].needs_sync()
+        if self[side].path and self[side].exists == EXISTS:
+            if self[side].needs_sync():
+                return not self[other_side(side)].oid or self[other_side(side)].exists in (TRASHED, MISSING)
+            else:
+                return self[other_side(side)].is_corrupt
 
     def is_rename(self, changed):
         return self[changed].sync_path and self[changed].path and self.paths_differ(changed)
