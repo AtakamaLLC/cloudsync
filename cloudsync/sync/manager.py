@@ -25,7 +25,7 @@ from cloudsync.utils import debug_sig
 from cloudsync.notification import SourceEnum, Notification, NotificationType
 from cloudsync.types import LOCAL, REMOTE
 from cloudsync import Event
-from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN
+from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN, OTHER_SIDE
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
@@ -39,12 +39,13 @@ PUNT = 0
 REQUEUE = -1
 
 
-def other_side(index):
+def other_side(index):  # pragma: no cover
+    # This method is deprecated, in favor of the OTHER_SIDE tuple
     return 1-index
 
 
 @strict                         # pylint: disable=too-many-instance-attributes
-class ResolveFile():
+class ResolveFile:
     """
     File-like handed to caller when conflicts need resolving.
 
@@ -274,7 +275,7 @@ class SyncManager(Runnable):
                     # we check 2 things..
                     # if the file translates and the file has hash changes (create/upload needed)
                     # metadata sync changes aren't relevant for visual display
-                    translated_path = self.translate(other_side(i), e[i].path)
+                    translated_path = self.translate(OTHER_SIDE[i], e[i].path)
                     if translated_path:
                         if e[i].sync_hash != e[i].hash:
                             count += 1
@@ -321,7 +322,7 @@ class SyncManager(Runnable):
         if sync.is_discarded:
             for i in (LOCAL, REMOTE):
                 changed = i
-                synced = other_side(i)
+                synced = OTHER_SIDE[i]
                 se = sync[changed]
                 if not se.changed or se.sync_path or not se.oid or sync.is_conflicted:
                     continue
@@ -400,14 +401,14 @@ class SyncManager(Runnable):
 
             # if the other side changed hash, handle it first
             if sync[side].hash == sync[side].sync_hash:
-                other = other_side(side)
+                other = OTHER_SIDE[side]
                 if sync[other].changed and sync[other].hash != sync[other].sync_hash:
                     continue
 
             if self.path_conflict(sync):
                 my_name = sync[side].path
-                their_name = sync[other_side(side)].path
-                my_name_there = self.translate(other_side(side), my_name) or ""
+                their_name = sync[OTHER_SIDE[side]].path
+                my_name_there = self.translate(OTHER_SIDE[side], my_name) or ""
                 their_name_here = self.translate(side, their_name) or ""
 
                 if my_name_there and their_name_here:
@@ -417,7 +418,7 @@ class SyncManager(Runnable):
                     self.state.split(sync)
 
             try:
-                response = self.embrace_change(sync, side, other_side(side))
+                response = self.embrace_change(sync, side, OTHER_SIDE[side])
             except ex.CloudTooManyRetriesError:
                 response = FINISHED
                 log.exception("too many retries - marked finished %s side:%s", sync, side)
@@ -576,7 +577,7 @@ class SyncManager(Runnable):
         """
         Called when it seems a folder has been made.
         """
-        synced = other_side(changed)
+        synced = OTHER_SIDE[changed]
         # see if there are other entries for the same path, but other ids
         ents = list(self.state.lookup_path(changed, sync[changed].path))
         ents = [ent for ent in ents if ent != sync]
@@ -620,7 +621,7 @@ class SyncManager(Runnable):
     def upload_synced(self, changed, sync):
         assert sync[changed].temp_file
 
-        synced = other_side(changed)
+        synced = OTHER_SIDE[changed]
         try:
             info = self.providers[synced].upload(
                 sync[synced].oid, open(sync[changed].temp_file, "rb"))
@@ -667,7 +668,7 @@ class SyncManager(Runnable):
             return True
 
     def _create_synced(self, changed, sync, translated_path):
-        synced = other_side(changed)
+        synced = OTHER_SIDE[changed]
         log.debug("create on %s as path %s",
                   self.providers[synced].name, translated_path)
         try:
@@ -719,7 +720,7 @@ class SyncManager(Runnable):
             exists=event.exists, prior_oid=event.prior_oid)
 
     def create_synced(self, changed, sync, translated_path):  # pylint: disable=too-many-branches, too-many-statements
-        synced = other_side(changed)
+        synced = OTHER_SIDE[changed]
         try:
             self._create_synced(changed, sync, translated_path)
             return FINISHED
@@ -966,7 +967,7 @@ class SyncManager(Runnable):
 
             if defer is not None:  # we are replacing one side, not both
                 sorted_states = sorted(side_states, key=lambda e: e.side)
-                replace_side = other_side(defer)
+                replace_side = OTHER_SIDE[defer]
                 replace_ent = self.state.lookup_oid(replace_side, sorted_states[replace_side].oid)
                 defer_ent = self.state.lookup_oid(defer, sorted_states[defer].oid)
                 if keep:

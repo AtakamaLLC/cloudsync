@@ -32,9 +32,10 @@ if TYPE_CHECKING:
     from cloudsync import Provider
 
 log = logging.getLogger(__name__)
+OTHER_SIDE = (1, 0)
 
 __all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage',
-           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'other_side']
+           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'OTHER_SIDE']
 # safe ternary, don't allow traditional comparisons
 
 
@@ -183,7 +184,8 @@ class SideState:
                 self.temp_file = None
 
 
-def other_side(index):
+def other_side(index):  # pragma: no cover
+    # This method is deprecated, in favor of the OTHER_SIDE tuple
     return 1-index
 
 
@@ -393,10 +395,10 @@ class SyncEntry:
         return self[changed].sync_path and self.paths_differ(changed)
 
     def is_deletion(self, side):
-        return self[other_side(side)].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
+        return self[OTHER_SIDE[side]].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
 
     def is_creation(self, side):
-        return (not self[other_side(side)].oid or self[other_side(side)].exists in (TRASHED, MISSING)) \
+        return (not self[OTHER_SIDE[side]].oid or self[OTHER_SIDE[side]].exists in (TRASHED, MISSING)) \
                and self[side].path and self[side].exists == EXISTS and self[side].needs_sync()
 
     def is_rename(self, changed):
@@ -730,7 +732,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[REMOTE]._changed = False
                 self._changeset_storage.discard(ent)
         elif key == "changed":
-            if (val and ent[side].oid) or (ent[other_side(side)].changed and ent[other_side(side)].oid):
+            if (val and ent[side].oid) or (ent[OTHER_SIDE[side]].changed and ent[OTHER_SIDE[side]].oid):
                 self._changeset_storage.add(ent)
             else:
                 self._changeset_storage.discard(ent)
@@ -848,11 +850,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if oid is not None:
             # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
-            if ent[side].changed or ent[other_side(side)].changed:
+            if ent[side].changed or ent[OTHER_SIDE[side]].changed:
                 self._changeset_storage.add(ent)
         else:
             # ent without oid doesn't go in changeset
-            if ent[side].changed and not ent[other_side(side)].changed:
+            if ent[side].changed and not ent[OTHER_SIDE[side]].changed:
                 self._changeset_storage.discard(ent)
 
     def lookup_creation(self, content_hash, side):

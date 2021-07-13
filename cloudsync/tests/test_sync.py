@@ -18,7 +18,7 @@ from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNot
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, MISSING, SideState, other_side
+from cloudsync.sync.state import TRASHED, MISSING, SideState, OTHER_SIDE
 
 log = logging.getLogger(__name__)
 
@@ -333,7 +333,7 @@ def test_create_before_delete(sync, delete_side):
     l, r = sync.providers
     delete, create = (l, r) if delete_side == LOCAL else (r, l)
     delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
-    create_side = other_side(delete_side)
+    create_side = OTHER_SIDE[delete_side]
     create_path = create.join(create_parent, "hello")
     create_path2 = create.join(create_parent, "goodbye")
     delete_path = delete.join(delete_parent, "hello")
@@ -379,7 +379,7 @@ def test_delete_plus_unchanged_marked_changed(sync, delete_side):
     l, r = sync.providers
     delete, create = (l, r) if delete_side == LOCAL else (r, l)
     delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
-    create_side = other_side(delete_side)
+    create_side = OTHER_SIDE[delete_side]
     create_path = create.join(create_parent, "goodbye")
     delete_path = delete.join(delete_parent, "goodbye")
 
