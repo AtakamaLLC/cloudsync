@@ -759,6 +759,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 self._changeset_storage.add(ent)
             else:
                 self._changeset_storage.discard(ent)
+                if ent[other_side(side)].changed and not ent[other_side(side)].oid:
+                    ent[other_side(side)].changed = 0  # otherwise there is a change that is not in the changeset
         elif key == "priority":
             if val > ent.priority and val > 0:
                 # move to later on priority drop below zero

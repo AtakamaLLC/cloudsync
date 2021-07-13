@@ -1256,7 +1256,7 @@ class SyncManager(Runnable):
 
         # cause the other side to sync down over the corrupt file, if it exists
         sync[synced].mark_changed()
-        return PUNT
+        return FINISHED
 
     def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
         # handle rename
