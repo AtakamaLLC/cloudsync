@@ -189,6 +189,13 @@ class ProviderTestMixin(ProviderBase):
             if self.__filter_root(e) or not e.exists:
                 yield self.__strip_root(e)
 
+    def resync(self, path, recursive=True):
+        path = self.__add_root(path)
+        log.debug("TEST RESYNC %s", path)
+        for e in self.prov.resync(path, recursive=recursive):
+            if self.__filter_root(e):
+                yield self.__strip_root(e)
+
     def walk(self, path, recursive=True):
         path = self.__add_root(path)
         log.debug("TEST WALK %s", path)
@@ -837,14 +844,15 @@ def test_walk(scoped_provider):
     oids[dest2] = info.oid
 
     # test walking a file instead of a directory
-    for e in provider.walk(dest0):
+    for e in provider.resync(dest0):
         assert e.oid == oids[dest0]
 
-    got_event = False
-    found = {}
-    for e in provider.walk("/"):
+    for e in provider.resync_oid(oids[dest0]):
+        assert e.oid == oids[dest0]
+
+    def check_e(e):
         if e.otype == cloudsync.DIRECTORY:
-            continue
+            return False
         log.debug("WALK %s", e)
         path = e.path
         if path is None:
@@ -853,12 +861,27 @@ def test_walk(scoped_provider):
         found[path] = True
         assert e.mtime
         assert e.exists
-        got_event = True
+        return True
 
+    got_event = False
+    found = {}
+    for e in provider.walk("/"):
+        if check_e(e):
+            got_event = True
     for x in [dest0, dest1, dest2]:
         assert found.get(x, False) is True
         log.debug("found %s", x)
+    assert got_event
 
+    # now check resync
+    got_event = False
+    found = {}
+    for e in provider.resync("/"):
+        if check_e(e):
+            got_event = True
+    for x in [dest0, dest1, dest2]:
+        assert found.get(x, False) is True
+        log.debug("found %s", x)
     assert got_event
 
     # check non-rec
@@ -884,6 +907,10 @@ def test_walk(scoped_provider):
     # check bad oid
     with pytest.raises(CloudFileNotFoundError):
         list(provider.walk_oid("bad-oid"))
+    with pytest.raises(CloudFileNotFoundError):
+        list(provider.resync_oid("bad-oid"))
+    with pytest.raises(CloudFileNotFoundError):
+        list(provider.resync("bad-path"))
 
     # if you _walk a folder that has disappeared, then it should show up as empty
     temp_folder = provider.temp_name("tempfolder")
