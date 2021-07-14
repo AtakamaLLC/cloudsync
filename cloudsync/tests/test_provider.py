@@ -25,7 +25,7 @@ import threading
 import time
 import copy
 
-from typing import Optional, Generator, TYPE_CHECKING, List, cast
+from typing import Optional, Generator, TYPE_CHECKING, List, cast, Dict
 from unittest.mock import patch
 
 import requests
@@ -864,7 +864,7 @@ def test_walk(scoped_provider):
         return True
 
     got_event = False
-    found = {}
+    found: Dict[str, bool] = {}
     for e in provider.walk("/"):
         if check_e(e):
             got_event = True
