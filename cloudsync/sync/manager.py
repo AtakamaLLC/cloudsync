@@ -1569,12 +1569,13 @@ class SyncManager(Runnable):
         assert sync[synced].oid
 
         try:
-            if not self.download_changed(changed, sync):
-                return PUNT
+            dc_result = self.download_changed(changed, sync)
         except ex.CloudCorruptError:
             log.debug("Handling corrupt download in handle hash_diff")
             return self.handle_corrupt_download(changed, sync)
 
+        if not dc_result:
+            return PUNT
         if not self.upload_synced(changed, sync):
             return PUNT
 
