@@ -919,11 +919,11 @@ def test_walk(scoped_provider):
     temp_folder_info = provider.info_oid(temp_folder_oid)
     temp_file_info = provider.create(temp_file, temp, None)
     assert provider.info_oid(temp_folder_oid)
-    for e in provider._walk(temp_folder, temp_folder_oid, True, temp_folder_info):
+    for e in provider._walk(temp_folder, temp_folder_oid, True):
         assert e.oid == temp_file_info.oid
     provider.rmtree(temp_folder_oid)
     assert not provider.info_oid(temp_folder_oid)
-    temp_folder_events = list(provider._walk(temp_folder, temp_folder_oid, True, temp_folder_info))
+    temp_folder_events = list(provider._walk(temp_folder, temp_folder_oid, True))
     assert temp_folder_events == []
 
 

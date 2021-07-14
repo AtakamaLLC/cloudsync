@@ -418,7 +418,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         except CloudFileNotFoundError:
             pass
 
-    def _walk(self, path: Optional[str], oid: str, recursive: bool, info: Union[OInfo, DirInfo]):
+    def _walk(self, path: Optional[str], oid: str, recursive: bool):
         try:
             for ent in self.listdir(oid):
                 current_path = self.join(path, ent.name)
@@ -426,7 +426,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 # log.debug("walk %s", event)
                 yield event
                 if ent.otype == DIRECTORY and recursive:
-                    yield from self._walk(current_path, ent.oid, recursive, ent)
+                    yield from self._walk(current_path, ent.oid, recursive)
         except CloudFileNotFoundError:
             # folders that disappear are not in the walk
             pass
@@ -436,14 +436,14 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         info = self.info_path(path)
         if not info:
             raise CloudFileNotFoundError(path)
-        yield from self._walk(path, info.oid, recursive, info)
+        yield from self._walk(path, info.oid, recursive)
 
     def walk_oid(self, oid, recursive=True):
         """List all files recursively, yielded as events"""
         info = self.info_oid(oid)
         if not info:
             raise CloudFileNotFoundError(oid)
-        yield from self._walk(info.path, info.oid, recursive, info)
+        yield from self._walk(info.path, info.oid, recursive)
 
     def _resync(self, path: Optional[str], oid: str, recursive: bool, info: Union[OInfo, DirInfo]):
         assert oid == info.oid
@@ -453,7 +453,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             event = Event(otype=otype, oid=info.oid, path=path, hash=info.hash, exists=True, mtime=time.time())
             yield event
             return
-        yield from self._walk(path, oid, recursive, info)
+        yield from self._walk(path, oid, recursive)
 
     def resync(self, path, recursive=True):
         """Same as walk, but also supports "walking" a file as well as walking folders"""
