@@ -1282,64 +1282,64 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return defer_ent, defer, replace_ent, replace
 
-    def unconditionally_get_no_info(self, ent, i):
-        if ent[i].exists == UNKNOWN:
-            if not self.providers[i].oid_is_path:
+    def unconditionally_get_no_info(self, ent, side):
+        if ent[side].exists == UNKNOWN:
+            if not self.providers[side].oid_is_path:
                 # missing oid from oid provider == trashed
-                ent[i].exists = TRASHED
+                ent[side].exists = TRASHED
 
-        if ent[i].exists == LIKELY_TRASHED:
-            if self.providers[i].oid_is_path:
+        if ent[side].exists == LIKELY_TRASHED:
+            if self.providers[side].oid_is_path:
                 # note: oid_is_path providers are not supposed to do this
                 # it's possible we are wrong, and there's a trashed event arriving soon
                 log.info("possible out of order events received for trashed/exists: %s", ent)
-            ent[i].exists = TRASHED
+            ent[side].exists = TRASHED
 
-        if ent[i].exists != TRASHED:
+        if ent[side].exists != TRASHED:
             # we haven't gotten a trashed event yet
-            ent[i].exists = MISSING if self.providers[i].oid_is_path else TRASHED
+            ent[side].exists = MISSING if self.providers[side].oid_is_path else TRASHED
 
-        if ent[i].exists == TRASHED:
-            ent[i].size = None
-            ent[i].mtime = None
+        if ent[side].exists == TRASHED:
+            ent[side].size = None
+            ent[side].mtime = None
 
-    def unconditionally_get_latest(self, ent, i):
-        if ent[i].oid is None:
-            if ent[i].exists not in (TRASHED, MISSING):
-                ent[i].exists = UNKNOWN
+    def unconditionally_get_latest(self, ent, side):
+        if ent[side].oid is None:
+            if ent[side].exists not in (TRASHED, MISSING):
+                ent[side].exists = UNKNOWN
             return
 
-        info: OInfo = self.providers[i].info_oid(ent[i].oid, use_cache=False)
+        info: OInfo = self.providers[side].info_oid(ent[side].oid, use_cache=False)
 
         if not info:
-            self.unconditionally_get_no_info(ent, i)
+            self.unconditionally_get_no_info(ent, side)
             return
 
-        ent[i].exists = EXISTS
+        ent[side].exists = EXISTS
 
-        if ent[i].hash != info.hash:
-            ent[i].hash = info.hash
-            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
-                ent[i].changed = time.time()
+        if ent[side].hash != info.hash:
+            ent[side].hash = info.hash
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
+                ent[side].changed = time.time()
 
-        ent[i].otype = info.otype
+        ent[side].otype = info.otype
 
-        if ent[i].otype == FILE:
-            if ent[i].hash is None:
-                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+        if ent[side].otype == FILE:
+            if ent[side].hash is None:
+                ent[side].hash = self.providers[side].hash_oid(ent[side].oid)
 
-            if ent[i].exists == EXISTS:
-                if ent[i].hash is None:
-                    log.warning("Cannot sync %s, since hash is None", ent[i])
+            if ent[side].exists == EXISTS:
+                if ent[side].hash is None:
+                    log.warning("Cannot sync %s, since hash is None", ent[side])
 
-        new_path = self.providers[i].normalize_path_separators(info.path)
-        if ent[i].path != new_path:
-            ent[i].path = new_path
-            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
-                ent[i].changed = time.time()
+        new_path = self.providers[side].normalize_path_separators(info.path)
+        if ent[side].path != new_path:
+            ent[side].path = new_path
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
+                ent[side].changed = time.time()
 
-        ent[i].size = info.size
-        ent[i].mtime = info.mtime
+        ent[side].size = info.size
+        ent[side].mtime = info.mtime
 
     def get_state_lookup(self, side: int) -> 'SyncStateLookup':
         return SyncStateLookup(self, side)
