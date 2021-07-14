@@ -352,8 +352,6 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload):
             sync.run_until(until=lambda: remote.hash_oid(new_oid) == old_hash, timeout=3)
             assert remote.hash_oid(new_oid) == old_hash  # old_hash is the pre-corrupt good file
 
-        # sync.run_until(until=lambda: not ent[REMOTE].changed and not ent[LOCAL].changed, timeout=3)
-
 
 def test_sync_hash(sync):
     remote_parent = "/remote"
