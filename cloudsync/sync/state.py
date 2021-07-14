@@ -47,8 +47,7 @@ class Exists(Enum):
     TRASHED = "trashed"
     MISSING = "missing"
     LIKELY_TRASHED = "likely-trashed"           # this oid was trashed, but then another event came in saying it wasn't
-    CORRUPT_EXISTS = "corrupt-exists"
-    CORRUPT_GONE = "corrupt-gone"
+    CORRUPT = "corrupt"
 
     def __bool__(self):
         """
@@ -62,8 +61,7 @@ EXISTS = Exists.EXISTS
 TRASHED = Exists.TRASHED
 LIKELY_TRASHED = Exists.LIKELY_TRASHED
 MISSING = Exists.MISSING
-CORRUPT_EXISTS = Exists.CORRUPT_EXISTS
-CORRUPT_GONE = Exists.CORRUPT_GONE
+CORRUPT = Exists.CORRUPT
 
 
 # state of a single object
@@ -93,6 +91,7 @@ class SideState:
         self.temp_file: str
         self._size: Optional[int] = None
         self._mtime: Optional[float] = None
+        self._saved_exists: Optional[Exists] = None
 
     def _set_mtime(self, value):
         if isinstance(value, datetime.datetime):
@@ -111,16 +110,13 @@ class SideState:
             object.__setattr__(self, k, v)
             return
 
-        if k == "exists" and self.is_corrupt:
-            if v in (EXISTS, CORRUPT_EXISTS, True):
-                v = CORRUPT_EXISTS
-                if self.exists == v:
-                    return
-            if v in (TRASHED, MISSING, LIKELY_TRASHED, CORRUPT_GONE, False):
-                v = CORRUPT_GONE
-                if self.exists == v:
-                    return
-            if v == UNKNOWN:
+        if k == "exists":
+            if v == CORRUPT and not self.is_corrupt:
+                self._saved_exists = self.exists
+                self._exists = v
+                return
+            if v != CORRUPT and self.is_corrupt:
+                self._saved_exists = self._translate_exists(v)
                 return
 
         self._parent.updated(self._side, k, v)
@@ -131,10 +127,11 @@ class SideState:
             self._set_mtime(v)
         else:
             if k == "hash" and self._hash != v and self.is_corrupt:
-                self._set_exists(EXISTS if self.exists == CORRUPT_EXISTS else MISSING)
+                self._set_exists(self._saved_exists)
             object.__setattr__(self, "_" + k, v)
 
-    def _set_exists(self, val: Union[bool, Exists]):
+    @staticmethod
+    def _translate_exists(val):
         if val is False:
             xval = TRASHED
         elif val is True:
@@ -148,7 +145,10 @@ class SideState:
 
         if type(xval) != Exists:
             raise ValueError("use enum for exists")
+        return xval
 
+    def _set_exists(self, val: Union[bool, Exists]):
+        xval = self._translate_exists(val)
         self._exists = xval
         self._parent.updated(self._side, "exists", xval)
 
@@ -202,7 +202,55 @@ class SideState:
 
     @property
     def is_corrupt(self):
-        return self.exists in (CORRUPT_EXISTS, CORRUPT_GONE)
+        return self.exists == CORRUPT
+
+    @property
+    def corrupt_exists(self):
+        return self.is_corrupt and self._saved_exists == EXISTS
+
+    @property
+    def corrupt_gone(self):
+        return self.is_corrupt and self._saved_exists in (TRASHED, MISSING, LIKELY_TRASHED)
+
+    def serialize(self) -> dict:
+        ret = dict()
+        ret['otype'] = self.otype.value
+        ret['side'] = self.side
+        ret['hash'] = self.hash
+        ret['changed'] = self.changed
+        ret['sync_hash'] = self.sync_hash
+        ret['path'] = self.path
+        ret['sync_path'] = self.sync_path
+        ret['oid'] = self.oid
+        ret['exists'] = self.exists.value
+        ret['temp_file'] = self.temp_file
+        ret['size'] = self.size
+        ret['mtime'] = self.mtime
+        ret['_saved_exists'] = self._saved_exists
+        # storage_id does not get serialized, it always comes WITH a serialization when deserializing
+        return ret
+
+    def deserialize(self, serialization: dict):
+        self.otype = OType(serialization['otype'])
+        self.side = serialization['side']
+        self.hash = serialization['hash']
+        self.changed = serialization['changed']
+        self.sync_hash = serialization['sync_hash']
+        self.sync_path = serialization['sync_path']
+        self.oid = serialization['oid']
+        self.path = serialization['path']
+        # back compat: 10/21/19
+        if serialization['exists'] is None:
+            self.exists = UNKNOWN
+        if serialization['exists'] is True:
+            self.exists = EXISTS
+        if serialization['exists'] is False:
+            self.exists = TRASHED
+        self.exists = serialization['exists']
+        self.temp_file = serialization['temp_file']
+        self.size = serialization.get('size')
+        self.mtime = serialization.get('mtime')
+        self._saved_exists = serialization.get('_saved_exists')
 
 
 def other_side(index):
@@ -298,26 +346,9 @@ class SyncEntry:
 
     def serialize(self) -> bytes:
         """converts SyncEntry into a json str"""
-        def side_state_to_dict(side_state: SideState) -> dict:
-            ret = dict()
-            ret['otype'] = side_state.otype.value
-            ret['side'] = side_state.side
-            ret['hash'] = side_state.hash
-            ret['changed'] = side_state.changed
-            ret['sync_hash'] = side_state.sync_hash
-            ret['path'] = side_state.path
-            ret['sync_path'] = side_state.sync_path
-            ret['oid'] = side_state.oid
-            ret['exists'] = side_state.exists.value
-            ret['temp_file'] = side_state.temp_file
-            ret['size'] = side_state.size
-            ret['mtime'] = side_state.mtime
-            # storage_id does not get serialized, it always comes WITH a serialization when deserializing
-            return ret
-
         ser: Dict[str, Any] = dict()
-        ser['side0'] = side_state_to_dict(self.__states[0])
-        ser['side1'] = side_state_to_dict(self.__states[1])
+        ser['side0'] = self.__states[0].serialize()
+        ser['side1'] = self.__states[1].serialize()
         ser['ignored'] = self._ignored.value
         ser['priority'] = self._priority
         try:
@@ -328,34 +359,10 @@ class SyncEntry:
 
     def deserialize(self, storage_init: Tuple[Any, bytes]):
         """loads the values in the serialization dict into self"""
-        def dict_to_side_state(side, side_dict: dict) -> SideState:
-            otype = OType(side_dict['otype'])
-            side_state = SideState(self, side, otype)
-            side_state.side = side_dict['side']
-            side_state.hash = side_dict['hash']
-            side_state.changed = side_dict['changed']
-            side_state.sync_hash = side_dict['sync_hash']
-            side_state.sync_path = side_dict['sync_path']
-            side_state.oid = side_dict['oid']
-            side_state.path = side_dict['path']
-            # back compat: 10/21/19
-            if side_dict['exists'] is None:
-                side_state.exists = UNKNOWN
-            if side_dict['exists'] is True:
-                side_state.exists = EXISTS
-            if side_dict['exists'] is False:
-                side_state.exists = TRASHED
-            side_state.exists = side_dict['exists']
-            side_state.temp_file = side_dict['temp_file']
-            side_state.size = side_dict.get('size')
-            side_state.mtime = side_dict.get('mtime')
-
-            return side_state
-
         self.storage_id = storage_init[0]
         ser: dict = msgpack.loads(storage_init[1], use_list=False, raw=False)
-        self.__states = [dict_to_side_state(0, ser['side0']),
-                         dict_to_side_state(1, ser['side1'])]
+        self.__states[0].deserialize(ser['side0'])
+        self.__states[1].deserialize(ser['side1'])
         reason_string = ser.get('ignored', "")
         if reason_string:
             if reason_string == "trashed":

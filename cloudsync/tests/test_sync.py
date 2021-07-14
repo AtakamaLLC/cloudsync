@@ -18,7 +18,7 @@ from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNot
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, MISSING, CORRUPT_GONE, EXISTS, SideState, other_side
+from cloudsync.sync.state import TRASHED, MISSING, CORRUPT, EXISTS, SideState, other_side
 from cloudsync import exceptions as ex
 
 log = logging.getLogger(__name__)
@@ -321,7 +321,8 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload):
             assert ent[REMOTE].path == ent[REMOTE].sync_path
             sync.create_event(REMOTE, FILE, new_oid, exists=TRASHED)
             assert ent[REMOTE].changed
-            assert ent[REMOTE].exists == CORRUPT_GONE  # existence can't change with corrupt files
+            assert ent[REMOTE].exists == CORRUPT  # existence can't change with corrupt files
+            assert ent[REMOTE]._saved_exists == TRASHED
             sync.run_until(until=lambda: not ent[REMOTE].changed and not ent[LOCAL].changed, timeout=3)
 
             # show that remote sync entry isn't marked as changed anymore, but the rename it indicated

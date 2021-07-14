@@ -25,7 +25,7 @@ from cloudsync.utils import debug_sig
 from cloudsync.notification import SourceEnum, Notification, NotificationType
 from cloudsync.types import LOCAL, REMOTE
 from cloudsync import Event
-from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN, CORRUPT_EXISTS, CORRUPT_GONE
+from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN, CORRUPT
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
@@ -1222,7 +1222,7 @@ class SyncManager(Runnable):
                 log.debug("Handling corrupt download in handle_path_change_or_creation")
                 return self.handle_corrupt_download(changed, sync)
 
-            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING, CORRUPT_GONE):
+            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING) and not sync[synced].corrupt_gone:
                 if self.upload_synced(changed, sync):
                     return FINISHED
                 return PUNT
@@ -1249,7 +1249,7 @@ class SyncManager(Runnable):
         synced = other_side(changed)
         sync[changed].sync_hash = sync[changed].hash
         sync[changed].sync_path = sync[changed].path
-        sync[changed].exists = CORRUPT_EXISTS if sync[changed].exists == EXISTS else CORRUPT_GONE
+        sync[changed].exists = CORRUPT
 
         # cause the other side to sync down over the corrupt file, if it exists
         sync[synced].mark_changed()
