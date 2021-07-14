@@ -323,6 +323,8 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload):
             assert ent[REMOTE].changed
             assert ent[REMOTE].exists == CORRUPT  # existence can't change with corrupt files
             assert ent[REMOTE]._saved_exists == TRASHED
+            assert ent[REMOTE].corrupt_gone
+            assert not ent[REMOTE].corrupt_exists
             sync.run_until(until=lambda: not ent[REMOTE].changed and not ent[LOCAL].changed, timeout=3)
 
             # show that remote sync entry isn't marked as changed anymore, but the rename it indicated
