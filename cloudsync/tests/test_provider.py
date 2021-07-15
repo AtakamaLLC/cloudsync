@@ -516,7 +516,8 @@ def provider_fixture(config_provider):
 
 @pytest.fixture(name="unwrapped_provider")
 def unwrapped_provider_fixture(request, provider_name, instances=1):
-    yield from config_provider_impl(request, provider_name, instances)
+    with confirm_long_poll_shutdown():
+        yield from config_provider_impl(request, provider_name, instances)
 
 
 @pytest.fixture(name="unconnected_provider")
@@ -2521,6 +2522,7 @@ def test_root_rename(unwrapped_provider):
     oinfo = provider.create(tfn1, BytesIO(b'hello'))
     oid = provider.rename(oinfo.oid, tfn2)
     provider.delete(oid)
+    provider.disconnect()
 
 
 def test_connect_saves_creds(unwrapped_provider):
@@ -2541,6 +2543,7 @@ def test_connect_saves_creds(unwrapped_provider):
             provider.connect(creds)
     provider.reconnect()
     assert provider.connected
+    provider.disconnect()
 
 
 small_fsize = 600 * 1024  # 600 KiB
