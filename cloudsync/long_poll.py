@@ -1,13 +1,13 @@
 import time
 import threading
 import logging
-from typing import Callable, Generator
+from typing import Callable, Generator, Dict
 import traceback
 from cloudsync.runnable import Runnable
 from cloudsync.event import Event
 
 log = logging.getLogger(__name__)
-LONG_POLLERS = {}
+LONG_POLLERS: Dict[int, str] = {}
 
 
 class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
