@@ -2,9 +2,9 @@ import time
 import threading
 import logging
 from typing import Callable, Generator
-from cloudsync.runnable import Runnable 
-from cloudsync.event import Event
 import traceback
+from cloudsync.runnable import Runnable
+from cloudsync.event import Event
 
 log = logging.getLogger(__name__)
 LONG_POLLERS = {}
