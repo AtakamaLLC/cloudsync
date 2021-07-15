@@ -5,6 +5,7 @@ dataclasses
 requests_oauthlib
 requests
 xxhash
+Deprecated
 
 # gdrive provider
 google-oauth
