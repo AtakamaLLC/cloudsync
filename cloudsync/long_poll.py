@@ -100,6 +100,9 @@ class LongPollManager(Runnable):
         self.unblock()
         super().stop(forever=forever, wait=wait)
         if self.runnable_thread_id and self.runnable_thread_id in LONG_POLLERS:
+            # technically, the long poller could still be running, because we're not checking if thread is_alive()
+            # but it's hard to interrupt a long poller while it's actually polling the server, and that can kill
+            # performance, so we'll trust that calling stop means it won't continue past the current iteration
             LONG_POLLERS.pop(self.runnable_thread_id)
 
     def start(self, *, daemon=True, **kwargs):
