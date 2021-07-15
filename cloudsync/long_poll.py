@@ -5,6 +5,7 @@ from typing import Callable, Generator
 from cloudsync.runnable import Runnable 
 from cloudsync.event import Event
 log = logging.getLogger(__name__)
+LONG_POLLERS = {}
 
 
 class LongPollManager(Runnable):
@@ -27,6 +28,7 @@ class LongPollManager(Runnable):
         self.last_set = time.monotonic()
         self.uses_cursor = uses_cursor
         self.got_events = threading.Event()
+        self.runnable_thread_id = None
         log.debug("EVSET: set got_events")
         self.got_events.set()
 
@@ -97,3 +99,11 @@ class LongPollManager(Runnable):
         # Don't wait for do() to finish, could wait for up to long_poll_timeout seconds
         self.unblock()
         super().stop(forever=forever, wait=wait)
+        if self.runnable_thread_id and self.runnable_thread_id in LONG_POLLERS:
+            LONG_POLLERS.pop(self.runnable_thread_id)
+
+    def start(self, *, daemon=True, **kwargs):
+        import traceback
+        super().start(daemon=daemon, **kwargs)
+        self.runnable_thread_id = self._thread_id
+        LONG_POLLERS[self.runnable_thread_id] = '\n'.join(traceback.format_stack())

@@ -14,11 +14,12 @@ Conforming providers should work well with the real-time sync engines.
 
 Under the LGPL, there is no obligation to publish your plugins.
 """
-
+import contextlib
 import os
 import errno
 import logging
 import io
+import unittest
 from io import BytesIO
 from os import SEEK_SET, SEEK_CUR, SEEK_END
 import threading
@@ -27,6 +28,7 @@ import copy
 
 from typing import Optional, Generator, TYPE_CHECKING, List, cast
 from unittest.mock import patch
+from cloudsync.long_poll import LONG_POLLERS
 
 import requests
 import msgpack
@@ -53,6 +55,7 @@ from cloudsync.provider import Namespace
 from cloudsync.tests.fixtures import Provider, MockProvider
 from cloudsync.runnable import time_helper
 from cloudsync.types import OInfo
+from types import GeneratorType
 
 
 # pylint: disable=missing-docstring
@@ -67,21 +70,46 @@ else:
     # but we can't actually derive from it or stuff will break
     ProviderBase = object
 
+EXPECTED_EXCEPTIONS = set()
+
+
+@contextlib.contextmanager
+def provider_raises(expected_exception):
+    """
+    Wrapper for pytest.raises that disables the retry code for provider methods. Use this for CloudTemporaryErrors
+    and CloudDisconnectedErrors, which are the ones that get retried. Other Exceptions, this method won't make a
+    difference.
+    """
+    assert issubclass(expected_exception, BaseException)
+    global EXPECTED_EXCEPTIONS
+    EXPECTED_EXCEPTIONS.add(expected_exception)
+    with pytest.raises(expected_exception):
+        yield None
+    EXPECTED_EXCEPTIONS.remove(expected_exception)
+
 
 def wrap_retry(func):                 # pylint: disable=too-few-public-methods
     count = 4
 
     def wrapped(prov, *args, **kwargs):
-        ex: CloudException = None
+        ex: Optional[CloudException] = None
         mult = 1.0
         for i in range(count):
             if i > 0:
                 log.warning("retry %s after %s", func.__name__, repr(ex))
             try:
-                return func(prov, *args, **kwargs)
+                retval = func(prov, *args, **kwargs)
+                assert not isinstance(retval, GeneratorType), "Don't use @wrap_retry with a generator method"
+                return retval
             except CloudTemporaryError as e:
+                if type(e) in EXPECTED_EXCEPTIONS:
+                    log.info("api won't retry: exception was expected %s: %s", func, repr(e))
+                    raise
                 ex = e
             except CloudDisconnectedError as e:
+                if type(e) in EXPECTED_EXCEPTIONS:
+                    log.info("api won't retry: exception was expected %s: %s", func, repr(e))
+                    raise
                 prov.reconnect()
                 ex = e
             time.sleep(mult * (prov._test_event_timeout / 5))
@@ -173,6 +201,9 @@ class ProviderTestMixin(ProviderBase):
                 try:
                     return func(*ar, **kw)
                 except CloudTemporaryError as e:
+                    if type(e) in EXPECTED_EXCEPTIONS:
+                        log.info("api won't retry: exception was expected %s %s %s: %s", func, ar, kw, repr(e))
+                        raise
                     log.info("api retry %s %s %s", func, ar, kw)
                     ex = e
         except TimeoutError as e:
@@ -266,20 +297,17 @@ class ProviderTestMixin(ProviderBase):
     def info_oid(self, oid: str, use_cache=True) -> Optional[OInfo]:
         return self.__strip_root(self.prov.info_oid(oid))
 
-    @wrap_retry
     def listdir(self, oid):
         for e in self.prov.listdir(oid):
             if self.__filter_root(e):
                 yield self.__strip_root(e)
 
-    @wrap_retry
     def listdir_path(self, path):
         path = self.__add_root(path)
         for e in self.prov.listdir_path(path):
             if self.__filter_root(e):
                 yield self.__strip_root(e)
 
-    @wrap_retry
     def listdir_oid(self, oid, path=None):
         path = self.__add_root(path)
         for e in self.prov.listdir_oid(oid, path):
@@ -368,6 +396,7 @@ class ProviderTestMixin(ProviderBase):
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
+        self.prov.disconnect()
 
     @wrap_retry
     def prime_events(self):
@@ -469,9 +498,17 @@ def two_config_providers(request, provider_name, instances=2):
     yield from config_provider_impl(request, provider_name, instances)
 
 
+@contextlib.contextmanager
+def confirm_long_poll_shutdown():
+    lp = LONG_POLLERS.copy()
+    yield
+    unittest.TestCase().assertDictEqual(lp, LONG_POLLERS, LONG_POLLERS)
+
+
 @pytest.fixture(name="provider")
 def provider_fixture(config_provider):
-    yield from mixin_provider(config_provider)
+    with confirm_long_poll_shutdown():
+        yield from mixin_provider(config_provider)
 
 
 # === function scoped, less efficient, good for connect/disconnect tests
@@ -483,28 +520,33 @@ def unwrapped_provider_fixture(request, provider_name, instances=1):
 
 @pytest.fixture(name="unconnected_provider")
 def provider_fixture_unconnected(config_provider):
-    yield from mixin_provider(config_provider, connect=False)
+    with confirm_long_poll_shutdown():
+        yield from mixin_provider(config_provider, connect=False)
 
 
 @pytest.fixture(name="scoped_provider")
 def scoped_provider_fixture(config_provider):
-    yield from mixin_provider(config_provider)
+    with confirm_long_poll_shutdown():
+        yield from mixin_provider(config_provider)
 
 
 @pytest.fixture(name="very_scoped_provider")
 def very_scoped_provider_fixture(request, provider_name):
-    yield from mixin_provider(config_provider_impl(request, provider_name, instances=1))
+    with confirm_long_poll_shutdown():
+        yield from mixin_provider(config_provider_impl(request, provider_name, instances=1))
 
 
 @pytest.fixture(name="two_scoped_providers")
 def two_scoped_provider_fixture(request, provider_name):
-    yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
+    with confirm_long_poll_shutdown():
+        yield from mixin_provider(config_provider_impl(request, provider_name, instances=2))
 
 
 # must be scoped because makes non-patched modification to provider
 @pytest.fixture(name="long_poll_provider")
 def scoped_provider_fixture_short_poll(config_provider):
-    yield from mixin_provider(config_provider, short_poll_only=False)
+    with confirm_long_poll_shutdown():
+        yield from mixin_provider(config_provider, short_poll_only=False)
 
 
 _registered = False
@@ -610,7 +652,7 @@ def test_set_root_path_creates_path(provider):
 
     # failure to create the root dir is a CloudRootMissingError
     with patch.object(provider.prov, "mkdirs", side_effect=Exception):
-        with pytest.raises(CloudRootMissingError):
+        with provider_raises(CloudRootMissingError):
             provider.set_root(root_path="/sync_root")
 
     # set_root creates it
@@ -1205,7 +1247,7 @@ def test_api_failure(scoped_provider):
 
     with patch.object(provider, "_api", side_effect=side_effect):
         with patch.object(provider, "api_retry", False):
-            with pytest.raises(CloudTemporaryError):
+            with provider_raises(CloudTemporaryError):
                 provider.exists_path("/notexists")
 
 
@@ -2459,8 +2501,8 @@ def test_bug_create(very_scoped_provider):
         # if the underlying api calls raise a temp error, then...
         raise CloudTemporaryError("cloud temp error")
 
-    with patch.object(provider, "_api", raises_tmp), patch.object(provider, "_test_event_timeout", .0001):
-        with pytest.raises(CloudTemporaryError):
+    with patch.object(provider, "_api", raises_tmp):
+        with provider_raises(CloudTemporaryError):
             provider.create("/bug_create", file_like)
 
     assert not provider.exists_path("/bug_create")
