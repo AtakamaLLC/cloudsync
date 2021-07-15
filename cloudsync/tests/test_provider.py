@@ -381,7 +381,7 @@ class ProviderTestMixin(ProviderBase):
         except Exception as e:
             log.error("error during cleanup %s", repr(e))
 
-    def test_cleanup(self, *, connected):
+    def test_cleanup(self, *, connected, disconnect=True):
         for p in self.__patches:
             p.stop()
 
@@ -396,7 +396,8 @@ class ProviderTestMixin(ProviderBase):
         info = self.prov.info_path(self.test_root)
         if info:
             self.__cleanup(info.oid)
-        self.prov.disconnect()
+        if disconnect:
+            self.prov.disconnect()
 
     @wrap_retry
     def prime_events(self):
@@ -2362,10 +2363,11 @@ def test_specific_test_root():
     # and i created it
     assert base.info_path(provider.test_root).otype == cloudsync.DIRECTORY 
 
-    provider.test_cleanup(connected=True)
+    provider.test_cleanup(connected=True, disconnect=False)
 
     # and i dont delete the test root
     assert list(base.listdir_path("/banana")) == []
+    base.disconnect()
 
 
 def test_provider_interface(unconnected_provider):
