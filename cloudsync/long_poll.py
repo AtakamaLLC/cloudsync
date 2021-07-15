@@ -4,11 +4,13 @@ import logging
 from typing import Callable, Generator
 from cloudsync.runnable import Runnable 
 from cloudsync.event import Event
+import traceback
+
 log = logging.getLogger(__name__)
 LONG_POLLERS = {}
 
 
-class LongPollManager(Runnable):
+class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
     """
     Class for helping providers with long poll support avoid potential threading issues
     arising from long running api requests.
@@ -106,7 +108,6 @@ class LongPollManager(Runnable):
             LONG_POLLERS.pop(self.runnable_thread_id)
 
     def start(self, *, daemon=True, **kwargs):
-        import traceback
         super().start(daemon=daemon, **kwargs)
         self.runnable_thread_id = self._thread_id
         LONG_POLLERS[self.runnable_thread_id] = '\n'.join(traceback.format_stack())
