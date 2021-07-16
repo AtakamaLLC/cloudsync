@@ -383,6 +383,7 @@ class SyncManager(Runnable):
         for side in ordered:
             if not sync[side].needs_sync():
                 if sync[side].changed and sync[other_side(side)].is_corrupt:
+                    # see comment on the SideState.is_corrupt method for more information on the corrupt state
                     log.info("sync entry doesn't need sync, but the other side is corrupt, so sync it anyway")
                 else:
                     if sync[side].changed:
@@ -1219,6 +1220,7 @@ class SyncManager(Runnable):
                 if not self.download_changed(changed, sync):
                     return PUNT
             except ex.CloudCorruptError:
+                # see comment on the SideState.is_corrupt method for more information on the corrupt state
                 log.debug("Handling corrupt download in handle_path_change_or_creation")
                 return self.handle_corrupt_download(changed, sync)
 
@@ -1571,6 +1573,7 @@ class SyncManager(Runnable):
         try:
             dc_result = self.download_changed(changed, sync)
         except ex.CloudCorruptError:
+            # see comment on the SideState.is_corrupt method for more information on the corrupt state
             log.debug("Handling corrupt download in handle hash_diff")
             return self.handle_corrupt_download(changed, sync)
 

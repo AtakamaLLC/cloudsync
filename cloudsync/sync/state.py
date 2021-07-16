@@ -112,6 +112,7 @@ class SideState:
 
         if k == "exists":
             if v == CORRUPT and not self.is_corrupt:
+                # see comment on the SideState.is_corrupt method for more information on the corrupt state
                 self._saved_exists = self.exists
                 self._exists = v
                 return
@@ -127,7 +128,7 @@ class SideState:
             self._set_mtime(v)
         else:
             if k == "hash" and self._hash != v and self.is_corrupt:
-                self._set_exists(self._saved_exists)
+                self.uncorrupt()
             object.__setattr__(self, "_" + k, v)
 
     @staticmethod
@@ -202,7 +203,22 @@ class SideState:
 
     @property
     def is_corrupt(self):
+        # A SideState is considered "corrupt" when a provider raises the CloudCorruptError from the download method.
+        # This can occur if a block is bad on disk, or any other reason why the file may be unreadable.
+        # If a file is corrupt, then the assumption is that we do not want to sync the corrupt file to the other side.
+        # Also, we assume that the corrupt version of the file may be deleted or renamed to move it out of the way,
+        #   and syncing these deletions or renames to the other side is unwanted, and should be ignored. When the file
+        #   is replaced with a new version (meaning a new hash is present on the corrupt side) then the assumption is
+        #   that this is the new, not corrupt, version, and should be synced. If the file is still corrupt, then the
+        #   download method will raise the CloudCorruptError again, and the file will go back to being corrupt.
+        # Additionally, since the file is corrupt, the known good file from the other side will be downloaded to
+        #   overwrite the known bad file, which should un-corrupt the file and leave it synced at an older version.
         return self.exists == CORRUPT
+
+    def uncorrupt(self):
+        if self.is_corrupt:
+            self._set_exists(self._saved_exists)
+            self._saved_exists = None
 
     @property
     def corrupt_exists(self):
