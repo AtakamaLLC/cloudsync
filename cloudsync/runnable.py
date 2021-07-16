@@ -129,7 +129,10 @@ class Runnable(ABC):
                 self.done()
 
             self.__thread = None
-            log.debug("stopping %s", self.service_name)
+            try:
+                log.debug("stopping %s", self.service_name)
+            except Exception:
+                pass  # may be after the logger has closed, because we don't always join() the runnable thread
 
     @property
     def started(self):
