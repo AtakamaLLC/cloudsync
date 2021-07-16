@@ -4,7 +4,7 @@ Generic 'runnable' abstract base class.
 All cloudsync services inherit from this, instead of implementing their own
 thread management.
 """
-
+import contextlib
 import time
 
 from abc import ABC, abstractmethod
@@ -181,12 +181,6 @@ class Runnable(ABC):
         self.__thread.name = self.service_name
         self.__thread.start()
 
-    @property
-    def _thread_id(self):
-        if self.__thread:
-            return self.__thread.ident
-        return None
-
     @abstractmethod
     def do(self):
         """
@@ -224,3 +218,17 @@ class Runnable(ABC):
             return True
         else:
             return False
+
+@contextlib.contextmanager
+def track_start_stop(cls):
+    import unittest
+    old_start = cls.start
+    old_stop = cls.stop
+    def new_start():
+        pass
+    def new_stop():
+        pass
+    with (unittest.mock.patch.object(cls, "start", side_effect=new_start),
+        unittest.mock.patch.object(cls, "stop", side_effect=new_stop)):
+        yield
+    # assert some stuff

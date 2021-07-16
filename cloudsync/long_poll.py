@@ -7,7 +7,6 @@ from cloudsync.runnable import Runnable
 from cloudsync.event import Event
 
 log = logging.getLogger(__name__)
-LONG_POLLERS: Dict[int, str] = {}
 
 
 class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
@@ -16,6 +15,7 @@ class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
     arising from long running api requests.
     """
     long_poll_timeout = 120.0
+    LONG_POLLERS: Dict[int, str] = {}
 
     def __init__(self, short_poll: Callable[[], Generator[Event, None, None]],
                  long_poll: Callable[[float], bool],
@@ -101,13 +101,12 @@ class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
         # Don't wait for do() to finish, could wait for up to long_poll_timeout seconds
         self.unblock()
         super().stop(forever=forever, wait=wait)
-        if self.runnable_thread_id and self.runnable_thread_id in LONG_POLLERS:
+        if id(self) in LongPollManager.LONG_POLLERS:
             # technically, the long poller could still be running, because we're not checking if thread is_alive()
             # but it's hard to interrupt a long poller while it's actually polling the server, and that can kill
             # performance, so we'll trust that calling stop means it won't continue past the current iteration
-            LONG_POLLERS.pop(self.runnable_thread_id)
+            LongPollManager.LONG_POLLERS.pop(self.runnable_thread_id)
 
     def start(self, *, daemon=True, **kwargs):
         super().start(daemon=daemon, **kwargs)
-        self.runnable_thread_id = self._thread_id
-        LONG_POLLERS[self.runnable_thread_id] = '\n'.join(traceback.format_stack())
+        LongPollManager.LONG_POLLERS[id(self)] = '\n'.join(traceback.format_stack())

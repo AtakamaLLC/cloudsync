@@ -28,7 +28,7 @@ import copy
 
 from typing import Optional, Generator, TYPE_CHECKING, List, cast
 from unittest.mock import patch
-from cloudsync.long_poll import LONG_POLLERS
+from cloudsync.long_poll import LongPollManager
 
 import requests
 import msgpack
@@ -501,9 +501,9 @@ def two_config_providers(request, provider_name, instances=2):
 
 @contextlib.contextmanager
 def confirm_long_poll_shutdown():
-    lp = LONG_POLLERS.copy()
+    lp = LongPollManager.LONG_POLLERS.copy()
     yield
-    unittest.TestCase().assertDictEqual(lp, LONG_POLLERS, LONG_POLLERS)
+    unittest.TestCase().assertDictEqual(lp, LongPollManager.LONG_POLLERS, LongPollManager.LONG_POLLERS)
 
 
 @pytest.fixture(name="provider")
@@ -2219,6 +2219,7 @@ def test_set_ns_offline(unwrapped_provider):
     assert provider.namespace is None  # setting a bad ns id makes this None
     with pytest.raises(CloudNamespaceError):
         provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
+    provider.disconnect()
 
 
 @pytest.mark.manual
@@ -2239,8 +2240,8 @@ def test_authenticate(unwrapped_provider):
             creds[k] = cast(str, v) + "junk"
             modded = True
 
+    provider.disconnect()
     if modded:
-        provider.disconnect()
         with pytest.raises(CloudTokenError):
             provider.connect(creds)
         assert not provider.connected
