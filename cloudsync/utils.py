@@ -11,7 +11,6 @@ import functools
 
 from base64 import b64encode
 from typing import Any, List, Dict, Callable, cast
-from unittest.mock import patch
 import xxhash
 
 log = logging.getLogger(__name__)
