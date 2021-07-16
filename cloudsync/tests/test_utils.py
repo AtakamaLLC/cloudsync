@@ -21,12 +21,6 @@ def test_debug_args():
     assert res == ("str", {"k": b'0'*61 + b'...'})
 
 
-@pytest.mark.manual
-def test_multiline():
-    log.error("indented line1\n<--- weird pytest indentation")
-    log.error("not indented line1\n<--- right up against the edge of the terminal")
-
-
 def test_memoize1():
     func = lambda *c: (c, os.urandom(32))
     cached = memoize(func, 60)
