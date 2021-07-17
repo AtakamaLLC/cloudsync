@@ -30,7 +30,6 @@ class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
         self.last_set = time.monotonic()
         self.uses_cursor = uses_cursor
         self.got_events = threading.Event()
-        self.runnable_thread_id = None
         log.debug("EVSET: set got_events")
         self.got_events.set()
 
@@ -105,7 +104,7 @@ class LongPollManager(Runnable):  # pylint: disable=too-many-instance-attributes
             # technically, the long poller could still be running, because we're not checking if thread is_alive()
             # but it's hard to interrupt a long poller while it's actually polling the server, and that can kill
             # performance, so we'll trust that calling stop means it won't continue past the current iteration
-            LongPollManager.LONG_POLLERS.pop(self.runnable_thread_id)
+            LongPollManager.LONG_POLLERS.pop(id(self))
 
     def start(self, *, daemon=True, **kwargs):
         super().start(daemon=daemon, **kwargs)
