@@ -228,7 +228,7 @@ def track_start_stop(cls):
         pass
     def new_stop():
         pass
-    with (unittest.mock.patch.object(cls, "start", side_effect=new_start),
-        unittest.mock.patch.object(cls, "stop", side_effect=new_stop)):
+    with unittest.mock.patch.object(cls, "start", side_effect=new_start), \
+        unittest.mock.patch.object(cls, "stop", side_effect=new_stop):
         yield
     # assert some stuff
