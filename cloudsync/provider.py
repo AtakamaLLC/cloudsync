@@ -9,7 +9,6 @@ import random
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
-from deprecated import deprecated
 
 from .types import OInfo, DIRECTORY, DirInfo, Any, FILE
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
