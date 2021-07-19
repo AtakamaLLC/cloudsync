@@ -4,13 +4,14 @@ Generic 'runnable' abstract base class.
 All cloudsync services inherit from this, instead of implementing their own
 thread management.
 """
-
+import contextlib
 import time
 
 from abc import ABC, abstractmethod
 
 import threading
 import logging
+from typing import Optional
 log = logging.getLogger(__name__)
 
 
@@ -46,13 +47,17 @@ class Runnable(ABC):
     service_name = None                         ; """The name of this runnable service, defaults to the class name"""
     # pylint: enable=multiple-statements
 
-    __thread = None
+    __thread: Optional[threading.Thread] = None
     __shutdown = False
     __interrupt: threading.Event = None
     __stopped = False
     __stopping = False
     __log: logging.Logger = None
     __clear_on_success: bool = True
+
+    @property
+    def _thread(self):
+        return self.__thread
 
     @property
     def stopped(self):
@@ -128,8 +133,6 @@ class Runnable(ABC):
             if self.__shutdown:
                 self.done()
 
-            self.__thread = None
-            log.debug("stopping %s", self.service_name)
 
     @property
     def started(self):
@@ -169,9 +172,10 @@ class Runnable(ABC):
         if self.__shutdown:
             raise RuntimeError("Service was stopped, create a new instance to run.")
         if self.__thread:
-            self.__thread.join(timeout=1)  # give the old thread a chance to die
-        if self.__thread:
-            raise RuntimeError("Service already started")
+            if self.__thread.is_alive():
+                self.__thread.join(timeout=1)  # give the old thread a chance to die
+            if self.__thread.is_alive():
+                raise RuntimeError("Service already started")
         self.__stopping = False
         self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
         self.__thread.name = self.service_name
@@ -195,7 +199,7 @@ class Runnable(ABC):
             if threading.current_thread() != self.__thread:
                 if wait:
                     self.wait()
-                self.__thread = None
+                    self.__thread = None  # if we're not waiting, keep this around so can join() it later
 
     def done(self):
         """
@@ -214,3 +218,17 @@ class Runnable(ABC):
             return True
         else:
             return False
+
+@contextlib.contextmanager
+def track_start_stop(cls):
+    import unittest
+    old_start = cls.start
+    old_stop = cls.stop
+    def new_start():
+        pass
+    def new_stop():
+        pass
+    with unittest.mock.patch.object(cls, "start", side_effect=new_start), \
+        unittest.mock.patch.object(cls, "stop", side_effect=new_stop):
+        yield
+    # assert some stuff
