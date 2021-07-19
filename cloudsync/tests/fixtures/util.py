@@ -67,6 +67,20 @@ class WaitFor(NamedTuple):
 class RunUntilHelper:
     default_timeout = 10  # seconds
 
+    def run_until(self: Any, until, timeout=None, poll_time=0.1, exc=None):
+        if timeout is None:
+            timeout = self.default_timeout
+
+        if not exc:
+            exc = TimeoutError("Timed out waiting for %s" % str(until))
+        while not until():
+            timeout -= poll_time
+            if timeout <= 0:
+                log.debug("Cond %s returned False after waiting %.2f", until, timeout)
+                raise exc
+            self.do()
+            time.sleep(poll_time)
+
     def run_until_clean(self: Any, timeout=TIMEOUT):
         # self.run(until=lambda: not self.busy, timeout=1)  # older, SLIGHTLY slower version
         start = time.monotonic()
