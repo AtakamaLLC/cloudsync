@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 import threading
 import logging
 log = logging.getLogger(__name__)
+from contextlib import suppress
 
 
 def time_helper(timeout, sleep=None, multiply=1):
@@ -129,10 +130,8 @@ class Runnable(ABC):
                 self.done()
 
             self.__thread = None
-            try:
+            with suppress():
                 log.debug("stopping %s", self.service_name)
-            except Exception:  # pragma: no cover
-                pass  # may be after the logger has closed, because we don't always join() the runnable thread
 
     @property
     def started(self):
