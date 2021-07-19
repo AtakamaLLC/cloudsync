@@ -4,10 +4,12 @@ from typing import Dict, Any
 
 import pytest
 
-from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY
+from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, EXISTS, UNKNOWN, TRASHED
+from cloudsync.sync.state import SideState
 from .fixtures import MockStorage
 
 log = logging.getLogger(__name__)
+
 
 def test_state_basic(mock_provider):
     providers = (mock_provider, mock_provider)
@@ -199,6 +201,21 @@ def state_diff(st1, st2):
                 if not e2.is_trash:
                     sd.append([name, e2])
     return sd
+
+
+@pytest.mark.parametrize("exists_tuple", [(None, UNKNOWN), (True, EXISTS), (False, TRASHED)])
+def test_state_deserialize_legacy(mock_provider, exists_tuple):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    ent = state.lookup_path(LOCAL, "123")[0]
+    local_dict = ent[LOCAL].serialize()
+    local_dict['exists'] = exists_tuple[0]
+    local2 = SideState(ent, LOCAL, FILE)
+    local2.deserialize(local_dict)
+    assert local2.exists == exists_tuple[1]
 
 
 def test_state_storage(mock_provider):

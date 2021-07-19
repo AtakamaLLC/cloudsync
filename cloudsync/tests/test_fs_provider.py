@@ -72,7 +72,12 @@ def test_cursor_prune(fsp):
 
     i = 0
     last = None
+    cpos = None
     for ev in fsp.events():
+        if str(ev.oid) == str(fsp._test_namespace):
+            log.debug("root oid skipped %s: event %s", i, ev.oid)
+            continue
+        log.debug("%s: event %s", i, ev.oid)
         cpos = ev.new_cursor
         i += 1
         last = ev

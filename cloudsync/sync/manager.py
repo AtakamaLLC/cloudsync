@@ -25,7 +25,7 @@ from cloudsync.utils import debug_sig
 from cloudsync.notification import SourceEnum, Notification, NotificationType
 from cloudsync.types import LOCAL, REMOTE
 from cloudsync import Event
-from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN
+from .state import SyncState, SyncEntry, SideState, MISSING, TRASHED, EXISTS, UNKNOWN, CORRUPT
 
 if TYPE_CHECKING:
     from cloudsync.provider import Provider
@@ -367,7 +367,7 @@ class SyncManager(Runnable):
         sync.get_latest()
         return False
 
-    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches
+    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches, too-many-statements
         """
         Called on each changed entry.
         """
@@ -382,10 +382,16 @@ class SyncManager(Runnable):
 
         for side in ordered:
             if not sync[side].needs_sync():
-                if sync[side].changed:
-                    log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
-                    sync[side].changed = 0
-                continue
+                if sync[side].changed and sync[other_side(side)].is_corrupt:
+                    # see comment on the SideState.is_corrupt method for more information on the corrupt state
+                    log.info("sync entry doesn't need sync, but the other side is corrupt, so sync it anyway")
+                else:
+                    if sync[side].changed:
+                        log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
+                        sync[side].changed = 0
+                    continue
+
+
 
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
                 log.debug("ignore:%s, side:%s", sync, side)
@@ -1210,18 +1216,46 @@ class SyncManager(Runnable):
 
             if sync[changed].otype == DIRECTORY:
                 return self.mkdir_synced(changed, sync, translated_path)
+            try:
+                if not self.download_changed(changed, sync):
+                    return PUNT
+            except ex.CloudCorruptError:
+                # see comment on the SideState.is_corrupt method for more information on the corrupt state
+                log.debug("Handling corrupt download in handle_path_change_or_creation")
+                return self.handle_corrupt_download(changed, sync)
 
-            if not self.download_changed(changed, sync):
-                return PUNT
-
-            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING):
+            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING) and not sync[synced].corrupt_gone:
                 if self.upload_synced(changed, sync):
                     return FINISHED
                 return PUNT
 
             return self.create_synced(changed, sync, translated_path)
 
-        return self.handle_rename(sync, changed, synced, translated_path)
+        if not sync[changed].is_corrupt:
+            return self.handle_rename(sync, changed, synced, translated_path)
+        else:
+            log.info("skipping rename of corrupt file")
+            return FINISHED
+
+    @staticmethod
+    def handle_corrupt_download(changed, sync: SyncEntry):
+        # prevent syncing the current version of the file as it exists on the changed side, as well as any
+        # further syncing of deletions or renames on this side. Additionally, mark the other side as unsynced,
+        # so the remote file syncs down over the local file.
+        #
+        # It is assumed that a corrupt or unreadable file will get deleted or renamed
+        # on the provider side in order to get this unreadable file out of the way for rewriting a
+        # known good file, and we don't want to sync up these maintenance operations. Once the hash changes
+        # on this side, the corrupt flag will be automatically cleared inside the SideState, and then syncing
+        # can continue as normal.
+        synced = other_side(changed)
+        sync[changed].sync_hash = sync[changed].hash
+        sync[changed].sync_path = sync[changed].path
+        sync[changed].exists = CORRUPT
+
+        # cause the other side to sync down over the corrupt file, if it exists
+        sync[synced].mark_changed()
+        return FINISHED
 
     def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
         # handle rename
@@ -1536,10 +1570,18 @@ class SyncManager(Runnable):
 
         assert sync[synced].oid
 
-        if not self.download_changed(changed, sync):
+        try:
+            dc_result = self.download_changed(changed, sync)
+        except ex.CloudCorruptError:
+            # see comment on the SideState.is_corrupt method for more information on the corrupt state
+            log.debug("Handling corrupt download in handle hash_diff")
+            return self.handle_corrupt_download(changed, sync)
+
+        if not dc_result:
             return PUNT
         if not self.upload_synced(changed, sync):
             return PUNT
+
         return FINISHED
 
     def update_sync_path(self, sync, changed):
