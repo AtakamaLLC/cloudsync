@@ -6,13 +6,13 @@ thread management.
 """
 
 import time
+from contextlib import suppress
 
 from abc import ABC, abstractmethod
 
 import threading
 import logging
 log = logging.getLogger(__name__)
-from contextlib import suppress
 
 
 def time_helper(timeout, sleep=None, multiply=1):
