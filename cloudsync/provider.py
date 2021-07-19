@@ -432,7 +432,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             # folders that disappear are not in the walk
             pass
 
-    @deprecated(reason="walk() is deprecated, and will go away in a future release. Please use resync() instead.")
     def walk(self, path, recursive=True):
         """List all files recursively, yielded as events"""
         info = self.info_path(path)
@@ -440,7 +439,6 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError(path)
         yield from self._walk(path, info.oid, recursive)
 
-    @deprecated(reason="walk_oid() is deprecated, and will go away in a future release. Please use resync_oid() instead.")
     def walk_oid(self, oid, recursive=True):
         """List all files recursively, yielded as events"""
         info = self.info_oid(oid)
