@@ -6,6 +6,7 @@ thread management.
 """
 
 import time
+from contextlib import suppress
 
 from abc import ABC, abstractmethod
 
@@ -129,7 +130,8 @@ class Runnable(ABC):
                 self.done()
 
             self.__thread = None
-            log.debug("stopping %s", self.service_name)
+            with suppress():
+                log.debug("stopping %s", self.service_name)
 
     @property
     def started(self):
