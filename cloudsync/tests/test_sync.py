@@ -1287,12 +1287,12 @@ def test_modif_rename(sync):
     sync.create_event(LOCAL, FILE, path=local_file1, oid=linfo1.oid, hash=linfo2.hash)
     new_loid = sync.providers[LOCAL].rename(linfo1.oid, local_file2)
 
-    log.debug("CHANGE LF1 NO REN EVENT")
-    log.debug("TABLE 0:\n%s", sync.state.pretty_print())
-    sync.run(until=lambda: sync.providers[REMOTE].info_path(remote_file1) is not None, timeout=1)
 
     if sync.providers[LOCAL].oid_is_path:
         # other providers can figure out the rename happend
+        log.debug("CHANGE LF1 NO REN EVENT")
+        log.debug("TABLE 0:\n%s", sync.state.pretty_print())
+        sync.run(until=lambda: sync.providers[REMOTE].info_path(remote_file1) is not None, timeout=1)
         assert sync.providers[REMOTE].info_path(remote_file1) is not None
 
     log.debug("REN EVENT")
