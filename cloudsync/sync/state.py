@@ -32,9 +32,10 @@ if TYPE_CHECKING:
     from cloudsync import Provider
 
 log = logging.getLogger(__name__)
+OTHER_SIDE = (1, 0)
 
-__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage',
-           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'other_side']
+__all__ = ['SyncState', 'SideState', 'SyncStateLookup', 'SyncEntry', 'Storage',
+           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'OTHER_SIDE', 'CORRUPT']
 # safe ternary, don't allow traditional comparisons
 
 
@@ -269,7 +270,8 @@ class SideState:
         self._saved_exists = serialization.get('_saved_exists')
 
 
-def other_side(index):
+def other_side(index):  # pragma: no cover
+    # This method is deprecated, in favor of the OTHER_SIDE tuple
     return 1-index
 
 
@@ -438,14 +440,14 @@ class SyncEntry:
         return self[changed].sync_path and self.paths_differ(changed)
 
     def is_deletion(self, side):
-        return self[other_side(side)].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
+        return self[OTHER_SIDE[side]].exists == EXISTS and self[side].exists in (TRASHED, MISSING) and self[side].changed
 
     def is_creation(self, side):
         if self[side].path and self[side].exists == EXISTS:
             if self[side].needs_sync():
-                return not self[other_side(side)].oid or self[other_side(side)].exists in (TRASHED, MISSING)
+                return not self[OTHER_SIDE[side]].oid or self[OTHER_SIDE[side]].exists in (TRASHED, MISSING)
             else:
-                return self[other_side(side)].is_corrupt
+                return self[OTHER_SIDE[side]].is_corrupt
         return False
 
     def is_rename(self, changed):
@@ -779,7 +781,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
                 ent[REMOTE]._changed = False
                 self._changeset_storage.discard(ent)
         elif key == "changed":
-            if (val and ent[side].oid) or (ent[other_side(side)].changed and ent[other_side(side)].oid):
+            if (val and ent[side].oid) or (ent[OTHER_SIDE[side]].changed and ent[OTHER_SIDE[side]].oid):
                 self._changeset_storage.add(ent)
             else:
                 self._changeset_storage.discard(ent)
@@ -899,11 +901,11 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if oid is not None:
             # ent with oid goes in changeset
             assert self.lookup_oid(side, oid) is ent
-            if ent[side].changed or ent[other_side(side)].changed:
+            if ent[side].changed or ent[OTHER_SIDE[side]].changed:
                 self._changeset_storage.add(ent)
         else:
             # ent without oid doesn't go in changeset
-            if ent[side].changed and not ent[other_side(side)].changed:
+            if ent[side].changed and not ent[OTHER_SIDE[side]].changed:
                 self._changeset_storage.discard(ent)
 
     def lookup_creation(self, content_hash, side):
@@ -1331,66 +1333,66 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         return defer_ent, defer, replace_ent, replace
 
-    def unconditionally_get_no_info(self, ent, i):
-        if ent[i].exists == UNKNOWN:
-            if not self.providers[i].oid_is_path:
+    def unconditionally_get_no_info(self, ent, side):
+        if ent[side].exists == UNKNOWN:
+            if not self.providers[side].oid_is_path:
                 # missing oid from oid provider == trashed
-                ent[i].exists = TRASHED
+                ent[side].exists = TRASHED
 
-        if ent[i].exists == LIKELY_TRASHED:
-            if self.providers[i].oid_is_path:
+        if ent[side].exists == LIKELY_TRASHED:
+            if self.providers[side].oid_is_path:
                 # note: oid_is_path providers are not supposed to do this
                 # it's possible we are wrong, and there's a trashed event arriving soon
                 log.info("possible out of order events received for trashed/exists: %s", ent)
-            ent[i].exists = TRASHED
+            ent[side].exists = TRASHED
 
-        if ent[i].exists != TRASHED:
+        if ent[side].exists != TRASHED:
             # we haven't gotten a trashed event yet
-            ent[i].exists = MISSING if self.providers[i].oid_is_path else TRASHED
+            ent[side].exists = MISSING if self.providers[side].oid_is_path else TRASHED
 
-        if ent[i].exists == TRASHED:
-            ent[i].size = None
-            ent[i].mtime = None
+        if ent[side].exists == TRASHED:
+            ent[side].size = None
+            ent[side].mtime = None
 
-    def unconditionally_get_latest(self, ent, i):
-        if ent[i].oid is None:
-            if ent[i].exists not in (TRASHED, MISSING):
-                ent[i].exists = UNKNOWN
+    def unconditionally_get_latest(self, ent, side):
+        if ent[side].oid is None:
+            if ent[side].exists not in (TRASHED, MISSING):
+                ent[side].exists = UNKNOWN
             return
 
-        info: OInfo = self.providers[i].info_oid(ent[i].oid, use_cache=False)
+        info: OInfo = self.providers[side].info_oid(ent[side].oid, use_cache=False)
 
         if not info:
-            self.unconditionally_get_no_info(ent, i)
+            self.unconditionally_get_no_info(ent, side)
             return
 
-        if ent[i].hash != info.hash:
-            ent[i].hash = info.hash
-            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
-                ent[i].changed = time.time()
+        if ent[side].hash != info.hash:
+            ent[side].hash = info.hash
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
+                ent[side].changed = time.time()
 
         # if it's corrupt, then "exists" won't actually change to the new value
         # set the exists after setting the hash, since that can clear the corrupt flag
-        ent[i].exists = EXISTS
+        ent[side].exists = EXISTS
 
-        ent[i].otype = info.otype
+        ent[side].otype = info.otype
 
-        if ent[i].otype == FILE:
-            if ent[i].hash is None:
-                ent[i].hash = self.providers[i].hash_oid(ent[i].oid)
+        if ent[side].otype == FILE:
+            if ent[side].hash is None:
+                ent[side].hash = self.providers[side].hash_oid(ent[side].oid)
 
-            if ent[i].exists == EXISTS:
-                if ent[i].hash is None:
-                    log.warning("Cannot sync %s, since hash is None", ent[i])
+            if ent[side].exists == EXISTS:
+                if ent[side].hash is None:
+                    log.warning("Cannot sync %s, since hash is None", ent[side])
 
-        new_path = self.providers[i].normalize_path_separators(info.path)
-        if ent[i].path != new_path:
-            ent[i].path = new_path
-            if ent.ignored == IgnoreReason.NONE and not ent[i].changed:
-                ent[i].changed = time.time()
+        new_path = self.providers[side].normalize_path_separators(info.path)
+        if ent[side].path != new_path:
+            ent[side].path = new_path
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
+                ent[side].changed = time.time()
 
-        ent[i].size = info.size
-        ent[i].mtime = info.mtime
+        ent[side].size = info.size
+        ent[side].mtime = info.mtime
 
     def get_state_lookup(self, side: int) -> 'SyncStateLookup':
         return SyncStateLookup(self, side)

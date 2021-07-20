@@ -18,7 +18,7 @@ from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNot
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
-from cloudsync.sync.state import TRASHED, MISSING, CORRUPT, EXISTS, SideState, other_side
+from cloudsync.sync.state import TRASHED, MISSING, SideState, OTHER_SIDE, UNKNOWN, EXISTS, CORRUPT
 from cloudsync import exceptions as ex
 
 log = logging.getLogger(__name__)
@@ -384,6 +384,48 @@ def test_sync_hash(sync):
     sync.state.assert_index_is_correct()
 
 
+def test_sync_no_info(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_path1 = "/local/stuff1"
+    remote_path1 = "/remote/stuff1"
+
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+    linfo = sync.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+
+    old_info_oid = sync.providers[LOCAL].info_oid
+
+    def new_info_oid(oid: str, use_cache=True):
+        info = old_info_oid(oid, use_cache)
+        if oid != linfo.oid:
+            return info
+        info.hash = None
+        return info
+
+    with patch.object(sync.providers[LOCAL], "info_oid", side_effect=new_info_oid):
+        with patch.object(sync.providers[LOCAL], "hash_oid", new=lambda _a, use_cache=True: None):
+            sync.create_event(LOCAL, FILE, path=local_path1, oid=linfo.oid, hash=None, exists=EXISTS)
+            ent = sync.state.lookup_oid(LOCAL, linfo.oid)
+            sync.run(until=lambda: not ent[LOCAL].changed)
+
+    assert sync.providers[LOCAL].exists_path(local_path1)
+    assert not sync.providers[REMOTE].exists_path(remote_path1)
+
+    sync.providers[LOCAL].delete(linfo.oid)
+
+    # with patch.object(sync.providers[LOCAL], "info_oid", new=lambda _a, use_cache: None):
+    sync.create_event(LOCAL, FILE, path=local_path1, oid=linfo.oid, hash=None, exists=UNKNOWN)
+    ent = sync.state.lookup_oid(LOCAL, linfo.oid)
+    sync.run(until=lambda: not ent[LOCAL].changed)
+
+    assert not sync.providers[LOCAL].exists_path(local_path1) # never actually deleted, provider lied and said it was trashed
+    assert not sync.providers[REMOTE].exists_path(remote_path1)
+
+
+    sync.state.assert_index_is_correct()
+
+
 def test_sync_rm(sync):
     remote_parent = "/remote"
     local_parent = "/local"
@@ -455,7 +497,7 @@ def test_create_before_delete(sync, delete_side):
     l, r = sync.providers
     delete, create = (l, r) if delete_side == LOCAL else (r, l)
     delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
-    create_side = other_side(delete_side)
+    create_side = OTHER_SIDE[delete_side]
     create_path = create.join(create_parent, "hello")
     create_path2 = create.join(create_parent, "goodbye")
     delete_path = delete.join(delete_parent, "hello")
@@ -501,7 +543,7 @@ def test_delete_plus_unchanged_marked_changed(sync, delete_side):
     l, r = sync.providers
     delete, create = (l, r) if delete_side == LOCAL else (r, l)
     delete_parent, create_parent = ("/local", "/remote") if delete_side == LOCAL else ("/remote", "/local")
-    create_side = other_side(delete_side)
+    create_side = OTHER_SIDE[delete_side]
     create_path = create.join(create_parent, "goodbye")
     delete_path = delete.join(delete_parent, "goodbye")
 
