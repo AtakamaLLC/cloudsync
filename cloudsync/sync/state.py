@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 OTHER_SIDE = (1, 0)
 
-__all__ = ['SyncState', 'SyncStateLookup', 'SyncEntry', 'Storage',
-           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'OTHER_SIDE']
+__all__ = ['SyncState', 'SideState', 'SyncStateLookup', 'SyncEntry', 'Storage',
+           'FILE', 'DIRECTORY', 'UNKNOWN', 'MISSING', 'TRASHED', 'EXISTS', 'LIKELY_TRASHED', 'OTHER_SIDE', 'CORRUPT']
 # safe ternary, don't allow traditional comparisons
 
 
