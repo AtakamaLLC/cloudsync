@@ -342,6 +342,11 @@ class EventManager(Runnable):
             self._make_event_accurate(event)
 
     def _notify_on_root_change_event(self, event: Event):
+        # since the event manager now assumes that the root path/oid passed into it are valid, use these values
+        # instead of the provider's -- the provider's root path/oid may not yet be set when event manager starts up,
+        # because root validation is now done in sync manager, which runs in another thread.
+        #
+        # using the providers unset roots here could result in raise CloudRootMissingError unnecessarily
         if self._root_path and self._root_oid:
             if self._root_oid == event.oid:
                 # none and false events for root ==== check it
