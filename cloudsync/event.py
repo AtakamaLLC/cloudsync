@@ -346,7 +346,7 @@ class EventManager(Runnable):
         # instead of the provider's -- the provider's root path/oid may not yet be set when event manager starts up,
         # because root validation is now done in sync manager, which runs in another thread.
         #
-        # using the providers unset roots here could result in false positive CloudRootMissingErrors
+        # using the provider's unset roots here could result in false positive CloudRootMissingErrors
         if self._root_path and self._root_oid:
             if self._root_oid == event.oid:
                 # none and false events for root ==== check it
