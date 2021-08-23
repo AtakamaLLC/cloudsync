@@ -4,9 +4,10 @@ from typing import Dict, Any
 
 import pytest
 
-from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, EXISTS, UNKNOWN, TRASHED
+from cloudsync import SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, EXISTS, UNKNOWN, TRASHED, CORRUPT
 from cloudsync.sync.state import SideState
 from .fixtures import MockStorage
+from cloudsync.sync.state import Exists
 
 log = logging.getLogger(__name__)
 
@@ -203,19 +204,50 @@ def state_diff(st1, st2):
     return sd
 
 
-@pytest.mark.parametrize("exists_tuple", [(None, UNKNOWN), (True, EXISTS), (False, TRASHED)])
-def test_state_deserialize_legacy(mock_provider, exists_tuple):
+def test_corrupt_serialize(mock_provider):
+    for exists in Exists:
+        if exists == Exists.CORRUPT:
+            continue
+        log.info("testing %s", exists)
+        providers = (mock_provider, mock_provider)
+        backend: Dict[Any, Any] = {}
+        storage = MockStorage(backend)
+        state = SyncState(providers, storage, tag="whatever")
+        state.update(LOCAL, FILE, path="123", oid="123", hash=b"123", exists=exists)
+        ent = state.lookup_path(LOCAL, "123")[0]
+        ent[LOCAL].exists = CORRUPT
+        local_dict = ent[LOCAL].serialize()
+        local2 = SideState(ent, LOCAL, FILE)
+        local2.deserialize(local_dict)
+        assert local2.exists == CORRUPT
+        assert local2._saved_exists == exists
+        ent[LOCAL].hash = b"changed"
+        assert ent[LOCAL].exists == exists
+        assert ent[LOCAL]._saved_exists is None
+
+
+def _test_state_deserialize(mock_provider, exists_tuple: tuple):
     providers = (mock_provider, mock_provider)
     backend: Dict[Any, Any] = {}
     storage = MockStorage(backend)
     state = SyncState(providers, storage, tag="whatever")
-    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123", exists=exists_tuple[1])
     ent = state.lookup_path(LOCAL, "123")[0]
     local_dict = ent[LOCAL].serialize()
     local_dict['exists'] = exists_tuple[0]
     local2 = SideState(ent, LOCAL, FILE)
     local2.deserialize(local_dict)
     assert local2.exists == exists_tuple[1]
+
+
+@pytest.mark.parametrize("exists_tuple", [(None, UNKNOWN), (True, EXISTS), (False, TRASHED)])
+def test_state_deserialize_legacy(mock_provider, exists_tuple: tuple):
+    _test_state_deserialize(mock_provider, exists_tuple)
+
+
+def test_state_deserialize(mock_provider):
+    for state in Exists:
+        _test_state_deserialize(mock_provider, (state.value, state))
 
 
 def test_state_storage(mock_provider):

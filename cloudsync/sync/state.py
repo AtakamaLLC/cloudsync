@@ -243,7 +243,7 @@ class SideState:
         ret['temp_file'] = self.temp_file
         ret['size'] = self.size
         ret['mtime'] = self.mtime
-        ret['_saved_exists'] = self._saved_exists
+        ret['_saved_exists'] = None if self._saved_exists is None else self._saved_exists.value
         # storage_id does not get serialized, it always comes WITH a serialization when deserializing
         return ret
 
@@ -267,7 +267,12 @@ class SideState:
         self.temp_file = serialization['temp_file']
         self.size = serialization.get('size')
         self.mtime = serialization.get('mtime')
-        self._saved_exists = serialization.get('_saved_exists')
+        saved_exists = serialization.get('_saved_exists')
+        try:
+            self._saved_exists = Exists(saved_exists) if saved_exists else None
+        except ValueError:
+            log.error('bad saved value %s for _saved_exists for %s' % (serialization.get('_saved_exists'), self.path))
+            self._saved_exists = None
 
 
 def other_side(index):  # pragma: no cover
