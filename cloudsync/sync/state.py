@@ -271,7 +271,7 @@ class SideState:
         try:
             self._saved_exists = Exists(saved_exists) if saved_exists else None
         except ValueError:
-            log.error('bad saved value %s for _saved_exists for %s' % (serialization.get('_saved_exists'), self.path))
+            log.error('bad saved value %s for _saved_exists for %s', (serialization.get('_saved_exists'), self.path))
             self._saved_exists = None
 
 
