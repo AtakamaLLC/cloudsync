@@ -1234,7 +1234,8 @@ class SyncManager(Runnable):
                         return FINISHED
                     return PUNT
 
-                log.debug("synced is_corrupt=%s, corrupt_gone=%s, corrupt_exists=%s", sync[synced].is_corrupt, sync[synced].corrupt_gone, sync[synced].corrupt_exists)
+                log.debug("synced is_corrupt=%s, corrupt_gone=%s, corrupt_exists=%s",
+                          sync[synced].is_corrupt, sync[synced].corrupt_gone, sync[synced].corrupt_exists)
                 return self.create_synced(changed, sync, translated_path)
             except ex.CloudCorruptError:
                 # see comment on the SideState.is_corrupt method for more information on the corrupt state
