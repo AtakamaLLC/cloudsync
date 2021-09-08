@@ -234,42 +234,53 @@ def test_sync_rename(sync):
 
 @pytest.mark.parametrize("test_delete_rename", ["basic", "delete", "rename"])
 @pytest.mark.parametrize("create_or_upload", ["create", "upload"])
-def test_sync_corrupt(sync, test_delete_rename, create_or_upload):
-    remote_parent, local_parent, local_path1, remote_path1  = "/remote", "/local", "/local/stuff1", "/remote/stuff1"
+@pytest.mark.parametrize("src_side", [LOCAL, REMOTE], ids=["local", "remote"])
+def test_sync_corrupt(sync, test_delete_rename, create_or_upload, src_side):
+    # local_or_remote refers to which side is the source of the file, meaning where the create happens first
+    # for this test, local does not check for corruption but remote does
+    # if the source is remote, then corruption is detected in remote.download
+    # if the source is local, then the corruption is detected in remote.create or remote.upload, depending
     local, remote = sync.providers
-    local.mkdir(local_parent)
-    remote.mkdir(remote_parent)
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+    paths = "/local/stuff1", "/remote/stuff1"
+    src_path1, dst_path1 = paths if src_side == LOCAL else reversed(paths)
+
     old_hash = None
     old_oid = None
-    if create_or_upload == "upload":
-        rinfo = remote.create(remote_path1, BytesIO(b"hello"))
-        old_hash = rinfo.hash
-        old_oid = rinfo.oid
-        sync.create_event(REMOTE, FILE, path=remote_path1, oid=rinfo.oid, hash=rinfo.hash)
-        sync.run_until_found((LOCAL, local_path1))
+    dst_side = OTHER_SIDE[src_side]
+    src, dst = sync.providers if src_side == LOCAL else reversed(sync.providers)
 
-    old_corrupt_handler = SyncManager.handle_corrupt_download
-    with patch.object(remote, "download", side_effect=ex.CloudCorruptError) as provider_no_download, \
-            patch.object(sync, "handle_corrupt_download", side_effect=old_corrupt_handler) as corrupt_handler:
+    if create_or_upload == "upload":
+        sinfo = src.create(src_path1, BytesIO(b"hello"))
+        old_hash = sinfo.hash
+        old_oid = sinfo.oid
+        sync.create_event(src_side, FILE, path=src_path1, oid=sinfo.oid, hash=sinfo.hash)
+        sync.run_until_found((dst_side, dst_path1))
+
+    old_corrupt_handler = SyncManager.handle_corrupt
+    patched_method = create_or_upload if src_side == LOCAL else "download"
+    with patch.object(remote, patched_method, side_effect=ex.CloudCorruptError) as provider_no_transfer, \
+            patch.object(sync, "handle_corrupt", side_effect=old_corrupt_handler) as corrupt_handler:
         if create_or_upload == "create":
-            rinfo = remote.create(remote_path1, BytesIO(b"hello2"))
+            sinfo = src.create(src_path1, BytesIO(b"hello2"))
         else:
-            rinfo = remote.upload(old_oid, BytesIO(b"hello2"))
-        new_hash = rinfo.hash
-        new_oid = rinfo.oid
-        assert remote.hash_oid(new_oid) == new_hash
-        sync.create_event(REMOTE, FILE, new_oid, hash=rinfo.hash)
+            sinfo = src.upload(old_oid, BytesIO(b"hello2"))
+        new_hash = sinfo.hash
+        new_oid = sinfo.oid
+        assert src.hash_oid(new_oid) == new_hash
+        sync.create_event(src_side, FILE, new_oid, hash=sinfo.hash)
         # now it should get marked as corrupt on the local side
-        sync.run_until(until=lambda: provider_no_download.called, timeout=5)
-        provider_no_download.assert_called()
+        sync.run_until(until=lambda: provider_no_transfer.called, timeout=5)
+        provider_no_transfer.assert_called()
         corrupt_handler.assert_called()
 
-        assert remote.hash_oid(new_oid) == new_hash  # new_hash is the hash of the "corrupt" file
-        ent = sync.state.lookup_oid(REMOTE, new_oid)
+        assert src.hash_oid(new_oid) == new_hash  # new_hash is the hash of the "corrupt" file
+        ent = sync.state.lookup_oid(src_side, new_oid)
         if create_or_upload == "upload":
-            assert ent[LOCAL].changed
+            assert ent[dst_side].changed
 
-    # File is now no longer corrupt when downloading from remote, because we dropped out of the patched context
+    # File is now no longer corrupt when downloading from src, because we dropped out of the patched context
     if test_delete_rename in ("delete", "rename"):
         # we haven't synced up the old, known good, file yet because we sync local first, then remote, and remote
         # had the update, so when remote syncing caused a change on the local side, the do loop stopped before
@@ -279,78 +290,88 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload):
         #   setting the hash to the same hash doesn't clear the corrupt flag, that
         #   renames and deletes on the corrupt side don't sync up, and that
         #   setting the hash to a new hash does allow it to sync
-        ent[LOCAL].changed = 0  # prevent this for now...
+        ent[dst_side].changed = 0  # prevent this for now...
 
         if test_delete_rename == "rename":
-            local_path2, remote_path2 = "/local/stuff2", "/remote/stuff2"
-            remote.rename(new_oid, remote_path2)
-            assert ent[REMOTE].path == ent[REMOTE].sync_path
-            sync.create_event(REMOTE, FILE, new_oid, path=remote_path2)
-            assert ent[REMOTE].changed
-            assert ent[REMOTE].path != ent[REMOTE].sync_path  # this is a rename
-            sync.run_until(until=lambda: not ent[REMOTE].changed, timeout=3)
+            paths = "/local/stuff2", "/remote/stuff2"
+            src_path2, dst_path2 = paths if src_side == LOCAL else reversed(paths)
+            saved_new_oid = new_oid
+            new_oid = src.rename(new_oid, src_path2)
+            if not(src_side == LOCAL and create_or_upload == "create" and test_delete_rename == "rename"):
+                # with a local create, the file won't sync up
+                assert ent[src_side].path == ent[src_side].sync_path
+            sync.create_event(src_side, FILE, saved_new_oid, path=src_path2)
+            assert ent[src_side].changed
+            assert ent[src_side].path != ent[src_side].sync_path  # this is a rename
+            sync.run_until(until=lambda: not ent[src_side].changed, timeout=3)
 
             # show that remote sync entry isn't marked as changed anymore, but the rename it indicated
             # never actually got synced
-            assert not ent[REMOTE].changed and not ent[LOCAL].changed
-            assert ent[REMOTE].path != ent[REMOTE].sync_path  # still showing the rename that won't sync until the file is no longer corrupt
+            assert not ent[src_side].changed and not ent[dst_side].changed
+            assert ent[src_side].path != ent[src_side].sync_path  # still showing the rename that won't sync until the file is no longer corrupt
             if create_or_upload == "upload":
-                assert local.info_path(local_path1)
-            assert not local.info_path(local_path2)
+                assert dst.info_path(dst_path1)
+            assert not dst.info_path(dst_path2)
 
             # change the hash to itself, confirm that the change still doesn't sync up
-            assert not ent[REMOTE].changed
-            sync.create_event(REMOTE, FILE, new_oid, hash=new_hash)
-            assert ent[REMOTE].changed
-            sync.run_until(until=lambda: not ent[REMOTE].changed, timeout=3)
-            assert ent[REMOTE].path != ent[REMOTE].sync_path  # still showing the rename that won't sync until the file is no longer corrupt
+            sync.run_until(until=lambda: not ent[src_side].changed, timeout=3)
+            assert not ent[src_side].changed
+            sync.create_event(src_side, FILE, new_oid, hash=new_hash)
+            # there is a race condition here, it's tricky to resolve. we assert "not changed" above, then create an
+            # event. If we wait until changed, we may miss it, because the sync manager may pick up the change first.
+            # If we only wait on "not changed", we may beat the sync manager to it, and assert the sync effects
+            # before the sync even started. Probably need to wait on the rename being rejected explicitly, and get rid
+            # of waiting on changed entirely, but it is tricky to wait on something "not" happening.
+            sync.run_until(until=lambda: not ent[src_side].changed, timeout=3)
+            assert ent[src_side].path != ent[src_side].sync_path  # still showing the rename that won't sync until the file is no longer corrupt
             if create_or_upload == "upload":
-                assert local.info_path(local_path1)
-            assert not local.info_path(local_path2)
+                assert dst.info_path(dst_path1)
+            assert not dst.info_path(dst_path2)
 
             # change the hash to something new, confirm that the rename now happens
-            rinfo3 = remote.upload(new_oid, BytesIO(b"hello3"))
-            remote_hash3 = rinfo3.hash
-            sync.create_event(REMOTE, FILE, new_oid, hash=remote_hash3)
-            assert remote.hash_oid(new_oid) == remote_hash3
-            assert not local.info_path(local_path2)
-            sync.run_until(until=lambda: local.info_path(local_path2), timeout=3)
-            assert local.info_path(local_path2)
+            sinfo3 = src.upload(new_oid, BytesIO(b"hello3"))
+            remote_hash3 = sinfo3.hash
+            sync.create_event(src_side, FILE, new_oid, hash=remote_hash3)
+            assert src.hash_oid(new_oid) == remote_hash3
+            assert not dst.info_path(dst_path2)
+            sync.run_until(until=lambda: dst.info_path(dst_path2), timeout=3)
+            assert dst.info_path(dst_path2)
         elif create_or_upload == "upload":  # if test_delete_rename == "delete", test is pointless if the create failed
-            remote.delete(new_oid)
-            assert ent[REMOTE].path == ent[REMOTE].sync_path
-            sync.create_event(REMOTE, FILE, new_oid, exists=TRASHED)
-            assert ent[REMOTE].changed
-            assert ent[REMOTE].exists == CORRUPT  # existence can't change with corrupt files
-            assert ent[REMOTE]._saved_exists == TRASHED
-            assert ent[REMOTE].corrupt_gone
-            assert not ent[REMOTE].corrupt_exists
-            sync.run_until(until=lambda: not ent[REMOTE].changed and not ent[LOCAL].changed, timeout=3)
+            src.delete(new_oid)
+            assert ent[src_side].path == ent[src_side].sync_path
+            sync.create_event(src_side, FILE, new_oid, exists=TRASHED)
+            assert ent[src_side].changed
+            assert ent[src_side].exists == CORRUPT  # existence can't change with corrupt files
+            assert ent[src_side]._saved_exists == TRASHED
+            assert ent[src_side].corrupt_gone
+            assert not ent[src_side].corrupt_exists
+            sync.run_until(until=lambda: not ent[src_side].changed and not ent[dst_side].changed, timeout=3)
 
             # show that remote sync entry isn't marked as changed anymore, but the rename it indicated
             # never actually got synced
-            assert not ent[REMOTE].changed and not ent[LOCAL].changed
-            assert ent[LOCAL].exists == EXISTS  # still showing the deletion won't sync until the file is no longer corrupt
-            assert local.info_path(local_path1)
+            assert not ent[src_side].changed and not ent[dst_side].changed
+            assert ent[dst_side].exists == EXISTS  # still showing the deletion won't sync until the file is no longer corrupt
+            assert dst.info_path(dst_path1)
 
             # change the hash to itself, confirm that the change still doesn't sync up
-            assert not ent[REMOTE].changed
-            sync.create_event(REMOTE, FILE, new_oid, hash=new_hash)
-            assert ent[REMOTE].changed
-            sync.run_until(until=lambda: not ent[REMOTE].changed, timeout=3)
-            assert ent[LOCAL].exists == EXISTS  # still showing the deletion won't sync until the file is no longer corrupt
-            assert local.info_path(local_path1)
+            assert not ent[src_side].changed
+            sync.create_event(src_side, FILE, new_oid, hash=new_hash)
+            assert ent[src_side].changed
+            sync.run_until(until=lambda: not ent[src_side].changed, timeout=3)
+            assert ent[dst_side].exists == EXISTS  # still showing the deletion won't sync until the file is no longer corrupt
+            assert dst.info_path(dst_path1)
 
             # change the hash to something new, confirm that the delete now happens
-            sync.create_event(REMOTE, FILE, new_oid, hash="different")
-            assert local.info_path(local_path1)
-            sync.run_until(until=lambda: not local.info_path(local_path1), timeout=3)
-            assert not local.info_path(local_path1)
+            sync.create_event(src_side, FILE, new_oid, hash="different", exists=TRASHED)
+            assert dst.info_path(dst_path1)
+            sync.run_until(until=lambda: not ent[src_side].is_corrupt, timeout=3)
+            sync.run_until(until=lambda: not dst.info_path(dst_path1), timeout=3)
+            assert not dst.info_path(dst_path1)
     else:
         if create_or_upload == "upload":
             # confirm that the known good file overwrites the known bad one
-            sync.run_until(until=lambda: remote.hash_oid(new_oid) == old_hash, timeout=3)
-            assert remote.hash_oid(new_oid) == old_hash  # old_hash is the pre-corrupt good file
+            sync.run_until(until=lambda: src.hash_oid(new_oid) == old_hash, timeout=3)
+            assert src.hash_oid(new_oid) == old_hash  # old_hash is the pre-corrupt good file
 
 
 def test_sync_hash(sync):
