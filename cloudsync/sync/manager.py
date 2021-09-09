@@ -1157,13 +1157,6 @@ class SyncManager(Runnable):
         return True
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
-        if not sync[changed].path:
-            self.update_sync_path(sync, changed)
-            log.debug("NEW SYNC %s", sync)
-            if sync[changed].exists == TRASHED or sync.is_discarded:
-                log.info("requeue trashed event %s", sync)
-                return PUNT
-
         translated_path = self.translate(synced, sync[changed].path)
         if translated_path is None:
             # ignore these
@@ -1592,26 +1585,6 @@ class SyncManager(Runnable):
             return self.handle_corrupt(changed, sync)
 
         return FINISHED
-
-    def update_sync_path(self, sync, changed):
-        assert sync[changed].oid
-
-        info = self.providers[changed].info_oid(sync[changed].oid)
-        if not info:
-            log.info("marking missing %s", debug_sig(sync[changed].oid))
-            sync[changed].exists = MISSING
-            return
-
-        if not info.path:
-            log.warning("impossible sync, no path. "
-                        "Probably a file that was shared, but not placed into a folder. discarding. %s",
-                        sync[changed])
-            sync.ignore(IgnoreReason.DISCARDED)
-            return
-
-        log.debug("UPDATE PATH %s->%s", sync, info.path)
-        self.update_entry(
-            sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
         log.debug("splitting hash conflict %s %s %s", sync, sync[LOCAL].sync_hash, sync[REMOTE].sync_hash)
