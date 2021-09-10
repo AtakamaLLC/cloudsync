@@ -2337,22 +2337,14 @@ def test_backoff(cs, recover):
 
 @pytest.mark.parametrize("prioritize_side", [LOCAL, REMOTE], ids=["LOCAL", "REMOTE"])
 def test_cs_prioritize(cs, prioritize_side):
-    remote_parent = "/remote"
-    local_parent = "/local"
     local_path1 = "/local/stuff1"
     remote_path1 = "/remote/stuff1"
     local_path2 = "/local/stuff2"
     remote_path2 = "/remote/stuff2"
 
-    cs.providers[LOCAL].mkdir(local_parent)
-    cs.providers[REMOTE].mkdir(remote_parent)
-    lp1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
-    rp2 = cs.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
+    # process root creation, which is done in cs fixture init
+    cs.run_until_clean(timeout=1)
 
-    # aging 3 seconds... nothing should get processed
-    cs.aging = 4
-
-    # this should also prioritize the remote, even though the local doesn't exist
     def prio(_ignored_side, path):
         if prioritize_side == LOCAL and path in (local_path1, remote_path1) \
                 or prioritize_side == REMOTE and path in (local_path2, remote_path2):
@@ -2360,7 +2352,13 @@ def test_cs_prioritize(cs, prioritize_side):
             return -1
         return 0
 
+    # set custom priority func -
+    # priority overrides aging, so expect prioritized changes to be processed before they are old enough
     cs.prioritize = prio
+    cs.aging = 4
+
+    lp1 = cs.providers[LOCAL].create(local_path1, BytesIO(b"hello"))
+    rp2 = cs.providers[REMOTE].create(remote_path2, BytesIO(b"hello2"))
 
     cs.emgrs[LOCAL].do()
     cs.emgrs[REMOTE].do()
@@ -2373,13 +2371,6 @@ def test_cs_prioritize(cs, prioritize_side):
     # ensure ent for "side" is later... regardless of clock granularity
     local_offset = 0.01 if prioritize_side == REMOTE else -0.01
     ent2[REMOTE].changed = ent1[LOCAL].changed + local_offset
-
-    prev_len = cs.state.changeset_len
-
-    cs.do()
-
-    # nothing is happening because aging is too long
-    assert cs.state.changeset_len == prev_len
 
     log.info("BEFORE TABLE\n%s", cs.state.pretty_print())
 

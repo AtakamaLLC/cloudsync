@@ -1168,6 +1168,21 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if not change_set:  # todo: cache the changeset
             return None
 
+        # fill in path if needed. Note that this updates the priority of the SyncEntry
+        for e in change_set:
+            for side in (LOCAL, REMOTE):
+                oid = e[side].oid
+                if oid and not e[side].path and e[side].exists in (EXISTS, UNKNOWN):
+                    info = self.providers[side].info_oid(oid, use_cache=False)
+                    e[side]._last_gotten = time.time()
+                    if info:
+                        self.update_entry(
+                            e, side, oid, path=info.path, file_hash=info.hash, exists=True,
+                            otype=info.otype, size=info.size, mtime=info.mtime
+                        )
+                    else:
+                        self.update_entry(e, side, oid, exists=False)
+
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
             sort_key = lambda a: (a.priority, random.random())
