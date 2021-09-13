@@ -1481,7 +1481,7 @@ class SyncManager(Runnable):
 
             # fall through in case of hash change
 
-        if sync[changed].hash != sync[changed].sync_hash or sync[synced].corrupt_exists:
+        if sync[changed].hash != sync[changed].sync_hash or (sync[synced].is_corrupt and not sync[synced].corrupt_gone):
             return self.handle_hash_diff(sync, changed, synced)
 
         log.debug("nothing changed %s", sync)
