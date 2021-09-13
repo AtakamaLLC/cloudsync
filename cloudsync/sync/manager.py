@@ -1222,11 +1222,6 @@ class SyncManager(Runnable):
                 return self.handle_corrupt(changed, sync)
 
             try:
-                if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING) and not sync[synced].corrupt_gone:
-                    if self.upload_synced(changed, sync):
-                        return FINISHED
-                    return PUNT
-
                 log.debug("synced is_corrupt=%s, corrupt_gone=%s, corrupt_exists=%s",
                           sync[synced].is_corrupt, sync[synced].corrupt_gone, sync[synced].corrupt_exists)
                 return self.create_synced(changed, sync, translated_path)
@@ -1486,7 +1481,7 @@ class SyncManager(Runnable):
 
             # fall through in case of hash change
 
-        if sync[changed].hash != sync[changed].sync_hash:
+        if sync[changed].hash != sync[changed].sync_hash or sync[synced].corrupt_exists:
             return self.handle_hash_diff(sync, changed, synced)
 
         log.debug("nothing changed %s", sync)
