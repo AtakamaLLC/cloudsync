@@ -20,6 +20,7 @@ from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
 from cloudsync.sync.state import TRASHED, MISSING, SideState, OTHER_SIDE, UNKNOWN, EXISTS, CORRUPT
 from cloudsync import exceptions as ex
+from cloudsync.sync.manager import PUNT
 
 log = logging.getLogger(__name__)
 
@@ -1324,6 +1325,7 @@ def test_modif_rename(sync):
 
     assert sync.providers[REMOTE].info_path(remote_file2)
 
+
 def test_create_cloud_fnf_error(sync):
     local_parent = "/local"
     local_file = "/local/dir/file"
@@ -1342,6 +1344,28 @@ def test_create_cloud_fnf_error(sync):
     sync.run_until_found((REMOTE, remote_file))
 
     assert sync.providers[REMOTE].info_path(remote_dir_to_create)
+
+
+def test_sync_fnf(sync):
+    local, remote = sync.providers
+    local_parent = "/local"
+    remote_parent = "/remote"
+    local_file = "/local/file"
+    remote_file = "/remote/file"
+    local.mkdir(local_parent)
+    remote.mkdir(remote_parent)
+    linfo = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=local_file, oid=linfo.oid, hash=linfo.hash)
+    sync.run_until_found((REMOTE, remote_file))
+    sync_entry = sync.state.lookup_oid(LOCAL, linfo.oid)
+    sync_entry[LOCAL].force_sync = False
+    sync_entry[REMOTE].exists = EXISTS
+    sync_entry[REMOTE].exists = CORRUPT
+    with patch.object(sync, "upload_synced", side_effect=lambda *args, **kwargs: False):
+        assert sync.handle_hash_diff(sync_entry, 0, 1) == PUNT
+    with patch.object(sync, "download_changed", side_effect=lambda *args, **kwargs: False):
+        assert sync.handle_hash_diff(sync_entry, 0, 1) == PUNT
+
 
 def test_rename_cloud_fnf_error(sync):
     local_parent = "/local"
