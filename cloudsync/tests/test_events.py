@@ -1,5 +1,5 @@
 # pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
-
+import threading
 import time
 from io import BytesIO
 
@@ -14,23 +14,36 @@ from cloudsync import (
     CloudTokenError,
     DIRECTORY,
     CloudRootMissingError,
-    CloudCursorError,
+    CloudCursorError, FILE,
 )
 from unittest.mock import patch, MagicMock
 import logging
 log = logging.getLogger(__name__)
 
 
-def create_event_manager(provider_generator, root_path):
+class EventManagerWithCounter(EventManager):
+    def __init__(self, *args, **kwargs):
+        self.event_count = 0
+        self.event_processed = threading.Event()
+        super().__init__(*args, **kwargs)
+
+    def _process_event(self, *args, **kwargs):
+        super()._process_event(*args, **kwargs)
+        self.event_count += 1
+        self.event_processed.set()
+        time.sleep(0.1)
+
+
+def create_event_manager(provider_generator, root_path, event_manager_type=EventManager):
     provider = provider_generator()
     state = SyncState((provider, provider), shuffle=True)
     if provider.oid_is_path:
         root_oid = provider.mkdirs(root_path) if root_path else None
         provider.set_root(root_oid=root_oid)
-        event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_oid)
+        event_manager = event_manager_type(provider, state, LOCAL, reauth=MagicMock(), root_oid=root_oid)
     else:
         provider.set_root(root_path=root_path)
-        event_manager = EventManager(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
+        event_manager = event_manager_type(provider, state, LOCAL, reauth=MagicMock(), root_path=root_path)
     event_manager._drain()
     return event_manager
 
@@ -49,6 +62,16 @@ def fixture_rootless_manager(mock_provider_generator):
     ret = create_event_manager(mock_provider_generator, None)
     yield ret
     ret.stop()
+
+@pytest.fixture(name="event_counter")
+def fixture_event_counter(mock_provider_generator):
+    ret = create_event_manager(mock_provider_generator, "/root", EventManagerWithCounter)
+    yield ret
+    ret.stop()
+
+
+def make_event():
+    return Event(FILE, "oid", "path", "hash", exists=True)
 
 
 def test_event_basic(manager):
@@ -113,6 +136,42 @@ def test_events_shutdown_force_process_event(manager):
             pass
     finally:
         manager.stop()
+
+
+def _test_events_shutdown_impl(event_counter):
+    # wait for 1 event to be processed
+    event_counter.start(sleep=0.2)
+    event_counter.event_processed.wait(timeout=1)
+    assert event_counter.event_processed.is_set
+    assert event_counter.event_count == 1
+
+    # ensure that events are not processed after event manager is stopped
+    event_counter.stop()
+    assert event_counter.event_count == 1
+
+
+def test_events_shutdown_queue(event_counter):
+    event_counter.need_walk = False
+    # queue up a bunch of fake events
+    event_counter._queue = [(make_event(), False)] * 10
+
+    _test_events_shutdown_impl(event_counter)
+
+
+def test_events_shutdown_walk(event_counter):
+    def fake_walk(oid):
+        return [make_event()] * 10
+
+    with patch.object(event_counter.provider, "walk_oid", fake_walk):
+        _test_events_shutdown_impl(event_counter)
+
+
+def test_events_shutdown_provider(event_counter):
+    def fake_events():
+        return [make_event()] * 10
+
+    with patch.object(event_counter.provider, "events", fake_events):
+        _test_events_shutdown_impl(event_counter)
 
 
 def test_backoff(manager):

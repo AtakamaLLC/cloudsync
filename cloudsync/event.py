@@ -206,6 +206,8 @@ class EventManager(Runnable):
             if oid:
                 for event in self.provider.walk_oid(oid):
                     self._process_event(event, from_walk=True)
+                    if self.stopped:
+                        return
         except CloudFileNotFoundError as e:
             log.debug('File to walk not found %s', e)
 
@@ -235,6 +237,8 @@ class EventManager(Runnable):
             log.debug("User supplied events")
             for (event, from_walk) in self._queue:
                 self._process_event(event, from_walk=from_walk)
+                if self.stopped:
+                    return
             self._queue = []
 
         # regular events
@@ -243,6 +247,8 @@ class EventManager(Runnable):
                 log.error("%s got BAD event %s", self.label, event)
                 continue
             self._process_event(event)
+            if self.stopped:
+                return
 
         self._save_current_cursor()
 
