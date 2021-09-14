@@ -150,22 +150,6 @@ def _test_events_shutdown_impl(event_counter):
     assert event_counter.event_count == 1
 
 
-def test_events_shutdown_queue(event_counter):
-    event_counter.need_walk = False
-    # queue up a bunch of fake events
-    event_counter._queue = [(make_event(), False)] * 10
-
-    _test_events_shutdown_impl(event_counter)
-
-
-def test_events_shutdown_walk(event_counter):
-    def fake_walk(oid):
-        return [make_event()] * 10
-
-    with patch.object(event_counter.provider, "walk_oid", fake_walk):
-        _test_events_shutdown_impl(event_counter)
-
-
 def test_events_shutdown_provider(event_counter):
     def fake_events():
         return [make_event()] * 10
