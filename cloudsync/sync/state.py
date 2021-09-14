@@ -269,7 +269,7 @@ class SideState:
         self.mtime = serialization.get('mtime')
         saved_exists = serialization.get('_saved_exists')
         try:
-            self._saved_exists = Exists(saved_exists) if saved_exists else None
+            self._saved_exists = Exists(saved_exists) if saved_exists else UNKNOWN
         except ValueError:
             log.error('bad saved value %s for _saved_exists for %s', serialization.get('_saved_exists'), self.path)
             self._saved_exists = UNKNOWN
