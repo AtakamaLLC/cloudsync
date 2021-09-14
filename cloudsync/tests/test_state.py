@@ -226,6 +226,21 @@ def test_corrupt_serialize(mock_provider):
         assert ent[LOCAL]._saved_exists is None
 
 
+def test_state_deserialize_bad_saved_exists(mock_provider):
+    providers = (mock_provider, mock_provider)
+    backend: Dict[Any, Any] = {}
+    storage = MockStorage(backend)
+    state = SyncState(providers, storage, tag="whatever")
+    state.update(LOCAL, FILE, path="123", oid="123", hash=b"123", exists=EXISTS)
+    ent = state.lookup_path(LOCAL, "123")[0]
+    ent[LOCAL].exists = CORRUPT
+    local_dict = ent[LOCAL].serialize()
+    local_dict['_saved_exists'] = "not good"
+    local2 = SideState(ent, LOCAL, FILE)
+    local2.deserialize(local_dict)
+    assert local2._saved_exists == UNKNOWN
+
+
 def _test_state_deserialize(mock_provider, exists_tuple: tuple):
     providers = (mock_provider, mock_provider)
     backend: Dict[Any, Any] = {}
