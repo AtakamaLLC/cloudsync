@@ -1,5 +1,5 @@
 __all__ = ['SyncManager', 'SyncState', 'SyncEntry', 'Storage', 'FILE', 'DIRECTORY', 'UNKNOWN', 'SqliteStorage',
-           'MISSING', 'TRASHED', 'EXISTS', 'UNKNOWN', 'LIKELY_TRASHED', 'OTHER_SIDE']
+           'MISSING', 'TRASHED', 'EXISTS', 'UNKNOWN', 'LIKELY_TRASHED', 'OTHER_SIDE', 'CORRUPT']
 
 from .manager import *
 from .state import *
