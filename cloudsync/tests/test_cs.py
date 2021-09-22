@@ -2429,14 +2429,15 @@ def test_hash_conflict_exception(cs):
 
     log.info("START TABLE\n%s", cs.state.pretty_print())
 
+    temp_resolver_called = False
+
     def _temp_resolver(*args, **kwargs):
-        _temp_resolver.called = True
+        nonlocal temp_resolver_called
+        temp_resolver_called = True
         raise CloudTemporaryError("_temporary_error_resolver")
 
-    _temp_resolver.called = False
-
     with patch.object(cs.smgr, "_resolve_conflict", new=_temp_resolver):
-        cs.run(until=lambda: _temp_resolver.called, timeout=2)  # type: ignore
+        cs.run(until=lambda: temp_resolver_called, timeout=2)  # type: ignore
 
     # confirm that no conflict resolution has occurred as a result of the CloudTemporaryError
     linfo2 = local.info_path("/local/foo")
@@ -2446,14 +2447,15 @@ def test_hash_conflict_exception(cs):
     assert linfo1.hash == linfo2.hash
     assert rinfo1.hash == rinfo2.hash
 
+    perm_resolver_called = False
+
     def _perm_resolver(*args, **kwargs):
-        _perm_resolver.called = True
+        nonlocal perm_resolver_called
+        perm_resolver_called = True
         raise Exception("_permanent_error_resolver")
 
-    _perm_resolver.called = False
-
     with patch.object(cs.smgr, "_resolve_conflict", new=_perm_resolver):
-        cs.run(until=lambda: _perm_resolver.called, timeout=2)  # type: ignore
+        cs.run(until=lambda: perm_resolver_called, timeout=2)  # type: ignore
 
     log.debug("Starting run %s", time.time())
     try:
