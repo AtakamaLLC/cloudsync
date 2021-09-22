@@ -2401,6 +2401,75 @@ def test_cs_prioritize(cs, prioritize_side):
 MERGE = 2
 
 
+def test_hash_conflict_exception(cs):
+    import time
+    local = cs.providers[LOCAL]
+    remote = cs.providers[REMOTE]
+
+    assert not remote.oid_is_path
+
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    def get_oid(prov, path):
+        return prov.info_path(path).oid
+
+    # Make first set
+    local.mkdir("/local/")
+    linfo = local.create("/local/foo", BytesIO(b"aaa"))
+
+    cs.run_until_found((REMOTE, "/remote/foo"))
+
+    rinfo = remote.info_path("/remote/foo")
+
+    local.upload(linfo.oid, BytesIO(b"zzz1"))
+    remote.upload(rinfo.oid, BytesIO(b"zzz2"))
+    linfo1 = local.info_path("/local/foo")
+    rinfo1 = remote.info_path("/remote/foo")
+
+    log.info("START TABLE\n%s", cs.state.pretty_print())
+
+    def _temp_resolver(*args, **kwargs):
+        _temp_resolver.called = True
+        raise CloudTemporaryError("_temporary_error_resolver")
+
+    _temp_resolver.called = False
+
+    with patch.object(cs.smgr, "_resolve_conflict", new=_temp_resolver):
+        cs.run(until=lambda: _temp_resolver.called, timeout=2)  # type: ignore
+
+    # confirm that no conflict resolution has occurred as a result of the CloudTemporaryError
+    linfo2 = local.info_path("/local/foo")
+    rinfo2 = remote.info_path("/remote/foo")
+    log.debug("linfo hash=%s -> %s", linfo1.hash, linfo2.hash)
+    log.debug("rinfo hash=%s -> %s", rinfo1.hash, rinfo2.hash)
+    assert linfo1.hash == linfo2.hash
+    assert rinfo1.hash == rinfo2.hash
+
+    def _perm_resolver(*args, **kwargs):
+        _perm_resolver.called = True
+        raise Exception("_permanent_error_resolver")
+
+    _perm_resolver.called = False
+
+    with patch.object(cs.smgr, "_resolve_conflict", new=_perm_resolver):
+        cs.run(until=lambda: _perm_resolver.called, timeout=2)  # type: ignore
+
+    log.debug("Starting run %s", time.time())
+    try:
+        cs.run(until=lambda: not cs.state.changeset_len, timeout=0.25)
+    finally:
+        log.info("END TABLE %s\n%s", time.time(), cs.state.pretty_print())
+
+    # confirm that we defer to the remote when there is a permanent exception during the conflict resolution
+    linfo2 = local.info_path("/local/foo")
+    rinfo2 = remote.info_path("/remote/foo")
+    log.debug("linfo hash=%s -> %s", linfo1.hash, linfo2.hash)
+    log.debug("rinfo hash=%s -> %s", rinfo1.hash, rinfo2.hash)
+    assert linfo1.hash != linfo2.hash
+    assert rinfo1.hash == rinfo2.hash
+
+
 @pytest.mark.parametrize("side_locked", [
     (LOCAL,  []),
     (LOCAL,  [LOCAL]),
