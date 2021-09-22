@@ -845,7 +845,7 @@ class SyncManager(Runnable):
 
         return Guard(side_states)
 
-    def __safe_call_resolver(self, fhs):
+    def __safe_call_resolver(self, fhs):  # pylint: disable=too-many-branches
         if DIRECTORY in (fhs[0].otype, fhs[1].otype):
             if fhs[0].otype != fhs[1].otype:
                 if fhs[0].otype == DIRECTORY:
