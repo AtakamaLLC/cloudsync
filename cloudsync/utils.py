@@ -11,8 +11,6 @@ import functools
 
 from base64 import b64encode
 from typing import Any, List, Dict, Callable, cast
-from unittest.mock import patch
-from _pytest.logging import PercentStyleMultiline
 import xxhash
 
 log = logging.getLogger(__name__)
@@ -69,26 +67,6 @@ def debug_sig(t: Any, size: int = 3) -> str:
     th = xxhash.xxh64()
     th.update(str(t))
     return b64encode(th.digest()).decode("utf8")[0:size]
-
-
-class disable_log_multiline:
-    """
-    Decorator that deals with : https://github.com/pytest-dev/pytest/pull/5926
-    TODO: remove this, and just bump the pytest version
-    """
-    @staticmethod
-    def _format(loggerclass, record):
-        return loggerclass._fmt % record.__dict__       # pylint: disable=protected-access
-
-    def __init__(self):
-        self.patch_object = patch.object(PercentStyleMultiline, "format", new=disable_log_multiline._format)
-
-    def __enter__(self):
-        self.patch_object.__enter__()
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        self.patch_object.__exit__(*args, **kwargs)     # type: ignore
 
 
 class memoize():

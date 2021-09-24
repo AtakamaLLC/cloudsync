@@ -25,7 +25,7 @@ from pystrict import strict
 from cloudsync.types import DIRECTORY, FILE, NOTKNOWN, IgnoreReason, LOCAL, REMOTE, OInfo
 from cloudsync.types import OType
 from cloudsync.log import TRACE
-from cloudsync.utils import debug_sig, disable_log_multiline
+from cloudsync.utils import debug_sig
 from cloudsync.notification import NotificationManager
 
 if TYPE_CHECKING:
@@ -1082,8 +1082,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
     def pretty_log_state_table_diffs(self, header="table"):
         try:
             if log.isEnabledFor(TRACE):
-                with disable_log_multiline():
-                    log.log(TRACE, "%s\n%s", header, self.pretty_print(only_dirty=True))
+                log.log(TRACE, "%s\n%s", header, self.pretty_print(only_dirty=True))
         except Exception:
             pass  # logging shouldn't be the cause of other things breaking
 
