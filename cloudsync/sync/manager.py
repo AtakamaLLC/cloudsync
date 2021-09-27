@@ -629,8 +629,8 @@ class SyncManager(Runnable):
 
         synced = OTHER_SIDE[changed]
         try:
-            info = self.providers[synced].upload(
-                sync[synced].oid, open(sync[changed].temp_file, "rb"))
+            temp_fh = open(sync[changed].temp_file, "rb")
+            info = self.providers[synced].upload(sync[synced].oid, temp_fh)
             log.debug("upload to %s as path %s",
                       self.providers[synced].name, sync[synced].sync_path)
 
@@ -672,6 +672,9 @@ class SyncManager(Runnable):
             # Nothing else to sync
             self.handle_file_name_error(sync, synced, sync[synced].path)
             return True
+        finally:
+            if temp_fh:
+                temp_fh.close()
 
     def _create_synced(self, changed, sync, translated_path):
         synced = OTHER_SIDE[changed]
@@ -1154,13 +1157,6 @@ class SyncManager(Runnable):
         return True
 
     def handle_path_change_or_creation(self, sync, changed, synced):  # pylint: disable=too-many-branches, too-many-return-statements
-        if not sync[changed].path:
-            self.update_sync_path(sync, changed)
-            log.debug("NEW SYNC %s", sync)
-            if sync[changed].exists == TRASHED or sync.is_discarded:
-                log.info("requeue trashed event %s", sync)
-                return PUNT
-
         translated_path = self.translate(synced, sync[changed].path)
         if translated_path is None:
             # ignore these
@@ -1223,14 +1219,16 @@ class SyncManager(Runnable):
             except ex.CloudCorruptError:
                 # see comment on the SideState.is_corrupt method for more information on the corrupt state
                 log.debug("Handling corrupt download in handle_path_change_or_creation")
-                return self.handle_corrupt_download(changed, sync)
+                return self.handle_corrupt(changed, sync)
 
-            if sync[synced].oid and sync[synced].exists not in (TRASHED, MISSING) and not sync[synced].corrupt_gone:
-                if self.upload_synced(changed, sync):
-                    return FINISHED
-                return PUNT
-
-            return self.create_synced(changed, sync, translated_path)
+            try:
+                log.debug("synced is_corrupt=%s, corrupt_gone=%s, corrupt_exists=%s",
+                          sync[synced].is_corrupt, sync[synced].corrupt_gone, sync[synced].corrupt_exists)
+                return self.create_synced(changed, sync, translated_path)
+            except ex.CloudCorruptError:
+                # see comment on the SideState.is_corrupt method for more information on the corrupt state
+                log.debug("Handling corrupt upload in handle_path_change_or_creation")
+                return self.handle_corrupt(changed, sync)
 
         if not sync[changed].is_corrupt:
             return self.handle_rename(sync, changed, synced, translated_path)
@@ -1239,7 +1237,7 @@ class SyncManager(Runnable):
             return FINISHED
 
     @staticmethod
-    def handle_corrupt_download(changed, sync: SyncEntry):
+    def handle_corrupt(side, sync: SyncEntry):
         # prevent syncing the current version of the file as it exists on the changed side, as well as any
         # further syncing of deletions or renames on this side. Additionally, mark the other side as unsynced,
         # so the remote file syncs down over the local file.
@@ -1249,13 +1247,12 @@ class SyncManager(Runnable):
         # known good file, and we don't want to sync up these maintenance operations. Once the hash changes
         # on this side, the corrupt flag will be automatically cleared inside the SideState, and then syncing
         # can continue as normal.
-        synced = other_side(changed)
-        sync[changed].sync_hash = sync[changed].hash
-        sync[changed].sync_path = sync[changed].path
-        sync[changed].exists = CORRUPT
+        sync[side].sync_hash = sync[side].hash
+        sync[side].sync_path = sync[side].path
+        sync[side].exists = CORRUPT
 
         # cause the other side to sync down over the corrupt file, if it exists
-        sync[synced].mark_changed()
+        sync[OTHER_SIDE[side]].mark_changed()
         return FINISHED
 
     def handle_rename(self, sync, changed, synced, translated_path):            # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
@@ -1484,7 +1481,7 @@ class SyncManager(Runnable):
 
             # fall through in case of hash change
 
-        if sync[changed].hash != sync[changed].sync_hash:
+        if sync[changed].hash != sync[changed].sync_hash or (sync[synced].is_corrupt and not sync[synced].corrupt_gone):
             return self.handle_hash_diff(sync, changed, synced)
 
         log.debug("nothing changed %s", sync)
@@ -1573,37 +1570,16 @@ class SyncManager(Runnable):
 
         try:
             dc_result = self.download_changed(changed, sync)
+            if not dc_result:
+                return PUNT
+            if not self.upload_synced(changed, sync):
+                return PUNT
         except ex.CloudCorruptError:
             # see comment on the SideState.is_corrupt method for more information on the corrupt state
-            log.debug("Handling corrupt download in handle hash_diff")
-            return self.handle_corrupt_download(changed, sync)
-
-        if not dc_result:
-            return PUNT
-        if not self.upload_synced(changed, sync):
-            return PUNT
+            log.debug("Handling corrupt file in hash_diff")
+            return self.handle_corrupt(changed, sync)
 
         return FINISHED
-
-    def update_sync_path(self, sync, changed):
-        assert sync[changed].oid
-
-        info = self.providers[changed].info_oid(sync[changed].oid)
-        if not info:
-            log.info("marking missing %s", debug_sig(sync[changed].oid))
-            sync[changed].exists = MISSING
-            return
-
-        if not info.path:
-            log.warning("impossible sync, no path. "
-                        "Probably a file that was shared, but not placed into a folder. discarding. %s",
-                        sync[changed])
-            sync.ignore(IgnoreReason.DISCARDED)
-            return
-
-        log.debug("UPDATE PATH %s->%s", sync, info.path)
-        self.update_entry(
-            sync, changed, sync[changed].oid, path=info.path, exists=True)
 
     def handle_hash_conflict(self, sync):
         log.debug("splitting hash conflict %s %s %s", sync, sync[LOCAL].sync_hash, sync[REMOTE].sync_hash)
