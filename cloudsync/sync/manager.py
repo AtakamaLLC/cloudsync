@@ -848,7 +848,7 @@ class SyncManager(Runnable):
 
         return Guard(side_states)
 
-    def __safe_call_resolver(self, fhs):
+    def __safe_call_resolver(self, fhs):  # pylint: disable=too-many-branches
         if DIRECTORY in (fhs[0].otype, fhs[1].otype):
             if fhs[0].otype != fhs[1].otype:
                 if fhs[0].otype == DIRECTORY:
@@ -873,8 +873,11 @@ class SyncManager(Runnable):
                 elif not is_file_like(ret[0]):
                     log.error("bad return value for resolve conflict %s", ret)
                     ret = None
+        except ex.CloudTemporaryError as e:
+            log.exception("temporary exception during conflict resolution %s", repr(e))
+            raise
         except Exception as e:
-            log.exception("exception during conflict resolution %s", e)
+            log.exception("exception during conflict resolution %s", repr(e))
 
         if ret is None:
             # we defer to the remote... since this can prevent loops

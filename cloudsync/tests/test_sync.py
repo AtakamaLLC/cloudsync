@@ -643,8 +643,8 @@ def test_sync_conflict_simul(sync):
 MERGE = 2
 
 
-@pytest.mark.parametrize("keep", [True, False])
-@pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE])
+@pytest.mark.parametrize("keep", [True, False], ids=["keep", "discard"])
+@pytest.mark.parametrize("side", [LOCAL, REMOTE, MERGE], ids=["local", "remote", "merge"])
 def test_sync_conflict_resolve(sync, side, keep):
     data = (b"hello", b"goodbye", b"merge")
 
