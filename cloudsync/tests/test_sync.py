@@ -241,12 +241,6 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload, src_side):
     # for this test, local does not check for corruption but remote does
     # if the source is remote, then corruption is detected in remote.download
     # if the source is local, then the corruption is detected in remote.create or remote.upload, depending
-    def confirm_corrupt_notification(sync):
-        sync.process_notifications()
-        log.info("notifications %s", sync.notifications)
-        assert NotificationType.SYNC_CORRUPT_IGNORED in [x.ntype for x in sync.notifications]
-        sync.notifications.clear()
-
     local, remote = sync.providers
     local.mkdir("/local")
     remote.mkdir("/remote")
@@ -381,7 +375,10 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload, src_side):
             sync.run_until(until=lambda: src.hash_oid(new_oid) == old_hash, timeout=3)
             assert src.hash_oid(new_oid) == old_hash  # old_hash is the pre-corrupt good file
 
-    confirm_corrupt_notification(sync)
+    sync.process_notifications()
+    log.info("notifications %s", sync.notifications)
+    assert NotificationType.SYNC_CORRUPT_IGNORED in [x.ntype for x in sync.notifications]
+    sync.notifications.clear()
 
 
 def test_sync_hash(sync):
