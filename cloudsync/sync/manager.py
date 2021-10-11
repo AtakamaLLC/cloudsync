@@ -392,8 +392,6 @@ class SyncManager(Runnable):
                         sync[side].changed = 0
                     continue
 
-
-
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
                 log.debug("ignore:%s, side:%s", sync, side)
                 # no hash for file, ignore it
@@ -424,7 +422,13 @@ class SyncManager(Runnable):
                     self.state.split(sync)
 
             try:
-                response = self.embrace_change(sync, side, OTHER_SIDE[side])
+                if sync[side].corrupt_gone:
+                    src = SourceEnum.LOCAL if side == LOCAL else SourceEnum.REMOTE
+                    log.debug("sync_corrupt_ignored path=%s", sync[side].path)
+                    self._nmgr.notify(Notification(src, NotificationType.SYNC_CORRUPT_IGNORED, sync[side].path))
+                    response = FINISHED
+                else:
+                    response = self.embrace_change(sync, side, OTHER_SIDE[side])
             except ex.CloudTooManyRetriesError:
                 response = FINISHED
                 log.exception("too many retries - marked finished %s side:%s", sync, side)

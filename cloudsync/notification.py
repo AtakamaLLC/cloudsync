@@ -9,7 +9,7 @@ import cloudsync.exceptions as ex
 
 
 log = logging.getLogger(__name__)
-__all__ = ["Notification", "NotificationType", "NotificationManager"]
+__all__ = ["Notification", "NotificationType", "NotificationManager", "SourceEnum"]
 
 
 # pylint: disable=multiple-statements
@@ -26,6 +26,7 @@ class NotificationType(enum.Enum):
     TEMPORARY_ERROR = 'temporary_error'             ; """Upload failure, or other temp error that will be retried."""
     SYNC_DISCARDED = 'sync_discarded'               ; """Sync discarded a file due to path translation failure"""
     SYNC_SMART_UNSYNCED = 'sync_smart_skipped'      ; """SmartSync file has not been requested, and therefore skipped during sync"""
+    SYNC_CORRUPT_IGNORED = 'sync_corrupt_ignored'   ; """a corrupt file has been deleted or renamed, and the delete/rename was dropped"""
 
 
 class SourceEnum(enum.Enum):
