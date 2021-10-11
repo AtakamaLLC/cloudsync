@@ -5,8 +5,8 @@ log = logging.getLogger(__name__)
 
 
 def test_notification():
-    handler = MagicMock()
-    nm = NotificationManager(evt_handler=handler)
+    handle_notification = MagicMock()
+    nm = NotificationManager(evt_handler=handle_notification)
     nm.notify(Notification(SourceEnum.LOCAL, NotificationType.DISCONNECTED_ERROR, None))
     nm.do()
-    handler.assert_called_once()
+    handle_notification.assert_called_once()

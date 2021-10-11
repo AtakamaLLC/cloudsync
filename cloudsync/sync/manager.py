@@ -1243,8 +1243,7 @@ class SyncManager(Runnable):
             log.info("skipping rename of corrupt file")
             return FINISHED
 
-    @staticmethod
-    def handle_corrupt(side, sync: SyncEntry):
+    def handle_corrupt(self, side, sync: SyncEntry):
         # prevent syncing the current version of the file as it exists on the changed side, as well as any
         # further syncing of deletions or renames on this side. Additionally, mark the other side as unsynced,
         # so the remote file syncs down over the local file.
@@ -1254,6 +1253,7 @@ class SyncManager(Runnable):
         # known good file, and we don't want to sync up these maintenance operations. Once the hash changes
         # on this side, the corrupt flag will be automatically cleared inside the SideState, and then syncing
         # can continue as normal.
+        self._nmgr.notify(Notification(SourceEnum(side), NotificationType.SYNC_CORRUPT_IGNORED, sync[side].path))
         sync[side].sync_hash = sync[side].hash
         sync[side].sync_path = sync[side].path
         sync[side].exists = CORRUPT
