@@ -242,6 +242,8 @@ class EventManager(Runnable):
             if not event:
                 log.error("%s got BAD event %s", self.label, event)
                 continue
+            if self.stopped:
+                return
             self._process_event(event)
 
         self._save_current_cursor()
