@@ -14,7 +14,7 @@ from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
 from cloudsync.smartsync import SmartCloudSync
-from cloudsync.syncnotificationhandler import SyncNotificationHandler
+from cloudsync.tests.syncnotificationhandler import SyncNotificationHandler
 import time
 
 from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
