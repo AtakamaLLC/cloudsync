@@ -1176,15 +1176,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             for side in (LOCAL, REMOTE):
                 oid = e[side].oid
                 if oid and not e[side].path and e[side].exists in (EXISTS, UNKNOWN):
-                    info = self.providers[side].info_oid(oid, use_cache=False)
-                    e[side]._last_gotten = time.time()
-                    if info:
-                        self.update_entry(
-                            e, side, oid, path=info.path, file_hash=info.hash, exists=True,
-                            otype=info.otype, size=info.size, mtime=info.mtime
-                        )
-                    else:
-                        self.update_entry(e, side, oid, exists=False)
+                    self.unconditionally_get_latest(e, side, update_changed=False)
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
@@ -1372,7 +1364,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].size = None
             ent[side].mtime = None
 
-    def unconditionally_get_latest(self, ent, side):
+    def unconditionally_get_latest(self, ent, side, update_changed=True):
         if ent[side].oid is None:
             if ent[side].exists not in (TRASHED, MISSING):
                 ent[side].exists = UNKNOWN
@@ -1386,7 +1378,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[side].hash != info.hash:
             ent[side].hash = info.hash
-            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed and update_changed:
                 ent[side].changed = time.time()
 
         # if it's corrupt, then "exists" won't actually change to the new value
@@ -1406,7 +1398,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         new_path = self.providers[side].normalize_path_separators(info.path)
         if ent[side].path != new_path:
             ent[side].path = new_path
-            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed and update_changed:
                 ent[side].changed = time.time()
 
         ent[side].size = info.size
