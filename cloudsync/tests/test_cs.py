@@ -3548,10 +3548,12 @@ def test_smartsync(scs):
 
     local_info3 = local.info_path(local_path3)
     local.rename(local_info3.oid, local_path3a)
-    scs.emgrs[0].do()
-    scs.emgrs[1].do()
 
     scs.csmonitor.wait_sync_state(remote_paths=[remote_path3], local_paths=[local_path3a])
+    scs.emgrs[0].do()
+    scs.emgrs[1].do()
+    scs.smgr.do()
+
     files = list(scs.smart_listdir_path(local_test_folder2))
     found3 = False
     found3a = False
