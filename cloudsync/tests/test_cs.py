@@ -3569,8 +3569,6 @@ def test_smartsync(scs):
     assert scs.smart_unsync_path('/not/translatable', LOCAL) is None, "smart unsync path should return None if bad path"
 
 
-
-
 def test_cursor_tag_delete(mock_provider_generator):
     storage_dict: Dict[Any, Any] = dict()
     storage = MockStorage(storage_dict)

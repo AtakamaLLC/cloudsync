@@ -1171,12 +1171,17 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if not change_set:  # todo: cache the changeset
             return None
 
-        # fill in path if needed. Note that this updates the priority of the SyncEntry
+        # Fill in path if needed.
+        # Some providers' events (GDrive) do not include a path. In order to minimize provider API calls
+        # in the EventManager thread, fill in missing paths here, in the SyncManager thread, instead.
+        # This must be done for the entire changeset in order for the priority sort below to work, since
+        # priority is updated when the path changes.
         for e in change_set:
             for side in (LOCAL, REMOTE):
-                oid = e[side].oid
-                if oid and not e[side].path and e[side].exists in (EXISTS, UNKNOWN):
-                    self.unconditionally_get_latest(e, side, update_changed=False)
+                s = e[side]
+                if not s.path and s.exists in (EXISTS, UNKNOWN) and s.changed and s.changed > s._last_gotten:
+                    self.unconditionally_get_latest(e, side)
+                    s._last_gotten = s.changed
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
@@ -1364,7 +1369,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
             ent[side].size = None
             ent[side].mtime = None
 
-    def unconditionally_get_latest(self, ent, side, update_changed=True):
+    def unconditionally_get_latest(self, ent, side):
         if ent[side].oid is None:
             if ent[side].exists not in (TRASHED, MISSING):
                 ent[side].exists = UNKNOWN
@@ -1378,7 +1383,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
 
         if ent[side].hash != info.hash:
             ent[side].hash = info.hash
-            if ent.ignored == IgnoreReason.NONE and not ent[side].changed and update_changed:
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
                 ent[side].changed = time.time()
 
         # if it's corrupt, then "exists" won't actually change to the new value
@@ -1398,7 +1403,7 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         new_path = self.providers[side].normalize_path_separators(info.path)
         if ent[side].path != new_path:
             ent[side].path = new_path
-            if ent.ignored == IgnoreReason.NONE and not ent[side].changed and update_changed:
+            if ent.ignored == IgnoreReason.NONE and not ent[side].changed:
                 ent[side].changed = time.time()
 
         ent[side].size = info.size
