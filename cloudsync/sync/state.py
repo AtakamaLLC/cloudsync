@@ -635,9 +635,9 @@ class SyncEntry:
         # do this one later
         self.priority += 1
 
-    def get_latest(self, force=False):
-        max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
-        for side in (LOCAL, REMOTE):
+    def get_latest(self, force=False, sides=(LOCAL, REMOTE)):
+        max_changed = max([self[side].changed or 0 for side in sides])
+        for side in sides:
             if force or max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
@@ -1178,10 +1178,8 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         # priority is updated when the path changes.
         for e in change_set:
             for side in (LOCAL, REMOTE):
-                s = e[side]
-                if not s.path and s.exists in (EXISTS, UNKNOWN) and s.changed and s.changed > s._last_gotten:
-                    self.unconditionally_get_latest(e, side)
-                    s._last_gotten = s.changed
+                if not e[side].path and e[side].exists in (EXISTS, UNKNOWN):
+                    e.get_latest(sides=[side])
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:
