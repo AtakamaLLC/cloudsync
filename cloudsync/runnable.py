@@ -126,12 +126,17 @@ class Runnable(ABC):
             self.__stopped = True
             self.__interrupt = None
 
+            # if logging "stopping %s" fails during a test with a "ValueError: I/O operation on closed file"
+            # then an instance of Runnable was permitted to run beyond the end of the test. The test log should show
+            # the service_name, which should identify which service was left around. Make sure that the service
+            # is really stopped before dropping out of the test, by catching the call to done(), and when done()
+            # is called, then you know there won't be any more logging from the service.
+            log.debug("stopping %s", self.service_name)
+
             if self.__shutdown:
                 self.done()
 
-            self.__thread = None
-            with suppress():
-                log.debug("stopping %s", self.service_name)
+            self.__thread = None  # this is a hair premature, no?
 
     @property
     def started(self):
@@ -175,9 +180,10 @@ class Runnable(ABC):
         if self.__thread:
             raise RuntimeError("Service already started")
         self.__stopping = False
-        self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
-        self.__thread.name = self.service_name
-        self.__thread.start()
+        thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
+        thread.name = self.service_name
+        thread.start()
+        self.__thread = thread
 
     @abstractmethod
     def do(self):
@@ -193,11 +199,13 @@ class Runnable(ABC):
         self.__stopping = True
         self.wake()
         self.__shutdown = forever
-        if self.__thread:
-            if threading.current_thread() != self.__thread:
+        thread = self.__thread  # otherwise race condition -- self.__thread can change value in another thread
+        if thread:
+            if threading.current_thread() != thread:
                 if wait:
                     self.wait()
-                self.__thread = None
+                if not thread.is_alive:
+                    self.__thread = None
 
     def done(self):
         """
@@ -208,9 +216,10 @@ class Runnable(ABC):
         """
         Wait for the service to stop.
         """
-        if self.__thread and threading.current_thread() != self.__thread:
-            self.__thread.join(timeout=timeout)
-            if self.__thread and self.__thread.is_alive():
+        thread = self.__thread  # otherwise race condition -- self.__thread can change value in another thread
+        if thread and threading.current_thread() != thread:
+            thread.join(timeout=timeout)
+            if thread and thread.is_alive():
                 raise TimeoutError()
             self.__thread = None
             return True
