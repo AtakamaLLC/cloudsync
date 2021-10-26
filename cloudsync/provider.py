@@ -474,7 +474,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Removes trailing separators from all paths in path_iterator,
         and leading separators from 'cdr' of path_iterator
         """
-        path = next(path_iterator)
+        try:
+            path = next(path_iterator)
+        except StopIteration:
+            return
         stripped = path.rstrip(cls.sep)
         if stripped:
             yield stripped
