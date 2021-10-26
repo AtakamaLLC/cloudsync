@@ -449,7 +449,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 # HELPER
 
     @classmethod
-    def __normalize_path_list(cls, paths: Tuple[Union[str, List[str], Tuple[str]]]) -> Generator[str, None, None]:
+    def __normalize_path_list(cls, paths) -> Generator[str, None, None]:
         """
         Removes blank paths, normalizes separators, expands included iterables
 
