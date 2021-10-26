@@ -6,7 +6,6 @@ thread management.
 """
 
 import time
-from contextlib import suppress
 
 from abc import ABC, abstractmethod
 
