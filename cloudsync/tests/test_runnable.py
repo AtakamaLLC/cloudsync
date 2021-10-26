@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 def test_runnable():
-    class TestRun(Runnable):
+    class TestRun1(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -20,7 +20,7 @@ def test_runnable():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRun1()
 
     with pytest.raises(TimeoutError):
         testrun.run(timeout=0.02, sleep=0.001)
@@ -50,7 +50,7 @@ def test_runnable():
 
 
 def test_timeout():
-    class TestRun(Runnable):
+    class TestRun2(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -62,7 +62,7 @@ def test_timeout():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRun2()
     testrun.start()
     while not testrun.started:
         time.sleep(.01)
@@ -70,7 +70,7 @@ def test_timeout():
         testrun.wait(timeout=.01)
 
 def test_start_exceptions():
-    class TestRun(Runnable):
+    class TestRun3(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -82,7 +82,7 @@ def test_start_exceptions():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRun3()
     testrun.start()
     while not testrun.started:
         time.sleep(.01)
@@ -97,7 +97,7 @@ def test_start_exceptions():
         testrun.start()
 
 def test_no_wait_stop():
-    class TestRun(Runnable):
+    class TestRun4(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -109,7 +109,7 @@ def test_no_wait_stop():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRun4()
     testrun.start()
     while not testrun.started:
         time.sleep(.01)
@@ -119,7 +119,7 @@ def test_no_wait_stop():
     assert testrun.called == 0
 
 def test_runnable_wake():
-    class TestRun(Runnable):
+    class TestRun5(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -130,7 +130,7 @@ def test_runnable_wake():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRun5()
 
     # noop
     log.info("noop")
