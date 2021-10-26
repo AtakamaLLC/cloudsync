@@ -130,7 +130,7 @@ class Runnable(ABC):
                 self.done()
 
             self.__thread = None
-            with suppress():
+            with suppress(ValueError):
                 log.debug("stopping %s", self.service_name)
 
     @property
