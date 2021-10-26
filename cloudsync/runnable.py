@@ -133,7 +133,6 @@ class Runnable(ABC):
             with suppress():
                 log.debug("stopping %s", self.service_name)
 
-
     @property
     def started(self):
         """
