@@ -180,10 +180,9 @@ class Runnable(ABC):
         if self.__thread:
             raise RuntimeError("Service already started")
         self.__stopping = False
-        thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
-        thread.name = self.service_name
-        thread.start()
-        self.__thread = thread
+        self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
+        self.__thread.name = self.service_name
+        self.__thread.start()
 
     @abstractmethod
     def do(self):
