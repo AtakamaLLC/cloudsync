@@ -476,11 +476,11 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         """
         try:
             path = next(path_iterator)
+            stripped = path.rstrip(cls.sep)
+            if stripped:
+                yield stripped
         except StopIteration:
             return
-        stripped = path.rstrip(cls.sep)
-        if stripped:
-            yield stripped
         for path in path_iterator:
             stripped = path.strip(cls.sep)
             if stripped:
@@ -494,7 +494,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         Args:
             paths: zero or more paths
         """
-        norm_paths: List[str] = [x for x in cls.__strip_path_list(cls.__normalize_path_list(paths))]
+        norm_paths: List[str] = list(cls.__strip_path_list(cls.__normalize_path_list(paths)))
         if norm_paths:
             joined_path = cls.sep.join(norm_paths)
             if not cls.win_paths or joined_path[1] != ':':
