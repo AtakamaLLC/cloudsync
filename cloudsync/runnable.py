@@ -6,6 +6,7 @@ thread management.
 """
 
 import time
+from contextlib import suppress
 
 from abc import ABC, abstractmethod
 
@@ -129,13 +130,8 @@ class Runnable(ABC):
                 self.done()
 
             self.__thread = None
-            try:
+            with suppress():
                 log.debug("stopping %s", self.service_name)
-            except Exception:
-                # Logging the "stopping" message screws with the test framework, especially when the test
-                # framework stops prior to this thread, and when this tries to log, it will create a
-                # "ValueError: I/O operation on closed file". We don't care about the log message *that* much
-                pass
 
 
     @property
