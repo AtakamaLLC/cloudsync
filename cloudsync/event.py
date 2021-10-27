@@ -340,8 +340,6 @@ class EventManager(Runnable):
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
             event.path = state[self.side].path
-        if not event.path and event.exists in (True, None):
-            self._make_event_accurate(event)
 
     def _notify_on_root_change_event(self, event: Event):
         # since the event manager now assumes that the root path/oid passed into it are valid, use these values

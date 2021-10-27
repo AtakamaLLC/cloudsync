@@ -635,9 +635,9 @@ class SyncEntry:
         # do this one later
         self.priority += 1
 
-    def get_latest(self, force=False):
-        max_changed = max(self[LOCAL].changed or 0, self[REMOTE].changed or 0)
-        for side in (LOCAL, REMOTE):
+    def get_latest(self, force=False, sides=(LOCAL, REMOTE)):
+        max_changed = max([self[side].changed or 0 for side in sides])
+        for side in sides:
             if force or max_changed > self[side]._last_gotten:
                 self._parent.unconditionally_get_latest(self, side)
                 self[side]._last_gotten = max_changed
@@ -1170,6 +1170,16 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         change_set = self._changeset
         if not change_set:  # todo: cache the changeset
             return None
+
+        # Fill in path if needed.
+        # Some providers' events (GDrive) do not include a path. In order to minimize provider API calls
+        # in the EventManager thread, fill in missing paths here, in the SyncManager thread, instead.
+        # This must be done for the entire changeset in order for the priority sort below to work, since
+        # priority is updated when the path changes.
+        for e in change_set:
+            for side in (LOCAL, REMOTE):
+                if not e[side].path and e[side].exists in (EXISTS, UNKNOWN):
+                    e.get_latest(sides=[side])
 
         sort_key = lambda a: (a.priority, max(a[LOCAL].changed or 0, a[REMOTE].changed or 0))
         if self.shuffle:

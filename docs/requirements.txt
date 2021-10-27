@@ -1,5 +1,6 @@
 pystrict
 sphinx==2.2.1
 recommonmark==0.6.0
+docutils==0.17.1
 requests_oauthlib
 python-daemon

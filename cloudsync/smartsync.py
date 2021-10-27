@@ -221,10 +221,6 @@ class SmartEventManager(EventManager):
         if state:
             if self.side == 1 or (state[self.side].path and self.provider.exists_path(state[self.side].path)):
                 event.path = state[self.side].path
-        # if there is no state entry, then the item is new, so make the event accurate
-        #   so that the new state entry will have a size and mtime
-        if not state or (not event.path and event.exists in (True, None)):
-            self._make_event_accurate(event)
 
 
 class SmartCloudSync(CloudSync):

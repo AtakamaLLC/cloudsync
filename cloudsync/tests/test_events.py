@@ -295,3 +295,25 @@ def test_event_cursor_error(manager):
             # _BackoffError
             manager.do()
         assert manager.need_walk
+
+
+def test_event_no_info_oid_calls(manager):
+    manager.need_walk = False
+    oid1 = manager.provider.create("/file1", BytesIO(b'hello')).oid
+    oid2 = manager.provider.create("/file2", BytesIO(b'hello')).oid
+
+    def done():
+        return manager.state.lookup_oid(manager.side, oid1) and manager.state.lookup_oid(manager.side, oid2)
+
+    with patch.object(manager.provider, "info_oid", side_effect=manager.provider.info_oid) as api:
+
+        # run until both oids are in the change set
+        manager.run(timeout=1, until=done)
+
+        # path is missing for oid providers
+        if not manager.provider.oid_is_path:
+            assert not manager.state.lookup_oid(manager.side, oid1)[manager.side].path
+            assert not manager.state.lookup_oid(manager.side, oid2)[manager.side].path
+
+        # info_oid() not called
+        api.assert_not_called()
