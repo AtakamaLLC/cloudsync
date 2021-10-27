@@ -449,7 +449,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 # HELPER
 
     @classmethod
-    def __normalize_path_list(cls, paths) -> Generator[str, None, None]:
+    def __normalize_path_list(cls, paths):
         """
         Removes blank paths, normalizes separators, expands included iterables
 
@@ -469,7 +469,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 yield from cls.__normalize_path_list(path)
 
     @classmethod
-    def __strip_path_list(cls, path_iterator: Iterator) -> Generator[str, None, None]:
+    def __strip_path_list(cls, path_iterator: Iterator):
         """
         Removes trailing separators from all paths in path_iterator,
         and leading separators from 'cdr' of path_iterator
