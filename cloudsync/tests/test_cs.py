@@ -9,11 +9,12 @@ import pytest
 
 from cloudsync.sync.sqlite_storage import SqliteStorage
 from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, FILE, DIRECTORY, \
-    CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError
+    CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError, CloudCorruptError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
 from cloudsync.runnable import _BackoffError
-from cloudsync.smartsync import SmartCloudSync, SyncNotificationHandler
+from cloudsync.smartsync import SmartCloudSync
+from cloudsync.tests.sync_notification_handler import SyncNotificationHandler
 import time
 
 from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
@@ -2197,6 +2198,20 @@ def test_replace_dir(cs, oidless):
     assert not any("conflicted" in x.path for x in local.listdir_path("/local/Test"))
     assert not any("conflicted" in x.path for x in remote.listdir_path("/remote/Test"))
 
+
+def test_corrupt(cs_nmgr):
+    local = cs_nmgr.providers[LOCAL]
+    remote = cs_nmgr.providers[REMOTE]
+
+    local.mkdir("/local")
+    remote.mkdir("/remote")
+
+    local.create("/local/foo", BytesIO(b'0' * 1025))
+
+    with patch.object(remote, "create", side_effect=CloudCorruptError) as provider_no_transfer:
+        cs_nmgr.run(until=lambda: cs_nmgr.csmonitor.corrupt_paths, timeout=0.25)
+    log.debug("corrupt_paths = %s", cs_nmgr.csmonitor.corrupt_paths)
+    assert cs_nmgr.csmonitor.corrupt_paths
 
 def test_out_of_space(cs):
     local = cs.providers[LOCAL]

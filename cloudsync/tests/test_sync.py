@@ -30,9 +30,9 @@ TIMEOUT = 4
 class SyncMgrMixin(SyncManager, RunUntilHelper):
     def __init__(self, state, prov, trans, resolv, **kw):
         self.notifications: List[Notification] = []
-        def handler(evt):
+        def handle_notification(evt):
             self.notifications.append(evt)
-        self.nmgr = NotificationManager(handler)
+        self.nmgr = NotificationManager(handle_notification)
         super().__init__(state, prov, trans, resolv, notification_manager=self.nmgr, **kw)
 
     def process_notifications(self):
@@ -259,7 +259,8 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload, src_side):
         sync.create_event(src_side, FILE, path=src_path1, oid=sinfo.oid, hash=sinfo.hash)
         sync.run_until_found((dst_side, dst_path1))
 
-    old_corrupt_handler = SyncManager.handle_corrupt
+
+    old_corrupt_handler = sync.handle_corrupt
     patched_method = create_or_upload if src_side == LOCAL else "download"
     with patch.object(remote, patched_method, side_effect=ex.CloudCorruptError) as provider_no_transfer, \
             patch.object(sync, "handle_corrupt", side_effect=old_corrupt_handler) as corrupt_handler:
@@ -373,6 +374,11 @@ def test_sync_corrupt(sync, test_delete_rename, create_or_upload, src_side):
             # confirm that the known good file overwrites the known bad one
             sync.run_until(until=lambda: src.hash_oid(new_oid) == old_hash, timeout=3)
             assert src.hash_oid(new_oid) == old_hash  # old_hash is the pre-corrupt good file
+
+    sync.process_notifications()
+    log.info("notifications %s", sync.notifications)
+    assert NotificationType.SYNC_CORRUPT_IGNORED in [x.ntype for x in sync.notifications]
+    sync.notifications.clear()
 
 
 def test_sync_hash(sync):

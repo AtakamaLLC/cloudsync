@@ -227,18 +227,13 @@ def bump(v, part):
         return [str(e) for e in a]
 
     vnew = ".".join(vlist)
-    vsuffix = ""
-    if v.pre:
-        vsuffix += "".join(strs(v.pre))
-    elif v.post:
-        vsuffix += str(v.post)
-    elif v.dev:
-        dot = ""
-        if v.dot_dev:
-            dot = "."
-        vsuffix += dot + "dev" + str(v.dev)
 
-    return XVersion(vnew + vsuffix)
+    # if we are at this point in the code, we are bumping major, minor or patch. That means that
+    # the any pre-release levels like alpha, beta, dev or what-have-you get stripped off
+    if v.pre or v.post or v.dev:
+        print("WARNING: previous version was pre-release, current version will be a release.")
+
+    return XVersion(vnew)
 
 
 def apply_version(branch, vorig, v2, *, dry, msg=None):

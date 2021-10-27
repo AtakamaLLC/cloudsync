@@ -31,7 +31,7 @@ class Event:
     """Information on stuff that happens in a provider, returned from the events() function."""
 
     otype: OType                                # fsobject type     (DIRECTORY or FILE)
-    oid: str                                    # fsobject id
+    oid: Optional[str]                          # fsobject id
     path: Optional[str]                         # path
     hash: Any                                   # fsobject hash     (better name: ohash)
     exists: Optional[bool]                      # True, False or None ... please do not assume None == False!
