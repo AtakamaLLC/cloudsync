@@ -3,3 +3,6 @@ sphinx==2.2.1
 recommonmark==0.6.0
 requests_oauthlib
 python-daemon
+
+# docutils 0.18 breaks sphinx
+docutils!=0.18
