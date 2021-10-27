@@ -10,7 +10,7 @@ virtualenv docenv
 pip install -r requirements.txt
 rm -rf _build
 
-make html > make.out 2>&1
+make html > make.out 2>&1  || cat make.out
 
 grep 'WARNING' make.out && cat make.out && exit 1
 grep 'build succeeded' make.out && exit 0
