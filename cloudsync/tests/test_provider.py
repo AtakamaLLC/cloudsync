@@ -559,12 +559,51 @@ def pytest_generate_tests(metafunc):
 
 
 def test_join(mock_provider):
-    assert "/a/b/c" == mock_provider.join("a", "b", "c")
-    assert "/a/c" == mock_provider.join("a", None, "c")
-    assert "/a/b/c" == mock_provider.join("/a", "/b", "/c")
-    assert "/a/b/c" == mock_provider.join("/a", "\\b", "\\c")
-    assert "/a/b/c" == mock_provider.join("\\a", "\\b\\c")
-    assert "/a/c" == mock_provider.join("a", "/", "c")
+    for prefix, win_paths in (('/', False), ('', True)):
+        print("prefix=%s win_paths=%s" % (prefix, win_paths))
+        with patch("cloudsync.tests.fixtures.mock_provider.MockProvider.win_paths", new=win_paths):
+            # test the trivial cases
+            assert "/" == mock_provider.join()
+            assert "/" == mock_provider.join("")
+            assert "/" == mock_provider.join("", "")
+            assert "/" == mock_provider.join("", "/")
+            assert "/" == mock_provider.join("/", "")
+            assert "/" == mock_provider.join("/", "//")
+            assert "/" == mock_provider.join("/", "", "//")
+
+            # notice that keeping extra leading separators is not supported in the case that the first component
+            # is *only* separators. The first component is still rstripped of separators
+            assert "/" == mock_provider.join("//", "//")
+
+            # list is comprised of path strings only
+            assert "/a/b/c" == mock_provider.join("a", "b", "c")
+            assert "/a/c" == mock_provider.join("a", None, "c")
+            assert "/a/b/c" == mock_provider.join("/a", "/b", "/c")
+            assert "/a/b/c" == mock_provider.join("/a", "\\b", "\\c")
+            assert "/a/b/c" == mock_provider.join("\\a", "\\b\\c")
+            assert "/a/c" == mock_provider.join("a", "/", "c")
+            assert "//a/b/c/d" == mock_provider.join("\\\\a", "\\b\\c", "d/")
+            assert "//?/b/c/d" == mock_provider.join("//?\\b", "\\c", "d/")
+            assert prefix + "c:/b/c" == mock_provider.join("c:", "b", "c")
+            assert prefix + "c:/c" == mock_provider.join("c:", None, "c")
+            assert prefix + "c:/b/c" == mock_provider.join("c:", "/b", "/c")
+            assert prefix + "c:/b/c" == mock_provider.join("c:", "\\b", "\\c")
+            assert prefix + "c:/c" == mock_provider.join("c:", "/", "c")
+
+            # same test, list is a mixture of paths and lists of paths
+            assert "/a/b/c" == mock_provider.join(("a", "b"), "c")
+            assert "/a/c" == mock_provider.join(("a", None), "c")
+            assert "/a/b/c" == mock_provider.join(("/a", "/b"), "/c")
+            assert "/a/b/c" == mock_provider.join(("/a", "\\b"), "\\c")
+            assert "/a/b/c" == mock_provider.join(("\\a", "\\b\\c"))
+            assert "/a/c" == mock_provider.join(("a", "/"), "c")
+            assert "//a/b/c/d" == mock_provider.join(("\\\\a", "\\b\\c"), "d/")
+            assert "//?/b/c/d" == mock_provider.join(("//?\\b", "\\c"), "d/")
+            assert prefix + "c:/b/c" == mock_provider.join(("c:", "b"), "c")
+            assert prefix + "c:/c" == mock_provider.join(("c:", None), "c")
+            assert prefix + "c:/b/c" == mock_provider.join(("c:", "/b"), "/c")
+            assert prefix + "c:/b/c" == mock_provider.join(("c:", "\\b"), "\\c")
+            assert prefix + "c:/c" == mock_provider.join(("c:", "/"), "c")
 
 
 def test_connect_basic(scoped_provider):
