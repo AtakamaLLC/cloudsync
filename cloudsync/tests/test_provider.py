@@ -25,7 +25,7 @@ import threading
 import time
 import copy
 
-from typing import Optional, Generator, TYPE_CHECKING, List, cast
+from typing import Optional, Generator, TYPE_CHECKING, List, cast, Dict
 from unittest.mock import patch
 
 import requests
@@ -187,6 +187,13 @@ class ProviderTestMixin(ProviderBase):
     def events(self) -> Generator[Event, None, None]:
         for e in self.prov.events():
             if self.__filter_root(e) or not e.exists:
+                yield self.__strip_root(e)
+
+    def resync(self, path, recursive=True):
+        path = self.__add_root(path)
+        log.debug("TEST RESYNC %s", path)
+        for e in self.prov.resync(path, recursive=recursive):
+            if self.__filter_root(e):
                 yield self.__strip_root(e)
 
     def walk(self, path, recursive=True):
@@ -836,11 +843,16 @@ def test_walk(scoped_provider):
     info = provider.create(dest2, temp, None)
     oids[dest2] = info.oid
 
-    got_event = False
-    found = {}
-    for e in provider.walk("/"):
+    # test walking a file instead of a directory
+    for e in provider.resync(dest0):
+        assert e.oid == oids[dest0]
+
+    for e in provider.resync_oid(oids[dest0]):
+        assert e.oid == oids[dest0]
+
+    def check_e(e):
         if e.otype == cloudsync.DIRECTORY:
-            continue
+            return False
         log.debug("WALK %s", e)
         path = e.path
         if path is None:
@@ -849,12 +861,27 @@ def test_walk(scoped_provider):
         found[path] = True
         assert e.mtime
         assert e.exists
-        got_event = True
+        return True
 
+    got_event = False
+    found: Dict[str, bool] = {}
+    for e in provider.walk("/"):
+        if check_e(e):
+            got_event = True
     for x in [dest0, dest1, dest2]:
         assert found.get(x, False) is True
         log.debug("found %s", x)
+    assert got_event
 
+    # now check resync
+    got_event = False
+    found = {}
+    for e in provider.resync("/"):
+        if check_e(e):
+            got_event = True
+    for x in [dest0, dest1, dest2]:
+        assert found.get(x, False) is True
+        log.debug("found %s", x)
     assert got_event
 
     # check non-rec
@@ -880,6 +907,24 @@ def test_walk(scoped_provider):
     # check bad oid
     with pytest.raises(CloudFileNotFoundError):
         list(provider.walk_oid("bad-oid"))
+    with pytest.raises(CloudFileNotFoundError):
+        list(provider.resync_oid("bad-oid"))
+    with pytest.raises(CloudFileNotFoundError):
+        list(provider.resync("bad-path"))
+
+    # if you _walk a folder that has disappeared, then it should show up as empty
+    temp_folder = provider.temp_name("tempfolder")
+    temp_file = provider.join(temp_folder, provider.temp_name("tempfile"))
+    temp_folder_oid = provider.mkdir(temp_folder)
+    temp_folder_info = provider.info_oid(temp_folder_oid)
+    temp_file_info = provider.create(temp_file, temp, None)
+    assert provider.info_oid(temp_folder_oid)
+    for e in provider._walk(temp_folder, temp_folder_oid, True):
+        assert e.oid == temp_file_info.oid
+    provider.rmtree(temp_folder_oid)
+    assert not provider.info_oid(temp_folder_oid)
+    temp_folder_events = list(provider._walk(temp_folder, temp_folder_oid, True))
+    assert temp_folder_events == []
 
 
 def check_event_path(event: Event, provider, target_path):

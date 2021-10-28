@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
 
-from .types import OInfo, DIRECTORY, DirInfo, Any
+from .types import OInfo, DIRECTORY, DirInfo, Any, FILE
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
     CloudRootMissingError
 from .oauth import OAuthConfig, OAuthProviderInfo
@@ -418,7 +418,7 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
         except CloudFileNotFoundError:
             pass
 
-    def _walk(self, path, oid, recursive):
+    def _walk(self, path: Optional[str], oid: str, recursive: bool):
         try:
             for ent in self.listdir(oid):
                 current_path = self.join(path, ent.name)
@@ -445,6 +445,29 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
             raise CloudFileNotFoundError(oid)
         yield from self._walk(info.path, info.oid, recursive)
 
+    def _resync(self, path: Optional[str], oid: str, recursive: bool, info: Union[OInfo, DirInfo]):
+        assert oid == info.oid
+        otype = info.otype
+        path = path or info.path
+        if otype == FILE:
+            event = Event(otype=otype, oid=info.oid, path=path, hash=info.hash, exists=True, mtime=time.time())
+            yield event
+            return
+        yield from self._walk(path, oid, recursive)
+
+    def resync(self, path, recursive=True):
+        """Same as walk, but also supports "walking" a file as well as walking folders"""
+        info = self.info_path(path)
+        if not info:
+            raise CloudFileNotFoundError(path)
+        yield from self._resync(path, info.oid, recursive, info)
+
+    def resync_oid(self, oid, recursive=True):
+        """List all files recursively, yielded as events. oid may refer to a file or a folder"""
+        info = self.info_oid(oid)
+        if not info:
+            raise CloudFileNotFoundError(oid)
+        yield from self._resync(info.path, info.oid, recursive, info)
 
 # HELPER
     @classmethod
