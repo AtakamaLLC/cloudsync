@@ -158,6 +158,14 @@ def test_events_shutdown_provider(event_counter):
         _test_events_shutdown_impl(event_counter)
 
 
+def test_events_shutdown_walk(event_counter):
+    def fake_walk(_oid):
+        return [make_event()] * 10
+
+    with patch.object(event_counter.provider, "walk_oid", fake_walk):
+        _test_events_shutdown_impl(event_counter)
+
+
 def test_backoff(manager):
     try:
         provider = manager.provider
