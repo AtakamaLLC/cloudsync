@@ -205,9 +205,9 @@ class EventManager(Runnable):
         try:
             if oid:
                 for event in self.provider.walk_oid(oid):
-                    self._process_event(event, from_walk=True)
                     if self.stopped:
                         return False
+                    self._process_event(event, from_walk=True)
         except CloudFileNotFoundError as e:
             log.debug('File to walk not found %s', e)
         return True
