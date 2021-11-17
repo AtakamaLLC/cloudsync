@@ -193,24 +193,18 @@ class EventManager(Runnable):
             self.backoff()
 
     def _do_walk_if_needed(self):
-        if self.need_walk:
+        if self.need_walk and self._root_oid:
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
                       self.provider.name, self._root_path, self._root_oid)
-            self._queue = []
-            if self._do_walk_oid(self._root_oid):
-                self.state.storage_update_data(self._walk_tag, time.time())
-                self.need_walk = False
-
-    def _do_walk_oid(self, oid) -> bool:
-        try:
-            if oid:
-                for event in self.provider.walk_oid(oid):
+            try:
+                for event in self.provider.walk_oid(self._root_oid):
                     if self.stopped:
-                        return False
+                        return
                     self._process_event(event, from_walk=True)
-        except CloudFileNotFoundError as e:
-            log.debug('File to walk not found %s', e)
-        return True
+            except CloudFileNotFoundError as e:
+                log.debug('File to walk not found %s', e)
+            self.state.storage_update_data(self._walk_tag, time.time())
+            self.need_walk = False
 
     def _do_first_init(self):
         if self._first_do:
@@ -242,13 +236,9 @@ class EventManager(Runnable):
 
         # regular events
         for event in self.provider.events():
-            if not event:
-                log.error("%s got BAD event %s", self.label, event)
-                continue
             if self.stopped:
                 return
             self._process_event(event)
-
         self._save_current_cursor()
 
     def _save_current_cursor(self):
@@ -282,6 +272,11 @@ class EventManager(Runnable):
 
         The backing store is written to afterward.
         """
+
+        if not event:
+            log.error("%s got BAD event %s", self.label, event)
+            return
+
         with self.state.lock:
             log.debug("%s got event %s, fw: %s", self.label, event, from_walk)
 
