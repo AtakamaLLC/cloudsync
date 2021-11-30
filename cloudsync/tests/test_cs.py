@@ -819,6 +819,19 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
+def test_cs_stop(cs):
+    cs.start()
+
+    with patch.object(cs.sthread, "join") as sthread_join:
+        cs.stop(wait=False)
+        assert cs.sthread
+        sthread_join.assert_not_called()
+
+        cs.stop(wait=True)
+        assert not cs.sthread
+        sthread_join.assert_called_once()
+
+
 def test_cs_move_in_and_out_of_root(cs_nmgr):
     cs = cs_nmgr
     # TODO: fix this - moving things in/out of root is not fully supported with event filtering turned off
