@@ -273,11 +273,10 @@ class CloudSync(Runnable):
         self.emgrs[0].stop(forever=forever, wait=wait)
         self.emgrs[1].stop(forever=forever, wait=wait)
         self.nmgr.stop(forever=forever, wait=wait)
-        if self.sthread:
+        if self.sthread and wait:
             self.sthread.join()
             self.ethreads[0].join()
             self.ethreads[1].join()
-            self.nmgr.wait()  # TODO: wait() above instead of join()?
             self.sthread = None
 
     # for tests, make this manually runnable
