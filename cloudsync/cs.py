@@ -275,9 +275,9 @@ class CloudSync(Runnable):
         Convenience function for stopping multiple CloudSyncs efficiently.
         """
         for cs in syncs:
-            cs._stop(forever=True, wait=False, join=False)
+            cs._stop(forever=True, wait=False, join=False)  # pylint: disable=protected-access
         for cs in syncs:
-            cs._join()
+            cs._join()  # pylint: disable=protected-access
 
     def _stop(self, forever=True, wait=True, join=True):
         log.info("stopping sync: %s", self.storage_label())
