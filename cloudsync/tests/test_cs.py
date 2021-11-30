@@ -819,17 +819,29 @@ def test_cs_basic(cs):
     assert not cs.state.changeset_len
 
 
-def test_cs_stop(cs):
-    cs.start()
+def test_cs_stop(four_local_cs):
+    syncs = list(four_local_cs)
+    for cs in syncs:
+        cs.start()
 
-    with patch.object(cs.sthread, "join") as sthread_join:
-        cs.stop(wait=False)
-        assert cs.sthread
+    # stop a single cloudsync
+    syncs[0].stop()
+    assert syncs[0].sthread is None
+
+    # stop(join=False) + join()
+    with patch.object(syncs[1].sthread, "join") as sthread_join:
+        syncs[1]._stop(join=False)
+        assert syncs[1].sthread
         sthread_join.assert_not_called()
 
-        cs.stop(wait=True)
-        assert not cs.sthread
+        syncs[1]._join()
+        assert not syncs[1].sthread
         sthread_join.assert_called_once()
+
+    # stop_all()
+    CloudSync.stop_all(syncs)
+    assert not syncs[2].sthread
+    assert not syncs[3].sthread
 
 
 def test_cs_move_in_and_out_of_root(cs_nmgr):
