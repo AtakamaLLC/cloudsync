@@ -1,5 +1,5 @@
 # pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
-
+import threading
 from io import BytesIO
 import logging
 from typing import List, Dict, Any, Tuple, Union
@@ -829,17 +829,21 @@ def test_cs_stop(four_local_cs):
     assert syncs[0].sthread is None
 
     # stop(join=False) + join()
-    with patch.object(syncs[1].sthread, "join") as sthread_join:
+    with patch.object(syncs[1], "sthread") as sthread:
         syncs[1]._stop(join=False)
         assert syncs[1].sthread
-        sthread_join.assert_not_called()
+        sthread.join.assert_not_called()
 
         syncs[1]._join()
         assert not syncs[1].sthread
-        sthread_join.assert_called_once()
+        sthread.join.assert_called_once()
+
+    # make sure the Thread object patched above is still a Thread, so that it can be joined below
+    assert isinstance(syncs[1].sthread, threading.Thread)
 
     # stop_all()
     CloudSync.stop_all(syncs)
+    assert not syncs[1].sthread
     assert not syncs[2].sthread
     assert not syncs[3].sthread
 
