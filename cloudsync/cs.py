@@ -266,11 +266,15 @@ class CloudSync(Runnable):
 
         Args:
             forever: If false is passed, then handles are left open for a future start.  Generally used for tests only.
+            wait: If false, notification manager thread is signaled to stop, but the caller does not wait for it.
+
+        NOTE: The wait parameter does not affect the sync manager or event manager threads. These threads need to write
+        out state on CloudSync shutdown, and as such are always joined.
         """
         self._stop(forever=forever, wait=wait, join=True)
 
-    @classmethod
-    def stop_all(cls, syncs: List["CloudSync"]):
+    @staticmethod
+    def stop_all(syncs: List["CloudSync"]):
         """
         Convenience function for stopping multiple CloudSyncs efficiently.
         """

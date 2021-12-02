@@ -826,7 +826,8 @@ def test_cs_stop(four_local_cs):
 
     # stop a single cloudsync
     syncs[0].stop()
-    assert syncs[0].sthread is None
+    for et in syncs[0].ethreads:
+        assert not et.is_alive()
 
     # stop(join=False) + join()
     with patch.object(syncs[1], "sthread") as sthread:
@@ -843,9 +844,9 @@ def test_cs_stop(four_local_cs):
 
     # stop_all()
     CloudSync.stop_all(syncs)
-    assert not syncs[1].sthread
-    assert not syncs[2].sthread
-    assert not syncs[3].sthread
+    for cs in syncs:
+        for et in cs.ethreads:
+            assert not et.is_alive()
 
 
 def test_cs_move_in_and_out_of_root(cs_nmgr):
