@@ -269,7 +269,7 @@ class CloudSync(Runnable):
             wait: If false, notification manager thread is signaled to stop, but the caller does not wait for it.
 
         NOTE: The wait parameter does not affect the sync manager or event manager threads. These threads need to write
-        out state on CloudSync shutdown, and as such are always joined.
+        out state on CloudSync shutdown, and as such we wait on them regardless of the wait parameter value.
         """
         self._stop(forever=forever, wait=wait, join=True)
 
@@ -297,6 +297,9 @@ class CloudSync(Runnable):
             self.sthread.join()
             self.ethreads[0].join()
             self.ethreads[1].join()
+            # TODO: Fix this. Calling wait() after stop() does nothing for Runnable-managed threads.
+            # (the stop call clears the Runnable.__thread handle so there is nothing to wait on)
+            self.nmgr.wait()
             self.sthread = None
 
     # for tests, make this manually runnable

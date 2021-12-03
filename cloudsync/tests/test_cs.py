@@ -824,7 +824,7 @@ def test_cs_stop(four_local_cs):
     for cs in syncs:
         cs.start()
 
-    # stop a single cloudsync
+    # stop() calls join() by default, so expect threads to not be alive afterwards
     syncs[0].stop()
     for et in syncs[0].ethreads:
         assert not et.is_alive()
@@ -832,17 +832,21 @@ def test_cs_stop(four_local_cs):
     # stop(join=False) + join()
     with patch.object(syncs[1], "sthread") as sthread:
         syncs[1]._stop(join=False)
-        assert syncs[1].sthread
+        # all managers were signaled to stop, join() was not called
+        assert syncs[1].smgr.stopped
+        assert syncs[1].emgrs[0].stopped
+        assert syncs[1].emgrs[1].stopped
+        assert syncs[1].nmgr.stopped
         sthread.join.assert_not_called()
 
         syncs[1]._join()
-        assert not syncs[1].sthread
+        # join() called on emgr and smgr threads
+        # NOTE: as of now nmgr is special - we don't join() its thread
         sthread.join.assert_called_once()
+        for et in syncs[1].ethreads:
+            assert not et.is_alive()
 
-    # make sure the Thread object patched above is still a Thread, so that it can be joined below
-    assert isinstance(syncs[1].sthread, threading.Thread)
-
-    # stop_all()
+    # stop_all() - stop+join all syncs
     CloudSync.stop_all(syncs)
     for cs in syncs:
         for et in cs.ethreads:
