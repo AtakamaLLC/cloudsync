@@ -54,6 +54,7 @@ class Runnable(ABC):
     __stopping = False
     __log: logging.Logger = None
     __clear_on_success: bool = True
+    _run_until = None
 
     @property
     def stopped(self):
@@ -80,6 +81,8 @@ class Runnable(ABC):
 
         If an unhandled exception occurs, backoff sleep will occur.
         """
+        self._run_until = until
+
         if self.service_name is None:
             self.service_name = self.__class__.__name__
 
