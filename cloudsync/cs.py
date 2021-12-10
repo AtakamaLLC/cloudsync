@@ -1,4 +1,3 @@
-import threading
 import logging
 
 from typing import Optional, Tuple, List, IO, Any, Type, TYPE_CHECKING
