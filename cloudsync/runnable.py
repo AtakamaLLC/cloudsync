@@ -174,7 +174,7 @@ class Runnable(ABC):
         if self.__thread and self.__thread.is_alive():
             raise RuntimeError("Service already started")
         self.__stopping = False
-        self.__thread = threading.Thread(target=self.run, daemon=daemon, name=self.service_name, kwargs=kwargs)
+        self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
         self.__thread.name = self.service_name
         self.__thread.start()
 

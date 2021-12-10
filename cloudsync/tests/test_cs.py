@@ -826,7 +826,7 @@ def test_cs_stop(four_local_cs):
 
     # stop(wait=True): expect all managers to be stopped
     syncs[0].stop()
-    for mgr in syncs[0]._runnables():
+    for mgr in syncs[0]._runnables:
         assert mgr.wait(timeout=0)
 
     # stop(wait=False) + wait()
@@ -840,13 +840,13 @@ def test_cs_stop(four_local_cs):
         nmgr_wait.assert_not_called()
 
     syncs[1].wait()
-    for mgr in syncs[1]._runnables():
+    for mgr in syncs[1]._runnables:
         assert mgr.wait(timeout=0)
 
     # stop_all() - stop(wait=False) + wait() called on all syncs
     CloudSync.stop_all(syncs)
     for cs in syncs:
-        for mgr in cs._runnables():
+        for mgr in cs._runnables:
             assert mgr.wait(timeout=0)
 
 

@@ -262,7 +262,7 @@ class CloudSync(Runnable):
             wait: If false, manager threads are signaled to stop, but are NOT joined
         """
         log.info("stopping sync: %s", self.storage_label())
-        for mgr in self._runnables():
+        for mgr in self._runnables:
             mgr.stop(forever=forever, wait=wait)
 
     @staticmethod
@@ -305,7 +305,7 @@ class CloudSync(Runnable):
         """
         Called at shutdown, override if you need some shutdown code.
         """
-        for mgr in self._runnables():
+        for mgr in self._runnables:
             mgr.done()
 
     def wait(self, timeout=None):
@@ -314,7 +314,7 @@ class CloudSync(Runnable):
 
         Will wait forever, unless stop() is called or timeout is specified.
         """
-        for mgr in self._runnables():
+        for mgr in self._runnables:
             mgr.wait(timeout=timeout)
 
     def handle_notification(self, notification: Notification):
@@ -325,5 +325,6 @@ class CloudSync(Runnable):
             notification: Information about errors, or other sync events.
         """
 
+    @property
     def _runnables(self):
         return [self.smgr, *self.emgrs, self.nmgr]
