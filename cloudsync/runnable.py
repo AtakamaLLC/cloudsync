@@ -33,7 +33,7 @@ class _BackoffError(Exception):
     pass
 
 
-class Runnable(ABC):
+class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
     """
     Abstract base class for a runnable service.
 
