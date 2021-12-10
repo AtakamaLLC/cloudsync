@@ -203,7 +203,7 @@ class Runnable(ABC):
                 if wait:
                     self.wait()
                 if not thread.is_alive:
-                    self.__thread = None
+                    self.__thread = None  # pragma: no cover
 
     def done(self):
         """
