@@ -53,7 +53,10 @@ class NotificationManager(Runnable):
 
     def do(self):
         log.debug("Looking for a notification")
-        e = self.__queue.get()
+        try:
+            e = self.__queue.get(timeout=0.1)
+        except:
+            return
         try:
             log.debug("Processing a notification: %s", e)
             if e is not None:

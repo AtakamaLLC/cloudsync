@@ -129,7 +129,6 @@ class Runnable(ABC):
             if self.__shutdown:
                 self.done()
 
-            self.__thread = None
             with suppress():
                 log.debug("stopping %s", self.service_name)
 
@@ -170,12 +169,12 @@ class Runnable(ABC):
             self.service_name = self.__class__.__name__
         if self.__shutdown:
             raise RuntimeError("Service was stopped, create a new instance to run.")
-        if self.__thread:
+        if self.__thread and self.__thread.is_alive():
             self.__thread.join(timeout=1)  # give the old thread a chance to die
-        if self.__thread:
+        if self.__thread and self.__thread.is_alive():
             raise RuntimeError("Service already started")
         self.__stopping = False
-        self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
+        self.__thread = threading.Thread(target=self.run, daemon=daemon, name=self.service_name, kwargs=kwargs)
         self.__thread.name = self.service_name
         self.__thread.start()
 
@@ -197,7 +196,6 @@ class Runnable(ABC):
             if threading.current_thread() != self.__thread:
                 if wait:
                     self.wait()
-                self.__thread = None
 
     def done(self):
         """
@@ -212,7 +210,6 @@ class Runnable(ABC):
             self.__thread.join(timeout=timeout)
             if self.__thread and self.__thread.is_alive():
                 raise TimeoutError()
-            self.__thread = None
             return True
         else:
             return False

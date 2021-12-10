@@ -185,6 +185,7 @@ def test_backoff(manager):
         def fail_to_connect(creds):
             nonlocal called
             called = True
+            log.warning("here")
             raise CloudTokenError()
 
         with patch.object(provider, "connect", fail_to_connect):

@@ -396,7 +396,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
     try:
         for i in range(0, 4):
-            four_local_cs[i].start(sleep=0.01)  # Start the sync
+            four_local_cs[i].start()  # Start the sync
             # four_local_cs[i].stop(forever=False)  # Pause the sync
 
         for i in range(0, 4):
@@ -824,33 +824,30 @@ def test_cs_stop(four_local_cs):
     for cs in syncs:
         cs.start()
 
-    # stop() calls join() by default, so expect threads to not be alive afterwards
+    # stop(wait=True): expect all managers to be stopped
     syncs[0].stop()
-    for et in syncs[0].ethreads:
-        assert not et.is_alive()
+    for mgr in syncs[0]._runnables():
+        assert mgr.wait(timeout=0)
 
-    # stop(join=False) + join()
-    with patch.object(syncs[1], "sthread") as sthread:
-        syncs[1]._stop(join=False)
-        # all managers were signaled to stop, join() was not called
+    # stop(wait=False) + wait()
+    with patch.object(syncs[1].nmgr, "wait") as nmgr_wait:
+        syncs[1].stop(wait=False)
+        # all managers were signaled to stop, wait() was not called
         assert syncs[1].smgr.stopped
         assert syncs[1].emgrs[0].stopped
         assert syncs[1].emgrs[1].stopped
         assert syncs[1].nmgr.stopped
-        sthread.join.assert_not_called()
+        nmgr_wait.assert_not_called()
 
-        syncs[1]._join()
-        # join() called on emgr and smgr threads
-        # NOTE: as of now nmgr is special - we don't join() its thread
-        sthread.join.assert_called_once()
-        for et in syncs[1].ethreads:
-            assert not et.is_alive()
+    syncs[1].wait()
+    for mgr in syncs[1]._runnables():
+        assert mgr.wait(timeout=0)
 
-    # stop_all() - stop+join all syncs
+    # stop_all() - stop(wait=False) + wait() called on all syncs
     CloudSync.stop_all(syncs)
     for cs in syncs:
-        for et in cs.ethreads:
-            assert not et.is_alive()
+        for mgr in cs._runnables():
+            assert mgr.wait(timeout=0)
 
 
 def test_cs_move_in_and_out_of_root(cs_nmgr):
@@ -2383,6 +2380,7 @@ def test_backoff(cs, recover):
     else:
         assert cs.smgr.in_backoff
         assert cs.state.changeset_len
+
 
 @pytest.mark.parametrize("prioritize_side", [LOCAL, REMOTE], ids=["LOCAL", "REMOTE"])
 def test_cs_prioritize(cs, prioritize_side):

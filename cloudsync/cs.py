@@ -94,8 +94,8 @@ class CloudSync(Runnable):
         )
         log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
-        self.sthread: threading.Thread = None
-        self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
+        # self.sthread: threading.Thread = None
+        # self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
         self.test_mgr_iter = None
         self.test_mgr_order: List[int] = []
 
@@ -108,7 +108,7 @@ class CloudSync(Runnable):
         self.emgrs[1].forget()
 
     def set_need_walk(self, side, need_walk=True):
-        self.emgrs[side].need_walk=need_walk
+        self.emgrs[side].need_walk = need_walk
 
     @property
     def aging(self) -> float:
@@ -247,18 +247,12 @@ class CloudSync(Runnable):
         """
         Starts the cloudsync service.
         """
-        # Replaces :py:meth:`cloudsync.Runnable.start` so that events are processed asynchronously.
-        self.sthread = threading.Thread(target=self.smgr.run, kwargs={'sleep': 0.1, **kwargs}, daemon=daemon)
-        self.ethreads = (
-            threading.Thread(target=self.emgrs[0].run, kwargs={'sleep': self.sleep[0], **kwargs}, daemon=daemon),
-            threading.Thread(target=self.emgrs[1].run, kwargs={'sleep': self.sleep[1], **kwargs}, daemon=daemon)
-        )
-        self.sthread.start()
-        self.ethreads[0].start()
-        self.ethreads[1].start()
-        log.debug('Starting the notification manager')
+        log.debug("starting sync: %s", self.storage_label())
         self.nmgr.notify(Notification(SourceEnum.SYNC, NotificationType.STARTED, None))
-        self.nmgr.start(**kwargs)
+        self.smgr.start(daemon=daemon, sleep=0.1, **kwargs)
+        self.emgrs[0].start(daemon=daemon, sleep=self.sleep[0], **kwargs)
+        self.emgrs[1].start(daemon=daemon, sleep=self.sleep[1], **kwargs)
+        self.nmgr.start(daemon=daemon, **kwargs)
 
     def stop(self, forever=True, wait=True):
         """
@@ -266,12 +260,11 @@ class CloudSync(Runnable):
 
         Args:
             forever: If false is passed, then handles are left open for a future start.  Generally used for tests only.
-            wait: If false, notification manager thread is signaled to stop, but the caller does not wait for it.
-
-        NOTE: The wait parameter does not affect the sync manager or event manager threads. These threads need to write
-        out state on CloudSync shutdown, and as such we wait on them regardless of the wait parameter value.
+            wait: If false, manager threads are signaled to stop, but are NOT joined
         """
-        self._stop(forever=forever, wait=wait, join=True)
+        log.info("stopping sync: %s", self.storage_label())
+        for mgr in self._runnables():
+            mgr.stop(forever=forever, wait=wait)
 
     @staticmethod
     def stop_all(syncs: List["CloudSync"]):
@@ -279,28 +272,9 @@ class CloudSync(Runnable):
         Convenience function for stopping multiple CloudSyncs efficiently.
         """
         for cs in syncs:
-            cs._stop(forever=True, wait=False, join=False)  # pylint: disable=protected-access
+            cs.stop(forever=True, wait=False)
         for cs in syncs:
-            cs._join()  # pylint: disable=protected-access
-
-    def _stop(self, forever=True, wait=True, join=True):
-        log.info("stopping sync: %s", self.storage_label())
-        self.smgr.stop(forever=forever, wait=wait)
-        self.emgrs[0].stop(forever=forever, wait=wait)
-        self.emgrs[1].stop(forever=forever, wait=wait)
-        self.nmgr.stop(forever=forever, wait=wait)
-        if join:
-            self._join()
-
-    def _join(self):
-        if self.sthread:
-            self.sthread.join()
-            self.ethreads[0].join()
-            self.ethreads[1].join()
-            # TODO: Fix this. Calling wait() after stop() does nothing for Runnable-managed threads.
-            # (the stop call clears the Runnable.__thread handle so there is nothing to wait on)
-            self.nmgr.wait()
-            self.sthread = None
+            cs.wait()
 
     # for tests, make this manually runnable
     # This method is NEVER called in production, it is only called in tests!
@@ -332,10 +306,8 @@ class CloudSync(Runnable):
         """
         Called at shutdown, override if you need some shutdown code.
         """
-        self.smgr.done()
-        self.emgrs[0].done()
-        self.emgrs[1].done()
-        self.nmgr.done()
+        for mgr in self._runnables():
+            mgr.done()
 
     def wait(self, timeout=None):
         """
@@ -343,10 +315,8 @@ class CloudSync(Runnable):
 
         Will wait forever, unless stop() is called or timeout is specified.
         """
-        for t in (self.sthread, self.ethreads[0], self.ethreads[1]):
-            t.join(timeout=timeout)
-            if t.is_alive():
-                raise TimeoutError()
+        for mgr in self._runnables():
+            mgr.wait(timeout=timeout)
 
     def handle_notification(self, notification: Notification):
         """
@@ -355,3 +325,6 @@ class CloudSync(Runnable):
         Args:
             notification: Information about errors, or other sync events.
         """
+
+    def _runnables(self):
+        return [self.smgr, *self.emgrs, self.nmgr]
