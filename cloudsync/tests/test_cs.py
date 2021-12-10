@@ -1,5 +1,5 @@
 # pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
-import threading
+
 from io import BytesIO
 import logging
 from typing import List, Dict, Any, Tuple, Union
@@ -2380,7 +2380,6 @@ def test_backoff(cs, recover):
     else:
         assert cs.smgr.in_backoff
         assert cs.state.changeset_len
-
 
 @pytest.mark.parametrize("prioritize_side", [LOCAL, REMOTE], ids=["LOCAL", "REMOTE"])
 def test_cs_prioritize(cs, prioritize_side):

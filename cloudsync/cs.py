@@ -91,12 +91,9 @@ class CloudSync(Runnable):
             emgr_class(smgr.providers[1], state, 1, self.nmgr, root_path=event_root_paths[1],
                          reauth=lambda: self.authenticate(1), root_oid=event_root_oids[1])
         )
-        log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
-        # self.sthread: threading.Thread = None
-        # self.ethreads: Tuple[threading.Thread, threading.Thread] = (None, None)
-        self.test_mgr_iter = None
-        self.test_mgr_order: List[int] = []
+        self._runnables = [self.smgr, *self.emgrs, self.nmgr]
+        log.info("initialized sync: %s, manager: %s", self.storage_label(), debug_sig(id(smgr)))
 
     def forget(self):
         """
@@ -107,7 +104,7 @@ class CloudSync(Runnable):
         self.emgrs[1].forget()
 
     def set_need_walk(self, side, need_walk=True):
-        self.emgrs[side].need_walk = need_walk
+        self.emgrs[side].need_walk=need_walk
 
     @property
     def aging(self) -> float:
@@ -289,8 +286,6 @@ class CloudSync(Runnable):
         import random  # pylint: disable=import-outside-toplevel
         mgrs = [*self.emgrs, self.smgr]
         random.shuffle(mgrs)
-        # conceptually, we should save the order of operations
-        # self.test_mgr_order.append(order_of(mgrs))
         caught = None
         for m in mgrs:
             try:
@@ -324,7 +319,3 @@ class CloudSync(Runnable):
         Args:
             notification: Information about errors, or other sync events.
         """
-
-    @property
-    def _runnables(self):
-        return [self.smgr, *self.emgrs, self.nmgr]
