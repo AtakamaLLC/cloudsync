@@ -8,7 +8,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO
+from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict, BinaryIO, Iterator
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
@@ -447,39 +447,62 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
 
 
 # HELPER
+
     @classmethod
-    def join(cls, *paths):
+    def __normalize_path_list(cls, paths) -> Generator[str, None, None]:
+        """
+        Removes blank paths, normalizes separators, expands included iterables
+
+        This is important because we don't want to lstrip the first element, and if the first
+        element is a list, then we don't want to lstrip only the first element of that list.
+        Not lstripping the first path component (which would require readding the leading sep after the join
+        was done every time) allows for support of filesystems that either want 0 leading separators,
+        such as "c:\" on windows, or that want >1 leading separators, such as windows UNC
+        paths which begin with double slashes
+        """
+        for path in paths:
+            if isinstance(path, str):
+                norm_path = cls.normalize_path_separators(path)
+                if norm_path:
+                    yield norm_path
+            elif path:
+                yield from cls.__normalize_path_list(path)
+
+    @classmethod
+    def __strip_path_list(cls, path_iterator: Iterator) -> Generator[str, None, None]:
+        """
+        Removes trailing separators from all paths in path_iterator,
+        and leading separators from 'cdr' of path_iterator
+        """
+        try:
+            path = next(path_iterator)
+            stripped = path.rstrip(cls.sep)
+            if stripped:
+                yield stripped
+        except StopIteration:
+            return
+        for path in path_iterator:
+            stripped = path.strip(cls.sep)
+            if stripped:
+                yield stripped
+
+    @classmethod
+    def join(cls, *paths: Union[str, List[str], Tuple[str]]):
         """
         Joins a list of path strings in a provider-specific manner.
 
         Args:
             paths: zero or more paths
         """
-        rl: List[str] = []
-        for path in paths:
-            if not path:
-                continue
-
-            if isinstance(path, str):
-                path = cls.normalize_path_separators(path)
-                if path and path != cls.sep:
-                    rl += [path.strip(cls.sep)]
-                continue
-
-            for sub_path in path:
-                sub_path = cls.normalize_path_separators(sub_path)
-                if sub_path and sub_path != cls.sep:
-                    rl += [sub_path.strip(cls.sep)]
-
-        if not rl:
+        norm_paths: List[str] = list(cls.__strip_path_list(cls.__normalize_path_list(paths)))
+        if norm_paths:
+            joined_path = cls.sep.join(norm_paths)
+            if not cls.win_paths or joined_path[1] != ':':
+                if joined_path[0] != cls.sep:
+                    joined_path = cls.sep + joined_path
+            return joined_path
+        else:
             return cls.sep
-
-        res = cls.sep.join(rl)
-
-        if not cls.win_paths or res[1] != ':':
-            res = cls.sep + res
-
-        return res
 
     def split(self, path):
         """Splits a path into a dirname, filename, just like 1os.path.split()1"""

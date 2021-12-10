@@ -1274,7 +1274,7 @@ def test_rename_by_delete_create(sync, order):
 
     new_loid = local.rename(linfo1.oid, local_file2)
     sync.create_event(LOCAL, FILE, oid=linfo1.oid, exists=False)
-    sync.create_event(LOCAL, FILE, oid=new_loid, hash=linfo1.hash, exists=True)
+    sync.create_event(LOCAL, FILE, oid=new_loid, path=local_file2, hash=linfo1.hash, exists=True)
     create: SyncEntry = sync.state.lookup_oid(LOCAL, new_loid)
     create._priority = (-1, -2)[order]
 

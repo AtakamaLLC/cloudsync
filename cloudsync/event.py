@@ -193,21 +193,18 @@ class EventManager(Runnable):
             self.backoff()
 
     def _do_walk_if_needed(self):
-        if self.need_walk:
+        if self.need_walk and self._root_oid:
             log.debug("walking all %s/%s-%s files as events, because no working cursor on startup",
                       self.provider.name, self._root_path, self._root_oid)
-            self._queue = []
-            self._do_walk_oid(self._root_oid)
+            try:
+                for event in self.provider.walk_oid(self._root_oid):
+                    if self.stopped:
+                        return
+                    self._process_event(event, from_walk=True)
+            except CloudFileNotFoundError as e:
+                log.debug('File to walk not found %s', e)
             self.state.storage_update_data(self._walk_tag, time.time())
             self.need_walk = False
-
-    def _do_walk_oid(self, oid):
-        try:
-            if oid:
-                for event in self.provider.walk_oid(oid):
-                    self._process_event(event, from_walk=True)
-        except CloudFileNotFoundError as e:
-            log.debug('File to walk not found %s', e)
 
     def _do_first_init(self):
         if self._first_do:
@@ -239,13 +236,9 @@ class EventManager(Runnable):
 
         # regular events
         for event in self.provider.events():
-            if not event:
-                log.error("%s got BAD event %s", self.label, event)
-                continue
             if self.stopped:
                 return
             self._process_event(event)
-
         self._save_current_cursor()
 
     def _save_current_cursor(self):
@@ -279,6 +272,11 @@ class EventManager(Runnable):
 
         The backing store is written to afterward.
         """
+
+        if not event:
+            log.error("%s got BAD event %s", self.label, event)
+            return
+
         with self.state.lock:
             log.debug("%s got event %s, fw: %s", self.label, event, from_walk)
 
@@ -340,8 +338,6 @@ class EventManager(Runnable):
         state = self.state.lookup_oid(self.side, event.oid)
         if state:
             event.path = state[self.side].path
-        if not event.path and event.exists in (True, None):
-            self._make_event_accurate(event)
 
     def _notify_on_root_change_event(self, event: Event):
         # since the event manager now assumes that the root path/oid passed into it are valid, use these values

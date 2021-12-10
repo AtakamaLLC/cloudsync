@@ -1,5 +1,4 @@
 # pylint: disable=protected-access,too-many-lines,missing-docstring,logging-format-interpolation,too-many-statements,too-many-locals
-import threading
 import time
 from io import BytesIO
 
@@ -24,14 +23,14 @@ log = logging.getLogger(__name__)
 class EventManagerWithCounter(EventManager):
     def __init__(self, *args, **kwargs):
         self.event_count = 0
-        self.event_processed = threading.Event()
+        self.stop_after = -1
         super().__init__(*args, **kwargs)
 
     def _process_event(self, *args, **kwargs):
         super()._process_event(*args, **kwargs)
         self.event_count += 1
-        self.event_processed.set()
-        time.sleep(0.1)
+        if self.event_count == self.stop_after:
+            self.stop()
 
 
 def create_event_manager(provider_generator, root_path, event_manager_type=EventManager):
@@ -138,24 +137,41 @@ def test_events_shutdown_force_process_event(manager):
         manager.stop()
 
 
-def _test_events_shutdown_impl(event_counter):
-    # wait for 1 event to be processed
-    event_counter.start(sleep=0.2)
-    event_counter.event_processed.wait(timeout=1)
-    assert event_counter.event_processed.is_set
-    assert event_counter.event_count == 1
-
-    # ensure that events are not processed after event manager is stopped
-    event_counter.stop()
-    assert event_counter.event_count == 1
+def test_events_stop_walk_processing(event_counter):
+    with patch.object(event_counter.provider, "walk_oid", lambda x: [make_event()] * 10):
+        with patch.object(event_counter.provider, "events", lambda: [make_event()] * 10):
+            event_counter.stop_after = 5
+            event_counter._do_unsafe()
+            # walk event processing is interruptable
+            assert event_counter.event_count == 5
 
 
-def test_events_shutdown_provider(event_counter):
-    def fake_events():
-        return [make_event()] * 10
+def test_events_stop_queue_processing(event_counter):
+    with patch.object(event_counter.provider, "walk_oid", lambda x: [make_event()] * 10):
+        with patch.object(event_counter.provider, "events", lambda: [make_event()] * 10):
+            event_counter._queue = [(None, True)] * 10
+            event_counter.stop_after = 15
+            event_counter._do_unsafe()
+            # queue event processing is not interruptable - stop before the first provider event
+            assert event_counter.event_count == 20
 
-    with patch.object(event_counter.provider, "events", fake_events):
-        _test_events_shutdown_impl(event_counter)
+
+def test_events_stop_provider_processing(event_counter):
+    event_counter.need_walk = False
+    with patch.object(event_counter.provider, "events", lambda: [make_event()] * 10):
+        event_counter.stop_after = 5
+        event_counter._do_unsafe()
+        # provider event processing is interruptible
+        assert event_counter.event_count == 5
+
+
+def test_events_no_stop(event_counter):
+    with patch.object(event_counter.provider, "events", lambda: [make_event()] * 6):
+        with patch.object(event_counter.provider, "walk_oid", lambda x: [make_event()] * 7):
+            # _process_event() is is resilient to invalid events
+            event_counter._queue = [(None, True)] * 8
+            event_counter._do_unsafe()
+            assert event_counter.event_count == 6 + 7 + 8
 
 
 def test_backoff(manager):
@@ -295,3 +311,25 @@ def test_event_cursor_error(manager):
             # _BackoffError
             manager.do()
         assert manager.need_walk
+
+
+def test_event_no_info_oid_calls(manager):
+    manager.need_walk = False
+    oid1 = manager.provider.create("/file1", BytesIO(b'hello')).oid
+    oid2 = manager.provider.create("/file2", BytesIO(b'hello')).oid
+
+    def done():
+        return manager.state.lookup_oid(manager.side, oid1) and manager.state.lookup_oid(manager.side, oid2)
+
+    with patch.object(manager.provider, "info_oid", side_effect=manager.provider.info_oid) as api:
+
+        # run until both oids are in the change set
+        manager.run(timeout=1, until=done)
+
+        # path is missing for oid providers
+        if not manager.provider.oid_is_path:
+            assert not manager.state.lookup_oid(manager.side, oid1)[manager.side].path
+            assert not manager.state.lookup_oid(manager.side, oid2)[manager.side].path
+
+        # info_oid() not called
+        api.assert_not_called()

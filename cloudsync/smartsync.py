@@ -175,7 +175,7 @@ class SmartSyncState(SyncState):
         # do we want to do the autosync calculation on every do()? Or perhaps flag each entry that the
         #     autosync calculation has been done, and no need to do it again... if so, don't persist that flag
         changes = set()
-        for ent in self._changeset_storage:
+        for ent in self._changeset_storage.copy():  # take a copy to ensure the set doesn't change during iteration
             if ent in self.excludeset and not ent[LOCAL].changed:
                 self._nmgr.notify(Notification(SourceEnum.REMOTE, NotificationType.SYNC_SMART_UNSYNCED, ent[REMOTE].path))
                 continue
@@ -197,7 +197,8 @@ class SmartSyncState(SyncState):
             if included:
                 changes.add(ent)
 
-        return changes
+        # intersection protects against changeset having changed, and intersection iterates in C, so it is atomic here
+        return changes.intersection(self._changeset_storage)
 
     @_changeset.setter
     def _changeset(self, value):
@@ -221,10 +222,6 @@ class SmartEventManager(EventManager):
         if state:
             if self.side == 1 or (state[self.side].path and self.provider.exists_path(state[self.side].path)):
                 event.path = state[self.side].path
-        # if there is no state entry, then the item is new, so make the event accurate
-        #   so that the new state entry will have a size and mtime
-        if not state or (not event.path and event.exists in (True, None)):
-            self._make_event_accurate(event)
 
 
 class SmartCloudSync(CloudSync):
