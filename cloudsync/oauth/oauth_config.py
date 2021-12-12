@@ -182,6 +182,13 @@ class OAuthConfig:
         assert self._redirect_server
         self._redirect_server.shutdown()
 
+    def server_close(self):
+        """
+        Close the redirect server and join all threads
+        """
+        assert self._redirect_server
+        self._redirect_server.server_close()
+
     @property
     def redirect_uri(self) -> str:
         """

@@ -156,6 +156,15 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
             self.__on_failure = None
         self.__thread = None
 
+    def server_close(self):
+        """Closes the server and joins all threads"""
+        if self.__api_server and not self.__running:
+            try:
+                self.__api_server.server_close()
+            except Exception:
+                log.exception("failed to close server")
+            self.__api_server = None
+
     def wait(self, timeout=None):
         """Wait for oauth response"""
         self.event.wait(timeout=timeout)
