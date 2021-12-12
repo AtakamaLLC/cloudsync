@@ -205,7 +205,7 @@ class ApiServer:
                 with self.__shutdown_lock:
                     if self.__shutting_down:
                         self.__server.server_close()
-        except Exception:
+        except Exception:  # pragma: no cover
             log.exception("exception during server_close")
 
     def __call__(self, env, start_response):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements

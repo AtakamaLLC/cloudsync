@@ -161,7 +161,7 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
         if self.__api_server and not self.__running:
             try:
                 self.__api_server.server_close()
-            except Exception:
+            except Exception:  # pragma: no cover
                 log.exception("failed to close server")
             self.__api_server = None
 
