@@ -6,7 +6,6 @@ thread management.
 """
 
 import time
-from contextlib import suppress
 
 from abc import ABC, abstractmethod
 
@@ -129,11 +128,15 @@ class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
             self.__stopped = True
             self.__interrupt = None
 
+            # if logging "stopping %s" fails during a test with a "ValueError: I/O operation on closed file"
+            # then an instance of Runnable was permitted to run beyond the end of the test. The test log should show
+            # the service_name, which should identify which service was left around. Make sure that the service
+            # is really stopped before dropping out of the test, by catching the call to done(), and when done()
+            # is called, then you know there won't be any more logging from the service.
+            log.debug("stopping %s", self.service_name)
+
             if self.__shutdown:
                 self.done()
-
-            with suppress():
-                log.debug("stopping %s", self.service_name)
 
     @property
     def started(self):
@@ -195,8 +198,9 @@ class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
         self.__stopping = True
         self.wake()
         self.__shutdown = forever
-        if self.__thread:
-            if threading.current_thread() != self.__thread:
+        thread = self.__thread  # otherwise race condition -- self.__thread can change value in another thread
+        if thread:
+            if threading.current_thread() != thread:
                 if wait:
                     self.wait()
 
@@ -209,9 +213,10 @@ class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
         """
         Wait for the service to stop.
         """
-        if self.__thread and threading.current_thread() != self.__thread:
-            self.__thread.join(timeout=timeout)
-            if self.__thread and self.__thread.is_alive():
+        thread = self.__thread  # otherwise race condition -- self.__thread can change value in another thread
+        if thread and threading.current_thread() != thread:
+            thread.join(timeout=timeout)
+            if thread and thread.is_alive():
                 raise TimeoutError()
             return True
         else:
