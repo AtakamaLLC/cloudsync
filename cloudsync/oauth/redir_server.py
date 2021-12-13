@@ -163,7 +163,6 @@ class OAuthRedirServer:        # pylint: disable=too-many-instance-attributes
                 self.__api_server.server_close()
             except Exception:  # pragma: no cover
                 log.exception("failed to close server")
-            self.__api_server = None
 
     def wait(self, timeout=None):
         """Wait for oauth response"""
