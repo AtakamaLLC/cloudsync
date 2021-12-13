@@ -2,14 +2,16 @@ import time
 import threading
 import logging
 import pytest
+from threading import Barrier
 
 from cloudsync import Runnable
+from cloudsync.tests.fixtures.util import RunUntilHelper
 
 log = logging.getLogger(__name__)
 
 
 def test_runnable():
-    class TestRun(Runnable):
+    class TestRunTestRunnable(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -20,7 +22,7 @@ def test_runnable():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRunTestRunnable()
 
     with pytest.raises(TimeoutError):
         testrun.run(timeout=0.02, sleep=0.001)
@@ -50,42 +52,52 @@ def test_runnable():
 
 
 def test_timeout():
-    class TestRun(Runnable):
+    do_barrier_start = Barrier(2)
+    do_barrier_end = Barrier(2)
+
+    class TestRunTestTimeout(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
 
         def do(self):
+            do_barrier_start.wait(10)  # tell the test we're started
+            do_barrier_end.wait(10)  # hang here until the test is done testing
             self.called += 1
-            time.sleep(10)
 
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRunTestTimeout()
     testrun.start()
-    while not testrun.started:
-        time.sleep(.01)
+    do_barrier_start.wait(10)  # hang here until runnable gets into do()
     with pytest.raises(TimeoutError):
         testrun.wait(timeout=.01)
 
+    # clean up
+    do_barrier_end.wait(10)  # release the do loop from prison
+    testrun.stop(wait=10)
+    RunUntilHelper.wait_until(until=lambda: testrun.called, timeout=10)  # make sure do dropped out
+    RunUntilHelper.wait_until(until=lambda: testrun.stopped, timeout=10)  # make sure the thread is done
+    RunUntilHelper.wait_until(until=lambda: testrun.cleaned, timeout=10)  # make sure done was called
+
+
 def test_start_exceptions():
-    class TestRun(Runnable):
+    class TestRunTestStartExceptions(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
 
         def do(self):
             self.called += 1
-            time.sleep(10)
+            time.sleep(1)
 
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRunTestStartExceptions()
     testrun.start()
-    while not testrun.started:
-        time.sleep(.01)
+    RunUntilHelper.wait_until(lambda: testrun.started)
 
     with pytest.raises(RuntimeError):
         testrun.start()
@@ -96,30 +108,41 @@ def test_start_exceptions():
     with pytest.raises(RuntimeError):
         testrun.start()
 
+
 def test_no_wait_stop():
-    class TestRun(Runnable):
+    do_barrier_start = Barrier(2)
+    do_barrier_end = Barrier(2)
+
+    class TestRunTestNoWaitStop(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
 
         def do(self):
-            time.sleep(10)
+            do_barrier_start.wait(10)  # tell the test we're started
+            do_barrier_end.wait(10)  # hang here until the test is done testing
             self.called += 1
 
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRunTestNoWaitStop()
     testrun.start()
-    while not testrun.started:
-        time.sleep(.01)
+    do_barrier_start.wait(10)  # hang here until runnable gets into do()
 
     assert testrun.called == 0
     testrun.stop(wait=False)
     assert testrun.called == 0
 
+    # the test framework chokes when the service stops after the test is complete and stop tries to log
+    do_barrier_end.wait(10)  # release the do loop from prison
+    RunUntilHelper.wait_until(until=lambda: testrun.called, timeout=10)  # make sure do dropped out
+    RunUntilHelper.wait_until(until=lambda: testrun.stopped, timeout=10)  # make sure the thread is done
+    RunUntilHelper.wait_until(until=lambda: testrun.cleaned, timeout=10)  # make sure done was called
+
+
 def test_runnable_wake():
-    class TestRun(Runnable):
+    class TestRunTestRunnableWake(Runnable):
         def __init__(self):
             self.cleaned = False
             self.called = 0
@@ -130,7 +153,7 @@ def test_runnable_wake():
         def done(self):
             self.cleaned = True
 
-    testrun = TestRun()
+    testrun = TestRunTestRunnableWake()
 
     # noop
     log.info("noop")
