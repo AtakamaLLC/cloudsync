@@ -91,7 +91,7 @@ def test_server_close():
         # started, but not shutdown yet
         t = threading.Thread(target=api.serve_forever, daemon=True)
         t.start()
-        RunUntilHelper.wait_until(lambda: api._ApiServer__started)
+        RunUntilHelper.wait_until(lambda: api._ApiServer__started)  # type: ignore
         api.server_close()
         server.server_close.assert_not_called()
 
