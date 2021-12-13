@@ -2041,9 +2041,10 @@ def test_report_info(provider):
 
     assert pinfo2['used'] > 0
     assert pinfo2['limit'] > 0
-    if provider.name not in ("box", "filesystem"):
+    if provider.name not in ("box", "filesystem", "testodbiz"):
         # box cache defeats this
         # fs providers have too many temp files blinking in and out
+        # onedrive enterprise does not appear to update quota in realtime (as of Dec 2021)
         assert pinfo2['used'] > u1
 
 
