@@ -5,8 +5,8 @@ import requests
 from unittest.mock import Mock, patch
 
 from cloudsync.oauth import OAuthRedirServer
-from cloudsync.oauth import OAuthConfig, OAuthToken
 from cloudsync.oauth.apiserver import ApiServer
+from cloudsync.tests import RunUntilHelper
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +44,9 @@ def test_oauth_redir_server():
     on_success = Mock()
     on_failure = Mock()
 
+    global server_close_calls
+    server_close_calls = 0
+
     # should have no effect on server that is not yet running
     srv.server_close()
     assert server_close_calls == 0
@@ -76,3 +79,23 @@ def test_oauth_redir_server():
 
     on_success.assert_not_called()
     on_failure.assert_called_once()
+
+
+def test_server_close():
+    api = ApiServer("127.0.0.1", 0)
+    with patch.object(api, "_ApiServer__server") as server:
+        # not started yet
+        api.server_close()
+        server.server_close.assert_not_called()
+
+        # started, but not shutdown yet
+        t = threading.Thread(target=api.serve_forever, daemon=True)
+        t.start()
+        RunUntilHelper.wait_until(lambda: api._ApiServer__started)
+        api.server_close()
+        server.server_close.assert_not_called()
+
+        # started and shutdown
+        api.shutdown()
+        api.server_close()
+        server.server_close.assert_called_once()
