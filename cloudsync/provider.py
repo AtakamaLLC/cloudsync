@@ -245,6 +245,8 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 log.error("oauth error %s", repr(e))
                 self.disconnect()
                 raise CloudTokenError(repr(e))
+            finally:
+                self._oauth_config.server_close()
 
             return {"refresh_token": token.refresh_token,
                     "access_token": token.access_token}
