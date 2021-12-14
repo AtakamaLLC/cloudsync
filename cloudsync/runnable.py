@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 
 import threading
 import logging
+from typing import List
+
 log = logging.getLogger(__name__)
 
 
@@ -203,6 +205,16 @@ class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
             if threading.current_thread() != thread:
                 if wait:
                     self.wait()
+
+    @staticmethod
+    def stop_all(runnables: List["Runnable"]):
+        """
+        Convenience function for stopping multiple Runnables efficiently.
+        """
+        for run in runnables:
+            run.stop(forever=True, wait=False)
+        for run in runnables:
+            run.wait()
 
     def done(self):
         """

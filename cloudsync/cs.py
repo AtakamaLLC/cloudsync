@@ -262,16 +262,6 @@ class CloudSync(Runnable):
         for mgr in self._runnables:
             mgr.stop(forever=forever, wait=wait)
 
-    @staticmethod
-    def stop_all(syncs: List["CloudSync"]):
-        """
-        Convenience function for stopping multiple CloudSyncs efficiently.
-        """
-        for cs in syncs:
-            cs.stop(forever=True, wait=False)
-        for cs in syncs:
-            cs.wait()
-
     # for tests, make this manually runnable
     # This method is NEVER called in production, it is only called in tests!
     #   Notice that the start() method is overridden in this class, and prevents do() from being called
@@ -286,6 +276,9 @@ class CloudSync(Runnable):
         import random  # pylint: disable=import-outside-toplevel
         mgrs = [*self.emgrs, self.smgr]
         random.shuffle(mgrs)
+        # TODO: log the order of operations here, in case the test fails.
+        #  we could use this info to reproduce the failure on a dev machine more easily
+        # self.test_mgr_order.append(order_of(mgrs))
         caught = None
         for m in mgrs:
             try:
