@@ -195,9 +195,18 @@ class ApiServer:
                     if not self.__shutting_down:
                         self.__shutting_down = True
                         self.__server.shutdown()
-                        self.__server.server_close()
         except Exception:
             log.exception("exception during shutdown")
+
+    def server_close(self):
+        """Closes the server and joins all threads"""
+        try:
+            if self.__started:
+                with self.__shutdown_lock:
+                    if self.__shutting_down:
+                        self.__server.server_close()
+        except Exception:  # pragma: no cover
+            log.exception("exception during server_close")
 
     def __call__(self, env, start_response):  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
         with self.__shutdown_lock:
