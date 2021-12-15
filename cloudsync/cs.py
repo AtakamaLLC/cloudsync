@@ -259,8 +259,7 @@ class CloudSync(Runnable):
             wait: If false, manager threads are signaled to stop, but are NOT joined
         """
         log.info("stopping sync: %s", self.storage_label())
-        for mgr in self._runnables:
-            mgr.stop(forever=forever, wait=wait)
+        self.stop_all(self._runnables, forever, wait)
 
     # for tests, make this manually runnable
     # This method is NEVER called in production, it is only called in tests!

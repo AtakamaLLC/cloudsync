@@ -207,14 +207,17 @@ class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
                     self.wait()
 
     @staticmethod
-    def stop_all(runnables: List["Runnable"]):
+    def stop_all(runnables: List["Runnable"], forever: bool = True, wait: bool = True):
         """
         Convenience function for stopping multiple Runnables efficiently.
         """
+        log.info("stop_all: forever=%s wait=%", forever, wait)
         for run in runnables:
-            run.stop(forever=True, wait=False)
-        for run in runnables:
-            run.wait()
+            # signal all runnables to stop before waiting on any of them
+            run.stop(forever=forever, wait=False)
+        if wait:
+            for run in runnables:
+                run.wait()
 
     def done(self):
         """
