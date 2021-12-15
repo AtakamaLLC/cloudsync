@@ -1,6 +1,6 @@
 import logging
 
-from typing import Optional, Tuple, List, IO, Any, Type, TYPE_CHECKING
+from typing import Optional, Tuple, IO, Any, Type, TYPE_CHECKING
 
 from pystrict import strict
 

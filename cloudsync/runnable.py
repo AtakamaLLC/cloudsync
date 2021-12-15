@@ -211,7 +211,7 @@ class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
         """
         Convenience function for stopping multiple Runnables efficiently.
         """
-        log.info("stop_all: forever=%s wait=%", forever, wait)
+        log.info("stop_all: forever=%s wait=%s", forever, wait)
         for run in runnables:
             # signal all runnables to stop before waiting on any of them
             run.stop(forever=forever, wait=False)
