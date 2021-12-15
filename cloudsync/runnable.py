@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 
 import threading
 import logging
+from typing import List
+
 log = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class _BackoffError(Exception):
     pass
 
 
-class Runnable(ABC):
+class Runnable(ABC):  # pylint: disable=too-many-instance-attributes
     """
     Abstract base class for a runnable service.
 
@@ -53,6 +55,7 @@ class Runnable(ABC):
     __stopping = False
     __log: logging.Logger = None
     __clear_on_success: bool = True
+    _run_until = None
 
     @property
     def stopped(self):
@@ -79,6 +82,8 @@ class Runnable(ABC):
 
         If an unhandled exception occurs, backoff sleep will occur.
         """
+        self._run_until = until
+
         if self.service_name is None:
             self.service_name = self.__class__.__name__
 
@@ -135,8 +140,6 @@ class Runnable(ABC):
             if self.__shutdown:
                 self.done()
 
-            self.__thread = None  # this is a hair premature, no?
-
     @property
     def started(self):
         """
@@ -174,9 +177,9 @@ class Runnable(ABC):
             self.service_name = self.__class__.__name__
         if self.__shutdown:
             raise RuntimeError("Service was stopped, create a new instance to run.")
-        if self.__thread:
+        if self.__thread and self.__thread.is_alive():
             self.__thread.join(timeout=1)  # give the old thread a chance to die
-        if self.__thread:
+        if self.__thread and self.__thread.is_alive():
             raise RuntimeError("Service already started")
         self.__stopping = False
         self.__thread = threading.Thread(target=self.run, kwargs=kwargs, daemon=daemon, name=self.service_name)
@@ -202,8 +205,19 @@ class Runnable(ABC):
             if threading.current_thread() != thread:
                 if wait:
                     self.wait()
-                if not thread.is_alive:
-                    self.__thread = None  # pragma: no cover
+
+    @staticmethod
+    def stop_all(runnables: List["Runnable"], forever: bool = True, wait: bool = True):
+        """
+        Convenience function for stopping multiple Runnables efficiently.
+        """
+        log.info("stop_all: forever=%s wait=%s", forever, wait)
+        for run in runnables:
+            # signal all runnables to stop before waiting on any of them
+            run.stop(forever=forever, wait=False)
+        if wait:
+            for run in runnables:
+                run.wait()
 
     def done(self):
         """
@@ -219,7 +233,6 @@ class Runnable(ABC):
             thread.join(timeout=timeout)
             if thread and thread.is_alive():
                 raise TimeoutError()
-            self.__thread = None
             return True
         else:
             return False

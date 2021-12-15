@@ -396,7 +396,7 @@ def test_cs_sharing_conflict_update_file_and_rename_parent_folder(four_local_cs)
 
     try:
         for i in range(0, 4):
-            four_local_cs[i].start(sleep=0.01)  # Start the sync
+            four_local_cs[i].start()  # Start the sync
             # four_local_cs[i].stop(forever=False)  # Pause the sync
 
         for i in range(0, 4):
@@ -817,6 +817,37 @@ def test_cs_basic(cs):
 
     assert len(cs.state) == 3
     assert not cs.state.changeset_len
+
+
+def test_cs_stop(four_local_cs):
+    syncs = list(four_local_cs)
+    for cs in syncs:
+        cs.start()
+
+    # stop(wait=True): expect all managers to be stopped
+    syncs[0].stop()
+    for mgr in syncs[0]._runnables:
+        assert mgr.wait(timeout=0)
+
+    # stop(wait=False) + wait()
+    with patch.object(syncs[1].nmgr, "wait") as nmgr_wait:
+        syncs[1].stop(wait=False)
+        # all managers were signaled to stop, wait() was not called
+        assert syncs[1].smgr.stopped
+        assert syncs[1].emgrs[0].stopped
+        assert syncs[1].emgrs[1].stopped
+        assert syncs[1].nmgr.stopped
+        nmgr_wait.assert_not_called()
+
+    syncs[1].wait()
+    for mgr in syncs[1]._runnables:
+        assert mgr.wait(timeout=0)
+
+    # stop_all() - stop(wait=False) + wait() called on all syncs
+    CloudSync.stop_all(syncs)
+    for cs in syncs:
+        for mgr in cs._runnables:
+            assert mgr.wait(timeout=0)
 
 
 def test_cs_move_in_and_out_of_root(cs_nmgr):
