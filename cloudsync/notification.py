@@ -56,7 +56,7 @@ class NotificationManager(Runnable):
         if self._run_until:
             try:
                 e = self.__queue.get(timeout=0.1)
-            except:
+            except queue.Empty:
                 return
         else:
             e = self.__queue.get()
