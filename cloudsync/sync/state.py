@@ -1124,11 +1124,13 @@ class SyncState:  # pylint: disable=too-many-instance-attributes, too-many-publi
         if prior_oid and prior_oid != oid:
             # this is an oid_is_path provider
             prior_ent = self.lookup_oid(side, prior_oid)
+            log.debug("ent %s", ent)
             log.debug("prior ent %s", prior_ent)
 
             # this is only needed when shuffling
             # run test_cs_folder_conflicts_del 100 times or so
-            if prior_ent and prior_ent.is_discarded and prior_ent[side].exists in (TRASHED, MISSING):
+            if not ent and prior_ent and prior_ent.is_discarded and prior_ent[side].exists in (TRASHED, MISSING):
+                log.info("Reusing prior ent")
                 ent = prior_ent
                 ent.ignored = IgnoreReason.NONE
 
