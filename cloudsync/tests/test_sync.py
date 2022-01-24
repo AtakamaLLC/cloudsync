@@ -1150,7 +1150,6 @@ def test_ent_overrides_prior_ent(sync):
     linfo = local.create(lpath1, BytesIO(b"hello"))
     sync.create_event(LOCAL, FILE, path=lpath1, oid=linfo.oid, hash=linfo.hash)
     sync.run_until_found((REMOTE, rpath1))
-    # row_a = sync.state.lookup_oid(LOCAL, linfo.oid)
 
     # next rename file1 to file2 and create a rename event for that, plus a matching delete for file1,
     # since filesystem watchers can report a rename as a delete of the old filename and a create of the new filename
