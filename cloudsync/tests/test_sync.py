@@ -1132,6 +1132,67 @@ def test_remove_folder_with_kids(sync_sh):
     sync.run_until_found(WaitFor(REMOTE, file1[REMOTE], exists=False), WaitFor(REMOTE, folder1[REMOTE], exists=False))
 
 
+def test_ent_overrides_prior_ent(sync):
+    (local, remote) = sync.providers
+
+    remote_parent = "/remote"
+    local_parent = "/local"
+
+    lparent_info = local.mkdir(local_parent)
+    rparent_info = remote.mkdir(remote_parent)
+
+    lpath1 = Provider.join(local_parent, "file1")
+    rpath1 = Provider.join(remote_parent, "file1")
+    lpath2 = Provider.join(local_parent, "file2")
+    rpath2 = Provider.join(remote_parent, "file2")
+
+    # start by setting up the initial state. File is created, and synced remotely
+    linfo = local.create(lpath1, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=lpath1, oid=linfo.oid, hash=linfo.hash)
+    sync.run_until_found((REMOTE, rpath1))
+
+    # next rename file1 to file2 and create a rename event for that, plus a matching delete for file1,
+    # since filesystem watchers can report a rename as a delete of the old filename and a create of the new filename
+    old_oid = linfo.oid
+    new_oid = local.rename(linfo.oid, lpath2)
+    sync.create_event(LOCAL, FILE, path=lpath2, oid=new_oid, hash=linfo.hash, prior_oid=old_oid)  # rename event
+    sync.create_event(LOCAL, FILE, path=lpath1, oid=old_oid, exists=False)  # a rename can also show up as a delete
+    if local.oid_is_path:
+        # when oid is oid, the delete event will trash the correct SyncEntry, but the trashed status will get reverted
+        # when we get latest, since that file isn't really trashed.
+        # when oid is path, the delete event won't find a SyncEntry for path1, so a new SyncEntry is
+        # created for path1, to be sure that we try to handle that event. The issue that we are testing
+        # for is that the new SyncEntry gets discarded, then later, after a repeat rename event comes in,
+        # the new SyncEntry gets renamed (erroneously) instead of the old SyncEntry, because the discarded
+        # SyncEntry mistakenly takes priority over the active one. This test demonstrates that the active
+        # SyncEntry takes priority.
+        row_a = sync.state.lookup_oid(LOCAL, new_oid)
+        row_b: SyncEntry = sync.state.lookup_oid(LOCAL, old_oid)
+        assert row_a != row_b
+        sync.run_until(lambda: row_b.is_discarded and remote.exists_path(rpath2))
+    else:
+        assert new_oid == old_oid
+        sync.run_until(lambda: remote.exists_path(rpath2))
+
+    # last step is to
+    #   delete path2 locally,
+    #   insert a repeat rename event in there to mess with the state, and then
+    #   insert a delete event for path2.
+    # If the discarded SyncEntry mistakenly takes precendence, then the rename will rename the path in the
+    # discarded SyncEntry, and bring it back to life, which will then become the SyncEntry that gets marked as
+    # trashed when the delete event comes in. This resurrected SyncEntry will not have been synced, so the delete
+    # gets ignored, and the delete is never synced remotely.
+    # If the correct SyncEntry takes precedence, then it will see that the
+    # path already matches the new path, and set the SyncEntry as changed without making any material changes to the
+    # details of the SyncEntry. Then, when the delete event comes in, it marks the active SyncEntry as trashed,
+    # so that when it gets embraced, the delete happens as it is supposed to
+    assert remote.exists_path(rpath2)
+    local.delete(new_oid)
+    sync.create_event(LOCAL, FILE, path=lpath2, oid=new_oid, hash=linfo.hash, prior_oid=old_oid)  # rename event
+    sync.create_event(LOCAL, FILE, path=lpath2, oid=new_oid, exists=False)
+    sync.run_until_found(WaitFor(REMOTE, rpath2, exists=False), timeout=1)
+    assert not remote.exists_path(rpath2)  # if the delete succeeds, then the correct SyncEntry took precendence
+
 def test_dir_rm(sync):
     remote_parent = "/remote"
     local_parent = "/local"
