@@ -2434,6 +2434,49 @@ def test_cs_prioritize(cs, prioritize_side):
         assert not lp2_exists
         assert rp1_exists
 
+    next_expectation = (REMOTE, remote_path1) if prioritize_side == REMOTE else (LOCAL, local_path2)
+    cs.run_until_found(next_expectation, timeout=cs.aging+1)
+
+
+def test_cs_prioritize_contrived(cs):
+    # process root creation, which is done in cs fixture init
+    cs.run_until_clean(timeout=1)
+
+    # custom priority
+    cs.prioritize = lambda _side, path: -1 if "top_priority" in path else 0
+
+    oid1 = cs.providers[LOCAL].create("/local/some_file.txt", BytesIO(b"hello")).oid
+    oid2 = cs.providers[LOCAL].mkdir("/local/top_priority_1")
+
+    cs.emgrs[LOCAL].do()
+    cs.emgrs[REMOTE].do()
+
+    ent1 = cs.state.lookup_oid(LOCAL, oid1)
+    ent2 = cs.state.lookup_oid(LOCAL, oid2)
+    assert ent1[LOCAL].changed > 0
+    assert ent2[LOCAL].changed > 0
+
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+    # this folder must be synced first based on priority
+    cs.run_until_found((REMOTE, "/remote/top_priority_1"))
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    assert cs.providers[REMOTE].info_path("/remote/top_priority_1") is not None
+    assert cs.providers[REMOTE].info_path("/remote/some_file.txt") is None
+
+    # once the top priority folder is synced, the lower priority file should sync
+    cs.run_until_found((REMOTE, "/remote/some_file.txt"))
+    assert cs.providers[REMOTE].info_path("/remote/some_file.txt") is not None
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+    # the contrived bit:
+    # insert a high priority entry that does NOT need to be synced into the changeset,
+    # and create a normal priority entry that does need to be synced.
+    # ensure that we don't get stuck in an infinite loop trying to sync the high priority entry.
+    cs.state._changeset.add(ent2)
+    cs.providers[LOCAL].create("/local/some_other_file.txt", BytesIO(b"hello"))
+    cs.run_until_found((REMOTE, "/remote/some_other_file.txt"))
+
 
 MERGE = 2
 

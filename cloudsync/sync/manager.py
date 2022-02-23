@@ -390,6 +390,10 @@ class SyncManager(Runnable):
                     if sync[side].changed:
                         log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                         sync[side].changed = 0
+
+                    # if we are processing an entry that doesn't need sync, mark it finished (remove from changeset)
+                    # to ensure that we don't get into an infinite loop trying to sync it
+                    self.finished(side, sync)
                     continue
 
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
