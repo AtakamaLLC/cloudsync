@@ -226,6 +226,7 @@ class SyncManager(Runnable):
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
             if sync:
+                log.log(TRACE, "do sync=%s", sync)
                 need_to_sleep = False
                 something_got_done = self._sync_one_entry(sync)
 
@@ -368,7 +369,8 @@ class SyncManager(Runnable):
         sync.get_latest()
         return False
 
-    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches, too-many-statements
+    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:
+        # pylint: disable=too-many-branches, too-many-statements, too-many-locals
         """
         Called on each changed entry.
         """
@@ -382,6 +384,8 @@ class SyncManager(Runnable):
         something_got_done = True
 
         for side in ordered:
+            log.log(TRACE, "sync: process side=%s", side)
+            other = OTHER_SIDE[side]
             if not sync[side].needs_sync():
                 if sync[side].changed and sync[other_side(side)].is_corrupt:
                     # see comment on the SideState.is_corrupt method for more information on the corrupt state
@@ -405,8 +409,8 @@ class SyncManager(Runnable):
 
             # if the other side changed hash, handle it first
             if sync[side].hash == sync[side].sync_hash:
-                other = OTHER_SIDE[side]
                 if sync[other].changed and sync[other].hash != sync[other].sync_hash:
+                    log.debug("hash change: defer to other side")
                     continue
 
             if self.path_conflict(sync):
@@ -415,8 +419,18 @@ class SyncManager(Runnable):
                 my_name_there = self.translate(OTHER_SIDE[side], my_name) or ""
                 their_name_here = self.translate(side, their_name) or ""
 
-                if my_name_there and their_name_here:
-                    if my_name_there > their_name and their_name_here < my_name:  # if the other side's path comes first alphabetically
+                # check for hash changes --
+                # if there is a hash change AND a path conflict, do NOT defer to other side (avoids infinite loop)
+                # instead, split the SyncEntry and proceed to embrace_change()
+                my_hash_changed = sync[side].hash != sync[side].sync_hash
+                their_hash_same = not sync[other].changed or sync[other].hash == sync[other].sync_hash
+                this_side_pending_content_sync = my_hash_changed and their_hash_same
+
+                log.debug("path conflict: %s %s hash_change=%s", my_name, their_name, my_hash_changed)
+                if my_name_there and their_name_here and not this_side_pending_content_sync:
+                    if my_name_there > their_name and their_name_here < my_name:
+                        # if the other side's path comes first alphabetically, defer to the other side,
+                        log.debug("path conflict: defer to other side")
                         continue
                 else:
                     self.state.split(sync)
