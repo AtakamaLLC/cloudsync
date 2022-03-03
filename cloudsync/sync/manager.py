@@ -369,7 +369,8 @@ class SyncManager(Runnable):
         sync.get_latest()
         return False
 
-    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:  # pylint: disable=too-many-branches, too-many-statements
+    def sync(self, sync: SyncEntry, want_raise: bool = False) -> bool:
+        # pylint: disable=too-many-branches, too-many-statements, too-many-locals
         """
         Called on each changed entry.
         """
