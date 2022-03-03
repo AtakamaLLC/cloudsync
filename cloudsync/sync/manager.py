@@ -181,12 +181,9 @@ class SyncManager(Runnable):
         something_got_done = False
         try:
             something_got_done = self.pre_sync(sync)
-            log.debug("bi2-3394: pre_sync ret=%s", something_got_done)
             if not something_got_done:
                 something_got_done = self.sync(sync)
-                log.debug("bi2-3394: sync ret=%s", something_got_done)
             self.state.storage_commit()
-            log.debug("bi2-3394: after storage_commit")
         except (ex.CloudTemporaryError, ex.CloudDisconnectedError, ex.CloudOutOfSpaceError, ex.CloudTokenError,
                 ex.CloudNamespaceError) as e:
             log.warning(
@@ -228,11 +225,10 @@ class SyncManager(Runnable):
         something_got_done = False  # shouldn't this be default False? Don't assume there will be no exceptions...
         with self.state.lock:
             sync: SyncEntry = self.state.change(self.aging)
-            log.debug("bi2-3394: do sync=%s", sync)
             if sync:
+                log.log(TRACE, "do sync=%s", sync)
                 need_to_sleep = False
                 something_got_done = self._sync_one_entry(sync)
-                log.debug("bi2-3394: sync_one_entry ret=%s", something_got_done)
 
         if need_to_sleep:
             time.sleep(self.aging)
@@ -387,7 +383,8 @@ class SyncManager(Runnable):
         something_got_done = True
 
         for side in ordered:
-            log.debug("bi2-3394: process side=%s", side)
+            log.log(TRACE, "sync: process side=%s", side)
+            other = OTHER_SIDE[side]
             if not sync[side].needs_sync():
                 if sync[side].changed and sync[other_side(side)].is_corrupt:
                     # see comment on the SideState.is_corrupt method for more information on the corrupt state
@@ -396,10 +393,6 @@ class SyncManager(Runnable):
                     if sync[side].changed:
                         log.debug("Sync entry marked as changed, but doesn't need sync, finishing. %s", sync)
                         sync[side].changed = 0
-
-                    # if we are processing an entry that doesn't need sync, mark it finished (remove from changeset)
-                    # to ensure that we don't get into an infinite loop trying to sync it
-                    self.finished(side, sync)
                     continue
 
             if sync[side].hash is None and sync[side].otype == FILE and sync[side].exists == EXISTS:
@@ -415,9 +408,8 @@ class SyncManager(Runnable):
 
             # if the other side changed hash, handle it first
             if sync[side].hash == sync[side].sync_hash:
-                other = OTHER_SIDE[side]
                 if sync[other].changed and sync[other].hash != sync[other].sync_hash:
-                    log.debug("bi2-3394: other side changed hash continue")
+                    log.debug("hash change: defer to other side")
                     continue
 
             if self.path_conflict(sync):
@@ -426,9 +418,18 @@ class SyncManager(Runnable):
                 my_name_there = self.translate(OTHER_SIDE[side], my_name) or ""
                 their_name_here = self.translate(side, their_name) or ""
 
-                if my_name_there and their_name_here:
-                    if my_name_there > their_name and their_name_here < my_name:  # if the other side's path comes first alphabetically
-                        log.debug("bi2-3394: path conflict continue")
+                # check for hash changes --
+                # if there is a hash change AND a path conflict, do NOT defer to other side (avoids infinite loop)
+                # instead, split the SyncEntry and proceed to embrace_change()
+                my_hash_changed = sync[side].hash != sync[side].sync_hash
+                their_hash_same = not sync[other].changed or sync[other].hash == sync[other].sync_hash
+                this_side_pending_content_sync = my_hash_changed and their_hash_same
+
+                log.debug("path conflict: %s %s hash_change=%s", my_name, their_name, my_hash_changed)
+                if my_name_there and their_name_here and not this_side_pending_content_sync:
+                    if my_name_there > their_name and their_name_here < my_name:
+                        # if the other side's path comes first alphabetically, defer to the other side,
+                        log.debug("path conflict: defer to other side")
                         continue
                 else:
                     self.state.split(sync)
