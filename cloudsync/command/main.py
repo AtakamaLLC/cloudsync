@@ -7,12 +7,13 @@ from typing import Any
 
 from .utils import SubCmd
 
-logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-        datefmt='%Y-%m-%d:%H:%M:%S',)
 log = logging.getLogger()
 
 def main():
     """cloudsync command line main"""
+
+    logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+            datefmt='%Y-%m-%d:%H:%M:%S',)
 
     parser = argparse.ArgumentParser(description='cloudsync - monitor and sync between cloud providers')
     cmds = parser.add_subparsers(title="Commands")
