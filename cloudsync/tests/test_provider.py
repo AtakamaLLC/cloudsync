@@ -2212,10 +2212,9 @@ def test_set_ns_offline(unwrapped_provider):
     log.info("ns id %s", provider.namespace_id)
     with pytest.raises(CloudNamespaceError):
         provider.connect(provider._test_creds)
-    assert provider.namespace is None  # setting a bad ns id makes this None
+
     provider.reconnect()
-    # TODO: revert to CloudNamespaceError after OneDrive fix is in
-    with pytest.raises(CloudException):
+    with pytest.raises(CloudNamespaceError):
         provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
 
 
