@@ -12,9 +12,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from cloudsync.tests.fixtures import WaitFor, RunUntilHelper
-from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNotFoundError, CloudFileNameError,\
-        LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError, Notification,\
-        NotificationManager, NotificationType, SyncEntry
+from cloudsync import SyncManager, SyncState, CloudFileExistsError, CloudFileNotFoundError, CloudFileNameError, \
+    LOCAL, REMOTE, FILE, DIRECTORY, Event, CloudTemporaryError, Notification, \
+    NotificationManager, NotificationType, SyncEntry, CloudResourceModifiedError
 from cloudsync.runnable import _BackoffError
 from cloudsync.provider import Provider
 from cloudsync.types import OInfo, IgnoreReason
@@ -231,6 +231,40 @@ def test_sync_rename(sync):
 
     assert sync.providers[REMOTE].info_path("/remote/stuff") is None
     sync.state.assert_index_is_correct()
+
+
+def test_sync_resource_modified(sync):
+    remote_parent = "/remote"
+    local_parent = "/local"
+    local_file = Provider.join(local_parent, "stuff1")  # "/local/stuff1"
+    remote_file = Provider.join(remote_parent, "stuff1")  # "/remote/stuff1"
+
+    # create roots
+    sync.providers[LOCAL].mkdir(local_parent)
+    sync.providers[REMOTE].mkdir(remote_parent)
+
+    # create local_file, wait for it to sync up to remote
+    linfo = sync.providers[LOCAL].create(local_file, BytesIO(b"hello"))
+    sync.create_event(LOCAL, FILE, path=local_file, oid=linfo.oid, hash=linfo.hash)
+    sync.run_until_found((REMOTE, remote_file))
+
+    # update local_file - SyncManager will upload it to remote
+    linfo = sync.providers[LOCAL].upload(linfo.oid, BytesIO(b"goodbye"))
+    sync.create_event(LOCAL, FILE, path=local_file, oid=linfo.oid, hash=linfo.hash)
+
+    # remote upload raises CloudResourceModifiedError
+    with patch.object(sync.providers[REMOTE], "upload", side_effect=CloudResourceModifiedError):
+        with patch.object(sync, "_nmgr") as nmgr:
+            with pytest.raises(_BackoffError):
+                # expect a backoff
+                sync.aging = 0
+                sync.do()
+
+            # error is temporary
+            nmgr.notify_from_exception.assert_called_once()
+            err = nmgr.notify_from_exception.call_args[0][1]
+            assert isinstance(err, CloudResourceModifiedError)
+            assert isinstance(err, CloudTemporaryError)
 
 
 @pytest.mark.parametrize("test_delete_rename", ["basic", "delete", "rename"])

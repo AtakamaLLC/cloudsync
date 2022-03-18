@@ -29,6 +29,10 @@ class CloudRootMissingError(CloudTemporaryError):     # ENOENT, but treated diff
     pass
 
 
+class CloudResourceModifiedError(CloudTemporaryError):  # resource being updated changed since the caller last read it
+    pass
+
+
 class CloudFileExistsError(CloudException):           # EEXIST
     pass
 
@@ -49,7 +53,7 @@ class CloudNamespaceError(CloudException):            # 'namespaces are not supp
     pass
 
 
-class CloudTooManyRetriesError(CloudException):       # giving up on an operation after N unsucessful attempts
+class CloudTooManyRetriesError(CloudException):       # giving up on an operation after N unsuccessful attempts
     pass
 
 
