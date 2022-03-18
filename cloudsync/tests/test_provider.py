@@ -2214,7 +2214,7 @@ def test_set_ns_offline(unwrapped_provider):
         provider.connect(provider._test_creds)
 
     # no namespace means use the default namespace on connect
-    provider.namespace = None  # type: ignore
+    provider.namespace_id = ""
     provider.reconnect()
     with pytest.raises(CloudNamespaceError):
         provider.namespace_id = 'bad-namespace-is-not-ok-when-online'
