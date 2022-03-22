@@ -2457,6 +2457,27 @@ def test_cs_path_conflict_and_hash_change(cs):
     log.info("TABLE 3\n%s", cs.state.pretty_print())
 
 
+def test_cs_path_conflict_and_no_change_on_other_side(cs):
+    # create a folder with a file in it, wait for it to sync
+    cs.providers[LOCAL].mkdir("/local/folder")
+    loc_fil_oid = cs.providers[LOCAL].create("/local/folder/file.txt", BytesIO(b"hello")).oid
+    cs.run_until_found((REMOTE, "/remote/folder/file.txt"))
+    log.info("TABLE 1\n%s", cs.state.pretty_print())
+
+    sync = cs.state.lookup_oid(LOCAL, loc_fil_oid)
+    # local file path/sync-path mismatch
+    sync[LOCAL].sync_path = "/local/old-folder/file.txt"
+    # remote file changed and renamed - new name is lower alphabetically,
+    # which normally defers to the other (alphabetically first) side
+    sync[REMOTE].changed = 1
+    sync[REMOTE].path = "/remote/folder/renamed-file.txt"
+    log.info("TABLE 2\n%s", cs.state.pretty_print())
+
+    # ensure this doesn't get into an infinite loop
+    cs.run_until_clean(timeout=3)
+    log.info("TABLE 3\n%s", cs.state.pretty_print())
+
+
 MERGE = 2
 
 

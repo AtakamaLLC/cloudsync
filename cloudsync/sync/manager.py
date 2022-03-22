@@ -428,7 +428,8 @@ class SyncManager(Runnable):
 
                 log.debug("path conflict: %s %s hash_change=%s", my_name, their_name, my_hash_changed)
                 if my_name_there and their_name_here and not this_side_pending_content_sync:
-                    if my_name_there > their_name and their_name_here < my_name:
+                    # make sure other side needs sync before deferring to it (avoids infinite loop)
+                    if my_name_there > their_name and their_name_here < my_name and sync[other].needs_sync():
                         # if the other side's path comes first alphabetically, defer to the other side,
                         log.debug("path conflict: defer to other side")
                         continue
