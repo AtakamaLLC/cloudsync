@@ -3997,7 +3997,7 @@ def test_cs_nested_local_folders_ignores_conflicts(cs_nested):
     log.info("TABLE OUTER 3\n%s", cso.state.pretty_print())
     log.info("TABLE INNER 3\n%s", csi.state.pretty_print())
     for i in range(5):
-        # pre-existing (stale) files are still there on out remote (these should not be deleted)
+        # pre-existing (stale) files are still there on outer remote (these should not be deleted)
         assert rpo.exists_path(f"/remote/outer/inner/e{i}.dat")
 
 
