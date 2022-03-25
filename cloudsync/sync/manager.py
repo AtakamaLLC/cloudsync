@@ -1422,13 +1422,20 @@ class SyncManager(Runnable):
             if not translated_path:
                 src = SourceEnum.LOCAL if changed == LOCAL else SourceEnum.REMOTE
                 self._nmgr.notify(Notification(src, NotificationType.SYNC_DISCARDED, sync[changed].path))
-                if sync[changed].sync_path:  # This entry was relevent, but now it is irrelevant
+
+                # Note: It is possible for a path to be translated to None, but still be inside the sync root.
+                #       For example, there is a nested sync that took ownership of a subfolder of this sync.
+                #       If that is the case, DO NOT delete the synced file or folder.
+                if sync[changed].sync_path and not self.providers[changed].is_subpath_of_root(sync[changed].path):
+                    # This entry was relevant, but now it is irrelevant
                     log.info(">>>Removing remnants of file moved out of cloud root")
                     ret = self.delete_synced(sync, changed, synced, IgnoreReason.IRRELEVANT)
                     if ret == FINISHED:
                         self.state.split(sync)
                     return ret
-                else:  # we don't have a new or old translated path... just irrelevant so discard
+                else:
+                    # We don't have a new or old translated path, or the changed path is still inside the sync root.
+                    # Just irrelevant, so discard.
                     log.log(TRACE, ">>>Not a cloud path %s, ignoring", sync[changed].path)
                     sync.ignore(IgnoreReason.IRRELEVANT)
 
