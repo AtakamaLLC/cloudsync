@@ -3795,6 +3795,8 @@ def test_cs_event_filter(cs):
 
 
 def test_cs_nested_local_folders_with_conflict_resolution(cs_nested):
+    # reference implementation of nested syncs that handle conflicts by copying
+    # conflicted files to a special folder
     (cso, csi) = cs_nested
     (lpo, rpo) = cso.providers  # /local/outer <-> /remote/outer
     (lpi, rpi) = csi.providers  # /local/outer/inner <-> /remote/inner
@@ -3890,9 +3892,24 @@ def test_cs_nested_local_folders_with_conflict_resolution(cs_nested):
 
 
 def test_cs_nested_local_folders_ignores_conflicts(cs_nested):
+    # reference implementation of nested syncs that ignore conflicts.
+    # conflicted files/folders are not synced, but also should not be deleted.
     (cso, csi) = cs_nested
     (lpo, rpo) = cso.providers  # /local/outer <-> /remote/outer
     (lpi, rpi) = csi.providers  # /local/outer/inner <-> /remote/inner
+
+    # add files to the inner folder BEFORE changing the translate function --
+    # this simulates setting up the outer sync first, and syncing folders/files
+    # that are not yet conflicting, but will be once the inner sync is setup
+    rpo.mkdir("/remote/outer/inner")
+    for i in range(5):
+        rpo.create(f"/remote/outer/inner/e{i}.dat", BytesIO(b"outer-inner-e"))
+    cso.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 0\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 0\n%s", csi.state.pretty_print())
+    for i in range(5):
+        assert lpo.info_path(f"/local/outer/inner/e{i}.dat")
+        assert cso.state.lookup_path(LOCAL, f"/local/outer/inner/e{i}.dat")
 
     def translate_impl(to, path, get_nested_sync_paths, translate_orig):
         provisional = translate_orig(to, path)
@@ -3941,28 +3958,47 @@ def test_cs_nested_local_folders_ignores_conflicts(cs_nested):
     csi.run_until_clean(timeout=1)
     log.info("TABLE OUTER 1\n%s", cso.state.pretty_print())
     log.info("TABLE INNER 1\n%s", csi.state.pretty_print())
-    assert not cso.state.lookup_path(REMOTE, "/remote/outer/inner")
-    assert not rpo.info_path("/remote/outer/inner")
     assert cso.state.lookup_path(REMOTE, "/remote/outer/f1.dat")
     assert rpo.info_path("/remote/outer/f1.dat")
     assert cso.state.lookup_path(LOCAL, "/local/outer/f3.dat")
     assert lpo.info_path("/local/outer/f3.dat")
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
+    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner/f2.dat")
     assert csi.state.lookup_path(REMOTE, "/remote/inner/f2.dat")
     assert rpi.info_path("/remote/inner/f2.dat")
     assert csi.state.lookup_path(LOCAL, "/local/outer/inner/f4.dat")
     assert lpi.info_path("/local/outer/inner/f4.dat")
+    assert not csi.state.lookup_path(LOCAL, "/local/outer/f1.dat")
+    assert not csi.state.lookup_path(LOCAL, "/local/outer/f3.dat")
 
     # ensure remote conflicts are ignored
-    rpo.mkdir("/remote/outer/inner")
     rpo.create("/remote/outer/inner/c1.dat", BytesIO(b"outer-inner-c1"))
     cso.run_until_clean(timeout=1)
     csi.run_until_clean(timeout=1)
     log.info("TABLE OUTER 2\n%s", cso.state.pretty_print())
     log.info("TABLE INNER 2\n%s", csi.state.pretty_print())
-    assert not cso.state.lookup_path(LOCAL, "/local/outer/inner")
     assert not lpo.info_path("/local/outer/inner/c1.dat")
     # the conflict file should still exist on remote
     assert rpo.info_path("/remote/outer/inner/c1.dat")
+
+    # ensure pre-existing files (those created/synced by the outer sync before the inner was enabled)
+    # are handled gracefully
+    for i in range(5):
+        # pre-existing (stale) files are still there on the outer remote
+        assert rpo.exists_path(f"/remote/outer/inner/e{i}.dat")
+    for i in range(5):
+        # update e*.dat on the inner remote
+        oid = rpi.info_path(f"/remote/inner/e{i}.dat").oid
+        rpi.upload(oid, BytesIO(b"outer-inner-e-changed"))
+    # expect these updates to sync to /local/outer/inner, and generate events for both syncs,
+    # since they are nested and share a file system
+    csi.run_until_clean(timeout=1)
+    cso.run_until_clean(timeout=1)
+    log.info("TABLE OUTER 3\n%s", cso.state.pretty_print())
+    log.info("TABLE INNER 3\n%s", csi.state.pretty_print())
+    for i in range(5):
+        # pre-existing (stale) files are still there on outer remote (these should not be deleted)
+        assert rpo.exists_path(f"/remote/outer/inner/e{i}.dat")
 
 
 def test_cs_del_folder_remote_add_file_local(cs):
