@@ -2228,6 +2228,7 @@ def test_authenticate(unwrapped_provider):
 
     creds = provider.authenticate()
     log.info(creds)
+    print(creds)
     provider.connect(creds)
     provider.disconnect()
     provider.connect(creds)
