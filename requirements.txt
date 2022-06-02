@@ -1,4 +1,4 @@
-pystrict~=1.1
+pystrict==1.1
 arrow~=0.17.0
 msgpack
 dataclasses
