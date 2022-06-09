@@ -214,7 +214,7 @@ class SyncManager(Runnable):
                     self._root_oids[side] = oid
                     self._root_validated[side] = True
                 except Exception as e:
-                    if isinstance(e, ex.CloudException) and not isinstance(e, ex.CloudTemporaryError):
+                    if isinstance(e, ex.CloudRootMissingError) or (isinstance(e, ex.CloudException) and not isinstance(e, ex.CloudTemporaryError)):
                         self._nmgr.notify_from_exception(SourceEnum.SYNC, e)
                     log.exception("exception %s[%s] while validating provider root", type(e), e)
                     self.backoff()  # raises a backoff error to the caller
