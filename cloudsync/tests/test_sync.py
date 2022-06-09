@@ -3,9 +3,10 @@
 import logging
 import time
 from io import BytesIO
-from typing import List
+from typing import List, Tuple, Callable
 from itertools import permutations
 from platform import system
+from pystrict import strict
 
 from unittest.mock import patch, MagicMock
 
@@ -27,8 +28,14 @@ log = logging.getLogger(__name__)
 TIMEOUT = 4
 
 
+@strict
 class SyncMgrMixin(SyncManager, RunUntilHelper):
-    def __init__(self, state, prov, trans, resolv, **kw):
+    def __init__(self,
+                 state: SyncState,
+                 prov: Tuple['Provider', 'Provider'],
+                 trans: Callable,
+                 resolv: Callable,
+                 **kw):
         self.notifications: List[Notification] = []
         def handle_notification(evt):
             self.notifications.append(evt)

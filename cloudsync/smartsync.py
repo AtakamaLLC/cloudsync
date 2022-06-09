@@ -1,6 +1,7 @@
 """ Implements SmartSync, which only syncs files to local storage upon request """
 import time
 import logging
+from pystrict import strict
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast, Union
 from cloudsync.sync import MISSING, TRASHED
@@ -82,6 +83,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         return pcs
 
 
+@strict
 class SmartSyncState(SyncState):
     """Enhances the syncstate to support smart syncing."""
     def __init__(self,
