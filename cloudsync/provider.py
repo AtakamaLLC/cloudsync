@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Generator, Optional, List, Union, Tuple, Dict,
 
 from .types import OInfo, DIRECTORY, DirInfo, Any
 from .exceptions import CloudFileNotFoundError, CloudFileExistsError, CloudTokenError, CloudNamespaceError, \
-    CloudRootMissingError
+    CloudRootMissingError, CloudTemporaryError
 from .oauth import OAuthConfig, OAuthProviderInfo
 from .event import Event
 
@@ -180,8 +180,10 @@ class Provider(ABC):                    # pylint: disable=too-many-public-method
                 raise CloudRootMissingError(f"Root path is not a directory: {root_path}")
             try:
                 root_oid = info.oid if info else self.mkdirs(root_path)
-            except:
-                raise CloudRootMissingError(f"Failed to create root path: {root_path}")
+            except Exception as e:
+                if not isinstance(e, CloudTemporaryError):
+                    raise CloudRootMissingError(f"Failed to create root path: {root_path}")
+                raise
 
         self._root_path = root_path
         self._root_oid = root_oid
