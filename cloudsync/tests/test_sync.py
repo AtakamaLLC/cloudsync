@@ -197,6 +197,23 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     sync.state.assert_index_is_correct()
 
 
+def test_sync_temporary_error_validating_provider_root(sync: "SyncMgrMixin"):
+    # confirms that a temporary error , like rate limit exceeded, won't cause a
+    sync._root_paths[REMOTE] = '/root'
+
+    with patch.object(sync.providers[REMOTE], "mkdirs", side_effect=CloudTemporaryError):
+        with pytest.raises(_BackoffError):
+            sync.do()
+
+    sync.process_notifications()
+    for notification in sync.notifications:
+        assert notification.ntype != NotificationType.ROOT_MISSING_ERROR
+
+    assert not sync.providers[REMOTE].info_path('/root')
+    sync.do()
+    assert sync.providers[REMOTE].info_path('/root')
+
+
 def test_sync_conflict_rename_path(sync):
     base = "/some@.o dd/cr azy.path"
     join = sync.providers[LOCAL].join
