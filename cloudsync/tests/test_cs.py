@@ -4,6 +4,7 @@ from io import BytesIO
 import logging
 from typing import List, Dict, Any, Tuple, Union
 from unittest.mock import patch, Mock
+from pystrict import strict
 
 import pytest
 
@@ -25,6 +26,7 @@ log = logging.getLogger(__name__)
 roots = ("/local", "/remote")
 
 
+@strict
 class SmartCloudSyncMixin(SmartCloudSync, RunUntilHelper):
     def __init__(self, *ar, **kw):
         self.csmonitor = SyncNotificationHandler(self)
@@ -39,6 +41,7 @@ class SmartCloudSyncMixin(SmartCloudSync, RunUntilHelper):
         self.smgr._validate_provider_roots()
 
 
+@strict
 class CloudSyncMixin(CloudSync, RunUntilHelper):
     def __init__(self, *ar, **kw):
         self.csmonitor = SyncNotificationHandler(self)

@@ -3,9 +3,10 @@
 import logging
 import time
 from io import BytesIO
-from typing import List
+from typing import List, Tuple, Callable
 from itertools import permutations
 from platform import system
+from pystrict import strict
 
 from unittest.mock import patch, MagicMock
 
@@ -27,8 +28,14 @@ log = logging.getLogger(__name__)
 TIMEOUT = 4
 
 
+@strict
 class SyncMgrMixin(SyncManager, RunUntilHelper):
-    def __init__(self, state, prov, trans, resolv, **kw):
+    def __init__(self,
+                 state: SyncState,
+                 prov: Tuple['Provider', 'Provider'],
+                 trans: Callable,
+                 resolv: Callable,
+                 **kw):
         self.notifications: List[Notification] = []
         def handle_notification(evt):
             self.notifications.append(evt)
@@ -188,6 +195,24 @@ def test_sync_basic(sync: "SyncMgrMixin"):
     log.debug("all state %s", sync.state.get_all())
 
     sync.state.assert_index_is_correct()
+
+
+def test_sync_temporary_error_validating_provider_root(sync: "SyncMgrMixin"):
+    # confirms that a temporary error, like rate limit exceeded, won't cause a
+    # Root Missing Error. The check for the root should be retried in that case, not fail.
+    sync._root_paths[REMOTE] = '/root'
+
+    with patch.object(sync.providers[REMOTE], "mkdirs", side_effect=CloudTemporaryError):
+        with pytest.raises(_BackoffError):
+            sync.do()
+
+    sync.process_notifications()
+    for notification in sync.notifications:
+        assert notification.ntype != NotificationType.ROOT_MISSING_ERROR
+
+    assert not sync.providers[REMOTE].info_path('/root')
+    sync.do()
+    assert sync.providers[REMOTE].info_path('/root')
 
 
 def test_sync_conflict_rename_path(sync):

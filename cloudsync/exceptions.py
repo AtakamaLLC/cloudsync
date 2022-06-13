@@ -25,7 +25,7 @@ class CloudOutOfSpaceError(CloudTemporaryError):      # ENOSPC
     pass
 
 
-class CloudRootMissingError(CloudTemporaryError):     # ENOENT, but treated differently!
+class CloudRootMissingError(CloudException):     # ENOENT, but treated differently!
     pass
 
 

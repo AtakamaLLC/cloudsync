@@ -3,6 +3,8 @@ import time
 import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Callable, List, Set, cast, Union
+
+from pystrict import strict
 from cloudsync.sync import MISSING, TRASHED
 from cloudsync import CloudSync, SyncManager, SyncState, SyncEntry, EventManager, Event, OTHER_SIDE
 from cloudsync.types import LOCAL, REMOTE, DIRECTORY, OInfo, DirInfo
@@ -82,6 +84,7 @@ class SmartSyncManager(SyncManager):   # pylint: disable=too-many-instance-attri
         return pcs
 
 
+@strict
 class SmartSyncState(SyncState):
     """Enhances the syncstate to support smart syncing."""
     def __init__(self,
@@ -93,7 +96,7 @@ class SmartSyncState(SyncState):
                  nmgr: 'NotificationManager' = None):
         self.requestset: Set[SyncEntry] = set()
         self.excludeset: Set[SyncEntry] = set()
-        self._callbacks: List[Callable] = list()
+        self._callbacks: List[Callable] = []
         super().__init__(providers, storage, tag, shuffle, prioritize, nmgr=nmgr)
 
     def register_auto_sync_callback(self, callback):
@@ -395,8 +398,8 @@ class SmartCloudSync(CloudSync):
         #   remote_oid and is_synced
         local, remote = self.providers
         remote_path = self.translate(REMOTE, local_path)
-        local_dir_ents = dict()
-        remote_ents = dict()
+        local_dir_ents = {}
+        remote_ents = {}
         try:
             for dirent in local.listdir_path(local_path):
                 local_dir_ents[dirent.name] = dirent

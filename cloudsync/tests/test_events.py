@@ -3,6 +3,7 @@ import time
 from io import BytesIO
 
 import pytest
+from pystrict import strict
 
 from cloudsync import (
     exceptions,
@@ -20,6 +21,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
+@strict
 class EventManagerWithCounter(EventManager):
     def __init__(self, *args, **kwargs):
         self.event_count = 0
