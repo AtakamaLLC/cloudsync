@@ -198,7 +198,8 @@ def test_sync_basic(sync: "SyncMgrMixin"):
 
 
 def test_sync_temporary_error_validating_provider_root(sync: "SyncMgrMixin"):
-    # confirms that a temporary error , like rate limit exceeded, won't cause a
+    # confirms that a temporary error, like rate limit exceeded, won't cause a
+    # Root Missing Error. The check for the root should be retried in that case, not fail.
     sync._root_paths[REMOTE] = '/root'
 
     with patch.object(sync.providers[REMOTE], "mkdirs", side_effect=CloudTemporaryError):
