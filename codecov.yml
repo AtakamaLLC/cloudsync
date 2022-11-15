@@ -9,4 +9,6 @@ coverage:
         threshold: 0.5
         base: pr
 ignore:
-    - "cloudsync/providers"
+    - "cloudsync/providers/box.py"
+    - "cloudsync/providers/dropbox.py"
+    - "cloudsync/providers/filesystem.py"
