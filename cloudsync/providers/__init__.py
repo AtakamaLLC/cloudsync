@@ -1,10 +1,11 @@
 import importlib
 
 from cloudsync.registry import register_provider
-from ..tests.fixtures.mock_provider import MockProvider
+from .mock import MockProvider
 
 # optionally load support for supported providers
 # todo: eventually there will be some factory class
+
 
 def _local_import(class_name, module, short_name):
     try:
@@ -27,6 +28,7 @@ def _local_import(class_name, module, short_name):
     
     register_provider(ret)
     return ret
+
 
 DropboxProvider = _local_import("DropboxProvider", ".dropbox", "dropbox")
 FileSystemProvider = _local_import("FileSystemProvider", ".filesystem", "filesystem")

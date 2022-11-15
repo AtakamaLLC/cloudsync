@@ -561,7 +561,7 @@ def pytest_generate_tests(metafunc):
 def test_join(mock_provider):
     for prefix, win_paths in (('/', False), ('', True)):
         print("prefix=%s win_paths=%s" % (prefix, win_paths))
-        with patch("cloudsync.tests.fixtures.mock_provider.MockProvider.win_paths", new=win_paths):
+        with patch("cloudsync.providers.mock.MockProvider.win_paths", new=win_paths):
             # test the trivial cases
             assert "/" == mock_provider.join()
             assert "/" == mock_provider.join("")
