@@ -71,7 +71,8 @@ class MockFS:
             if key.startswith('/'):
                 yield value
 
-    def register_event(self, action, target_object, prior_oid=None):    # pylint: disable=protected-access
+    def register_event(self, action, target_object, prior_oid=None):
+        # pylint: disable=protected-access
         event = MockEvent(action, target_object, prior_oid)
         target_object.update()
         for prov in self._listeners:
@@ -162,12 +163,12 @@ class MockEvent:  # pylint: disable=too-few-public-methods
 
 def lock(func):
     def wrap(self, *args, **kw):
-        with self._lock:
+        with self._lock:  # pylint: disable=protected-access
             return func(self, *args, **kw)
     return wrap
 
 
-class MockProvider(Provider):
+class MockProvider(Provider):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """In-memory provider with lots of options for testing."""
     default_sleep = 0.01
     name = "Mock"
@@ -238,7 +239,7 @@ class MockProvider(Provider):
         if self._use_ns:
             self.namespace_id = namespace.id
         else:
-            Provider.namespace.fset(self, namespace)    # type: ignore
+            Provider.namespace.fset(self, namespace)  # type: ignore  # pylint: disable=no-member
 
     @property
     def namespace_id(self) -> Optional[str]:
@@ -251,7 +252,8 @@ class MockProvider(Provider):
             if not self._namespace:
                 raise CloudNamespaceError("invalid namespace")
         else:
-            Provider.namespace_id.fset(self, namespace_id)  # type: ignore
+            # pylint: disable=no-member
+            Provider.namespace_id.fset(self, namespace_id)  # type: ignore  # pylint: disable=no-member
 
     @lock
     def connect_impl(self, creds):
@@ -490,6 +492,7 @@ class MockProvider(Provider):
 
     @lock
     def rename(self, oid, path) -> str:
+        # pylint: disable=too-many-branches
         log.debug("renaming %s -> %s", debug_sig(oid), path)
         self._api("rename", oid, path)
         # TODO: folders are implied by the path of the file...
@@ -569,13 +572,15 @@ class MockProvider(Provider):
         for c in self._forbidden_chars:
             if c in path:
                 raise CloudFileNameError()
+
         file_info = self.info_path(path)
         if file_info is not None:
             if file_info.otype == OType.FILE:
                 raise CloudFileExistsError(path)
-            else:
-                log.debug("Skipped creating already existing folder: %s", path)
-                return file_info.oid
+
+            log.debug("Skipped creating already existing folder: %s", path)
+            return file_info.oid
+
         new_fs_object = MockFSObject(path, MockFSObject.DIR, self.oid_is_path, hash_func=self._hash_func)
         self._store_object(new_fs_object)
         self._register_event(MockEvent.ACTION_CREATE, new_fs_object)
@@ -593,7 +598,6 @@ class MockProvider(Provider):
         self._mock_fs.unfile(self, file.path)
         file.path = None
         self._register_event(MockEvent.ACTION_RENAME, file, prior_oid)
-        return None
 
     def _delete(self, oid, without_event=False):
         log.debug("delete %s", debug_sig(oid))
