@@ -2418,8 +2418,9 @@ def test_multi_provider_shutdown(two_scoped_providers):
     assert not prov2.connected
 
     end_time = time.monotonic()
-    if (end_time - start_time > MAX_TIME):
-        raise TimeoutError("Connect/Disconnect taking too long")
+    if end_time - start_time > MAX_TIME:
+        raise TimeoutError(f"Connect/Disconnect taking too long - {end_time - start_time}s")
+
 
 def test_cache(two_scoped_providers):
     (prov1, prov2) = two_scoped_providers
