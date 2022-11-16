@@ -87,8 +87,6 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
     def __init__(self, path, object_type, oid_is_path, hash_func, contents=None, mtime=None):
         # self.display_path = path  # TODO: used for case insensitive file systems
-        if contents is None and type == MockFSObject.FILE:
-            contents = b""
         self.path = path
         if self.path != "/":
             self.path = path.rstrip("/")
@@ -128,9 +126,6 @@ class MockFSObject:         # pylint: disable=too-few-public-methods
 
     def update(self):
         self.mtime = time.time()
-
-    def copy(self):
-        return copy.copy(self)
 
     def __repr__(self):
         return "MockFSObject: %s(%s) %s %s %s" % (self.path, len(self.contents or ""), self.oid, self.exists, self.type)
