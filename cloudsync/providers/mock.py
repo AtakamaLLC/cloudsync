@@ -377,21 +377,21 @@ class MockProvider(Provider):  # pylint: disable=too-many-instance-attributes,to
         if not self.connected and not self.__in_connect:
             raise CloudDisconnectedError()
 
-    @property
+    @property  # type: ignore
     @lock
-    def latest_cursor(self):  # type: ignore
+    def latest_cursor(self):
         if not self._uses_cursor:
             return None
         return self._latest_cursor
 
-    @property
+    @property  # type: ignore
     @lock
-    def current_cursor(self):  # type: ignore
+    def current_cursor(self):
         if not self._uses_cursor:
             return None
         return self._cursor
 
-    @current_cursor.setter
+    @current_cursor.setter  # type: ignore
     @lock
     def current_cursor(self, val):  # type: ignore
         if val is None:

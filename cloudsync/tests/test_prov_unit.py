@@ -62,8 +62,8 @@ def test_mock_misc():
     assert prov.current_cursor is None
     assert prov.latest_cursor is None
     with pytest.raises(CloudCursorError):
-        prov.current_cursor = "cursor"
-    prov.current_cursor = None
+        prov.current_cursor = "cursor"  # type: ignore
+    prov.current_cursor = None  # type: ignore
     assert prov.current_cursor == prov.latest_cursor
 
     d1 = MockFSObject("/some/dir", MockFSObject.DIR, False, prov._hash_func)
