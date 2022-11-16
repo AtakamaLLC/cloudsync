@@ -20,7 +20,7 @@ def test_mock_misc():
 
     not_bool = EventFilter.PROCESS
     with pytest.raises(ValueError):
-        bool(not_bool)
+        _ = bool(not_bool)
 
     prov = MockProvider(False, True)
     fs = prov._mock_fs
