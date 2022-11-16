@@ -13,13 +13,15 @@ from cloudsync import Storage, CloudSync, SyncState, SyncEntry, LOCAL, REMOTE, F
     CloudFileExistsError, CloudTemporaryError, CloudFileNotFoundError, CloudCorruptError
 from cloudsync.types import IgnoreReason
 from cloudsync.notification import Notification, NotificationType
+from cloudsync.providers.mock import MockProvider, MockFS
 from cloudsync.runnable import _BackoffError
 from cloudsync.smartsync import SmartCloudSync
 from cloudsync.tests.sync_notification_handler import SyncNotificationHandler
 import time
 
-from .fixtures import MockFS, MockProvider, MockStorage, mock_provider_instance
+from .fixtures import MockStorage, mock_provider_instance
 from .fixtures import WaitFor, RunUntilHelper
+
 
 log = logging.getLogger(__name__)
 
@@ -2610,7 +2612,7 @@ def test_hash_mess(cs, side_locked):
 
         _called.count = 0                                       # type: ignore
 
-        with patch("cloudsync.tests.fixtures.mock_provider.CloudTemporaryError", new=_called):
+        with patch("cloudsync.providers.mock.CloudTemporaryError", new=_called):
             for locked in locks:
                 cs.providers[locked]._locked_for_test.add(renamed_path[locked])
                 log.info("lock set: %s", renamed_path[locked])

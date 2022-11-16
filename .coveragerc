@@ -1,7 +1,9 @@
 [run]
 branch=True
 omit = 
-    cloudsync/providers/*
+    cloudsync/providers/box.py
+    cloudsync/providers/dropbox.py
+    cloudsync/providers/filesystem.py
     cloudsync/tests/*
 
 [report]

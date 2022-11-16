@@ -1700,7 +1700,7 @@ def test_reprioritize_sync_trash_loop(sync):
         sync.create_event(LOCAL, FILE, path=local_file, oid=lfil.oid, hash=lfil.hash)
         return self._hash_func(self.contents)
 
-    with patch("cloudsync.tests.fixtures.mock_provider.MockFSObject.hash", new=hash_creates_event):
+    with patch("cloudsync.providers.mock.MockFSObject.hash", new=hash_creates_event):
         sync.run_until_clean(timeout=1) # times out if we get into the rename codepath
 
     # ensure all entries are discarded
